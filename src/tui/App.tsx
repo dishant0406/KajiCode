@@ -1,7 +1,7 @@
 /** @jsxImportSource @opentui/solid */
 import { TextAttributes, type KeyEvent, type MouseEvent, type ScrollBoxRenderable } from '@opentui/core';
 import { useKeyboard, usePaste, useTerminalDimensions } from '@opentui/solid';
-import { For, Match, Show, Switch, createMemo, createSignal, onMount } from 'solid-js';
+import { For, Match, Show, Switch, createMemo, createSignal, onMount, type JSX } from 'solid-js';
 import packageJson from '../../package.json';
 import { configManager } from '../config/manager';
 import { loadProviderConfig } from '../config/provider';
@@ -9,6 +9,7 @@ import type { ProviderProfile } from '../config/types';
 import { runAgent } from '../agent/loop';
 import { OpenAIProvider } from '../providers/openai';
 import type { PlanItem } from '../tools/plan';
+import { highlightCode, type HighlightedLine } from './highlighter';
 
 type Screen = 'chat' | 'providers' | 'add-provider';
 
@@ -112,6 +113,11 @@ function trimLine(input: string, max = 120) {
   return line.length > max ? `${line.slice(0, max - 1)}...` : line;
 }
 
+function firstLine(input: string, max = 120) {
+  const line = input.split(/\r?\n/, 1)[0]?.trim() || '';
+  return line.length > max ? `${line.slice(0, max - 3)}...` : line;
+}
+
 function statusText(status: PlanItem['status']) {
   switch (status) {
     case 'completed':
@@ -133,6 +139,33 @@ function formatJson(input: string) {
   }
 }
 
+function looksLikeCode(input: string) {
+  return /\b(function|const|let|class|import|export|return|interface|type)\b|=>|<\/?[a-z][\s\S]*>/i.test(input);
+}
+
+function toolSummary(name: string, args: string) {
+  try {
+    const parsed = JSON.parse(args || '{}') as Record<string, unknown>;
+
+    if (name === 'bash' || name === 'shell_command') {
+      return trimLine(String(parsed.command || ''), 80);
+    }
+    if (name === 'read_file' || name === 'view_image') {
+      return `read ${trimLine(String(parsed.path || ''), 74)}`;
+    }
+    if (name === 'edit_file' || name === 'apply_patch') {
+      return `edit ${trimLine(String(parsed.path || parsed.file || ''), 74)}`;
+    }
+
+    const firstKey = Object.keys(parsed)[0];
+    if (firstKey) return `${firstKey}: ${trimLine(String(parsed[firstKey] ?? ''), 70)}`;
+  } catch {
+    // Fall through to the raw argument preview.
+  }
+
+  return trimLine(args, 80);
+}
+
 function commandHelp() {
   return [
     { type: 'system' as const, content: 'Available commands:' },
@@ -152,10 +185,7 @@ function commandHelp() {
 export function App(props: { onExit: () => void }) {
   const term = useTerminalDimensions();
   const [screen, setScreen] = createSignal<Screen>('chat');
-  const [messages, setMessages] = createSignal<ChatMessage[]>([
-    { type: 'system', content: 'Welcome to zero. Type /provider to manage providers.' },
-    { type: 'system', content: 'Type /help for available commands.' },
-  ]);
+  const [messages, setMessages] = createSignal<ChatMessage[]>([]);
   const [input, setInput] = createSignal('');
   const [isThinking, setIsThinking] = createSignal(false);
   const [isPlanMode, setIsPlanMode] = createSignal(false);
@@ -779,7 +809,7 @@ function Header(props: { version: string; provider: string; model: string; usage
   return (
     <box
       width="100%"
-      height={3}
+      height={7}
       flexDirection="row"
       justifyContent="space-between"
       backgroundColor={colors.surface}
@@ -788,12 +818,7 @@ function Header(props: { version: string; provider: string; model: string; usage
       paddingRight={1}
     >
       <box flexDirection="column" flexShrink={1}>
-        <text fg={colors.accent} attributes={TextAttributes.BOLD} wrapMode="none" truncate>
-          ⣀⣀ ⢀⡀ ⡀⣀⢀⣀
-        </text>
-        <text fg={colors.accent} attributes={TextAttributes.BOLD} wrapMode="none" truncate>
-          ⠴⠥ ⠣⠭ ⠏  ⠣⠜
-        </text>
+        <ZeroLogo compact />
         <text fg={colors.subtle} wrapMode="none" truncate>
           v{props.version} local agent
         </text>
@@ -809,6 +834,38 @@ function Header(props: { version: string; provider: string; model: string; usage
           p:{props.usage.promptTokens} c:{props.usage.completionTokens} t:{props.total}
         </text>
       </box>
+    </box>
+  );
+}
+
+function ZeroLogo(props: { compact?: boolean }) {
+  const lines = props.compact
+    ? [
+        '███████╗███████╗██████╗  ██████╗',
+        '╚══███╔╝██╔════╝██╔══██╗██╔═══██╗',
+        '  ███╔╝ █████╗  ██████╔╝██║   ██║',
+        ' ███╔╝  ██╔══╝  ██╔══██╗██║   ██║',
+        '███████╗███████╗██║  ██║╚██████╔╝',
+        '╚══════╝╚══════╝╚═╝  ╚═╝ ╚═════╝',
+      ]
+    : [
+        '   ███████╗ ███████╗ ██████╗   ██████╗ ',
+        '   ╚══███╔╝ ██╔════╝ ██╔══██╗ ██╔═══██╗',
+        '     ███╔╝  █████╗   ██████╔╝ ██║   ██║',
+        '    ███╔╝   ██╔══╝   ██╔══██╗ ██║   ██║',
+        '   ███████╗ ███████╗ ██║  ██║ ╚██████╔╝',
+        '   ╚══════╝ ╚══════╝ ╚═╝  ╚═╝  ╚═════╝ ',
+      ];
+
+  return (
+    <box flexDirection="column">
+      <For each={lines}>
+        {(line) => (
+          <text fg={colors.accent} attributes={TextAttributes.BOLD} wrapMode="none" truncate>
+            {line}
+          </text>
+        )}
+      </For>
     </box>
   );
 }
@@ -836,17 +893,30 @@ function Transcript(props: {
         scrollbarOptions={{ showArrows: false }}
         focused
       >
-        <For each={props.messages}>
-          {(message) => (
-            <box width="100%" flexDirection="column" marginBottom={1}>
-              <Message message={message} />
-            </box>
-          )}
-        </For>
+        <Show when={props.messages.length > 0} fallback={<EmptySession />}>
+          <For each={props.messages}>
+            {(message) => (
+              <box width="100%" flexDirection="column" marginBottom={1}>
+                <Message message={message} />
+              </box>
+            )}
+          </For>
+        </Show>
         <Show when={props.thinking}>
           <text fg={colors.cyan}>zero is thinking...</text>
         </Show>
       </scrollbox>
+    </box>
+  );
+}
+
+function EmptySession() {
+  return (
+    <box width="100%" height="100%" flexDirection="column" justifyContent="center" paddingLeft={2}>
+      <ZeroLogo />
+      <box height={1} />
+      <text fg={colors.muted} wrapMode="word">A clean terminal AI coding agent</text>
+      <text fg={colors.subtle} wrapMode="word">Type /provider to manage providers or /help for commands.</text>
     </box>
   );
 }
@@ -863,12 +933,12 @@ function Message(props: { message: ChatMessage }) {
       <Match when={props.message.type === 'assistant'}>
         <box flexDirection="row" width="100%">
           <text fg={colors.cyan} flexShrink={0}>zero </text>
-          <text fg={colors.text} wrapMode="word">
-            {(props.message as any).content}
+          <box flexDirection="column" flexGrow={1}>
+            <Markdown content={(props.message as any).content} />
             <Show when={(props.message as any).streaming}>
-              <span style={{ fg: colors.cyan }}> _</span>
+              <text fg={colors.cyan}>_</text>
             </Show>
-          </text>
+          </box>
         </box>
       </Match>
       <Match when={props.message.type === 'tool-call'}>
@@ -881,15 +951,191 @@ function Message(props: { message: ChatMessage }) {
   );
 }
 
-function ToolCall(props: { message: Extract<ChatMessage, { type: 'tool-call' }> }) {
+function Markdown(props: { content: string }) {
+  const parts = createMemo(() => parseMarkdown(props.content));
+
   return (
-    <box width="100%" flexDirection="column" paddingLeft={1}>
-      <text fg={props.message.result ? colors.success : colors.yellow} wrapMode="none">
-        tool {props.message.name} {props.message.result ? 'done' : 'running'}
-      </text>
-      <text fg={colors.subtle} wrapMode="word">{trimLine(formatJson(props.message.args), 180)}</text>
-      <Show when={props.message.result}>
-        <text fg={colors.muted} wrapMode="word">{trimLine(props.message.result || '', 180)}</text>
+    <box flexDirection="column" width="100%">
+      <For each={parts()}>
+        {(part) => (
+          <Switch>
+            <Match when={part.type === 'code'}>
+              <CodeBlock code={part.content} lang={part.lang || 'text'} />
+            </Match>
+            <Match when={part.type === 'text'}>
+              <TextBlock text={part.content} />
+            </Match>
+          </Switch>
+        )}
+      </For>
+    </box>
+  );
+}
+
+function parseMarkdown(input: string): Array<{ type: 'text' | 'code'; content: string; lang?: string }> {
+  const parts: Array<{ type: 'text' | 'code'; content: string; lang?: string }> = [];
+  const fence = /```([^\n`]*)\n?([\s\S]*?)```/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = fence.exec(input)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push({ type: 'text', content: input.slice(lastIndex, match.index) });
+    }
+    parts.push({ type: 'code', lang: match[1]?.trim() || 'text', content: match[2]?.trimEnd() || '' });
+    lastIndex = match.index + match[0].length;
+  }
+
+  if (lastIndex < input.length) parts.push({ type: 'text', content: input.slice(lastIndex) });
+  return parts.length > 0 ? parts : [{ type: 'text', content: input }];
+}
+
+function TextBlock(props: { text: string }) {
+  const lines = createMemo(() => props.text.split(/\r?\n/));
+
+  return (
+    <box flexDirection="column" width="100%">
+      <For each={lines()}>
+        {(line) => (
+          <Show when={line.length > 0} fallback={<box height={1} />}>
+            <text fg={colors.text} wrapMode="word">
+              {formatInline(line)}
+            </text>
+          </Show>
+        )}
+      </For>
+    </box>
+  );
+}
+
+function formatInline(text: string): JSX.Element {
+  const segments: JSX.Element[] = [];
+  const token = /(\*\*[^*]+\*\*|`[^`]+`)/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = token.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      segments.push(<span>{text.slice(lastIndex, match.index)}</span>);
+    }
+
+    const value = match[0];
+    if (value.startsWith('**')) {
+      segments.push(<span style={{ fg: '#ffffff', attributes: TextAttributes.BOLD }}>{value.slice(2, -2)}</span>);
+    } else {
+      segments.push(<span style={{ fg: colors.cyan }}>{value.slice(1, -1)}</span>);
+    }
+    lastIndex = match.index + value.length;
+  }
+
+  if (lastIndex < text.length) segments.push(<span>{text.slice(lastIndex)}</span>);
+  return <>{segments}</>;
+}
+
+function CodeBlock(props: { code: string; lang: string }) {
+  const [highlighted, setHighlighted] = createSignal<HighlightedLine[]>();
+
+  onMount(() => {
+    void highlightCode(props.code, props.lang).then(setHighlighted);
+  });
+
+  return (
+    <box
+      width="100%"
+      flexDirection="column"
+      border
+      borderStyle="single"
+      borderColor={colors.frame}
+      paddingLeft={1}
+      paddingRight={1}
+      marginTop={1}
+      marginBottom={1}
+    >
+      <Show when={props.lang && props.lang !== 'text'}>
+        <text fg={colors.cyan} wrapMode="none">{props.lang}</text>
+      </Show>
+      <HighlightedCode lines={highlighted()} fallback={props.code} />
+    </box>
+  );
+}
+
+function HighlightedCode(props: { lines?: HighlightedLine[]; fallback: string }) {
+  const lines = createMemo<HighlightedLine[]>(
+    () => props.lines || props.fallback.split(/\r?\n/).map((line) => [{ content: line }]),
+  );
+
+  return (
+    <box flexDirection="column" width="100%">
+      <For each={lines()}>
+        {(line) => (
+          <text fg={colors.text} wrapMode="word">
+            <For each={line.length > 0 ? line : [{ content: ' ' }]}>
+              {(token) => <span style={{ fg: token.color || colors.text }}>{token.content}</span>}
+            </For>
+          </text>
+        )}
+      </For>
+    </box>
+  );
+}
+
+function ToolCall(props: { message: Extract<ChatMessage, { type: 'tool-call' }> }) {
+  const [expanded, setExpanded] = createSignal(false);
+  const [showFullResult, setShowFullResult] = createSignal(false);
+  const result = createMemo(() => props.message.result || '');
+  const longResult = createMemo(() => result().length > 400 || result().split(/\r?\n/).length > 12);
+  const previewResult = createMemo(() => {
+    if (!longResult() || showFullResult()) return result();
+    return `${firstLine(result(), 220)}...`;
+  });
+
+  function toggleExpanded(event: MouseEvent) {
+    setExpanded((value) => !value);
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  function toggleFullResult(event: MouseEvent) {
+    setShowFullResult((value) => !value);
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  return (
+    <box width="100%" flexDirection="column" paddingLeft={1} paddingRight={1}>
+      <box flexDirection="row" width="100%">
+        <text fg={props.message.result ? colors.success : colors.yellow} attributes={TextAttributes.BOLD} wrapMode="none">
+          {props.message.result ? '[x]' : '[>]'} {props.message.name}
+        </text>
+        <text fg={colors.subtle} wrapMode="none" truncate>
+          {'  '}{toolSummary(props.message.name, props.message.args)}
+        </text>
+        <text fg={colors.cyan} wrapMode="none" onMouseDown={toggleExpanded}>
+          {'  '}{expanded() ? '[hide]' : '[show]'}
+        </text>
+      </box>
+      <Show when={expanded()}>
+        <box
+          width="100%"
+          flexDirection="column"
+          border
+          borderStyle="single"
+          borderColor={props.message.result ? colors.success : colors.yellow}
+          paddingLeft={1}
+          paddingRight={1}
+        >
+          <text fg={colors.subtle} attributes={TextAttributes.BOLD}>args</text>
+          <CodeBlock code={formatJson(props.message.args)} lang="json" />
+          <Show when={props.message.result}>
+            <text fg={colors.subtle} attributes={TextAttributes.BOLD}>result</text>
+            <CodeBlock code={previewResult()} lang={looksLikeCode(result()) ? 'typescript' : 'text'} />
+            <Show when={longResult()}>
+              <text fg={colors.cyan} wrapMode="none" onMouseDown={toggleFullResult}>
+                {showFullResult() ? '[less]' : '[more]'}
+              </text>
+            </Show>
+          </Show>
+        </box>
       </Show>
     </box>
   );
