@@ -155,7 +155,7 @@ func (m model) View() string {
 	builder.WriteString("\n")
 	builder.WriteString(m.input.View())
 	builder.WriteString("\n\n")
-	builder.WriteString(footerStyle.Render("/help  /clear  /exit  /tools  /permissions  Esc clear  Ctrl+C quit"))
+	builder.WriteString(footerStyle.Render(commandFooterText()))
 
 	return builder.String()
 }
@@ -184,6 +184,30 @@ func (m model) handleSubmit() (tea.Model, tea.Cmd) {
 		return m, nil
 	case commandPermissions:
 		m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: m.permissionsText()})
+		return m, nil
+	case commandProvider:
+		m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: m.providerText()})
+		return m, nil
+	case commandModel:
+		m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: m.modelText(command.text)})
+		return m, nil
+	case commandContext:
+		m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: m.contextText()})
+		return m, nil
+	case commandConfig:
+		m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: m.configText()})
+		return m, nil
+	case commandDebug:
+		m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: m.debugText()})
+		return m, nil
+	case commandPlan:
+		m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: m.planText()})
+		return m, nil
+	case commandDoctor, commandSearch, commandTheme, commandInputStyle:
+		m.transcript = reduceTranscript(m.transcript, transcriptAction{
+			kind: actionAppendSystem,
+			text: shellOnlyCommandText(command.name),
+		})
 		return m, nil
 	case commandUnknown:
 		m.transcript = reduceTranscript(m.transcript, transcriptAction{
@@ -293,8 +317,120 @@ func (m model) permissionsText() string {
 	return "Permission mode: " + string(m.permissionMode)
 }
 
+func (m model) providerText() string {
+	return strings.Join([]string{
+		"Provider",
+		"provider: " + displayValue(m.providerName, "none"),
+		"model: " + displayValue(m.modelName, "none"),
+	}, "\n")
+}
+
+func (m model) modelText(args string) string {
+	switch strings.ToLower(strings.TrimSpace(args)) {
+	case "list", "ls":
+		return m.modelListText()
+	}
+
+	lines := []string{
+		"Model",
+		"Active model: " + displayValue(m.modelName, "none"),
+		"provider: " + displayValue(m.providerName, "none"),
+	}
+	if args != "" {
+		lines = append(lines, "Model switching is not wired in Go TUI yet.")
+	} else {
+		lines = append(lines, "Use /model list to inspect the current model shell.")
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (m model) contextText() string {
+	return strings.Join([]string{
+		"Context",
+		"cwd: " + displayValue(m.cwd, "unknown"),
+		"provider: " + displayValue(m.providerName, "none"),
+		"model: " + displayValue(m.modelName, "none"),
+		"permission mode: " + string(m.permissionMode),
+		fmt.Sprintf("tools: %d", len(m.registry.All())),
+	}, "\n")
+}
+
+func (m model) configText() string {
+	return strings.Join([]string{
+		"Config",
+		"provider: " + displayValue(m.providerName, "none"),
+		"model: " + displayValue(m.modelName, "none"),
+		"permission mode: " + string(m.permissionMode),
+	}, "\n")
+}
+
+func (m model) debugText() string {
+	state := "idle"
+	if m.pending {
+		state = "running"
+	}
+	return strings.Join([]string{
+		"Debug",
+		"run state: " + state,
+		"active run: " + fmt.Sprint(m.activeRunID),
+		"Debug mode is not wired in Go TUI yet.",
+	}, "\n")
+}
+
+func displayValue(value string, fallback string) string {
+	if value == "" {
+		return fallback
+	}
+	return value
+}
+
+func shellOnlyCommandText(name string) string {
+	return fmt.Sprintf("%s is registered in the Go TUI shell but is not wired yet.", name)
+}
+
 func helpText() string {
-	return "Commands: /help, /clear, /exit, /tools, /permissions. Submit text to ask the assistant."
+	return "Commands:\n" + strings.Join(formatCommandHelpLines(), "\n") + "\nSubmit text to ask the assistant."
+}
+
+const defaultCommandFooterText = "/help  /model  /provider  /context  /tools  /permissions  /clear  /exit  Esc clear  Ctrl+C quit"
+
+func commandFooterText() string {
+	return formatCommandFooterText(commandDefinitions)
+}
+
+func formatCommandFooterText(commands []commandDefinition) string {
+	if len(commands) == 0 {
+		return defaultCommandFooterText
+	}
+
+	namesByKind := make(map[commandKind]string, len(commands))
+	for _, command := range commands {
+		namesByKind[command.kind] = command.name
+	}
+
+	featured := []commandKind{
+		commandHelp,
+		commandModel,
+		commandProvider,
+		commandContext,
+		commandTools,
+		commandPermissions,
+		commandClear,
+		commandExit,
+	}
+	parts := make([]string, 0, len(featured)+2)
+	for _, kind := range featured {
+		name := namesByKind[kind]
+		if name != "" {
+			parts = append(parts, name)
+		}
+	}
+	if len(parts) == 0 {
+		return defaultCommandFooterText
+	}
+
+	parts = append(parts, "Esc clear", "Ctrl+C quit")
+	return strings.Join(parts, "  ")
 }
 
 func renderRow(row transcriptRow) string {
