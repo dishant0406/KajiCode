@@ -44,7 +44,7 @@ These rules prevent future conflicts:
 
 | Person | Primary role | Owns | Does not own |
 |---|---|---|---|
-| Vasanth | Product lead, TUI, tools UX | Ink TUI, slash command UI, tool result rendering, local tool UX, permission prompts, themes, command palette, user-facing flows | Provider internals, session protocol, MCP transports, release pipeline |
+| Vasanth | Product lead, TUI, tools UX | Bubble Tea TUI, slash command UI, tool result rendering, local tool UX, permission prompts, themes, command palette, user-facing flows | Provider internals, session protocol, MCP transports, release pipeline |
 | Gnanam | Runtime backend, providers, protocols | Model registry, provider factory, Anthropic/Gemini, usage/cost, session store, stream-json, config validation, doctor/search backend, MCP/plugin backend, permissions/grants, sandbox policy | TUI rendering, binary packaging, VS Code extension UI |
 | Anandan | Infra, distribution, external integrations | CI, build, single binary, release packages, installers, self-update, performance benchmarks, VS Code extension, GitHub PR integration, Windows sandbox, release security | Provider internals, TUI command rendering, model registry |
 
@@ -66,38 +66,48 @@ These contracts are required before dependent work starts:
 
 Goal: Zero runs locally, has basic tools, one OpenAI-compatible provider, basic TUI, tests, and project scripts.
 
-Current status: PR #6 covers much of M0. This v2 treats M0 as the baseline and starts workload balancing from M1.
+Current status: the earlier TS/Bun M0 baseline is historical context only. The Go migration resets M0 around a new Go module, `cmd/zero` entrypoint, Bubble Tea TUI shell, core tools, tests, and validation commands. M1 work should start only after these Go foundation PRs are merged.
 
 ### Vasanth
 
-- ToolBase with Zod schema validation.
+- Tool interface with JSON Schema-compatible parameter validation.
 - Core file tools: read, write, edit, grep, list directory, bash, plan.
-- Basic Ink TUI and message/tool rendering.
+- Basic Bubble Tea TUI and message/tool rendering.
 - Basic agent loop integration.
-- PR: existing PR #6 plus follow-up fixes if needed.
+- PR: `feat/go-m0-tools-tui`.
 
 ### Gnanam
 
-- Review and stabilize provider contract from PR #6.
+- Define the first Go provider contract for the M0 OpenAI-compatible provider.
 - Define first draft of normalized `Usage` type.
 - Define first draft of model registry type.
 - Review config loader and list missing provider/config fields.
-- PR: `feat/m0-runtime-contracts` if not already covered.
+- PR: `feat/go-m0-runtime-contracts`.
 
 ### Anandan
 
-- Add stable package scripts: `bun test`, `bun run build`, `bun run typecheck`.
+- Add stable project commands: `go test ./...`, `go build ./cmd/zero`, and the npm wrapper smoke checklist.
 - Add initial CI smoke job.
-- Verify Bun version and lockfile behavior.
+- Verify Go toolchain version, module cache behavior, and npm wrapper lockfile behavior.
 - Add build artifact smoke check.
 - PR: `feat/m0-ci-scripts`.
 
 ### M0 Done
 
-- `bun test` passes.
-- `bun run typecheck` exists and passes.
-- `bun run build` exists or has a documented placeholder until binary work.
+- `go test ./...` passes.
+- `go build ./cmd/zero` passes.
+- npm wrapper smoke checklist exists when npm packaging files are touched.
 - `zero` can run, read a file, edit a file, and stream a response.
+
+### npm Wrapper Smoke Checklist
+
+When npm distribution files are changed, the smoke check must verify:
+
+- `package.json` exists with the expected package name and version.
+- `npm ci` succeeds from the wrapper package directory.
+- The wrapper binary resolves through the package `bin` entry and `node_modules/.bin`.
+- `zero --version` or `zero --help` exits 0 and reports the expected version or command surface.
+- The designated npm smoke/build script exits 0.
 
 ## Milestone M1: Multi-Provider And Headless Foundation, Weeks 3-4
 
@@ -130,7 +140,7 @@ Goal: Zero can select models/providers, use Claude/Gemini/OpenAI-compatible prov
 
 ### Anandan: Build And CI
 
-- Single binary build spike with `bun build --compile`.
+- Single binary build spike with Go cross-compilation.
 - CI matrix for Linux/macOS/Windows test and build smoke.
 - Release packaging formats: tar.gz for Unix, zip for Windows.
 - Artifact upload on tags or manual workflow.
@@ -154,7 +164,7 @@ Goal: Zero can select models/providers, use Claude/Gemini/OpenAI-compatible prov
 - OpenAI-compatible provider still works.
 - Anthropic and Gemini providers pass mocked stream tests.
 - Model selector reads registry data.
-- CI runs tests and typecheck on PR.
+- CI runs tests and build checks on PR.
 - Binary build has at least one working platform artifact or documented blocker.
 
 ## Milestone M2: Core Commands, Cost, Observability, Install Flow, Weeks 5-8
@@ -179,7 +189,7 @@ Goal: Core slash commands work, cost and diagnostics are visible, sessions have 
 
 - Minimal session event store to support cost/search/resume later.
 - Cost tracking from normalized usage and model registry.
-- `zero doctor` backend checks: Bun, config, provider, connectivity, model validity.
+- `zero doctor` backend checks: binary, config, provider, connectivity, model validity.
 - `zero search` backend over local session events.
 - Config inspection and validation API for `/config`.
 - Secret redaction helper used by logs, provider errors, doctor, feedback.
@@ -521,9 +531,9 @@ Headless `exec` is split to avoid conflict:
 Every PR must include:
 
 - Tests for changed behavior.
-- `bun test` passes.
-- `bun run typecheck` passes.
-- `bun run build` passes or the PR explicitly documents why build is not applicable.
+- `go test ./...` must pass when the PR modifies any Go code; docs-only PRs are exempt and must say so in the PR description.
+- `go build ./cmd/zero` must pass when the PR modifies `cmd/zero` or runtime packages used by the entrypoint; docs-only and npm-wrapper-only PRs are exempt and must say so in the PR description.
+- The npm wrapper smoke checklist must pass when the PR modifies npm distribution files.
 - PR description explains what changed and why.
 - No unrelated refactors.
 - Redaction used for secrets in logs/errors/tests.
@@ -553,10 +563,10 @@ This keeps workload balanced while preserving clean ownership boundaries.
 
 ## Immediate Next Steps
 
-1. Merge or close PR #6 with M0 baseline decision.
-2. Anandan adds/validates project scripts and CI baseline if missing.
-3. Gnanam starts `feat/m1-model-registry`.
-4. Vasanth starts model selector UI only after registry API shape is agreed.
-5. Gnanam starts provider factory before Anthropic/Gemini providers.
-6. Anandan starts CI matrix and binary build spike in parallel.
+1. Reset M0 for the Go migration and treat old TS/Bun PR #6 as historical only.
+2. Anandan starts `feat/go-m0-module-entrypoint` with `go.mod`, `cmd/zero`, `go test ./...`, and `go build ./cmd/zero`.
+3. Gnanam starts `feat/go-m0-runtime-contracts` for the Go provider/tool/runtime contracts.
+4. Vasanth starts `feat/go-m0-tools-tui` for core tools, Bubble Tea startup shell, and basic agent loop integration.
+5. Anandan adds CI smoke coverage for the Go commands and the npm wrapper smoke checklist when wrapper files land.
+6. Start M1 model registry, provider factory, and model selector work only after the Go M0 foundation PRs are merged.
 
