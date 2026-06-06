@@ -66,8 +66,23 @@ type styles struct {
 	green, red, amb lipgloss.Style
 }
 
+// newStyles builds foreground-only text styles. These compose INSIDE the chat
+// status bars (which set their own Panel backgrounds), so they must NOT bake in a
+// background of their own.
 func newStyles(p Pal) styles {
 	f := func(c lipgloss.Color) lipgloss.Style { return lipgloss.NewStyle().Foreground(c) }
+	return styles{p, f(p.Fg), f(p.Dim), f(p.Mute), f(p.Accent), f(p.Accent2), f(p.Green), f(p.Red), f(p.Amber)}
+}
+
+// newCanvasStyles is for full-bleed surfaces (the home + boot splash) where text
+// sits directly on the themed background. Each style carries the theme background
+// so content cells match the surrounding whitespace fill — otherwise the text
+// shows the terminal's own background, producing a visible "card" against the
+// themed margins.
+func newCanvasStyles(p Pal) styles {
+	f := func(c lipgloss.Color) lipgloss.Style {
+		return lipgloss.NewStyle().Foreground(c).Background(p.Bg)
+	}
 	return styles{p, f(p.Fg), f(p.Dim), f(p.Mute), f(p.Accent), f(p.Accent2), f(p.Green), f(p.Red), f(p.Amber)}
 }
 
@@ -80,7 +95,7 @@ func (s styles) block() string {
 // then the tagline and a loading line, advancing by animation frame (~120ms).
 func RenderBoot(variant int, dark bool, frame, w, h int) string {
 	p := Resolve(variant, dark)
-	s := newStyles(p)
+	s := newCanvasStyles(p)
 	reveal := []int{1, 3, 5, 7, 9} // per-line reveal frames (~120ms each)
 	var b strings.Builder
 	for i, l := range wordmark {
@@ -100,7 +115,7 @@ func RenderBoot(variant int, dark bool, frame, w, h int) string {
 	if frame >= 8 {
 		b.WriteString(s.mute.Render("initializing runtime · loading providers ") + s.amb.Render(spinFrames[frame%len(spinFrames)]))
 	}
-	content := lipgloss.NewStyle().Align(lipgloss.Center).Render(b.String())
+	content := lipgloss.NewStyle().Align(lipgloss.Center).Background(p.Bg).Render(b.String())
 	return lipgloss.Place(maxi(w, 40), maxi(h, 8), lipgloss.Center, lipgloss.Center, content,
 		lipgloss.WithWhitespaceBackground(p.Bg))
 }
@@ -110,7 +125,7 @@ func RenderBoot(variant int, dark bool, frame, w, h int) string {
 // RenderHome renders the centered Zen landing surface.
 func RenderHome(d HomeData) string {
 	p := Resolve(d.Variant, d.Dark)
-	s := newStyles(p)
+	s := newCanvasStyles(p)
 	w := maxi(d.Width, 40)
 
 	var b strings.Builder
@@ -136,11 +151,12 @@ func RenderHome(d HomeData) string {
 	}
 
 	box := lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(p.Line).
+		BorderBackground(p.Bg).Background(p.Bg).
 		Padding(0, 1).Width(mini(58, w-4)).Render(d.Input)
 	b.WriteString(box + "\n\n")
 	b.WriteString(s.mute.Render("⏎ start · 1-5 theme · ^L light · / commands · @ files · ! bash · ^C quit"))
 
-	content := lipgloss.NewStyle().Align(lipgloss.Center).Render(b.String())
+	content := lipgloss.NewStyle().Align(lipgloss.Center).Background(p.Bg).Render(b.String())
 	return lipgloss.Place(w, maxi(d.Height, 8), lipgloss.Center, lipgloss.Center, content,
 		lipgloss.WithWhitespaceBackground(p.Bg))
 }
