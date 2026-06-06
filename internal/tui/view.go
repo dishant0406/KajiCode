@@ -201,6 +201,55 @@ func gitBranch(cwd string) string {
 	return ref
 }
 
+// suggestionOverlay renders the slash-command autocomplete list below the input
+// in the default skin: one row per match (name + dim description), the selected
+// row highlighted with a caret and the accent color. Returns "" when no overlay
+// should show.
+func (m model) suggestionOverlay(width int) string {
+	if !m.suggestionsActive() {
+		return ""
+	}
+	nameWidth := 0
+	for _, s := range m.suggestions {
+		if w := lipgloss.Width(s.Name); w > nameWidth {
+			nameWidth = w
+		}
+	}
+	lines := make([]string, 0, len(m.suggestions))
+	for index, s := range m.suggestions {
+		pad := strings.Repeat(" ", maxInt(0, nameWidth-lipgloss.Width(s.Name)))
+		marker := "  "
+		name := zeroTheme.text.Render(s.Name)
+		if index == m.suggestionIdx {
+			marker = zeroTheme.accent.Render("› ")
+			name = zeroTheme.accent.Render(s.Name)
+		}
+		line := marker + name + pad + "  " + zeroTheme.muted.Render(s.Desc)
+		lines = append(lines, fitStyledLine(line, width-2))
+	}
+	return strings.Join(lines, "\n")
+}
+
+// pickerOverlay renders an open interactive selector below the input in the
+// default skin: a titled bordered list with the selected row highlighted.
+func (m model) pickerOverlay(width int) string {
+	if m.picker == nil {
+		return ""
+	}
+	lines := make([]string, 0, len(m.picker.items)+1)
+	lines = append(lines, zeroTheme.accent.Render(m.picker.title)+zeroTheme.muted.Render("  ↑/↓ move · ⏎ select · esc cancel"))
+	for index, item := range m.picker.items {
+		marker := "  "
+		label := zeroTheme.text.Render(item.Label)
+		if index == m.picker.selected {
+			marker = zeroTheme.accent.Render("› ")
+			label = zeroTheme.accent.Render(item.Label)
+		}
+		lines = append(lines, fitStyledLine(marker+label, width-4))
+	}
+	return borderedBlock(width, lines)
+}
+
 // argHint extracts the most representative argument from a tool call's raw JSON
 // arguments for the single-line tool row (the path, pattern, or command acted on).
 func argHint(raw string) string {

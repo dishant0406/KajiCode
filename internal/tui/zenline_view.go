@@ -66,12 +66,15 @@ func (m model) zenlineView() string {
 	// Home until the first turn is submitted.
 	if m.showSplash {
 		return zenline.RenderHome(zenline.HomeData{
-			Variant: m.themeVariant,
-			Dark:    m.themeDark,
-			Width:   width,
-			Height:  height,
-			Header:  header,
-			Input:   m.input.View(),
+			Variant:     m.themeVariant,
+			Dark:        m.themeDark,
+			Width:       width,
+			Height:      height,
+			Header:      header,
+			Input:       m.input.View(),
+			Suggestions: m.zenlineSuggestions(),
+			SelectedIdx: m.suggestionIdx,
+			Picker:      m.zenlinePicker(),
 		})
 	}
 
@@ -85,20 +88,50 @@ func (m model) zenlineView() string {
 	thinking := m.pending && m.streamingText == "" && !running && m.pendingPermission == nil
 
 	return zenline.RenderChat(zenline.ChatData{
-		Variant:  m.themeVariant,
-		Dark:     m.themeDark,
-		Width:    width,
-		Height:   height,
-		Header:   header,
-		Rows:     rows,
-		Working:  m.pending && m.pendingPermission == nil,
-		Thinking: thinking,
-		Stream:   m.streamingText,
-		TokS:     m.streamTokS(),
-		Spin:     m.frame,
-		Perm:     m.zenlinePerm(),
-		Input:    m.input.View(),
+		Variant:     m.themeVariant,
+		Dark:        m.themeDark,
+		Width:       width,
+		Height:      height,
+		Header:      header,
+		Rows:        rows,
+		Working:     m.pending && m.pendingPermission == nil,
+		Thinking:    thinking,
+		Stream:      m.streamingText,
+		TokS:        m.streamTokS(),
+		Spin:        m.frame,
+		Perm:        m.zenlinePerm(),
+		Input:       m.input.View(),
+		Suggestions: m.zenlineSuggestions(),
+		SelectedIdx: m.suggestionIdx,
+		Picker:      m.zenlinePicker(),
 	})
+}
+
+// zenlineSuggestions maps the live autocomplete matches into zenline render
+// data, or nil when the overlay is inactive (a modal is up or there are no
+// matches).
+func (m model) zenlineSuggestions() []zenline.Suggestion {
+	if !m.suggestionsActive() {
+		return nil
+	}
+	out := make([]zenline.Suggestion, 0, len(m.suggestions))
+	for _, s := range m.suggestions {
+		out = append(out, zenline.Suggestion{Name: s.Name, Desc: s.Desc})
+	}
+	return out
+}
+
+// zenlinePicker maps an open selector into zenline render data, or nil when no
+// picker is open.
+func (m model) zenlinePicker() *zenline.Picker {
+	if m.picker == nil {
+		return nil
+	}
+	labels := make([]string, 0, len(m.picker.items))
+	for _, item := range m.picker.items {
+		labels = append(labels, item.Label)
+	}
+	return &zenline.Picker{Title: m.picker.title, Items: labels, Selected: m.picker.selected}
 }
 
 // streamTokS estimates tokens/sec for the current streaming segment (~4 chars/token).

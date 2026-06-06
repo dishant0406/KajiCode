@@ -33,6 +33,20 @@ type Perm struct {
 	Tool, Risk, Reason, Summary string
 }
 
+// Suggestion is one slash-command autocomplete row threaded in from the TUI.
+type Suggestion struct {
+	Name string
+	Desc string
+}
+
+// Picker is an open interactive selector overlay threaded in from the TUI: a
+// title, the visible item labels, and the highlighted index.
+type Picker struct {
+	Title    string
+	Items    []string
+	Selected int
+}
+
 // HomeData drives the Zen home page.
 type HomeData struct {
 	Variant       int
@@ -41,6 +55,11 @@ type HomeData struct {
 	Header        Header
 	Recent        [][3]string
 	Input         string
+	// Suggestions / SelectedIdx drive the slash-command autocomplete overlay; an
+	// empty slice means no overlay. Picker, when non-nil, is an open selector.
+	Suggestions []Suggestion
+	SelectedIdx int
+	Picker      *Picker
 }
 
 // ChatData drives the Statusline chat page.
@@ -57,6 +76,11 @@ type ChatData struct {
 	Spin          int
 	Perm          *Perm
 	Input         string
+	// Suggestions / SelectedIdx drive the slash-command autocomplete overlay; an
+	// empty slice means no overlay. Picker, when non-nil, is an open selector.
+	Suggestions []Suggestion
+	SelectedIdx int
+	Picker      *Picker
 }
 
 type styles struct {
@@ -156,7 +180,11 @@ func RenderHome(d HomeData) string {
 	box := lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(p.Line).
 		BorderBackground(p.Bg).Background(p.Bg).
 		Padding(0, 1).Width(mini(58, w-4)).Render(d.Input)
-	b.WriteString(box + "\n\n")
+	b.WriteString(box + "\n")
+	if overlay := s.overlayRegion(ChatData{Suggestions: d.Suggestions, SelectedIdx: d.SelectedIdx, Picker: d.Picker}, mini(58, w-4)); overlay != "" {
+		b.WriteString(overlay + "\n")
+	}
+	b.WriteString("\n")
 	b.WriteString(s.mute.Render("⏎ start · 1-5 theme · ^L light · / commands · @ files · ! bash · ^C quit"))
 
 	content := lipgloss.NewStyle().Align(lipgloss.Center).Background(p.Bg).Render(b.String())
@@ -197,7 +225,16 @@ func RenderChat(d ChatData) string {
 	bottom := s.botBar(run, d.Header, d.Variant, d.TokS, w)
 	cmd := s.cmdRegion(d, w)
 
-	bodyH := h - 3
+	// The autocomplete / picker overlay (when present) sits between the command
+	// line and the bottom bar; its lines are subtracted from the transcript body
+	// so the frame keeps its fixed height.
+	overlay := s.overlayRegion(d, w)
+	overlayH := 0
+	if overlay != "" {
+		overlayH = strings.Count(overlay, "\n") + 1
+	}
+
+	bodyH := h - 3 - overlayH
 	if bodyH < 1 {
 		bodyH = 1
 	}
@@ -207,7 +244,66 @@ func RenderChat(d ChatData) string {
 	} else {
 		body = s.transcript(d, w, bodyH)
 	}
-	return top + "\n" + body + "\n" + cmd + "\n" + bottom
+	frame := top + "\n" + body + "\n" + cmd
+	if overlay != "" {
+		frame += "\n" + overlay
+	}
+	return frame + "\n" + bottom
+}
+
+// overlayRegion renders the slash-command autocomplete list or an open picker on
+// the theme background, just below the command line. Returns "" when neither is
+// present. A picker takes precedence over the suggestion list.
+func (s styles) overlayRegion(d ChatData, w int) string {
+	if d.Picker != nil {
+		return s.pickerLines(*d.Picker, w)
+	}
+	if len(d.Suggestions) > 0 {
+		return s.suggestionLines(d.Suggestions, d.SelectedIdx, w)
+	}
+	return ""
+}
+
+// suggestionLines renders one row per match (name + dim description) on the
+// theme background; the selected row is highlighted with a caret and accent.
+func (s styles) suggestionLines(items []Suggestion, selected, w int) string {
+	nameW := 0
+	for _, it := range items {
+		if l := lipgloss.Width(it.Name); l > nameW {
+			nameW = l
+		}
+	}
+	lines := make([]string, 0, len(items))
+	for i, it := range items {
+		pad := strings.Repeat(" ", maxi(0, nameW-lipgloss.Width(it.Name)))
+		marker := s.mute.Render("  ")
+		name := s.fg.Render(it.Name)
+		if i == selected {
+			marker = s.acc.Bold(true).Render("› ")
+			name = s.acc.Bold(true).Render(it.Name)
+		}
+		line := marker + name + pad + s.dim.Render("  "+it.Desc)
+		lines = append(lines, padRight(clip(line, w), w, s.pal.Bg))
+	}
+	return strings.Join(lines, "\n")
+}
+
+// pickerLines renders an open selector: a title line plus one row per item, the
+// selected row highlighted, all on the theme background.
+func (s styles) pickerLines(p Picker, w int) string {
+	lines := make([]string, 0, len(p.Items)+1)
+	head := s.acc.Bold(true).Render(p.Title) + s.mute.Render("  ↑/↓ move · ⏎ select · esc cancel")
+	lines = append(lines, padRight(clip(head, w), w, s.pal.Bg))
+	for i, item := range p.Items {
+		marker := s.mute.Render("  ")
+		label := s.fg.Render(item)
+		if i == p.Selected {
+			marker = s.acc.Bold(true).Render("› ")
+			label = s.acc.Bold(true).Render(item)
+		}
+		lines = append(lines, padRight(clip(marker+label, w), w, s.pal.Bg))
+	}
+	return strings.Join(lines, "\n")
 }
 
 // Rect is a screen region in cell coordinates (0-based, y measured from the top
@@ -294,7 +390,7 @@ func (s styles) topBar(run string, h Header, w int) string {
 	if h.Dirty {
 		dirty = s.amb.Render("✱")
 	}
-	branch := b1(s.fg.Render("⎇ " + orDash(h.Branch)) + dirty)
+	branch := b1(s.fg.Render("⎇ "+orDash(h.Branch)) + dirty)
 	cwd := b2(s.dim.Render(shortPath(h.Cwd)))
 	model := b2(s.mute.Render("model ") + s.fg.Render(orDash(h.Model)))
 	prov := b2(s.mute.Render("prov ") + s.dim.Render(orDash(h.Provider)))

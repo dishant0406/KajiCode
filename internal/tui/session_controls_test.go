@@ -393,8 +393,9 @@ func anthropicTestProfile(modelID string) config.ProviderProfile {
 }
 
 func TestModeCommandListsPresets(t *testing.T) {
+	// "/mode list" prints the preset list (no picker for an explicit subcommand).
 	m := newModel(context.Background(), Options{ModelName: "claude-sonnet-4.5"})
-	m.input.SetValue("/mode")
+	m.input.SetValue("/mode list")
 
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	next := updated.(model)
@@ -406,6 +407,25 @@ func TestModeCommandListsPresets(t *testing.T) {
 		if !transcriptContains(next.transcript, want) {
 			t.Fatalf("expected mode list transcript to contain %q, got %#v", want, next.transcript)
 		}
+	}
+}
+
+func TestModeCommandNoArgOpensPicker(t *testing.T) {
+	// A bare "/mode" opens the interactive picker instead of printing status.
+	m := newModel(context.Background(), Options{ModelName: "claude-sonnet-4.5"})
+	m.input.SetValue("/mode")
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	next := updated.(model)
+
+	if cmd != nil {
+		t.Fatal("expected /mode picker open without starting an agent run")
+	}
+	if next.picker == nil || next.picker.kind != pickerMode {
+		t.Fatalf("expected an open mode picker, got %#v", next.picker)
+	}
+	if len(next.picker.items) == 0 {
+		t.Fatal("expected mode picker to list presets")
 	}
 }
 

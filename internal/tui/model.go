@@ -69,6 +69,17 @@ type model struct {
 	booted           bool   // zenline boot splash finished
 	streamingText    string // live assistant text for the current segment
 	streamStartFrame int    // frame the current stream segment began (tok/s)
+
+	// Slash-command autocomplete (purely additive UI state). suggestions is the
+	// live match list for the current "/token"; suggestionIdx is the highlighted
+	// row. Active only when suggestionsActive() (no modal, non-empty matches).
+	suggestions   []commandSuggestion
+	suggestionIdx int
+
+	// picker, when non-nil, is an open interactive selector overlay (/model,
+	// /theme, /effort, /mode with no argument). It captures ↑/↓/Enter/Esc and
+	// applies the chosen value through the existing command handlers.
+	picker *commandPicker
 }
 
 type agentTextMsg struct {
@@ -175,9 +186,9 @@ func newModel(ctx context.Context, options Options) model {
 	input.Focus()
 
 	return model{
-		skin:         options.Skin,
-		themeVariant: options.ThemeVariant,
-		themeDark:    options.ThemeDark,
+		skin:               options.Skin,
+		themeVariant:       options.ThemeVariant,
+		themeDark:          options.ThemeDark,
 		ctx:                ctx,
 		cwd:                cwd,
 		gitBranch:          gitBranch(cwd),
@@ -224,7 +235,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.pendingAskUser != nil {
 				return m.resolveAskUser(true)
 			}
+			// An open picker cancels first; then an active suggestion overlay is
+			// dismissed. Neither cancels the run or clears the input.
+			if m.picker != nil {
+				m.picker = nil
+				return m, nil
+			}
+			if m.suggestionsActive() {
+				return m.dismissSuggestions(), nil
+			}
 			m.input.SetValue("")
+			m.suggestions = nil
+			m.suggestionIdx = 0
 			if m.pending {
 				m.cancelRun()
 			}
@@ -236,7 +258,38 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.pendingAskUser != nil {
 				return m.submitAskUserAnswer()
 			}
+			if m.picker != nil {
+				return m.choosePicker()
+			}
+			// Enter on a highlighted suggestion completes the input rather than
+			// submitting; Enter with no active suggestion submits as today.
+			if m.suggestionsActive() {
+				return m.completeSuggestion(), nil
+			}
 			return m.handleSubmit()
+		case tea.KeyTab:
+			if m.picker == nil && m.suggestionsActive() {
+				m.moveSuggestion(1)
+				return m, nil
+			}
+		case tea.KeyDown:
+			if m.picker != nil {
+				m.picker.move(1)
+				return m, nil
+			}
+			if m.suggestionsActive() {
+				m.moveSuggestion(1)
+				return m, nil
+			}
+		case tea.KeyUp:
+			if m.picker != nil {
+				m.picker.move(-1)
+				return m, nil
+			}
+			if m.suggestionsActive() {
+				m.moveSuggestion(-1)
+				return m, nil
+			}
 		}
 		if m.pendingAskUser != nil {
 			// While a questionnaire is active, all other keys feed the text input
@@ -248,12 +301,24 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.pendingPermission != nil {
 			return m.handlePermissionKey(msg)
 		}
+		// An open picker is modal over the input: swallow remaining keys so they
+		// neither type into the field nor trigger zenline theme shortcuts.
+		// ↑/↓/Enter/Esc were already handled above.
+		if m.picker != nil {
+			return m, nil
+		}
 		if m.skin == "zenline" {
 			m.booted = true // any key dismisses the boot splash
 			if nm, handled := m.handleZenlineKeys(msg); handled {
 				return nm, nil
 			}
 		}
+		// The key fell through to the text input: let it update, then refresh the
+		// autocomplete match list from the new value.
+		var cmd tea.Cmd
+		m.input, cmd = m.input.Update(msg)
+		m.recomputeSuggestions()
+		return m, cmd
 	case zenlineTickMsg:
 		if m.skin != "zenline" {
 			return m, nil
@@ -405,6 +470,14 @@ func (m model) transcriptView() string {
 
 	builder.WriteString("\n")
 	builder.WriteString(borderedBlock(width, []string{m.input.View()}))
+	if overlay := m.suggestionOverlay(width); overlay != "" {
+		builder.WriteString("\n")
+		builder.WriteString(overlay)
+	}
+	if picker := m.pickerOverlay(width); picker != "" {
+		builder.WriteString("\n")
+		builder.WriteString(picker)
+	}
 	builder.WriteString("\n")
 	builder.WriteString(m.statusLine(width))
 
@@ -503,12 +576,52 @@ func permissionDecisionReason(decision permissionDecision) string {
 	}
 }
 
+// choosePicker applies the highlighted picker item through the same handler the
+// typed command would have used, appends the resulting status text, and closes
+// the picker. Behavior is identical to running "/model <id>", "/effort <v>",
+// "/mode <name>", or selecting a zenline theme by key.
+func (m model) choosePicker() (tea.Model, tea.Cmd) {
+	picker := m.picker
+	m.picker = nil
+	if picker == nil {
+		return m, nil
+	}
+	item, ok := picker.current()
+	if !ok {
+		return m, nil
+	}
+	switch picker.kind {
+	case pickerModel:
+		m.showSplash = false
+		text := ""
+		m, text = m.handleModelCommand(item.Value)
+		m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: text})
+	case pickerEffort:
+		m.showSplash = false
+		text := ""
+		m, text = m.handleEffortCommand(item.Value)
+		m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: text})
+	case pickerMode:
+		m.showSplash = false
+		text := ""
+		m, text = m.handleModeCommand(item.Value)
+		m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: text})
+	case pickerTheme:
+		// Theme selection mirrors the zenline number-key shortcut: set the active
+		// variant by its catalog index.
+		m.themeVariant = picker.selected
+	}
+	return m, nil
+}
+
 func (m model) handleSubmit() (tea.Model, tea.Cmd) {
 	command := parseCommand(m.input.Value())
 	if command.kind == commandPrompt && m.pending {
 		return m, nil
 	}
 	m.input.SetValue("")
+	m.suggestions = nil
+	m.suggestionIdx = 0
 
 	switch command.kind {
 	case commandEmpty:
@@ -537,12 +650,24 @@ func (m model) handleSubmit() (tea.Model, tea.Cmd) {
 		m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: m.providerText()})
 		return m, nil
 	case commandModel:
+		if strings.TrimSpace(command.text) == "" {
+			if picker := m.newModelPicker(); picker != nil {
+				m.picker = picker
+				return m, nil
+			}
+		}
 		m.showSplash = false
 		text := ""
 		m, text = m.handleModelCommand(command.text)
 		m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: text})
 		return m, nil
 	case commandMode:
+		if strings.TrimSpace(command.text) == "" {
+			if picker := m.newModePicker(); picker != nil {
+				m.picker = picker
+				return m, nil
+			}
+		}
 		m.showSplash = false
 		text := ""
 		m, text = m.handleModeCommand(command.text)
@@ -600,6 +725,12 @@ func (m model) handleSubmit() (tea.Model, tea.Cmd) {
 		m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: text})
 		return m, nil
 	case commandEffort:
+		if strings.TrimSpace(command.text) == "" {
+			if picker := m.newEffortPicker(); picker != nil {
+				m.picker = picker
+				return m, nil
+			}
+		}
 		m.showSplash = false
 		text := ""
 		m, text = m.handleEffortCommand(command.text)
@@ -611,7 +742,22 @@ func (m model) handleSubmit() (tea.Model, tea.Cmd) {
 		m, text = m.handleStyleCommand(command.text)
 		m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: text})
 		return m, nil
-	case commandTheme, commandInputStyle:
+	case commandTheme:
+		// Only the zenline skin renders themes; there a no-argument /theme opens
+		// the picker. The default skin keeps its existing shell-only message.
+		if m.skin == "zenline" && strings.TrimSpace(command.text) == "" {
+			if picker := m.newThemePicker(); picker != nil {
+				m.picker = picker
+				return m, nil
+			}
+		}
+		m.showSplash = false
+		m.transcript = reduceTranscript(m.transcript, transcriptAction{
+			kind: actionAppendSystem,
+			text: shellOnlyCommandText(command.name),
+		})
+		return m, nil
+	case commandInputStyle:
 		m.showSplash = false
 		m.transcript = reduceTranscript(m.transcript, transcriptAction{
 			kind: actionAppendSystem,
