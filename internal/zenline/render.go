@@ -61,6 +61,8 @@ type ChatData struct {
 
 type styles struct {
 	pal             Pal
+	variant         int  // theme index, for keying the markdown renderer cache
+	dark            bool // light/dark mode, for keying the markdown renderer cache
 	fg, dim, mute   lipgloss.Style
 	acc, acc2       lipgloss.Style
 	green, red, amb lipgloss.Style
@@ -68,10 +70,11 @@ type styles struct {
 
 // newStyles builds foreground-only text styles. These compose INSIDE the chat
 // status bars (which set their own Panel backgrounds), so they must NOT bake in a
-// background of their own.
-func newStyles(p Pal) styles {
+// background of their own. variant/dark identify the active theme for the
+// markdown renderer cache.
+func newStyles(p Pal, variant int, dark bool) styles {
 	f := func(c lipgloss.Color) lipgloss.Style { return lipgloss.NewStyle().Foreground(c) }
-	return styles{p, f(p.Fg), f(p.Dim), f(p.Mute), f(p.Accent), f(p.Accent2), f(p.Green), f(p.Red), f(p.Amber)}
+	return styles{p, variant, dark, f(p.Fg), f(p.Dim), f(p.Mute), f(p.Accent), f(p.Accent2), f(p.Green), f(p.Red), f(p.Amber)}
 }
 
 // newCanvasStyles is for full-bleed surfaces (the home + boot splash) where text
@@ -79,11 +82,11 @@ func newStyles(p Pal) styles {
 // so content cells match the surrounding whitespace fill — otherwise the text
 // shows the terminal's own background, producing a visible "card" against the
 // themed margins.
-func newCanvasStyles(p Pal) styles {
+func newCanvasStyles(p Pal, variant int, dark bool) styles {
 	f := func(c lipgloss.Color) lipgloss.Style {
 		return lipgloss.NewStyle().Foreground(c).Background(p.Bg)
 	}
-	return styles{p, f(p.Fg), f(p.Dim), f(p.Mute), f(p.Accent), f(p.Accent2), f(p.Green), f(p.Red), f(p.Amber)}
+	return styles{p, variant, dark, f(p.Fg), f(p.Dim), f(p.Mute), f(p.Accent), f(p.Accent2), f(p.Green), f(p.Red), f(p.Amber)}
 }
 
 // block is a solid caret cell used for the streaming cursor.
@@ -95,7 +98,7 @@ func (s styles) block() string {
 // then the tagline and a loading line, advancing by animation frame (~120ms).
 func RenderBoot(variant int, dark bool, frame, w, h int) string {
 	p := Resolve(variant, dark)
-	s := newCanvasStyles(p)
+	s := newCanvasStyles(p, variant, dark)
 	reveal := []int{1, 3, 5, 7, 9} // per-line reveal frames (~120ms each)
 	var b strings.Builder
 	for i, l := range wordmark {
@@ -125,7 +128,7 @@ func RenderBoot(variant int, dark bool, frame, w, h int) string {
 // RenderHome renders the centered Zen landing surface.
 func RenderHome(d HomeData) string {
 	p := Resolve(d.Variant, d.Dark)
-	s := newCanvasStyles(p)
+	s := newCanvasStyles(p, d.Variant, d.Dark)
 	w := maxi(d.Width, 40)
 
 	var b strings.Builder
@@ -176,7 +179,7 @@ func headerStripe(s styles, h Header) string {
 // RenderChat renders the Statusline chat surface from live agent state.
 func RenderChat(d ChatData) string {
 	p := Resolve(d.Variant, d.Dark)
-	s := newStyles(p)
+	s := newStyles(p, d.Variant, d.Dark)
 	w := maxi(d.Width, 40)
 	h := maxi(d.Height, 8)
 
@@ -459,7 +462,7 @@ func (s styles) transcript(d ChatData, w, h int) string {
 		case "assistant":
 			blank()
 			add(s.acc2.Bold(true).Render("✦ zero"))
-			lines = append(lines, s.renderAssistant(r.Text, tw)...)
+			lines = append(lines, s.renderAssistant(r.Text, tw, true)...)
 		case "toolcall":
 			blank()
 			marker := s.mute.Render("▸")
@@ -479,7 +482,11 @@ func (s styles) transcript(d ChatData, w, h int) string {
 				add("  " + s.mute.Render("⎿ ") + s.dim.Render(clip(summary, tw-8)))
 			}
 			if showBody && r.Status != "error" {
-				lines = append(lines, s.renderCodeBlock(r.Detail, tw, bodyMax)...)
+				if (r.Tool == "edit_file" || r.Tool == "apply_patch") && looksLikeDiff(r.Detail) {
+					lines = append(lines, s.colorizeDiff(r.Detail, tw)...)
+				} else {
+					lines = append(lines, s.renderCodeBlock(r.Detail, tw, bodyMax)...)
+				}
 			}
 		case "permission":
 			blank()
@@ -499,7 +506,7 @@ func (s styles) transcript(d ChatData, w, h int) string {
 	case d.Stream != "":
 		blank()
 		add(s.acc2.Bold(true).Render("✦ zero"))
-		slines := s.renderAssistant(d.Stream, tw)
+		slines := s.renderAssistant(d.Stream, tw, false)
 		if len(slines) > 0 {
 			slines[len(slines)-1] += s.block() // streaming caret
 		}
@@ -524,10 +531,45 @@ func (s styles) transcript(d ChatData, w, h int) string {
 	return lipgloss.NewStyle().PaddingLeft(2).Render(out)
 }
 
-// renderAssistant lays out a model message: prose is word-wrapped, fenced code
-// blocks are kept verbatim in an aligned, clipped block with a gutter so code
-// never re-wraps or knocks the layout out of alignment.
-func (s styles) renderAssistant(text string, tw int) []string {
+// renderAssistant lays out a model message. Completed messages (markdown=true)
+// are rendered through glamour for full CommonMark + chroma-highlighted fenced
+// code in one pass; live streaming text (markdown=false) stays plain because
+// partial markdown renders badly mid-stream. Either way the body is indented to
+// sit under the "✦ zero" label.
+func (s styles) renderAssistant(text string, tw int, markdown bool) []string {
+	if markdown && strings.TrimSpace(text) != "" {
+		return s.renderAssistantMarkdown(text, tw)
+	}
+	return s.renderAssistantPlain(text, tw)
+}
+
+// renderAssistantMarkdown runs the message through glamour and lays the result
+// out under the label with the same 8-space indent as the plain path, on the
+// theme background so no card reappears against the full-bleed canvas.
+func (s styles) renderAssistantMarkdown(text string, tw int) []string {
+	wrapW := tw - 9
+	if wrapW < 8 {
+		wrapW = 8
+	}
+	md := renderMarkdown(text, s.pal, s.variant, s.dark, wrapW)
+	if strings.TrimSpace(md) == "" {
+		return s.renderAssistantPlain(text, tw)
+	}
+	bg := lipgloss.NewStyle().Background(s.pal.Bg)
+	var out []string
+	for _, ln := range strings.Split(md, "\n") {
+		out = append(out, bg.Render("        ")+ln)
+	}
+	if len(out) == 0 {
+		out = []string{""}
+	}
+	return out
+}
+
+// renderAssistantPlain word-wraps prose; fenced code blocks are kept verbatim in
+// an aligned, clipped block with a gutter so code never re-wraps or knocks the
+// layout out of alignment. Used for live streaming text.
+func (s styles) renderAssistantPlain(text string, tw int) []string {
 	var out []string
 	inCode := false
 	for _, ln := range strings.Split(text, "\n") {
@@ -591,6 +633,80 @@ func (s styles) codeLine(ln string, w int, isDiff bool) string {
 		}
 	}
 	return s.dim.Render(c)
+}
+
+// diffMaxLines caps how many diff lines are colorized inline before a "… N more
+// lines" footer takes over, so a huge patch can't blow out the transcript.
+const diffMaxLines = 40
+
+// looksLikeDiff reports whether detail is a unified diff (hunk headers, file
+// markers, or +/- body lines), the trigger for structured diff rendering.
+func looksLikeDiff(detail string) bool {
+	if strings.Contains(detail, "@@") {
+		return true
+	}
+	for _, ln := range strings.Split(detail, "\n") {
+		switch {
+		case strings.HasPrefix(ln, "+++ "), strings.HasPrefix(ln, "--- "):
+			return true
+		case strings.HasPrefix(ln, "+"), strings.HasPrefix(ln, "-"):
+			return true
+		}
+	}
+	return false
+}
+
+// colorizeDiff is the standalone, dependency-free unified-diff colorizer with
+// the requested (detail, Pal) signature: green additions, red deletions, dim
+// context, mute hunk/file headers, a subtle left gutter, capped at diffMaxLines
+// with a "… N more lines" footer. Returns a single joined string.
+func colorizeDiff(detail string, p Pal) string {
+	return strings.Join(newStyles(p, 0, true).colorizeDiff(detail, 0), "\n")
+}
+
+// colorizeDiff renders a unified diff with a subtle left gutter and per-line
+// coloring: green for additions, red for deletions, mute for hunk/file headers,
+// dim for context. Long diffs are capped at diffMaxLines with a "… N more lines"
+// footer. tw is the available width (0 = no clipping); content sits indented to
+// match the surrounding transcript.
+func (s styles) colorizeDiff(detail string, tw int) []string {
+	detail = strings.TrimRight(detail, "\n")
+	if detail == "" {
+		return nil
+	}
+	lines := strings.Split(detail, "\n")
+	gut := s.mute.Render("│ ")
+	cw := tw - 8
+	var out []string
+	for i, ln := range lines {
+		if i >= diffMaxLines {
+			out = append(out, "      "+s.mute.Render(fmt.Sprintf("│ … %d more lines", len(lines)-i)))
+			break
+		}
+		out = append(out, "      "+gut+s.diffLine(detab(ln), cw))
+	}
+	return out
+}
+
+// diffLine colors one unified-diff line by its leading marker. cw <= 0 disables
+// clipping (used by the standalone helper and tests).
+func (s styles) diffLine(ln string, cw int) string {
+	c := ln
+	if cw > 0 {
+		c = clip(ln, cw)
+	}
+	switch {
+	case strings.HasPrefix(ln, "@@"),
+		strings.HasPrefix(ln, "+++ "), strings.HasPrefix(ln, "--- "),
+		strings.HasPrefix(ln, "diff "), strings.HasPrefix(ln, "index "):
+		return s.mute.Render(c)
+	case strings.HasPrefix(ln, "+"):
+		return s.green.Render(c)
+	case strings.HasPrefix(ln, "-"):
+		return s.red.Render(c)
+	default:
+		return s.dim.Render(c)
+	}
 }
 
 func detab(s string) string { return strings.ReplaceAll(s, "\t", "    ") }
