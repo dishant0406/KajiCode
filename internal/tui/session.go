@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Gitlawb/zero/internal/agent"
+	"github.com/Gitlawb/zero/internal/sandbox"
 	"github.com/Gitlawb/zero/internal/sessions"
 	"github.com/Gitlawb/zero/internal/tools"
 )
@@ -181,10 +183,13 @@ func transcriptRowsFromSessionEvents(events []sessions.Event) []transcriptRow {
 			}
 			rows = append(rows, transcriptRow{
 				kind:   rowToolCall,
+				id:     payloadString(payload, "id"),
 				text:   "tool call: " + name,
 				tool:   name,
 				detail: argHint(payloadString(payload, "arguments")),
 			})
+		case sessions.EventPermission:
+			rows = append(rows, permissionTranscriptRow(permissionEventFromPayload(payload)))
 		case sessions.EventToolResult:
 			name := payloadString(payload, "name")
 			if name == "" {
@@ -197,6 +202,7 @@ func transcriptRowsFromSessionEvents(events []sessions.Event) []transcriptRow {
 			output := payloadString(payload, "output")
 			rows = append(rows, transcriptRow{
 				kind:   rowToolResult,
+				id:     firstNonEmptyString(payloadString(payload, "toolCallId"), payloadString(payload, "id")),
 				text:   fmt.Sprintf("tool result: %s %s %s", name, status, truncateTUIOutput(output, tuiToolOutputLimit)),
 				tool:   name,
 				status: status,
@@ -225,6 +231,49 @@ func sessionPayload(event sessions.Event) map[string]any {
 	return payload
 }
 
+func permissionEventFromPayload(payload map[string]any) agent.PermissionEvent {
+	name := payloadString(payload, "name")
+	if name == "" {
+		name = payloadString(payload, "toolName")
+	}
+	event := agent.PermissionEvent{
+		ToolCallID:        firstNonEmptyString(payloadString(payload, "toolCallId"), payloadString(payload, "id")),
+		ToolName:          name,
+		Action:            agent.PermissionAction(payloadString(payload, "action")),
+		Permission:        payloadString(payload, "permission"),
+		PermissionGranted: payloadBool(payload, "permissionGranted"),
+		PermissionMode:    agent.PermissionMode(payloadString(payload, "permissionMode")),
+		Autonomy:          payloadString(payload, "autonomy"),
+		SideEffect:        payloadString(payload, "sideEffect"),
+		Reason:            payloadString(payload, "reason"),
+		GrantMatched:      payloadBool(payload, "grantMatched"),
+	}
+	if risk, ok := payloadMap(payload, "risk"); ok {
+		event.Risk = sandbox.Risk{
+			Level:  sandbox.RiskLevel(payloadString(risk, "level")),
+			Reason: payloadString(risk, "reason"),
+		}
+	}
+	if violation, ok := payloadMap(payload, "violation"); ok {
+		event.Violation = &sandbox.Violation{
+			Code:        sandbox.ViolationCode(payloadString(violation, "code")),
+			ToolName:    payloadString(violation, "toolName"),
+			Action:      sandbox.Action(payloadString(violation, "action")),
+			Risk:        event.Risk,
+			Path:        payloadString(violation, "path"),
+			Reason:      payloadString(violation, "reason"),
+			Recoverable: payloadBool(violation, "recoverable"),
+		}
+		if nestedRisk, ok := payloadMap(violation, "risk"); ok {
+			event.Violation.Risk = sandbox.Risk{
+				Level:  sandbox.RiskLevel(payloadString(nestedRisk, "level")),
+				Reason: payloadString(nestedRisk, "reason"),
+			}
+		}
+	}
+	return event
+}
+
 func payloadString(payload map[string]any, key string) string {
 	value := payload[key]
 	switch typed := value.(type) {
@@ -241,4 +290,30 @@ func payloadString(payload map[string]any, key string) string {
 		}
 		return string(data)
 	}
+}
+
+func payloadBool(payload map[string]any, key string) bool {
+	value := payload[key]
+	switch typed := value.(type) {
+	case bool:
+		return typed
+	case string:
+		return strings.EqualFold(strings.TrimSpace(typed), "true")
+	default:
+		return false
+	}
+}
+
+func payloadMap(payload map[string]any, key string) (map[string]any, bool) {
+	value, ok := payload[key].(map[string]any)
+	return value, ok
+}
+
+func firstNonEmptyString(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
