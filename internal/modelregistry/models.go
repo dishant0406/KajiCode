@@ -152,8 +152,22 @@ func (model ModelEntry) Validate() error {
 			return fmt.Errorf("unknown reasoning effort %q", effort)
 		}
 	}
-	if model.DefaultReasoningEffort != "" && !ValidReasoningEffort(model.DefaultReasoningEffort) {
-		return fmt.Errorf("unknown default reasoning effort %q", model.DefaultReasoningEffort)
+	if model.DefaultReasoningEffort != "" {
+		if !ValidReasoningEffort(model.DefaultReasoningEffort) {
+			return fmt.Errorf("unknown default reasoning effort %q", model.DefaultReasoningEffort)
+		}
+		// The default must be one the model actually supports, else
+		// EffectiveReasoningEffort would hand back an unsupported effort.
+		supported := false
+		for _, effort := range model.ReasoningEfforts {
+			if effort == model.DefaultReasoningEffort {
+				supported = true
+				break
+			}
+		}
+		if !supported {
+			return fmt.Errorf("default reasoning effort %q is not in the model's supported efforts", model.DefaultReasoningEffort)
+		}
 	}
 	if model.Deprecation != nil && strings.TrimSpace(model.Deprecation.FallbackID) == "" {
 		return fmt.Errorf("deprecation rule requires a fallback id")
@@ -312,6 +326,21 @@ func NewRegistry(entries []ModelEntry) (Registry, error) {
 			registry.patterns = append(registry.patterns, compiledMatch{re: re, modelID: clonedEntry.ID})
 		}
 		registry.models = append(registry.models, clonedEntry)
+	}
+	// Cross-entry validation (needs every model registered first): a deprecation
+	// rule's FallbackID must resolve to a real model, otherwise ResolveWithFallback
+	// would silently ignore the rule at runtime instead of failing loudly here.
+	for _, entry := range registry.models {
+		if entry.Deprecation == nil {
+			continue
+		}
+		fallbackID := strings.TrimSpace(entry.Deprecation.FallbackID)
+		if fallbackID == "" {
+			continue
+		}
+		if _, ok := registry.Get(fallbackID); !ok {
+			return Registry{}, fmt.Errorf("model %q deprecation fallback %q does not resolve to a known model", entry.ID, fallbackID)
+		}
 	}
 	return registry, nil
 }

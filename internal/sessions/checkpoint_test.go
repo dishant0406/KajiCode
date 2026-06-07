@@ -121,10 +121,10 @@ func TestRestoreToSequenceRevertsFileContent(t *testing.T) {
 	store, ws := newCkStore(t)
 	target, _ := store.AppendEvent("s", AppendEventInput{Type: EventMessage, Payload: map[string]any{}})
 	path := filepath.Join(ws, "a.txt")
-	_ = os.WriteFile(path, []byte("original"), 0o644)
-	store.CaptureToolCheckpoint("s", ws, "write_file", []string{"a.txt"}) // captures "original"
-	_ = os.WriteFile(path, []byte("edited1"), 0o644)
-	store.CaptureToolCheckpoint("s", ws, "edit_file", []string{"a.txt"}) // captures "edited1"
+	mustWriteFile(t, path, "original")
+	mustCapture(t, store, ws, "write_file", "a.txt") // captures "original"
+	mustWriteFile(t, path, "edited1")
+	mustCapture(t, store, ws, "edit_file", "a.txt") // captures "edited1"
 	_ = os.WriteFile(path, []byte("edited2"), 0o644)
 
 	report, err := store.RestoreToSequence("s", ws, target.Sequence)
@@ -144,8 +144,8 @@ func TestRestoreDeletesFileThatWasAbsent(t *testing.T) {
 	store, ws := newCkStore(t)
 	target, _ := store.AppendEvent("s", AppendEventInput{Type: EventMessage, Payload: map[string]any{}})
 	path := filepath.Join(ws, "new.txt")
-	store.CaptureToolCheckpoint("s", ws, "write_file", []string{"new.txt"}) // absent before
-	_ = os.WriteFile(path, []byte("created"), 0o644)
+	mustCapture(t, store, ws, "write_file", "new.txt") // absent before
+	mustWriteFile(t, path, "created")
 
 	report, err := store.RestoreToSequence("s", ws, target.Sequence)
 	if err != nil {
@@ -163,9 +163,9 @@ func TestApplyRewindRestoresAndTruncates(t *testing.T) {
 	store, ws := newCkStore(t)
 	target, _ := store.AppendEvent("s", AppendEventInput{Type: EventMessage, Payload: map[string]any{}})
 	path := filepath.Join(ws, "a.txt")
-	_ = os.WriteFile(path, []byte("original"), 0o644)
-	store.CaptureToolCheckpoint("s", ws, "write_file", []string{"a.txt"})
-	_ = os.WriteFile(path, []byte("changed"), 0o644)
+	mustWriteFile(t, path, "original")
+	mustCapture(t, store, ws, "write_file", "a.txt")
+	mustWriteFile(t, path, "changed")
 
 	report, err := store.ApplyRewind("s", ws, target.Sequence)
 	if err != nil {
@@ -191,8 +191,8 @@ func TestRestoreRejectsPathTraversal(t *testing.T) {
 	target, _ := store.AppendEvent("s", AppendEventInput{Type: EventMessage, Payload: map[string]any{}})
 	// Hand-craft a tampered checkpoint event with a traversal path.
 	outside := filepath.Join(filepath.Dir(ws), "evil.txt")
-	_ = os.WriteFile(outside, []byte("keep me"), 0o644)
-	store.AppendEvent("s", AppendEventInput{Type: EventSessionCheckpoint, Payload: CheckpointPayload{
+	mustWriteFile(t, outside, "keep me")
+	mustAppend(t, store, AppendEventInput{Type: EventSessionCheckpoint, Payload: CheckpointPayload{
 		Tool:  "write_file",
 		Files: []CheckpointFile{{Path: "../evil.txt", Absent: true}},
 	}})
@@ -210,7 +210,7 @@ func TestRestoreRejectsPathTraversal(t *testing.T) {
 
 func TestTruncateToZeroProducesEmptyFile(t *testing.T) {
 	store, _ := newCkStore(t)
-	store.AppendEvent("s", AppendEventInput{Type: EventMessage, Payload: map[string]any{}})
+	mustAppend(t, store, AppendEventInput{Type: EventMessage, Payload: map[string]any{}})
 	if err := store.TruncateEvents("s", 0); err != nil {
 		t.Fatal(err)
 	}
@@ -218,4 +218,30 @@ func TestTruncateToZeroProducesEmptyFile(t *testing.T) {
 	if len(events) != 0 {
 		t.Fatalf("expected 0 events after truncate-to-0, got %d", len(events))
 	}
+}
+
+// mustWriteFile / mustCapture / mustAppend are setup helpers that fail the test
+// immediately on error, so a setup failure is diagnosed at its source instead of
+// surfacing as a confusing downstream assertion.
+func mustWriteFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write %s: %v", path, err)
+	}
+}
+
+func mustCapture(t *testing.T, store *Store, ws, tool, path string) {
+	t.Helper()
+	if _, err := store.CaptureToolCheckpoint("s", ws, tool, []string{path}); err != nil {
+		t.Fatalf("CaptureToolCheckpoint(%s, %s): %v", tool, path, err)
+	}
+}
+
+func mustAppend(t *testing.T, store *Store, input AppendEventInput) Event {
+	t.Helper()
+	ev, err := store.AppendEvent("s", input)
+	if err != nil {
+		t.Fatalf("AppendEvent: %v", err)
+	}
+	return ev
 }
