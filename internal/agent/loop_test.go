@@ -876,6 +876,119 @@ func TestRunSurfacesDroppedToolCallAlongsideValidCall(t *testing.T) {
 	}
 }
 
+// TestRunPropagatesSubAgentUsageToParentOnUsage verifies that token usage a
+// sub-agent (task) child run reports is surfaced to the PARENT run's OnUsage
+// callback, so cost accounting that tracks via OnUsage does not count every
+// sub-agent run as zero tokens.
+func TestRunPropagatesSubAgentUsageToParentOnUsage(t *testing.T) {
+	const childPrompt = "do the costed sub work"
+	registry := tools.NewRegistry()
+	registry.Register(tools.NewTaskTool())
+	registry.Register(tools.NewReadFileTool(t.TempDir()))
+
+	provider := &routingProvider{
+		parentSubstr: "delegate with cost",
+		parentTurns: [][]zeroruntime.StreamEvent{
+			taskCallTurn(childPrompt), // parent turn 1: call task
+			textTurn("parent done"),   // parent turn 2: final answer
+		},
+		childTurns: [][]zeroruntime.StreamEvent{
+			{
+				// The child run reports token usage as it produces its answer.
+				{Type: zeroruntime.StreamEventUsage, Usage: zeroruntime.Usage{PromptTokens: 30, CompletionTokens: 9, CachedInputTokens: 4}},
+				{Type: zeroruntime.StreamEventText, Content: "child summary"},
+				{Type: zeroruntime.StreamEventDone},
+			},
+		},
+	}
+
+	var usages []zeroruntime.Usage
+	if _, err := Run(context.Background(), "delegate with cost", provider, Options{
+		Registry: registry,
+		MaxTurns: 5,
+		OnUsage:  func(usage zeroruntime.Usage) { usages = append(usages, usage) },
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// The child's usage event must reach the parent's OnUsage callback.
+	var sawChildUsage bool
+	for _, usage := range usages {
+		if usage.PromptTokens == 30 && usage.CompletionTokens == 9 && usage.CachedInputTokens == 4 {
+			sawChildUsage = true
+		}
+	}
+	if !sawChildUsage {
+		t.Fatalf("expected sub-agent token usage to propagate to parent OnUsage, got %#v", usages)
+	}
+}
+
+// TestRunAppendsAbortedPlaceholderForUnexecutedToolCallsOnGuardStop verifies
+// that when a turn carries multiple tool calls and the repeated-failure guard
+// halts the run on a call that is NOT the last, every advertised tool_use still
+// gets a matching tool_result: the executed call gets its real result and the
+// remaining (unexecuted) calls get aborted-placeholder results, so the recorded
+// messages stay structurally valid for a strict provider replay.
+func TestRunAppendsAbortedPlaceholderForUnexecutedToolCallsOnGuardStop(t *testing.T) {
+	registry := tools.NewRegistry()
+	registry.Register(alwaysFailingTool{})
+
+	// Three prior single-call failures prime the streak to one below the stop
+	// cap, so the FIRST call of the next multi-call turn is the 4th failure and
+	// trips outcome.Stop.
+	primingTurns := repeatedFlakyTurns(toolFailureStopAt - 1)
+
+	// The halting turn carries TWO tool calls: the first (flaky-stop) trips the
+	// guard before the second (flaky-2) is executed.
+	haltingTurn := []zeroruntime.StreamEvent{
+		{Type: zeroruntime.StreamEventToolCallStart, ToolCallID: "flaky-stop", ToolName: "flaky"},
+		{Type: zeroruntime.StreamEventToolCallEnd, ToolCallID: "flaky-stop"},
+		{Type: zeroruntime.StreamEventToolCallStart, ToolCallID: "flaky-2", ToolName: "flaky"},
+		{Type: zeroruntime.StreamEventToolCallEnd, ToolCallID: "flaky-2"},
+		{Type: zeroruntime.StreamEventDone},
+	}
+
+	provider := &mockProvider{turns: append(primingTurns, haltingTurn)}
+
+	result, err := Run(context.Background(), "go", provider, Options{Registry: registry, MaxTurns: 12})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result.FinalAnswer, "flaky") || !strings.Contains(result.FinalAnswer, "failed") {
+		t.Fatalf("expected repeated-failure stop answer, got %q", result.FinalAnswer)
+	}
+
+	// Both tool calls must have a matching tool_result message.
+	toolResultIDs := map[string]string{}
+	for _, message := range result.Messages {
+		if message.Role == zeroruntime.MessageRoleTool {
+			toolResultIDs[message.ToolCallID] = message.Content
+		}
+	}
+	if _, ok := toolResultIDs["flaky-stop"]; !ok {
+		t.Fatalf("expected a tool result for the executed call flaky-stop, messages: %+v", result.Messages)
+	}
+	placeholder, ok := toolResultIDs["flaky-2"]
+	if !ok {
+		t.Fatalf("expected an aborted-placeholder tool result for the unexecuted call flaky-2, messages: %+v", result.Messages)
+	}
+	if !strings.Contains(strings.ToLower(placeholder), "aborted") {
+		t.Fatalf("expected the placeholder result to mark the call as aborted, got %q", placeholder)
+	}
+
+	// Every tool_use in the final assistant message must have a matching result.
+	for _, message := range result.Messages {
+		if message.Role != zeroruntime.MessageRoleAssistant {
+			continue
+		}
+		for _, call := range message.ToolCalls {
+			if _, ok := toolResultIDs[call.ID]; !ok {
+				t.Fatalf("tool_use %q (%s) has no matching tool_result", call.ID, call.Name)
+			}
+		}
+	}
+}
+
 type secretEmittingTool struct{ output string }
 
 func (t secretEmittingTool) Name() string        { return "leak" }

@@ -17,6 +17,12 @@ import (
 const defaultSystemPrompt = "You are Zero, a terminal coding agent. Help with the current workspace and use tools when needed."
 const maxTurnsAnswer = "Agent reached maximum number of turns without a final answer."
 
+// abortedToolResultNotice is the placeholder tool result recorded for a tool
+// call that was advertised by the assistant turn but never executed because the
+// repeated-failure guard halted the run first. It keeps every tool_use paired
+// with a tool_result so the transcript stays valid for a strict provider replay.
+const abortedToolResultNotice = "aborted: run halted by the repeated-failure guard"
+
 // droppedToolCallNotice tells the model a tool call it attempted was malformed
 // (missing a tool name) and dropped before execution, so it re-issues a valid
 // call instead of assuming the call ran. It is surfaced both when a turn yields
@@ -210,7 +216,7 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 		guards.observeTurn(collected)
 
 		failureHint := ""
-		for _, call := range collected.ToolCalls {
+		for index, call := range collected.ToolCalls {
 			if options.OnToolCall != nil {
 				options.OnToolCall(call)
 			}
@@ -228,6 +234,13 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 			// once (with its schema) then halt — so no model loops on a bad call.
 			outcome := guards.observeToolResult(call.Name, toolResult.Status == tools.StatusError, toolResult.Output)
 			if outcome.Stop {
+				// The assistant message advertised EVERY collected tool call, but
+				// the guard halts mid-turn so the calls after this one never run.
+				// Append an aborted placeholder result for each remaining call so
+				// every tool_use has a matching tool_result and the recorded
+				// messages stay valid for a strict provider replay (Anthropic
+				// rejects a tool_use with no answering tool_result).
+				messages = appendAbortedToolResults(messages, collected.ToolCalls[index+1:])
 				result.FinalAnswer = toolFailureStopAnswer(call.Name, outcome.Count)
 				result.Messages = copyMessages(messages)
 				return result, nil
@@ -447,9 +460,12 @@ func executeTask(ctx context.Context, registry *tools.Registry, call ToolCall, a
 	//   - Depth+1 so the guard counts nesting.
 	//   - Registry without "task" (no infinite nesting) and "ask_user" (a
 	//     sub-agent has no interactive user to prompt).
-	//   - All interactive/observer callbacks cleared so the sub-run is fully
-	//     headless. Permission mode + sandbox + autonomy are inherited so the
-	//     child enforces the same safety policy.
+	//   - Interactive/activity callbacks cleared so the sub-run is fully headless.
+	//   - OnUsage IS propagated: it is non-interactive cost telemetry, not
+	//     user-facing tool activity, so the child's real token spend must roll up
+	//     to whoever tracks cost on the parent run.
+	//   Permission mode + sandbox + autonomy are inherited so the child enforces
+	//   the same safety policy.
 	childRegistry := options.Registry
 	if childRegistry == nil {
 		childRegistry = registry
@@ -470,9 +486,14 @@ func executeTask(ctx context.Context, registry *tools.Registry, call ToolCall, a
 		Sandbox:                options.Sandbox,
 		EnabledTools:           options.EnabledTools,
 		DisabledTools:          options.DisabledTools,
-		// Interactive + observer callbacks intentionally left nil: the sub-run
-		// must not prompt the user, ask questions, or surface its inner tool
-		// activity as if it were the parent's.
+		// OnUsage is intentionally propagated so a sub-agent's token spend is
+		// counted for cost accounting (cli/exec.go and tui/model.go record usage
+		// via OnUsage). It is telemetry, not interactive output.
+		OnUsage: options.OnUsage,
+		// Other interactive + observer callbacks (OnText, OnToolCall,
+		// OnToolResult, OnPermission*, OnAskUser) intentionally left nil: the
+		// sub-run must not prompt the user, ask questions, or surface its inner
+		// tool activity as if it were the parent's.
 	}
 
 	childResult, runErr := Run(ctx, request.Prompt, options.Provider, childOptions)
@@ -918,6 +939,20 @@ func ToolAdvertised(tool tools.Tool, permissionMode PermissionMode) bool {
 		return tool.Safety().Permission == tools.PermissionAllow
 	}
 	return true
+}
+
+// appendAbortedToolResults adds a placeholder tool-result message for each of
+// the given (unexecuted) tool calls, so every advertised tool_use keeps a
+// matching tool_result when the loop halts a turn before all calls have run.
+func appendAbortedToolResults(messages []Message, remaining []ToolCall) []Message {
+	for _, call := range remaining {
+		messages = append(messages, zeroruntime.Message{
+			Role:       zeroruntime.MessageRoleTool,
+			Content:    abortedToolResultNotice,
+			ToolCallID: call.ID,
+		})
+	}
+	return messages
 }
 
 func copyMessages(messages []Message) []Message {
