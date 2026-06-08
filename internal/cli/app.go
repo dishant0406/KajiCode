@@ -326,6 +326,11 @@ func runInteractiveTUIWithSkin(stderr io.Writer, deps appDeps, skin string, perm
 		return writeAppError(stderr, err.Error(), 1)
 	}
 	defer closeMCPRuntime(stderr, mcpRuntime)
+	// Activate deferred MCP-tool loading for the interactive run only when the
+	// deferred-eligible count meets the resolved threshold, matching exec. The
+	// registry is complete (core + specialist + MCP) here, so the count is
+	// accurate; below threshold this is a no-op and the surface is unchanged.
+	registerToolSearchIfEligible(registry, resolved.Tools.DeferThreshold)
 	sandboxStore, err := deps.newSandboxStore()
 	if err != nil {
 		return writeAppError(stderr, "failed to initialize sandbox grants: "+err.Error(), 1)
@@ -362,6 +367,7 @@ func runInteractiveTUIWithSkin(stderr io.Writer, deps appDeps, skin string, perm
 			PermissionMode: permissionMode,
 			Autonomy:       string(sandbox.AutonomyLow),
 			Sandbox:        sandboxEngine,
+			DeferThreshold: resolved.Tools.DeferThreshold,
 		},
 		PermissionMode: permissionMode,
 		Skin:           skin,

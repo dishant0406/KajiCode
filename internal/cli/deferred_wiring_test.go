@@ -4,12 +4,15 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"strings"
 	"testing"
 
+	"github.com/Gitlawb/zero/internal/agent"
 	"github.com/Gitlawb/zero/internal/config"
 	"github.com/Gitlawb/zero/internal/mcp"
 	"github.com/Gitlawb/zero/internal/tools"
+	"github.com/Gitlawb/zero/internal/tui"
 )
 
 // cliFakeDeferredTool is deferred-eligible (implements Deferred() bool), mirroring
@@ -114,5 +117,57 @@ func TestRunExecListToolsBelowThresholdHasNoToolSearch(t *testing.T) {
 	}
 	if strings.Contains(out, "tool_search") {
 		t.Fatalf("expected NO tool_search below threshold, got %q", out)
+	}
+}
+
+func TestTUIRunThreadsDeferThresholdAndRegistersToolSearch(t *testing.T) {
+	cwd := t.TempDir()
+	var captured agent.Options
+	var capturedRegistry *tools.Registry
+
+	// Empty args route runWithDeps to the interactive TUI (runInteractiveTUIWithSkin).
+	// There is no "--tui" flag; that arg would hit the unknown-command path.
+	exitCode := runWithDeps([]string{}, io.Discard, io.Discard, appDeps{
+		getwd: func() (string, error) { return cwd, nil },
+		resolveConfig: func(string, config.Overrides) (config.ResolvedConfig, error) {
+			return config.ResolvedConfig{
+				Provider: config.ProviderProfile{
+					Name:         "p",
+					ProviderKind: config.ProviderKindOpenAICompatible,
+					BaseURL:      "http://127.0.0.1/v1",
+					Model:        "m",
+				},
+				Tools: config.ToolsConfig{DeferThreshold: 2},
+			}, nil
+		},
+		resolveMCPConfig: func(string) (config.MCPConfig, error) {
+			return config.MCPConfig{Servers: map[string]config.MCPServerConfig{
+				"docs": {Type: "stdio", Command: "docs-mcp"},
+			}}, nil
+		},
+		newMCPStore: func() (*mcp.PermissionStore, error) { return nil, nil },
+		registerMCPTools: func(_ context.Context, registry *tools.Registry, _ config.MCPConfig, _ mcp.RegisterOptions) (mcpToolRuntime, error) {
+			registry.Register(cliFakeDeferredTool{name: "mcp_docs_ta"})
+			registry.Register(cliFakeDeferredTool{name: "mcp_docs_tb"})
+			return closeFunc(func() error { return nil }), nil
+		},
+		runTUI: func(_ context.Context, options tui.Options) int {
+			captured = options.AgentOptions
+			capturedRegistry = options.Registry
+			return exitSuccess
+		},
+	})
+
+	if exitCode != exitSuccess {
+		t.Fatalf("expected exit %d, got %d", exitSuccess, exitCode)
+	}
+	if captured.DeferThreshold != 2 {
+		t.Fatalf("AgentOptions.DeferThreshold = %d, want 2", captured.DeferThreshold)
+	}
+	if capturedRegistry == nil {
+		t.Fatal("expected registry passed to TUI")
+	}
+	if _, ok := capturedRegistry.Get("tool_search"); !ok {
+		t.Fatal("expected tool_search registered for TUI run at/above threshold")
 	}
 }
