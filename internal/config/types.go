@@ -63,6 +63,14 @@ type ToolsConfig struct {
 	deferThresholdSet bool
 }
 
+// ToolsOverride builds a ToolsConfig that explicitly overrides the deferred-tool
+// threshold (including to 0, which disables deferral). Use this for programmatic
+// Overrides — a bare ToolsConfig{DeferThreshold: 0} is indistinguishable from
+// "unset" and will not override.
+func ToolsOverride(deferThreshold int) ToolsConfig {
+	return ToolsConfig{DeferThreshold: deferThreshold, deferThresholdSet: true}
+}
+
 func (cfg *ToolsConfig) UnmarshalJSON(data []byte) error {
 	type rawTools struct {
 		DeferThreshold *int `json:"deferThreshold"`
