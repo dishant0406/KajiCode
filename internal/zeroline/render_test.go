@@ -8,8 +8,11 @@ import (
 )
 
 func TestThemesCount(t *testing.T) {
-	if len(Themes) != 5 {
-		t.Fatalf("expected 5 themes, got %d", len(Themes))
+	if len(Themes) != 6 {
+		t.Fatalf("expected 6 themes (ZERO + 5 legacy), got %d", len(Themes))
+	}
+	if Themes[0].Name != "ZERO" {
+		t.Fatalf("Themes[0] = %q, want ZERO (the default)", Themes[0].Name)
 	}
 	for i, th := range Themes {
 		if th.Name == "" || th.Dark.Bg == "" || th.Light.Bg == "" {

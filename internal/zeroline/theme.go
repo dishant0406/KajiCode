@@ -11,6 +11,10 @@ import "github.com/charmbracelet/lipgloss"
 type Pal struct {
 	Bg, Panel, Panel2, Fg, Dim, Mute, Line, Line2 lipgloss.Color
 	Accent, Accent2, Green, Amber, Red, Sel       lipgloss.Color
+	// Extended fields for the ZERO design: a third panel level, two extra
+	// dim/text levels (faint, faintest), and a blue accent. Legacy themes derive
+	// these in mkPal so new render code always has a non-empty value.
+	Panel3, Faint, Faintest, Blue lipgloss.Color
 }
 
 // Theme is a named color identity with a dark and a light variant.
@@ -23,12 +27,35 @@ type Theme struct {
 
 func mkPal(bg, panel, panel2, fg, dim, mute, line, line2, accent, accent2, green, amber, red, sel string) Pal {
 	c := func(s string) lipgloss.Color { return lipgloss.Color(s) }
-	return Pal{c(bg), c(panel), c(panel2), c(fg), c(dim), c(mute), c(line), c(line2),
-		c(accent), c(accent2), c(green), c(amber), c(red), c(sel)}
+	p := Pal{
+		Bg: c(bg), Panel: c(panel), Panel2: c(panel2), Fg: c(fg), Dim: c(dim), Mute: c(mute),
+		Line: c(line), Line2: c(line2), Accent: c(accent), Accent2: c(accent2),
+		Green: c(green), Amber: c(amber), Red: c(red), Sel: c(sel),
+	}
+	// Derive the extended fields for legacy themes from existing colors.
+	p.Panel3 = p.Panel2
+	p.Faint = p.Mute
+	p.Faintest = p.Line2
+	p.Blue = p.Accent2
+	return p
+}
+
+// zeroPal is the ZERO design palette (exact hex from the spec). Dark-only design.
+var zeroPal = Pal{
+	Bg: "#070708", Panel: "#0e0e10", Panel2: "#121215", Panel3: "#17171b",
+	Line: "#242429", Line2: "#2e2e34",
+	Fg: "#ececee", Dim: "#8b8b93", Mute: "#5b5b63", Faint: "#5b5b63", Faintest: "#3a3a40",
+	Accent: "#caff3f", Accent2: "#caff3f", Green: "#5dd1a4", Amber: "#ffc25c", Red: "#ff7a7a",
+	Blue: "#7db4ff", Sel: "#19220a",
 }
 
 // Themes is the ordered list of the 5 selectable color identities (keys 1-5).
 var Themes = []Theme{
+	{
+		Name: "ZERO", Swt: "#caff3f",
+		Dark:  zeroPal,
+		Light: zeroPal, // dark-only design
+	},
 	{
 		Name: "Phosphor", Swt: "#ffb000",
 		Dark:  mkPal("#040804", "#0a0f0a", "#0e150e", "#dfe8d6", "#8aa07f", "#566b50", "#16241a", "#22382a", "#ffb000", "#36ff7a", "#36ff7a", "#ffb000", "#ff6b6b", "#171f12"),
