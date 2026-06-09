@@ -145,8 +145,8 @@ func TestColorizeDiffCapsLongDiffs(t *testing.T) {
 
 func TestLooksLikeDiff(t *testing.T) {
 	cases := map[string]bool{
-		"@@ -1 +1 @@\n-a\n+b":        true,
-		"--- a\n+++ b\n-x\n+y":       true,
+		"@@ -1 +1 @@\n-a\n+b":       true,
+		"--- a\n+++ b\n-x\n+y":      true,
 		"+just an addition":         true,
 		"plain prose with no diff":  false,
 		"wrote 12 lines to file.go": false,
