@@ -778,31 +778,9 @@ func (s styles) transcript(d ChatData, w, h int) string {
 		case "done":
 			blank()
 			add(s.doneLine(r.Text, r.Status, tw))
-		case "toolcall":
+		case "tool":
 			blank()
-			marker := s.mute.Render("▸")
-			if r.Running {
-				marker = s.amb.Render(spinFrames[d.Spin%len(spinFrames)])
-			}
-			line := marker + " " + toolIcon(s, r.Tool) + " " + s.acc2.Render(toolLabel(r.Tool))
-			if a := clip(firstLine(r.Detail), tw-22); a != "" {
-				line += "  " + s.dim.Render(a)
-			}
-			add(line)
-		case "toolresult":
-			summary, showBody, bodyMax := resultSummary(r.Tool, r.Status, r.Detail)
-			if r.Status == "error" {
-				add("  " + s.mute.Render("⎿ ") + s.red.Render(clip(firstLine(r.Detail), tw-8)))
-			} else if summary != "" {
-				add("  " + s.mute.Render("⎿ ") + s.dim.Render(clip(summary, tw-8)))
-			}
-			if showBody && r.Status != "error" {
-				if (r.Tool == "edit_file" || r.Tool == "apply_patch") && looksLikeDiff(r.Detail) {
-					lines = append(lines, s.colorizeDiff(r.Detail, tw)...)
-				} else {
-					lines = append(lines, s.renderCodeBlock(r.Detail, tw, bodyMax)...)
-				}
-			}
+			lines = append(lines, s.toolCard(r, tw, d.Spin)...)
 		case "permission":
 			blank()
 			add(s.amb.Render("⚠ ") + s.dim.Render(clip(r.Text, tw-4)))
@@ -919,6 +897,197 @@ func (s styles) noteLines(text string, deny bool, w int) []string {
 		out = append(out, st.Render("│ "+clip(ln, w-2)))
 	}
 	return out
+}
+
+const cardBodyMax = 40 // cap card body lines so one tool can't dominate the frame
+
+// padBetween places left and right on one line of width w, separated by filler.
+func padBetween(left, right string, w int) string {
+	gap := w - lipgloss.Width(left) - lipgloss.Width(right)
+	if gap < 1 {
+		gap = 1
+	}
+	return left + strings.Repeat(" ", gap) + right
+}
+
+// toolCard renders a tool invocation as a bordered card (.tool): a head (accent
+// icon + bold name + muted target + a running spinner / ✓ / ✗) and, once the
+// result lands, a per-tool body. Running cards use an accent border; errors red.
+func (s styles) toolCard(r Row, w, spin int) []string {
+	p := s.pal
+	cw := w - 2 // content width inside the rounded border (border adds 2 → total w)
+	if cw < 12 {
+		cw = 12
+	}
+	border := p.Line
+	switch {
+	case r.Status == "error":
+		border = p.Red
+	case r.Running:
+		border = p.Accent
+	}
+
+	var status string
+	switch {
+	case r.Running:
+		status = s.amb.Render(spinFrames[spin%len(spinFrames)])
+	case r.Status == "error":
+		status = s.red.Bold(true).Render("✗")
+	default:
+		status = s.green.Bold(true).Render("✓")
+	}
+
+	left := toolIcon(s, r.Tool) + " " + s.fg.Bold(true).Render(toolLabel(r.Tool))
+	if t := firstLine(r.Text); t != "" {
+		if budget := cw - lipgloss.Width(left) - 4; budget > 4 {
+			left += "  " + s.dim.Render(clip(t, budget))
+		}
+	}
+	content := padBetween(left, status, cw)
+	if !r.Running && strings.TrimSpace(r.Detail) != "" {
+		if body := s.toolBody(r, cw); len(body) > 0 {
+			content += "\n" + lipgloss.NewStyle().Foreground(p.Line).Render(strings.Repeat("─", cw)) + "\n" + strings.Join(body, "\n")
+		}
+	}
+	box := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(border).Width(cw).Render(content)
+	return strings.Split(box, "\n")
+}
+
+// toolBody renders the body region of a tool card by tool type.
+func (s styles) toolBody(r Row, w int) []string {
+	switch r.Tool {
+	case "edit_file", "apply_patch", "write_file":
+		if looksLikeDiff(r.Detail) {
+			return s.diffBody(r.Detail, w)
+		}
+		return s.numberedBody(r.Detail, w, 8, false)
+	case "read_file":
+		return s.numberedBody(r.Detail, w, 12, true)
+	case "bash":
+		return s.bashBody(r.Text, r.Detail, r.Status, w)
+	case "grep":
+		return s.grepBody(r.Detail, w)
+	default:
+		return s.numberedBody(r.Detail, w, 8, false)
+	}
+}
+
+// diffBody renders a unified diff: a +N/-M stat head, then numbered lines with a
+// sign column and add/del/context coloring (spec diff add/del text colors).
+func (s styles) diffBody(diff string, w int) []string {
+	addText := lipgloss.NewStyle().Foreground(lipgloss.Color("#bdeed7"))
+	delText := lipgloss.NewStyle().Foreground(lipgloss.Color("#f2c4c4"))
+	faintest := lipgloss.NewStyle().Foreground(s.pal.Faintest)
+	lines := strings.Split(strings.TrimRight(diff, "\n"), "\n")
+	add, del := 0, 0
+	for _, ln := range lines {
+		switch {
+		case strings.HasPrefix(ln, "+"):
+			add++
+		case strings.HasPrefix(ln, "-"):
+			del++
+		}
+	}
+	out := []string{padBetween(s.mute.Render("diff"), s.green.Render(fmt.Sprintf("+%d", add))+" "+s.red.Render(fmt.Sprintf("-%d", del)), w)}
+	for i, ln := range lines {
+		if i >= cardBodyMax {
+			out = append(out, faintest.Render(fmt.Sprintf("     … %d more lines", len(lines)-i)))
+			break
+		}
+		sign, txt, raw := " ", s.mute, strings.TrimPrefix(ln, " ")
+		signCol := " "
+		switch {
+		case strings.HasPrefix(ln, "+"):
+			sign, txt, raw, signCol = "+", addText, ln[1:], s.green.Render("+")
+		case strings.HasPrefix(ln, "-"):
+			sign, txt, raw, signCol = "-", delText, ln[1:], s.red.Render("-")
+		}
+		_ = sign
+		gut := faintest.Render(fmt.Sprintf("%4d", i+1)) + " " + signCol + " "
+		out = append(out, gut+txt.Render(clip(detab(raw), w-7)))
+	}
+	return out
+}
+
+// numberedBody renders content lines (read_file / fallback), optionally numbered.
+func (s styles) numberedBody(text string, w, max int, numbered bool) []string {
+	lines := strings.Split(strings.TrimRight(text, "\n"), "\n")
+	faintest := lipgloss.NewStyle().Foreground(s.pal.Faintest)
+	var out []string
+	for i, ln := range lines {
+		if i >= max {
+			out = append(out, faintest.Render(fmt.Sprintf("     … %d more lines", len(lines)-i)))
+			break
+		}
+		if numbered {
+			out = append(out, faintest.Render(fmt.Sprintf("%4d", i+1))+"  "+s.mute.Render(clip(detab(ln), w-6)))
+		} else {
+			out = append(out, s.mute.Render(clip(detab(ln), w)))
+		}
+	}
+	return out
+}
+
+// bashBody renders a bash card body: accent $ + command, output lines, and an
+// exit-status foot (green exit 0 / red on failure).
+func (s styles) bashBody(cmd, output, status string, w int) []string {
+	faintest := lipgloss.NewStyle().Foreground(s.pal.Faintest)
+	out := []string{s.acc.Bold(true).Render("$ ") + s.fg.Render(clip(firstLine(cmd), w-2))}
+	outStyle := s.mute
+	if status == "error" {
+		outStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#e8b3b3"))
+	}
+	body := strings.Split(strings.TrimRight(output, "\n"), "\n")
+	for i, ln := range body {
+		if i >= cardBodyMax {
+			out = append(out, faintest.Render("     …"))
+			break
+		}
+		out = append(out, "  "+outStyle.Render(clip(detab(ln), w-2)))
+	}
+	if status == "error" {
+		out = append(out, s.red.Render("exit 1"))
+	} else {
+		out = append(out, s.green.Render("exit 0"))
+	}
+	return out
+}
+
+// grepBody renders a grep card body: path:line (blue) + matched text (muted) per
+// row, with a match-count foot.
+func (s styles) grepBody(detail string, w int) []string {
+	blue := lipgloss.NewStyle().Foreground(s.pal.Blue)
+	faintest := lipgloss.NewStyle().Foreground(s.pal.Faintest)
+	var out []string
+	count := 0
+	for _, ln := range strings.Split(strings.TrimRight(detail, "\n"), "\n") {
+		if strings.TrimSpace(ln) == "" {
+			continue
+		}
+		if count >= cardBodyMax {
+			out = append(out, faintest.Render("     …"))
+			break
+		}
+		loc, text := splitGrepLine(ln)
+		lw := w / 2
+		out = append(out, blue.Render(clip(loc, lw))+"  "+s.mute.Render(clip(strings.TrimSpace(text), w-lw-2)))
+		count++
+	}
+	out = append(out, faintest.Render(fmt.Sprintf("%d matches", count)))
+	return out
+}
+
+// splitGrepLine splits a "path:line:text" grep row into its location and text.
+func splitGrepLine(ln string) (loc, text string) {
+	parts := strings.SplitN(ln, ":", 3)
+	switch len(parts) {
+	case 3:
+		return parts[0] + ":" + parts[1], parts[2]
+	case 2:
+		return parts[0], parts[1]
+	default:
+		return ln, ""
+	}
 }
 
 // renderAssistant lays out a model message. Completed messages (markdown=true)

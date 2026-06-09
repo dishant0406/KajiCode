@@ -40,8 +40,7 @@ func TestRenderChatLiveData(t *testing.T) {
 		Header: Header{Cwd: "~/src/zero", Branch: "main", Model: "claude-sonnet-4.5", Provider: "anthropic"},
 		Rows: []Row{
 			{Kind: "user", Text: "refactor the loop"},
-			{Kind: "toolcall", Tool: "grep", Detail: "pattern: case"},
-			{Kind: "toolresult", Tool: "grep", Status: "ok", Detail: "3 matches"},
+			{Kind: "tool", Tool: "grep", Text: "pattern: case", Status: "ok", Detail: "internal/x.go:3:case"},
 			{Kind: "assistant", Text: "Here is the plan."},
 		},
 	}
@@ -239,39 +238,24 @@ func TestPermLayoutMatchesRenderClamped(t *testing.T) {
 	}
 }
 
-func TestToolResultRenderingCollapsesAndShows(t *testing.T) {
+func TestToolCardsShowContent(t *testing.T) {
 	d := ChatData{
 		Variant: 0, Dark: true, Width: 100, Height: 40,
 		Rows: []Row{
-			{Kind: "toolcall", Tool: "read_file", Detail: "README.md"},
-			{Kind: "toolresult", Tool: "read_file", Status: "ok", Detail: "File: README.md (217 lines)\n\n  1 | THE-RAW-FILE-CONTENT-SHOULD-NOT-APPEAR"},
-			{Kind: "toolcall", Tool: "list_directory", Detail: "."},
-			{Kind: "toolresult", Tool: "list_directory", Status: "ok", Detail: "Contents of .:\n\na\nb\nc"},
-			{Kind: "toolcall", Tool: "edit_file", Detail: "x.go"},
-			{Kind: "toolresult", Tool: "edit_file", Status: "ok", Detail: "@@ -1 +1 @@\n-old\n+NEWCODE"},
-			{Kind: "toolcall", Tool: "bash", Detail: "go test"},
-			{Kind: "toolresult", Tool: "bash", Status: "error", Detail: "exit 1: BUILD-FAILED-HERE"},
+			{Kind: "tool", Tool: "read_file", Text: "README.md", Status: "ok", Detail: "line one\nline two\nline three"},
+			{Kind: "tool", Tool: "edit_file", Text: "x.go", Status: "ok", Detail: "@@ -1 +1 @@\n-old\n+NEWCODE"},
+			{Kind: "tool", Tool: "bash", Text: "go test", Status: "error", Detail: "exit 1: BUILD-FAILED-HERE"},
 		},
 	}
 	out := stripANSI(RenderChat(d))
-	// file read collapses to a count, never dumps content
-	if !strings.Contains(out, "217 lines") {
-		t.Error("read_file should summarize to a line count")
+	if !strings.Contains(out, "line one") {
+		t.Error("read card should show file content")
 	}
-	if strings.Contains(out, "THE-RAW-FILE-CONTENT-SHOULD-NOT-APPEAR") {
-		t.Error("read_file dumped raw file content (should be collapsed)")
-	}
-	// listing collapses to entry count
-	if !strings.Contains(out, "3 entries") {
-		t.Error("list_directory should summarize to an entry count")
-	}
-	// diff body is shown for edits
 	if !strings.Contains(out, "NEWCODE") {
-		t.Error("edit_file diff body should be shown")
+		t.Error("edit card should show the diff body")
 	}
-	// errors are surfaced
-	if !strings.Contains(out, "BUILD-FAILED-HERE") {
-		t.Error("error output should be shown")
+	if !strings.Contains(out, "BUILD-FAILED-HERE") || !strings.Contains(out, "✗") {
+		t.Error("bash error card should surface the error output + ✗ status")
 	}
 }
 

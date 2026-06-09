@@ -206,11 +206,12 @@ func (m model) streamTokS() int {
 }
 
 func (m model) zerolineRows() []zeroline.Row {
-	// a tool call is "running" until a result row with the same id arrives
-	resultIDs := make(map[string]bool)
+	// Merge each tool call with its matching result (by id) into a single "tool"
+	// card row: running until the result arrives, then carrying its status + body.
+	results := make(map[string]transcriptRow)
 	for _, r := range m.transcript {
 		if r.kind == rowToolResult && r.id != "" {
-			resultIDs[r.id] = true
+			results[r.id] = r
 		}
 	}
 	rows := make([]zeroline.Row, 0, len(m.transcript))
@@ -221,14 +222,18 @@ func (m model) zerolineRows() []zeroline.Row {
 		case rowAssistant:
 			rows = append(rows, zeroline.Row{Kind: "assistant", Text: r.text})
 		case rowToolCall:
-			rows = append(rows, zeroline.Row{
-				Kind:    "toolcall",
-				Tool:    r.tool,
-				Detail:  r.detail,
-				Running: !(r.id != "" && resultIDs[r.id]),
-			})
+			res, done := results[r.id]
+			row := zeroline.Row{Kind: "tool", Tool: r.tool, Text: r.detail, Running: !(r.id != "" && done)}
+			if done {
+				row.Status = string(res.status)
+				row.Detail = res.detail
+			}
+			rows = append(rows, row)
 		case rowToolResult:
-			rows = append(rows, zeroline.Row{Kind: "toolresult", Tool: r.tool, Status: string(r.status), Detail: r.detail})
+			if r.id != "" {
+				continue // already merged into its tool call above
+			}
+			rows = append(rows, zeroline.Row{Kind: "tool", Tool: r.tool, Status: string(r.status), Detail: r.detail})
 		case rowPermission:
 			rows = append(rows, zeroline.Row{Kind: "permission", Text: r.text})
 		case rowAskUser:
