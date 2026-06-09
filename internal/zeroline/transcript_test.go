@@ -115,6 +115,21 @@ func TestComposerRunStopAffordance(t *testing.T) {
 	}
 }
 
+func TestComposerButtonNotClippedByLongInput(t *testing.T) {
+	d := chatWith([]Row{{Kind: "user", Text: "hi"}})
+	d.Input = strings.Repeat("x", 200)
+	d.Width, d.Height = 50, 12
+	out := stripANSI(RenderChat(d))
+	if !strings.Contains(out, "run ↵") {
+		t.Errorf("run button must survive a long input (was clipped): %q", out)
+	}
+	for _, line := range strings.Split(out, "\n") {
+		if lipgloss.Width(line) > 50 {
+			t.Fatalf("composer line overflows width 50: %d", lipgloss.Width(line))
+		}
+	}
+}
+
 func TestTranscriptFrameExact(t *testing.T) {
 	d := chatWith([]Row{
 		{Kind: "user", Text: "do the thing"},

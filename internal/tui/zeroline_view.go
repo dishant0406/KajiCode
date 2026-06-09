@@ -37,6 +37,9 @@ func (m model) handleZerolineKeys(msg tea.KeyMsg) (model, bool) {
 		m.jsonMode = !m.jsonMode // TEXT/JSON view toggle
 		return m, true
 	case "ctrl+s":
+		if m.showSplash {
+			return m, true // the drawer only renders on the chat page; ignore on home
+		}
 		m.drawerOpen = true // sessions drawer (Esc/ctrl+s closes; handled in Update)
 		m.drawerSessions = m.loadDrawerSessions()
 		m.drawerIndex = 0

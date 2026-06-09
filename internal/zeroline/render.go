@@ -658,11 +658,15 @@ func (s styles) cmdRegion(d ChatData, w int) string {
 	// lime "run ↵" normally, red "■ stop" while the agent is working.
 	var btn string
 	if d.Working {
-		btn = lipgloss.NewStyle().Foreground(p.Red).Bold(true).Render("■ stop")
+		btn = lipgloss.NewStyle().Background(p.Panel3).Foreground(p.Red).Bold(true).Render(" ■ stop ")
 	} else {
 		btn = lipgloss.NewStyle().Background(p.Accent).Foreground(p.Bg).Bold(true).Render(" run ↵ ")
 	}
-	line := s.acc.Bold(true).Render("❯") + " " + d.Input
+	// Clip the input so the right-side button always fits (the live TUI also bounds
+	// input.Width, but snapshots/edge widths pass raw text); keep ❯ + a space + a
+	// 1-cell gap + the button.
+	input := clip(d.Input, maxi(0, w-lipgloss.Width(btn)-3))
+	line := s.acc.Bold(true).Render("❯") + " " + input
 	gap := w - lipgloss.Width(line) - lipgloss.Width(btn)
 	if gap < 1 {
 		gap = 1
@@ -1069,7 +1073,7 @@ func (s styles) drawerPanel(dr *Drawer, pw, h int) []string {
 			rail, title = s.acc.Render("▌")+" ", s.fg
 		}
 		content = append(content,
-			rail+s.acc.Render(sess.ID)+"  "+s.mute.Render(sess.When),
+			clip(rail+s.acc.Render(sess.ID)+"  "+s.mute.Render(sess.When), cw),
 			rail+title.Render(clip(sess.Title, cw-2)),
 			rail+s.mute.Render(clip(fmt.Sprintf("%s · %d turns", sess.Model, sess.Turns), cw-2)),
 			"",

@@ -156,6 +156,28 @@ func TestZerolineDrawerOpenClose(t *testing.T) {
 	}
 }
 
+func TestZerolineDrawerCtrlCNotSwallowed(t *testing.T) {
+	m := newZerolineModel()
+	m.showSplash = false
+	upd, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
+	m2 := upd.(model)
+	if !m2.drawerOpen {
+		t.Fatal("ctrl+s should open the drawer")
+	}
+	if _, cmd := m2.Update(tea.KeyMsg{Type: tea.KeyCtrlC}); cmd == nil {
+		t.Error("Ctrl+C must not be swallowed by the drawer (it should quit)")
+	}
+}
+
+func TestZerolineDrawerNotOpenedOnHome(t *testing.T) {
+	m := newZerolineModel()
+	m.showSplash = true // home page
+	upd, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
+	if upd.(model).drawerOpen {
+		t.Error("ctrl+s on the home page must not open the drawer (nothing renders it there)")
+	}
+}
+
 func TestZerolineThemeKeys(t *testing.T) {
 	m := newZerolineModel()
 	// digit selects theme when input empty

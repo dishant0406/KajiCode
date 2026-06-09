@@ -280,9 +280,10 @@ func (m model) Init() tea.Cmd {
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		// The sessions drawer is a top-level modal: it intercepts keys (close,
-		// navigate) and swallows the rest before any other handler runs.
-		if m.skin == "zeroline" && m.drawerOpen {
+		// The sessions drawer is a top-level modal: it intercepts close/navigate
+		// keys and swallows the rest. Ctrl+C (quit/cancel) and a pending permission
+		// always take precedence, so the drawer never traps the user.
+		if m.skin == "zeroline" && m.drawerOpen && m.pendingPermission == nil && msg.Type != tea.KeyCtrlC {
 			switch msg.String() {
 			case "esc", "ctrl+s", "q":
 				m.drawerOpen = false
@@ -478,6 +479,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		// Bound the input width for the zeroline composer so a long line scrolls
+		// horizontally instead of growing past the frame and pushing the run/stop
+		// button off the right edge. Leave room for the ❯ prompt + the button.
+		if m.skin == "zeroline" && m.width > 16 {
+			m.input.Width = m.width - 12
+		}
 		return m, nil
 	case permissionRequestMsg:
 		if msg.runID != m.activeRunID {
