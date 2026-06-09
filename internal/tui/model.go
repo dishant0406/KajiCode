@@ -226,8 +226,8 @@ func newModel(ctx context.Context, options Options) model {
 	input.Prompt = "zero > "
 	input.Placeholder = "Ask Zero to inspect, edit, explain, or run a command..."
 	if options.Skin == "zeroline" {
-		input.Prompt = "❯ "
-		input.Placeholder = "message zero — / commands · @ files · ! bash"
+		input.Prompt = "" // the zeroline composer renders its own ❯ prompt
+		input.Placeholder = "describe a task for zero…"
 	}
 	input.Focus()
 
