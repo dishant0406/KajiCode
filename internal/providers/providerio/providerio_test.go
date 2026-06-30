@@ -214,8 +214,8 @@ func TestScanSSEDataWithContextAbortsOnContentStall(t *testing.T) {
 	stop := make(chan struct{})
 	defer close(stop)
 	go func() {
-		// Heartbeat every 20ms (< the 60ms idle timeout, so idle never fires) but
-		// never send a data line.
+		// Heartbeat every 30ms — comfortably under the 100ms idle timeout, so idle
+		// never fires under CI/GC jitter — but never send a data line.
 		for {
 			select {
 			case <-stop:
@@ -225,7 +225,7 @@ func TestScanSSEDataWithContextAbortsOnContentStall(t *testing.T) {
 			if _, err := io.WriteString(pw, ": keep-alive\n\n"); err != nil {
 				return
 			}
-			time.Sleep(20 * time.Millisecond)
+			time.Sleep(30 * time.Millisecond)
 		}
 	}()
 
@@ -234,8 +234,8 @@ func TestScanSSEDataWithContextAbortsOnContentStall(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		// idle 60ms → content stall at 120ms. Keep-alives reset idle but not content.
-		done <- ScanSSEDataWithContext(context.Background(), cancel, pr, 60*time.Millisecond, func(string) bool { return true })
+		// idle 100ms → content stall at 200ms. Keep-alives reset idle but not content.
+		done <- ScanSSEDataWithContext(context.Background(), cancel, pr, 100*time.Millisecond, func(string) bool { return true })
 	}()
 
 	select {
@@ -257,13 +257,14 @@ func TestScanSSEDataWithContextContentResetsOnData(t *testing.T) {
 	pr, pw := io.Pipe()
 
 	go func() {
-		// One data line every 40ms for ~240ms (well past the 120ms content window),
-		// so the content watchdog keeps resetting, then close cleanly.
-		for i := 0; i < 6; i++ {
+		// One data line every 30ms for ~300ms (well past the 200ms content window,
+		// with comfortable slack under the 100ms idle timeout), so the content
+		// watchdog keeps resetting, then close cleanly.
+		for i := 0; i < 10; i++ {
 			if _, err := io.WriteString(pw, "data: chunk\n\n"); err != nil {
 				return
 			}
-			time.Sleep(40 * time.Millisecond)
+			time.Sleep(30 * time.Millisecond)
 		}
 		_ = pw.Close()
 	}()
@@ -271,7 +272,7 @@ func TestScanSSEDataWithContextContentResetsOnData(t *testing.T) {
 	n := 0
 	done := make(chan error, 1)
 	go func() {
-		done <- ScanSSEDataWithContext(context.Background(), func() {}, pr, 60*time.Millisecond, func(string) bool { n++; return true })
+		done <- ScanSSEDataWithContext(context.Background(), func() {}, pr, 100*time.Millisecond, func(string) bool { n++; return true })
 	}()
 
 	select {
@@ -282,7 +283,24 @@ func TestScanSSEDataWithContextContentResetsOnData(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("ScanSSEDataWithContext hung on a producing stream")
 	}
-	if n != 6 {
-		t.Fatalf("handled %d data lines, want 6", n)
+	if n != 10 {
+		t.Fatalf("handled %d data lines, want 10", n)
+	}
+}
+
+// StreamTimeoutMessage must give a stalled stream a distinct, accurate detail —
+// it reports the content window (idle × factor) and must NOT claim the upstream
+// "stopped sending data" (keep-alives were still arriving).
+func TestStreamTimeoutMessage(t *testing.T) {
+	idle := 5 * time.Minute
+	if msg := StreamTimeoutMessage(ErrStreamIdle, idle); !strings.Contains(msg, "idle timeout after 5m") {
+		t.Fatalf("idle message = %q, want it to mention the 5m idle timeout", msg)
+	}
+	stalled := StreamTimeoutMessage(ErrStreamStalled, idle)
+	if !strings.Contains(stalled, "no output for 10m") {
+		t.Fatalf("stalled message = %q, want it to report the 10m content window", stalled)
+	}
+	if strings.Contains(stalled, "stopped sending data") {
+		t.Fatalf("stalled message must not claim the upstream stopped sending data: %q", stalled)
 	}
 }

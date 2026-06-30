@@ -211,11 +211,11 @@ func (provider *Provider) stream(ctx context.Context, body []byte, events chan<-
 	err = providerio.ScanSSEDataWithContext(streamCtx, cancelStream, response.Body, provider.streamIdleTimeout, func(data string) bool {
 		return provider.emitPayload(ctx, data, state, events)
 	})
-	if errors.Is(err, providerio.ErrStreamIdle) {
+	if errors.Is(err, providerio.ErrStreamIdle) || errors.Is(err, providerio.ErrStreamStalled) {
 		state.closeOpen(ctx, events)
 		providerio.SendEvent(ctx, events, zeroruntime.StreamEvent{
 			Type:  zeroruntime.StreamEventError,
-			Error: provider.redact(fmt.Sprintf("provider stream error: idle timeout after %s (upstream stopped sending data)", provider.streamIdleTimeout)),
+			Error: provider.redact("provider stream error: " + providerio.StreamTimeoutMessage(err, provider.streamIdleTimeout)),
 		})
 		return
 	}

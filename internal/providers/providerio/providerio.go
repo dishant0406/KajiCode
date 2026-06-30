@@ -30,6 +30,19 @@ var ErrStreamIdle = errors.New("idle timeout (upstream stopped sending data)")
 // reasoning models — would hang the agent indefinitely.
 var ErrStreamStalled = errors.New("stream stalled (upstream kept the connection alive but produced no output)")
 
+// StreamTimeoutMessage returns the human-readable detail for a stream-timeout
+// error (ErrStreamIdle or ErrStreamStalled), given the configured idle timeout.
+// Callers prepend their own "provider stream error: " prefix. A stalled stream
+// gets a distinct, actionable message — it did NOT stop sending data (keep-alives
+// kept arriving); it just produced no output, which usually means the model is
+// stuck or very slow.
+func StreamTimeoutMessage(err error, idleTimeout time.Duration) string {
+	if errors.Is(err, ErrStreamStalled) {
+		return fmt.Sprintf("no output for %s (the model kept the connection alive but produced nothing — it may be stuck; try a faster model or lower reasoning effort)", idleTimeout*streamContentStallFactor)
+	}
+	return fmt.Sprintf("idle timeout after %s (upstream stopped sending data)", idleTimeout)
+}
+
 // DefaultStreamIdleTimeout is the single source of truth for how long every
 // provider waits on a silent stream before aborting it. The watchdog only fires
 // on genuine silence — SSE keep-alive comments reset it (see

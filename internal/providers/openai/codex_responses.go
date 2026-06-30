@@ -389,10 +389,10 @@ func (p *CodexProvider) streamResponses(
 	err = providerio.ScanSSEDataWithContext(streamCtx, cancelStream, response.Body, inner.streamIdleTimeout, func(data string) bool {
 		return p.emitResponsesEvent(ctx, data, state, events)
 	})
-	if errors.Is(err, providerio.ErrStreamIdle) {
+	if errors.Is(err, providerio.ErrStreamIdle) || errors.Is(err, providerio.ErrStreamStalled) {
 		providerio.SendEvent(ctx, events, zeroruntime.StreamEvent{
 			Type:  zeroruntime.StreamEventError,
-			Error: p.redact(fmt.Sprintf("provider stream error: idle timeout after %s (upstream stopped sending data)", inner.streamIdleTimeout)),
+			Error: p.redact("provider stream error: " + providerio.StreamTimeoutMessage(err, inner.streamIdleTimeout)),
 		})
 		return
 	}
