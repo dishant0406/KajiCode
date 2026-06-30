@@ -33,7 +33,11 @@ func TestSpawnAndHandoffAgentTypeEnumReflectsRoster(t *testing.T) {
 	}
 	spawnEnum = (&spawnTool{sw: sw}).Parameters().Properties["agent_type"].Enum
 	if !slices.Contains(spawnEnum, "researcher") {
-		t.Fatalf("custom agent type not reflected in enum: %v", spawnEnum)
+		t.Fatalf("custom agent type not reflected in spawn enum: %v", spawnEnum)
+	}
+	handoffEnum = (&handoffTool{sw: sw}).Parameters().Properties["to_agent_type"].Enum
+	if !slices.Contains(handoffEnum, "researcher") {
+		t.Fatalf("custom agent type not reflected in handoff enum: %v", handoffEnum)
 	}
 }
 
