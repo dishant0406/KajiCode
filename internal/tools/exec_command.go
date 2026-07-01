@@ -28,8 +28,17 @@ const (
 	completedSessionRetention = 30 * time.Second
 	maxExecSessions           = 64
 	recentExecOutputBytes     = 4096
-	execSessionStopTimeout    = 3 * time.Second
-	execSessionEvictedMessage = "[zero] session evicted: too many background terminals\n"
+	// maxExecOutputBufferBytes caps the undrained output an unpolled session can
+	// accumulate. Without a cap, a long-lived background session nobody polls
+	// again (e.g. a dev server left running after its initiating run was
+	// cancelled) grows this buffer forever as long as the process keeps writing
+	// output, with no ceiling — this previously ran a session's memory into the
+	// tens of gigabytes over several hours and got the whole zero process
+	// OOM-killed by the OS.
+	maxExecOutputBufferBytes   = 2 * 1024 * 1024
+	execSessionStopTimeout     = 3 * time.Second
+	execSessionEvictedMessage  = "[zero] session evicted: too many background terminals\n"
+	execOutputTruncatedMessage = "[zero] output truncated: undrained buffer exceeded 2MiB, oldest output dropped\n"
 )
 
 type execSessionManager struct {
@@ -331,10 +340,11 @@ func (session *execSession) snapshot() ExecSessionSnapshot {
 }
 
 type execOutputBuffer struct {
-	mu     sync.Mutex
-	data   []byte
-	recent []byte
-	notify chan struct{}
+	mu        sync.Mutex
+	data      []byte
+	recent    []byte
+	truncated bool
+	notify    chan struct{}
 }
 
 func newExecOutputBuffer() *execOutputBuffer {
@@ -344,6 +354,10 @@ func newExecOutputBuffer() *execOutputBuffer {
 func (buffer *execOutputBuffer) Write(p []byte) (int, error) {
 	buffer.mu.Lock()
 	buffer.data = append(buffer.data, p...)
+	if len(buffer.data) > maxExecOutputBufferBytes {
+		buffer.data = buffer.data[len(buffer.data)-maxExecOutputBufferBytes:]
+		buffer.truncated = true
+	}
 	buffer.recent = append(buffer.recent, p...)
 	if len(buffer.recent) > recentExecOutputBytes {
 		buffer.recent = buffer.recent[len(buffer.recent)-recentExecOutputBytes:]
@@ -365,10 +379,15 @@ func (buffer *execOutputBuffer) recentString() string {
 func (buffer *execOutputBuffer) drainString() string {
 	buffer.mu.Lock()
 	defer buffer.mu.Unlock()
-	if len(buffer.data) == 0 {
+	if len(buffer.data) == 0 && !buffer.truncated {
 		return ""
 	}
-	out := string(buffer.data)
+	out := ""
+	if buffer.truncated {
+		out = execOutputTruncatedMessage
+		buffer.truncated = false
+	}
+	out += string(buffer.data)
 	buffer.data = nil
 	return out
 }

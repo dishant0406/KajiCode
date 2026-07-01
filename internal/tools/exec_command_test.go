@@ -363,6 +363,43 @@ func TestStartExecProcessFallsBackAfterPTYStartMutation(t *testing.T) {
 	}
 }
 
+// TestExecOutputBufferCapsUndrainedData: a session nobody polls must not grow
+// its undrained buffer without bound — a long-lived background process that
+// keeps writing while unpolled previously ran a session's memory into the
+// tens of gigabytes and got the whole zero process OOM-killed by the OS.
+func TestExecOutputBufferCapsUndrainedData(t *testing.T) {
+	buffer := newExecOutputBuffer()
+
+	chunk := strings.Repeat("x", 1024)
+	writes := (maxExecOutputBufferBytes / len(chunk)) + 10 // comfortably over the cap
+	for i := 0; i < writes; i++ {
+		if _, err := buffer.Write([]byte(chunk)); err != nil {
+			t.Fatalf("Write: %v", err)
+		}
+	}
+
+	buffer.mu.Lock()
+	dataLen := len(buffer.data)
+	buffer.mu.Unlock()
+	if dataLen > maxExecOutputBufferBytes {
+		t.Fatalf("undrained buffer grew to %d bytes, want <= %d", dataLen, maxExecOutputBufferBytes)
+	}
+
+	out := buffer.drainString()
+	if !strings.HasPrefix(out, execOutputTruncatedMessage) {
+		t.Fatalf("drained output should be prefixed with the truncation notice, got prefix %q", out[:min(len(out), 80)])
+	}
+	if !strings.HasSuffix(out, chunk) {
+		t.Fatal("drained output should keep the most recent bytes, not the oldest")
+	}
+
+	// A second drain with no intervening writes must not repeat the notice —
+	// the buffer is empty and untruncated again.
+	if got := buffer.drainString(); got != "" {
+		t.Fatalf("drainString after a full drain = %q, want empty", got)
+	}
+}
+
 // resilientTempDir is like t.TempDir() but tolerates the Windows handle-release
 // lag: a SIGKILL'd child process that had the dir as its cwd may not have
 // released it the instant it is reaped, so the immediate RemoveAll t.TempDir()
