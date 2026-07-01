@@ -280,10 +280,15 @@ type model struct {
 	// (clickable suggestions, right-click paste, transcript select) pause while on.
 	mouseReleased       bool
 	transcriptSelection transcriptSelectionState
-	copyStatus          string
-	copyStatusSeq       int
-	exitConfirmActive   bool
-	exitConfirmSeq      int
+	// hover identifies the single clickable row (if any) currently under the
+	// mouse cursor with no button pressed, so it renders in a distinct style —
+	// the visual cue that it's clickable. Requires AllMotion mouse reporting
+	// (see wantsMouseCapture) since idle cursor movement carries no button.
+	hover             hoverTarget
+	copyStatus        string
+	copyStatusSeq     int
+	exitConfirmActive bool
+	exitConfirmSeq    int
 
 	// picker, when non-nil, is an open interactive selector overlay (/model,
 	// /effort with no argument). It captures ↑/↓/Enter/Esc and applies
@@ -956,6 +961,7 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Subchat view exits on Esc (returns to main chat).
 			if m.subchat.active {
 				m.chatScrollOffset = m.subchat.exit()
+				m.hover = hoverTarget{} // bodyY numbering differs between subchat and the parent transcript
 				return m, nil
 			}
 			if m.mcpCommandCancel != nil {
@@ -1174,11 +1180,17 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.transcriptDetailed {
 				return m, nil
 			}
+			// A stationary mouse over a bodyY-keyed transcript hover target would
+			// otherwise stay lit at the scrolled-away bodyY until the next real
+			// motion event (see clearHover) — same reasoning as the wheel-scroll
+			// cases in mouse.go.
+			m = m.clearHover()
 			return m.scrollChat(m.chatPageScrollLines()), nil
 		case keyIs(msg, tea.KeyPgDown):
 			if m.transcriptDetailed {
 				return m, nil
 			}
+			m = m.clearHover()
 			return m.scrollChat(-m.chatPageScrollLines()), nil
 		case keyIs(msg, tea.KeyDown):
 			if m.transcriptDetailed {
@@ -1220,6 +1232,7 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// ArrowUp exits subchat view (returns to main chat).
 			if m.subchat.active {
 				m.chatScrollOffset = m.subchat.exit()
+				m.hover = hoverTarget{} // bodyY numbering differs between subchat and the parent transcript
 				return m, nil
 			}
 			if m.transcriptDetailed {
@@ -1445,6 +1458,10 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		// A resize re-wraps content at a new width, shifting every row's bodyY;
+		// a stale transcript-hover target could coincidentally land on an
+		// unrelated clickable row (same reasoning as clearHover's other callers).
+		m = m.clearHover()
 		// Reset the streaming-text fade state. A width change can re-wrap
 		// the in-progress text into a different number of visual lines,
 		// which invalidates the per-line age mapping. The next delta
@@ -1881,7 +1898,14 @@ func (m model) View() tea.View {
 	view.AltScreen = m.altScreen
 	view.ReportFocus = m.notifier != nil
 	if m.wantsMouseCapture() {
-		view.MouseMode = tea.MouseModeCellMotion
+		// AllMotion (not CellMotion) is required for hover highlighting: it
+		// reports cursor movement even with no button pressed. CellMotion only
+		// reports motion while a button is held (drag) — see bubbletea's
+		// MouseMode docs. AllMotion has marginally worse terminal compatibility
+		// but is well supported by the terminals this app targets; the existing
+		// 15ms mouse-event throttle (mouseEventThrottleInterval) already bounds
+		// the redraw rate from the extra motion events.
+		view.MouseMode = tea.MouseModeAllMotion
 	}
 	return view
 }

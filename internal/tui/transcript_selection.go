@@ -159,8 +159,43 @@ func (m model) finalizeTranscriptBodyRow(rendered string, selectable []transcrip
 	shifted := shiftSelectableX(selectable, gutter)
 	if m.transcriptSelection.active {
 		lines = viewLines(m.renderRenderedSelection(strings.Join(lines, "\n"), shifted, startBodyY))
+	} else if m.hover.kind == hoverTranscript {
+		// Mutually exclusive with the selection highlight above: transcriptSelection
+		// stays active for the lifetime of a persisted (copied) selection, not just
+		// during the drag — so hover correctly stays suppressed over old selected
+		// text too, not only mid-drag.
+		lines = viewLines(m.renderHoverHighlight(strings.Join(lines, "\n"), shifted, startBodyY))
 	}
 	return transcriptBodyRenderedItem{lines: lines, selectable: shifted}
+}
+
+// renderHoverHighlight re-styles the WHOLE line at m.hover.bodyY in the hover
+// accent (see renderRenderedSelection for the sibling selection-highlight logic,
+// which this mirrors). Only a clickable line (a specialist card or a
+// collapse/expand toggle header) is eligible — if the hovered bodyY no longer
+// matches one (content shifted beneath a stale hover target), this is a no-op,
+// which self-heals a hover left over from before a transcript update.
+func (m model) renderHoverHighlight(rendered string, selectable []transcriptSelectableLine, startBodyY int) string {
+	index := m.hover.bodyY - startBodyY
+	if index < 0 {
+		return rendered
+	}
+	lines := viewLines(rendered)
+	if index >= len(lines) {
+		return rendered
+	}
+	matched := false
+	for _, line := range selectable {
+		if line.bodyY == m.hover.bodyY && (line.specialistCard || line.toggle) {
+			matched = true
+			break
+		}
+	}
+	if !matched {
+		return rendered
+	}
+	lines[index] = zeroTheme.hover.Render(ansi.Strip(lines[index]))
+	return strings.Join(lines, "\n")
 }
 
 func (m model) transcriptBodyItems(width int, emptyOverlay string) []transcriptBodyItem {
@@ -1097,6 +1132,7 @@ func (m model) handleTranscriptSelectionMouse(msg tea.MouseMsg) (model, tea.Cmd,
 				m = m.appendSystemNotice(errMsg)
 			}
 			m.chatScrollOffset = 0
+			m.hover = hoverTarget{} // bodyY numbering differs between subchat and the parent transcript
 			return m, nil, true
 		}
 		// A click on a PLAN step row drops a transcript card listing the file
@@ -1126,6 +1162,7 @@ func (m model) handleTranscriptSelectionMouse(msg tea.MouseMsg) (model, tea.Cmd,
 				m = m.appendSystemNotice(errMsg)
 			}
 			m.chatScrollOffset = 0
+			m.hover = hoverTarget{} // bodyY numbering differs between subchat and the parent transcript
 			return m, nil, true
 		}
 		if line.toggle {

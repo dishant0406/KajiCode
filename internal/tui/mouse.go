@@ -103,10 +103,17 @@ func (m model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if next, cmd, ok := m.handleTranscriptSelectionMouse(msg); ok {
 		return next, cmd
 	}
+	// A plain hover (cursor moved, no button pressed) never matches the
+	// press/drag/release cases above, so it falls through here — resolve what's
+	// under the cursor so it can render with the hover highlight.
+	if mouseHover(msg) {
+		return m.updateHoverTarget(msg), nil
+	}
 
 	switch {
 	case mouseWheelUp(msg):
 		m.clearMouseSelection()
+		m = m.clearHover()
 		if m.providerWizard != nil {
 			m.providerWizard.move(-1)
 			return m, nil
@@ -138,6 +145,7 @@ func (m model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m.scrollChatExtendingSelection(chatWheelScrollLines, msg), nil
 	case mouseWheelDown(msg):
 		m.clearMouseSelection()
+		m = m.clearHover()
 		if m.providerWizard != nil {
 			m.providerWizard.move(1)
 			return m, nil

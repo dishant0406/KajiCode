@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/Gitlawb/zero/internal/tools"
 )
@@ -607,6 +608,15 @@ func (m model) renderContextSidebar(width, height int) []string {
 	}
 	add(tokenLine)
 
+	// Hover highlight: resolved by STABLE IDENTITY (sessionID / stepIndex), not a
+	// cached line offset — see hoveredSidebarLineOffset. A row whose identity no
+	// longer resolves (it disappeared since the hover was last set from a real
+	// mouse motion) simply doesn't highlight, rather than a coincidentally-matching
+	// unrelated row lighting up.
+	if lineOffset, ok := m.hoveredSidebarLineOffset(width); ok && lineOffset >= 0 && lineOffset < len(lines) {
+		lines[lineOffset] = zeroTheme.hover.Render(ansi.Strip(lines[lineOffset]))
+	}
+
 	// Normalize every row to exactly width cells.
 	for i := range lines {
 		lines[i] = padStyledLine(lines[i], width)
@@ -618,6 +628,31 @@ func (m model) renderContextSidebar(width, height int) []string {
 		lines = lines[:height]
 	}
 	return lines
+}
+
+// hoveredSidebarLineOffset resolves the hovered sidebar row's CURRENT line offset
+// fresh on every call, by re-matching m.hover's stable identity (sessionID for an
+// agent, stepIndex for a plan step) against a freshly computed hit list — never a
+// cached index. Returns false when the hover isn't sidebar-scoped, or when the
+// identity no longer resolves (that row disappeared since the hover was last set
+// by a real mouse motion — a linger window elapsing, a plan step completing —
+// with no intervening motion to re-target it).
+func (m model) hoveredSidebarLineOffset(width int) (int, bool) {
+	switch m.hover.kind {
+	case hoverSidebarAgent:
+		for _, hit := range m.sidebarAgentSelectables(width) {
+			if hit.sessionID == m.hover.sessionID {
+				return hit.lineOffset, true
+			}
+		}
+	case hoverPlanStep:
+		for _, hit := range m.sidebarPlanSelectables(width) {
+			if hit.stepIndex == m.hover.stepIndex {
+				return hit.lineOffset, true
+			}
+		}
+	}
+	return 0, false
 }
 
 // sidebarHeader renders a bold-muted uppercase section label. Bold muted (vs the

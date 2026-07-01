@@ -29,6 +29,7 @@ type tuiTheme struct {
 	line       lipgloss.Style // default borders, rules, status separators
 	lineStrong lipgloss.Style // emphasized borders
 	selection  lipgloss.Style // transcript selection highlight
+	hover      lipgloss.Style // hovered clickable row (specialist card, toggle, sidebar/plan row)
 
 	// Title bar.
 	badge lipgloss.Style // ` 0 ` brand chip: onAccent on accent, bold
@@ -210,6 +211,11 @@ func buildTheme(p palette) tuiTheme {
 		line:       fg(p.line),
 		lineStrong: fg(p.line2),
 		selection:  lipgloss.NewStyle().Background(col(p.accent)).Foreground(col(p.onAccent)),
+		// A full block (like selection) would be too heavy for something that
+		// repaints on every mouse movement; underline + accent foreground reads as
+		// "interactive" at a glance without competing with real content colors
+		// (e.g. a specialist card's red/green status glyph).
+		hover: fg(p.accent).Underline(true),
 
 		badge: lipgloss.NewStyle().Background(col(p.accent)).Foreground(col(p.onAccent)).Bold(true),
 

@@ -139,6 +139,10 @@ func (m model) drainFlushQueue() (model, tea.Cmd) {
 // surface ended.
 func (m *model) resetFlushFrontier(divider string) {
 	m.flushed = 0
+	// Renumbers every row's bodyY from the top (used by /clear, /resume, /rewind,
+	// /compact); a transcript-hover target's bodyY would otherwise risk
+	// coincidentally matching an unrelated row in the rebuilt transcript.
+	m.hover = hoverTarget{}
 	if divider != "" && m.flushedAny {
 		m.flushQueue = append(m.flushQueue, zeroTheme.faint.Render(divider))
 	}
