@@ -35,10 +35,10 @@ const (
 	// output, with no ceiling — this previously ran a session's memory into the
 	// tens of gigabytes over several hours and got the whole zero process
 	// OOM-killed by the OS.
-	maxExecOutputBufferBytes   = 2 * 1024 * 1024
-	execSessionStopTimeout     = 3 * time.Second
-	execSessionEvictedMessage  = "[zero] session evicted: too many background terminals\n"
-	execOutputTruncatedMessage = "[zero] output truncated: undrained buffer exceeded 2MiB, oldest output dropped\n"
+	maxExecOutputBufferBytes         = 2 * 1024 * 1024
+	execSessionStopTimeout           = 3 * time.Second
+	execSessionEvictedMessage        = "[zero] session evicted: too many background terminals\n"
+	execOutputBufferTruncatedMessage = "[zero] output buffer truncated: undrained output exceeded 2MiB, oldest output dropped"
 )
 
 type execSessionManager struct {
@@ -242,6 +242,10 @@ type ExecSessionSnapshot struct {
 	Status       string
 	ExitCode     *int
 	RecentOutput string
+	// OutputTruncated reflects the buffer's last-known truncation state (see
+	// execOutputBuffer.peekTruncated), so a session listing (/ps) still shows
+	// this even if the session is reaped before ever being polled again.
+	OutputTruncated bool
 }
 
 type ExecSessionController interface {
@@ -326,16 +330,17 @@ func (session *execSession) snapshot() ExecSessionSnapshot {
 		status = "exited"
 	}
 	return ExecSessionSnapshot{
-		ID:           session.id,
-		Command:      session.commandText,
-		Cwd:          session.cwd,
-		RelativeCwd:  session.relativeCwd,
-		StartedAt:    startedAt,
-		LastUsedAt:   lastUsedAt,
-		TTY:          session.tty,
-		Status:       status,
-		ExitCode:     copiedExit,
-		RecentOutput: session.output.recentString(),
+		ID:              session.id,
+		Command:         session.commandText,
+		Cwd:             session.cwd,
+		RelativeCwd:     session.relativeCwd,
+		StartedAt:       startedAt,
+		LastUsedAt:      lastUsedAt,
+		TTY:             session.tty,
+		Status:          status,
+		ExitCode:        copiedExit,
+		RecentOutput:    session.output.recentString(),
+		OutputTruncated: session.output.peekTruncated(),
 	}
 }
 
@@ -379,17 +384,40 @@ func (buffer *execOutputBuffer) recentString() string {
 func (buffer *execOutputBuffer) drainString() string {
 	buffer.mu.Lock()
 	defer buffer.mu.Unlock()
-	if len(buffer.data) == 0 && !buffer.truncated {
+	if len(buffer.data) == 0 {
 		return ""
 	}
-	out := ""
-	if buffer.truncated {
-		out = execOutputTruncatedMessage
-		buffer.truncated = false
-	}
-	out += string(buffer.data)
+	out := string(buffer.data)
 	buffer.data = nil
 	return out
+}
+
+// consumeTruncated reports whether the buffer has dropped output to stay
+// within maxExecOutputBufferBytes since the last call, resetting the flag.
+// Kept as an out-of-band signal rather than text embedded in drainString's
+// result: an earlier version prefixed a notice directly into the drained
+// string, but that notice always sat ~maxExecOutputBufferBytes (2MiB) before
+// the end of the combined output, far outside the byte-budget head/tail
+// window truncateExecOutput keeps afterward (at most 400KB even at the
+// tool's maximum max_output_tokens) — so the notice was reliably swallowed
+// or chopped by that second, unrelated truncation pass. Surfacing it as a
+// separate bool lets the caller report it regardless of where in the byte
+// stream the overflow happened.
+func (buffer *execOutputBuffer) consumeTruncated() bool {
+	buffer.mu.Lock()
+	defer buffer.mu.Unlock()
+	truncated := buffer.truncated
+	buffer.truncated = false
+	return truncated
+}
+
+// peekTruncated reports the buffer's last-known truncation state without
+// clearing it, for status views (e.g. /ps) that shouldn't consume the signal
+// a subsequent poll is still meant to report via consumeTruncated.
+func (buffer *execOutputBuffer) peekTruncated() bool {
+	buffer.mu.Lock()
+	defer buffer.mu.Unlock()
+	return buffer.truncated
 }
 
 type execCommandTool struct {
@@ -504,25 +532,28 @@ func (tool execCommandTool) run(ctx context.Context, args map[string]any, engine
 	if err != nil {
 		return errorResult("Error starting exec_command: " + err.Error())
 	}
-	output := session.collect(ctx, time.Duration(yieldTimeMS)*time.Millisecond)
+	output, outputTruncated := session.collect(ctx, time.Duration(yieldTimeMS)*time.Millisecond)
 	if ctx != nil && ctx.Err() != nil && !session.doneClosed() {
 		session.terminate()
-		output += session.collect(context.Background(), time.Second)
+		more, moreTruncated := session.collect(context.Background(), time.Second)
+		output += more
+		outputTruncated = outputTruncated || moreTruncated
 	}
 	exitCode, exited := session.exitStatus()
 	if exited {
 		tool.manager.remove(session.id)
 	}
 	return execToolResult(execToolResultInput{
-		commandText:     commandText,
-		output:          output,
-		sessionID:       session.id,
-		exitCode:        exitCode,
-		exited:          exited,
-		relativeCwd:     relativeCwd,
-		tty:             session.tty,
-		plan:            session.plan,
-		maxOutputTokens: maxOutputTokens,
+		commandText:           commandText,
+		output:                output,
+		outputBufferTruncated: outputTruncated,
+		sessionID:             session.id,
+		exitCode:              exitCode,
+		exited:                exited,
+		relativeCwd:           relativeCwd,
+		tty:                   session.tty,
+		plan:                  session.plan,
+		maxOutputTokens:       maxOutputTokens,
 	})
 }
 
@@ -577,26 +608,39 @@ func (tool execCommandTool) startSession(commandText string, absoluteCwd string,
 	return session, nil
 }
 
-func (session *execSession) collect(ctx context.Context, wait time.Duration) string {
+// collect drains the session's output buffer, returning the accumulated text
+// and whether the buffer ever had to drop output to stay within
+// maxExecOutputBufferBytes since the last collect call.
+func (session *execSession) collect(ctx context.Context, wait time.Duration) (string, bool) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	deadline := time.Now().Add(wait)
 	var builder strings.Builder
+	truncated := false
+	finish := func() (string, bool) {
+		if session.output.consumeTruncated() {
+			truncated = true
+		}
+		return builder.String(), truncated
+	}
 	for {
 		if chunk := session.output.drainString(); chunk != "" {
 			builder.WriteString(chunk)
+			if session.output.consumeTruncated() {
+				truncated = true
+			}
 			continue
 		}
 		if session.doneClosed() {
 			if chunk := session.output.drainString(); chunk != "" {
 				builder.WriteString(chunk)
 			}
-			return builder.String()
+			return finish()
 		}
 		remaining := time.Until(deadline)
 		if remaining <= 0 {
-			return builder.String()
+			return finish()
 		}
 		timer := time.NewTimer(remaining)
 		select {
@@ -621,9 +665,9 @@ func (session *execSession) collect(ctx context.Context, wait time.Duration) str
 				default:
 				}
 			}
-			return builder.String()
+			return finish()
 		case <-timer.C:
-			return builder.String()
+			return finish()
 		}
 	}
 }
@@ -720,22 +764,23 @@ func (tool writeStdinTool) RunWithOptions(ctx context.Context, args map[string]a
 			}
 		}
 	}
-	output := session.collect(ctx, time.Duration(yieldTimeMS)*time.Millisecond)
+	output, outputTruncated := session.collect(ctx, time.Duration(yieldTimeMS)*time.Millisecond)
 	exitCode, exited := session.exitStatus()
 	if exited {
 		tool.manager.remove(session.id)
 	}
 	return execToolResult(execToolResultInput{
-		commandText:     session.commandText,
-		output:          output,
-		sessionID:       session.id,
-		exitCode:        exitCode,
-		exited:          exited,
-		relativeCwd:     session.relativeCwd,
-		tty:             session.tty,
-		interrupted:     interrupted,
-		plan:            session.plan,
-		maxOutputTokens: maxOutputTokens,
+		commandText:           session.commandText,
+		output:                output,
+		outputBufferTruncated: outputTruncated,
+		sessionID:             session.id,
+		exitCode:              exitCode,
+		exited:                exited,
+		relativeCwd:           session.relativeCwd,
+		tty:                   session.tty,
+		interrupted:           interrupted,
+		plan:                  session.plan,
+		maxOutputTokens:       maxOutputTokens,
 	})
 }
 
@@ -760,16 +805,22 @@ func shouldInterruptExecSession(chars string, tty bool) bool {
 }
 
 type execToolResultInput struct {
-	commandText     string
-	output          string
-	sessionID       int
-	exitCode        int
-	exited          bool
-	relativeCwd     string
-	tty             bool
-	interrupted     bool
-	plan            zeroSandbox.CommandPlan
-	maxOutputTokens int
+	commandText string
+	output      string
+	// outputBufferTruncated is true when the session's undrained output buffer
+	// had to drop bytes to stay within maxExecOutputBufferBytes since it was
+	// last collected — data that is gone for good, unlike the head/tail
+	// truncation below (which the caller can recover by polling again or
+	// raising max_output_tokens).
+	outputBufferTruncated bool
+	sessionID             int
+	exitCode              int
+	exited                bool
+	relativeCwd           string
+	tty                   bool
+	interrupted           bool
+	plan                  zeroSandbox.CommandPlan
+	maxOutputTokens       int
 }
 
 func execToolResult(input execToolResultInput) Result {
@@ -790,16 +841,26 @@ func execToolResult(input execToolResultInput) Result {
 	} else {
 		meta["session_id"] = strconv.Itoa(input.sessionID)
 	}
+	if input.outputBufferTruncated {
+		meta["output_buffer_truncated"] = "true"
+	}
 
 	status := StatusOK
 	if input.exited && ((input.exitCode != 0 && !input.interrupted) || meta[SandboxLikelyDeniedMeta] == "true") {
 		status = StatusError
 	}
 	body := formatExecCommandOutput(output, input.sessionID, input.exited, input.exitCode, input.interrupted)
+	if input.outputBufferTruncated {
+		// Appended after truncateExecOutput's own head/tail slicing, not
+		// embedded in the text that goes through it — a marker inside that
+		// text can land in the discarded middle or get chopped at a small
+		// max_output_tokens budget. Appending here guarantees it survives.
+		body += "\n" + execOutputBufferTruncatedMessage
+	}
 	return Result{
 		Status:    status,
 		Output:    body,
-		Truncated: truncated,
+		Truncated: truncated || input.outputBufferTruncated,
 		Meta:      meta,
 		Display: Display{
 			Summary: execDisplaySummary(input.commandText, input.sessionID, input.exited, input.exitCode),

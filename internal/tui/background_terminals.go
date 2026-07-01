@@ -146,6 +146,9 @@ func formatBackgroundTerminalRow(session tools.ExecSessionSnapshot, now time.Tim
 	}
 	preview := compactCommandOutputText(session.RecentOutput)
 	prefix := fmt.Sprintf("%d · %s · %s · %s", session.ID, session.Status, age, cwd)
+	if session.OutputTruncated {
+		prefix += " · output truncated"
+	}
 	if preview != "" {
 		return prefix + " · " + command + " · " + preview
 	}
