@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -122,6 +123,21 @@ func NormalizeBaseURL(baseURL string, defaultBaseURL string, label string) (stri
 //     unaffected (the stream-idle + content watchdogs cover that).
 //   - IdleConnTimeout is shortened so a connection that went idle across a pause
 //     is closed (and re-dialed fresh) rather than reused after it has gone stale.
+//   - DisableKeepAlives on darwin only: ResponseHeaderTimeout/IdleConnTimeout
+//     above catch a reused connection that's fully dead (never responds) or
+//     idle past the timeout, but not one that's alive-but-severely-degraded —
+//     e.g. reused shortly after a prior request on the same host (well within
+//     30s, common across quick retries of the same turn), where it still
+//     delivers real bytes, just at a crippled rate, resetting Zero's stream
+//     idle/content-stall watchdogs (which only fire on true silence) without
+//     ever recovering. That degraded-not-dead case is indistinguishable from
+//     genuine backend slowness from inside the stream, so the only reliable
+//     fix is removing pooling from the equation entirely on the one platform
+//     where this class of bug has actually reproduced. A fresh TCP+TLS
+//     handshake per request costs low tens of milliseconds — negligible next
+//     to the minutes-long stalls this avoids — and this doesn't touch
+//     Linux/Windows, where the underlying OS doesn't keep dead/degraded
+//     pooled connections around as long.
 var sharedHTTPClient = func() *http.Client {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	// 120s, not 60s: a slow cloud proxy (e.g. ollama `*:cloud`) can withhold its
@@ -132,6 +148,7 @@ var sharedHTTPClient = func() *http.Client {
 	// content-stall watchdogs.
 	transport.ResponseHeaderTimeout = 120 * time.Second
 	transport.IdleConnTimeout = 30 * time.Second
+	transport.DisableKeepAlives = runtime.GOOS == "darwin"
 	return &http.Client{Transport: transport}
 }()
 

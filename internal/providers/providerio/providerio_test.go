@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -323,6 +324,17 @@ func TestHTTPClientReturnsStallHardenedSharedClient(t *testing.T) {
 	}
 	if tr.IdleConnTimeout != 30*time.Second {
 		t.Fatalf("IdleConnTimeout = %v, want 30s", tr.IdleConnTimeout)
+	}
+	// DisableKeepAlives is the stronger mitigation scoped to darwin only: the
+	// two timeouts above catch a reused connection that's fully dead or idle
+	// too long, but not one that's alive-and-degraded (still delivers real
+	// bytes, just at a crippled rate) — which resets Zero's stream watchdogs
+	// without ever recovering. Removing pooling from the equation entirely is
+	// only worth its reconnect cost on the platform this class of bug has
+	// actually reproduced on.
+	wantDisableKeepAlives := runtime.GOOS == "darwin"
+	if tr.DisableKeepAlives != wantDisableKeepAlives {
+		t.Fatalf("DisableKeepAlives = %v, want %v (GOOS=%s)", tr.DisableKeepAlives, wantDisableKeepAlives, runtime.GOOS)
 	}
 	if HTTPClient(nil) != got {
 		t.Fatal("HTTPClient(nil) must return a shared instance so the conn pool is reused")
