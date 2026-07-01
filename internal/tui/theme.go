@@ -140,10 +140,12 @@ var darkPalette = palette{
 	// Brand lime, softened from the original #caff3f (L 62%, S 100% — fully
 	// saturated, which read as glaring/neon everywhere it filled a block or
 	// bold-text surface: the composer prompt glyph, the permission popup's
-	// focused-option badge, the text-selection highlight). Pulled to L 50%,
-	// S 80%; still clearly lime, contrast vs both black (onAccent) and the
-	// near-black panel stays far above WCAG AA (~14:1 and ~13:1).
-	accent:    "#ade619",
+	// focused-option badge, the text-selection highlight). Two prior passes
+	// (#ade619 at L50/S80, #8db620 at L42/S70) were each confirmed too subtle
+	// in turn; settled at L 36%/S 62% — a darker, more olive lime. Contrast
+	// vs both black (onAccent) and the near-black panel stays comfortably
+	// above WCAG AA (~6.1:1 and ~5.6:1) with real margin to spare.
+	accent:    "#759523",
 	green:     "#5dd1a4",
 	red:       "#ff7a7a",
 	amber:     "#ffc25c",
