@@ -46,6 +46,46 @@ func TestResolveConfigUsesXAIPreset(t *testing.T) {
 	}
 }
 
+// envWithPresetsAllowed lets a caller (the wizard / CLI login / runtime refresh)
+// opt into the preset without exporting ZERO_OAUTH_ALLOW_PRESETS: an otherwise-inert
+// xAI config now resolves from the baked-in preset.
+func TestEnvWithPresetsAllowedEnablesPreset(t *testing.T) {
+	r := NewRegistry()
+	// Baseline: a hermetic empty map keeps the preset inert.
+	if _, _, err := r.ResolveConfig("xai", map[string]string{}); err == nil {
+		t.Fatal("xai should not resolve without the opt-in")
+	}
+	// The helper forces the opt-in so the preset resolves.
+	cfg, _, err := r.ResolveConfig("xai", envWithPresetsAllowed(map[string]string{}))
+	if err != nil {
+		t.Fatalf("envWithPresetsAllowed should enable the xai preset: %v", err)
+	}
+	if cfg.ClientID != "b1a00492-073a-47ea-816f-4c329264a828" {
+		t.Fatalf("client_id = %q", cfg.ClientID)
+	}
+}
+
+// The helper copies the base map (never mutating it) and keeps ZERO_OAUTH_<NAME>_*
+// overrides — critical because envValue treats a non-nil map as hermetic, so a
+// partial map would silently drop them.
+func TestEnvWithPresetsAllowedPreservesOverrides(t *testing.T) {
+	base := map[string]string{"ZERO_OAUTH_XAI_CLIENT_ID": "custom-id"}
+	env := envWithPresetsAllowed(base)
+	if env["ZERO_OAUTH_ALLOW_PRESETS"] != "1" {
+		t.Fatalf("opt-in flag not set: %v", env)
+	}
+	if _, mutated := base["ZERO_OAUTH_ALLOW_PRESETS"]; mutated {
+		t.Fatal("envWithPresetsAllowed mutated the caller's base map")
+	}
+	cfg, _, err := NewRegistry().ResolveConfig("xai", env)
+	if err != nil {
+		t.Fatalf("ResolveConfig with override env: %v", err)
+	}
+	if cfg.ClientID != "custom-id" {
+		t.Fatalf("override dropped through the helper: client_id = %q", cfg.ClientID)
+	}
+}
+
 func TestResolveConfigEnvOverridesPreset(t *testing.T) {
 	r := NewRegistry()
 	env := map[string]string{

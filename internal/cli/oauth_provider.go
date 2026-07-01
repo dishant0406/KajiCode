@@ -43,6 +43,9 @@ func oauthResolverForProfile(profile config.ProviderProfile) providerio.TokenRes
 	manager, err := oauth.NewManager(oauth.ManagerOptions{
 		Store:      store,
 		HTTPClient: &http.Client{Timeout: 30 * time.Second},
+		// Refreshing a token the user logged into (possibly a preset provider like
+		// xAI) re-resolves that provider's OAuth config, which needs the preset.
+		AllowPresets: true,
 	})
 	if err != nil {
 		return nil

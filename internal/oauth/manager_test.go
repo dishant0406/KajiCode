@@ -52,6 +52,30 @@ func managerFor(t *testing.T, env map[string]string, openBrowser func(string) er
 	return m
 }
 
+// AllowPresets layers the opt-in onto the manager's env so a login/refresh for a
+// preset provider resolves; without it (and no Env) the env stays nil so callers
+// and tests remain hermetic.
+func TestNewManagerAllowPresetsForcesOptIn(t *testing.T) {
+	store, err := NewStore(StoreOptions{FilePath: filepath.Join(t.TempDir(), "tok.json")})
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+	m, err := NewManager(ManagerOptions{Store: store, AllowPresets: true})
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	if m.env["ZERO_OAUTH_ALLOW_PRESETS"] != "1" {
+		t.Fatalf("AllowPresets should force the opt-in; got env[%q]=%q", "ZERO_OAUTH_ALLOW_PRESETS", m.env["ZERO_OAUTH_ALLOW_PRESETS"])
+	}
+	m2, err := NewManager(ManagerOptions{Store: store})
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	if m2.env != nil {
+		t.Fatalf("env should stay nil without AllowPresets, got %v", m2.env)
+	}
+}
+
 func TestManagerLoginLoopback(t *testing.T) {
 	fp := newFakeProvider(t, `{"access_token":"at","refresh_token":"rt","token_type":"Bearer","expires_in":3600}`)
 	env := map[string]string{

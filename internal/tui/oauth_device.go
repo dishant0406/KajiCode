@@ -44,6 +44,9 @@ func oauthDevicePrepare(name string) (oauth.DeviceAuth, oauth.Config, error) {
 		Store:       store,
 		HTTPClient:  &http.Client{Timeout: 60 * time.Second},
 		OpenBrowser: browser.OpenURL,
+		// Device-flow providers (e.g. Hugging Face) rely on the baked-in preset for
+		// their endpoints; opt in so the device code can be requested.
+		AllowPresets: true,
 	})
 	if err != nil {
 		return oauth.DeviceAuth{}, oauth.Config{}, err
@@ -62,8 +65,9 @@ func oauthDeviceComplete(name string, cfg oauth.Config, auth oauth.DeviceAuth) e
 		return err
 	}
 	manager, err := oauth.NewManager(oauth.ManagerOptions{
-		Store:      store,
-		HTTPClient: &http.Client{Timeout: 60 * time.Second},
+		Store:        store,
+		HTTPClient:   &http.Client{Timeout: 60 * time.Second},
+		AllowPresets: true, // preset config is needed to poll/exchange the device token
 	})
 	if err != nil {
 		return err
@@ -84,8 +88,9 @@ func oauthStoredToken(ctx context.Context, providerID string) string {
 		return ""
 	}
 	manager, err := oauth.NewManager(oauth.ManagerOptions{
-		Store:      store,
-		HTTPClient: &http.Client{Timeout: 30 * time.Second},
+		Store:        store,
+		HTTPClient:   &http.Client{Timeout: 30 * time.Second},
+		AllowPresets: true, // refreshing a preset-provider token re-resolves its config
 	})
 	if err != nil {
 		return ""

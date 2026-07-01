@@ -166,6 +166,10 @@ func runProviderTokenLogin(name string) error {
 		Store:       store,
 		HTTPClient:  &http.Client{Timeout: 60 * time.Second},
 		OpenBrowser: browser.OpenURL,
+		// The user explicitly chose to sign in with this provider's OAuth, so opt
+		// into its baked-in preset (e.g. xAI's public client_id); without this the
+		// config never resolves and the browser never opens.
+		AllowPresets: true,
 	})
 	if err != nil {
 		return err
@@ -1229,7 +1233,27 @@ func (wizard *providerWizardState) renderProviderStep(width int) []string {
 	for offset, provider := range wizard.providers[start : start+maxVisible] {
 		lines = append(lines, wizard.renderSelectableProvider(width, start+offset, provider))
 	}
+	// A failed OAuth attempt leaves the wizard on this list (it does not advance),
+	// so the error must render here or the click looks like a silent no-op. The
+	// credential step renders its own copy for the ctrl+o path.
+	if wizard.oauthMode && wizard.oauthErr != "" {
+		lines = append(lines, "", zeroTheme.red.Render("OAuth login failed: "+wizard.oauthErr))
+		if hint := providerWizardOAuthErrHint(wizard.currentProvider()); hint != "" {
+			lines = append(lines, zeroTheme.faint.Render(hint))
+		}
+	}
 	return lines
+}
+
+// providerWizardOAuthErrHint returns a provider-specific next step for a failed
+// OAuth login. Hugging Face ships no public client_id (unlike xAI), so a login
+// can only work once the operator registers an app and supplies its client_id.
+func providerWizardOAuthErrHint(provider providercatalog.Descriptor) string {
+	if strings.EqualFold(provider.ID, "huggingface") {
+		return "Hugging Face needs your own app: create one at " +
+			"https://huggingface.co/settings/applications/new, then set ZERO_OAUTH_HUGGINGFACE_CLIENT_ID."
+	}
+	return ""
 }
 
 func (wizard *providerWizardState) renderSelectableProvider(width int, index int, provider providercatalog.Descriptor) string {

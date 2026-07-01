@@ -44,10 +44,17 @@ type Manager struct {
 
 // ManagerOptions configures a Manager.
 type ManagerOptions struct {
-	Store         *Store
-	Registry      *Registry
-	HTTPClient    *http.Client
-	Env           map[string]string
+	Store      *Store
+	Registry   *Registry
+	HTTPClient *http.Client
+	Env        map[string]string
+	// AllowPresets opts this manager into the baked-in OAuth presets without the
+	// operator exporting ZERO_OAUTH_ALLOW_PRESETS — used by the interactive wizard
+	// and CLI login (and the runtime token refresh) for a provider the user chose
+	// to sign into, whose preset client identity is public (e.g. xAI). It layers the
+	// flag onto Env (or the process environment when Env is nil), preserving any
+	// ZERO_OAUTH_<NAME>_* overrides. Leave false for hermetic tests.
+	AllowPresets  bool
 	Now           func() time.Time
 	RefreshBuffer time.Duration
 	Out           io.Writer
@@ -83,9 +90,13 @@ func NewManager(opts ManagerOptions) (*Manager, error) {
 	if open == nil {
 		open = func(string) error { return nil }
 	}
+	env := opts.Env
+	if opts.AllowPresets {
+		env = envWithPresetsAllowed(env)
+	}
 	return &Manager{
 		store: opts.Store, registry: registry, client: client,
-		env: opts.Env, now: now, buffer: buffer, out: out, openBrowser: open,
+		env: env, now: now, buffer: buffer, out: out, openBrowser: open,
 	}, nil
 }
 

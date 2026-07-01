@@ -1,6 +1,33 @@
 package oauth
 
-import "strings"
+import (
+	"os"
+	"strings"
+)
+
+// envWithPresetsAllowed returns an env map that opts into the baked-in presets
+// (as if ZERO_OAUTH_ALLOW_PRESETS=1 were exported) so an interactive wizard/CLI
+// login for a well-known public client (e.g. xAI) can use the preset without the
+// operator setting the flag themselves. It copies base — or snapshots the process
+// environment when base is nil — because envValue treats a non-nil map as hermetic
+// (a missing key does NOT fall back to os.Getenv), so a partial map would silently
+// drop the operator's ZERO_OAUTH_<NAME>_* overrides. The flag is then forced on.
+func envWithPresetsAllowed(base map[string]string) map[string]string {
+	env := make(map[string]string, len(base)+1)
+	if base == nil {
+		for _, kv := range os.Environ() {
+			if eq := strings.IndexByte(kv, '='); eq > 0 {
+				env[kv[:eq]] = kv[eq+1:]
+			}
+		}
+	} else {
+		for k, v := range base {
+			env[k] = v
+		}
+	}
+	env["ZERO_OAUTH_ALLOW_PRESETS"] = "1"
+	return env
+}
 
 // providerPreset is a baked-in default OAuth configuration for a well-known
 // provider. Every field is overridable per provider via ZERO_OAUTH_<NAME>_*

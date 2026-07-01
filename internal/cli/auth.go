@@ -283,6 +283,9 @@ func newAuthManager(deps appDeps, out io.Writer) (*oauth.Manager, error) {
 		// carries no token material. A real browser launch is intentionally not
 		// performed (the sandbox/headless contexts make printing the safer default).
 		OpenBrowser: func(string) error { return nil },
+		// `zero auth login <preset>` (e.g. xai) should resolve the baked-in preset
+		// without the operator exporting ZERO_OAUTH_ALLOW_PRESETS first.
+		AllowPresets: true,
 	})
 }
 

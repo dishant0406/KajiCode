@@ -125,6 +125,36 @@ func TestProviderWizardDeviceCodeMsgShowsCodeAndPolls(t *testing.T) {
 	}
 }
 
+// A failed OAuth attempt leaves the wizard on the provider list; the error must be
+// rendered there (not just on the credential step) so a click isn't a silent
+// no-op, and Hugging Face gets an actionable client_id hint.
+func TestProviderStepSurfacesOAuthError(t *testing.T) {
+	m := mouseTestModel()
+	m.providerWizard = m.newProviderWizard()
+	wizard := m.providerWizard
+	wizard.oauthMode = true
+	wizard.providers = providerWizardOAuthDescriptors()
+	found := false
+	for i, p := range wizard.providers {
+		if strings.EqualFold(p.ID, "huggingface") {
+			wizard.selectedProvider = i
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("huggingface should be an OAuth-capable provider")
+	}
+	wizard.oauthErr = `oauth: provider "huggingface" is not configured; set ZERO_OAUTH_HUGGINGFACE_CLIENT_ID`
+
+	view := strings.Join(wizard.renderProviderStep(72), "\n")
+	if !strings.Contains(view, "OAuth login failed") {
+		t.Fatalf("provider step should surface the OAuth error:\n%s", view)
+	}
+	if !strings.Contains(view, "huggingface.co/settings/applications/new") {
+		t.Fatalf("Hugging Face hint should point at app registration:\n%s", view)
+	}
+}
+
 func TestProviderWizardDeviceErrorSurfaced(t *testing.T) {
 	m := mouseTestModel()
 	m.providerWizard = m.newProviderWizard()
