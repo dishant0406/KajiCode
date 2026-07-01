@@ -20,32 +20,33 @@ import (
 
 // Options configures the reusable Zero terminal UI shell.
 type Options struct {
-	Cwd                    string
-	UserConfigPath         string
-	DoctorUserConfigPath   string
-	ProjectConfigPath      string
-	ProviderName           string
-	ModelName              string
-	ProviderProfile        config.ProviderProfile
-	SavedProviders         []config.ProviderProfile // all configured providers, for the /model multi-provider list
-	FavoriteModels         []string
-	RecapsEnabled          bool
-	Provider               zeroruntime.Provider
-	NewProvider            func(config.ProviderProfile) (zeroruntime.Provider, error)
-	ProbeProviderHealth    func(context.Context, providerhealth.Options) providerhealth.Result
-	DiscoverProviderModels func(context.Context, config.ProviderProfile) ([]providermodeldiscovery.Model, error)
-	RuntimeMessageSink     func(tea.Msg)
-	Registry               *tools.Registry
-	SessionStore           *sessions.Store
-	SandboxStore           *sandbox.GrantStore
-	MCPConfig              config.MCPConfig
-	MCPPermissionStore     *mcp.PermissionStore
-	MCPTokenStore          *mcp.TokenStore
-	MCPCommand             func(context.Context, []string) MCPCommandResult
-	SandboxSetupCommand    func(context.Context) SandboxSetupCommandResult
-	UsageTracker           *usage.Tracker
-	SessionCompactor       SessionCompactor
-	PrService              *PrService
+	Cwd                         string
+	UserConfigPath              string
+	DoctorUserConfigPath        string
+	ProjectConfigPath           string
+	ProviderName                string
+	ModelName                   string
+	ProviderProfile             config.ProviderProfile
+	SavedProviders              []config.ProviderProfile // all configured providers, for the /model multi-provider list
+	FavoriteModels              []string
+	RecapsEnabled               bool
+	Provider                    zeroruntime.Provider
+	NewProvider                 func(config.ProviderProfile) (zeroruntime.Provider, error)
+	ProbeProviderHealth         func(context.Context, providerhealth.Options) providerhealth.Result
+	DiscoverProviderModels      func(context.Context, config.ProviderProfile) ([]providermodeldiscovery.Model, error)
+	DiscoverOllamaContextWindow func(ctx context.Context, baseURL string, model string) (int, error)
+	RuntimeMessageSink          func(tea.Msg)
+	Registry                    *tools.Registry
+	SessionStore                *sessions.Store
+	SandboxStore                *sandbox.GrantStore
+	MCPConfig                   config.MCPConfig
+	MCPPermissionStore          *mcp.PermissionStore
+	MCPTokenStore               *mcp.TokenStore
+	MCPCommand                  func(context.Context, []string) MCPCommandResult
+	SandboxSetupCommand         func(context.Context) SandboxSetupCommandResult
+	UsageTracker                *usage.Tracker
+	SessionCompactor            SessionCompactor
+	PrService                   *PrService
 
 	AgentOptions    agent.Options
 	PermissionMode  agent.PermissionMode

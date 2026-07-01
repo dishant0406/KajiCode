@@ -14,6 +14,7 @@ import (
 
 	"github.com/Gitlawb/zero/internal/config"
 	"github.com/Gitlawb/zero/internal/modelregistry"
+	"github.com/Gitlawb/zero/internal/providercatalog"
 	"github.com/Gitlawb/zero/internal/providermodeldiscovery"
 	"github.com/Gitlawb/zero/internal/zeroruntime"
 )
@@ -877,5 +878,101 @@ func TestModelContextWindowResolution(t *testing.T) {
 	// Empty name → 0 (no window).
 	if got := m.modelContextWindow(""); got != 0 {
 		t.Fatalf("empty model name should yield 0, got %d", got)
+	}
+	// A custom/local Ollama model tag has no curated-catalog entry and its
+	// generic /v1/models listing carries no window either — the only source is
+	// the Ollama-specific /api/show probe, landed via ollamaContextWindowByModel.
+	m.ollamaContextWindowByModel = map[string]int{"kimi-k2.7-code:cloud": 131072}
+	if got := m.modelContextWindow("kimi-k2.7-code:cloud"); got != 131072 {
+		t.Fatalf("ollama-discovered window should be used for an unregistered model, got %d", got)
+	}
+}
+
+// TestOllamaContextWindowDiscoveryCmdScopedToLocalOllama: the /api/show probe
+// only makes sense against a local Ollama daemon (catalog ID "ollama") — a
+// different provider like "ollama-cloud" is a distinct hosted service this
+// endpoint isn't assumed to exist on, and every other provider already has
+// its context window covered by the curated catalog or /v1/models discovery.
+func TestOllamaContextWindowDiscoveryCmdScopedToLocalOllama(t *testing.T) {
+	m := model{ctx: context.Background()}
+
+	ollama, ok := providercatalog.Get("ollama")
+	if !ok {
+		t.Fatal("expected \"ollama\" to be a registered catalog descriptor")
+	}
+	if cmd := m.ollamaContextWindowDiscoveryCmd(ollama, "http://localhost:11434/v1", "kimi-k2.7-code:cloud"); cmd == nil {
+		t.Fatal("expected a discovery command for the local ollama provider")
+	}
+
+	ollamaCloud, ok := providercatalog.Get("ollama-cloud")
+	if !ok {
+		t.Fatal("expected \"ollama-cloud\" to be a registered catalog descriptor")
+	}
+	if cmd := m.ollamaContextWindowDiscoveryCmd(ollamaCloud, "https://ollama.com/v1", "qwen3-coder:480b"); cmd != nil {
+		t.Fatal("ollama-cloud is a different hosted service; must not probe /api/show against it")
+	}
+
+	if cmd := m.ollamaContextWindowDiscoveryCmd(ollama, "", "kimi-k2.7-code:cloud"); cmd != nil {
+		t.Fatal("an empty base URL should yield no command")
+	}
+	if cmd := m.ollamaContextWindowDiscoveryCmd(ollama, "http://localhost:11434/v1", ""); cmd != nil {
+		t.Fatal("an empty model name should yield no command")
+	}
+}
+
+// TestOllamaContextWindowDiscoveredMsgPopulatesMap verifies the Update()
+// handler for the async probe's result actually reaches modelContextWindow's
+// fallback source, and that a failed/zero probe leaves the map untouched
+// rather than caching a bogus zero.
+func TestOllamaContextWindowDiscoveredMsgPopulatesMap(t *testing.T) {
+	m := newModel(context.Background(), Options{})
+
+	updated, cmd := m.Update(ollamaContextWindowDiscoveredMsg{modelName: "kimi-k2.7-code:cloud", contextWindow: 131072})
+	next := updated.(model)
+	if cmd != nil {
+		t.Fatal("applying a discovered window should not schedule further work")
+	}
+	if got := next.modelContextWindow("kimi-k2.7-code:cloud"); got != 131072 {
+		t.Fatalf("modelContextWindow after discovery = %d, want 131072", got)
+	}
+
+	updated, _ = next.Update(ollamaContextWindowDiscoveredMsg{modelName: "other-model", contextWindow: 0, err: errors.New("boom")})
+	next = updated.(model)
+	if got := next.modelContextWindow("other-model"); got != 0 {
+		t.Fatalf("a failed probe must not populate a window, got %d", got)
+	}
+}
+
+// TestSwitchProviderModelWarmsDiscoveryForTheNewProvider: switching providers
+// mid-session (e.g. via the /model picker) previously fired no discovery at
+// all for the newly active provider — Init() only warms the provider active
+// at launch — so the context gauge stayed blank for the rest of the session
+// unless /model happened to be reopened separately. Switching to Ollama
+// specifically must also warm the /api/show probe, the only source of a
+// context window for custom/local Ollama models.
+func TestSwitchProviderModelWarmsDiscoveryForTheNewProvider(t *testing.T) {
+	m := newModel(context.Background(), Options{
+		ProviderName:    "openai",
+		ModelName:       "gpt-5.1",
+		Provider:        &fakeProvider{},
+		ProviderProfile: config.ProviderProfile{Name: "openai", CatalogID: "openai", Model: "gpt-5.1"},
+		SavedProviders: []config.ProviderProfile{
+			{Name: "openai", CatalogID: "openai", Model: "gpt-5.1"},
+			{Name: "ollama", CatalogID: "ollama", ProviderKind: config.ProviderKindOpenAICompatible, BaseURL: "http://localhost:11434/v1", Model: "kimi-k2.7-code:cloud"},
+		},
+		NewProvider: func(config.ProviderProfile) (zeroruntime.Provider, error) {
+			return &fakeProvider{}, nil
+		},
+	})
+
+	next, text, cmd := m.switchProviderModel("ollama", "kimi-k2.7-code:cloud")
+	if !strings.Contains(text, "Switched to ollama") {
+		t.Fatalf("switch notice = %q, want it to confirm the switch", text)
+	}
+	if next.modelName != "kimi-k2.7-code:cloud" || next.providerName != "ollama" {
+		t.Fatalf("model/provider not switched: modelName=%q providerName=%q", next.modelName, next.providerName)
+	}
+	if cmd == nil {
+		t.Fatal("switching to ollama should warm both the generic and ollama-specific discovery commands")
 	}
 }

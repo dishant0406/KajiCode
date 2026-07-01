@@ -565,6 +565,46 @@ type modelPickerModelsDiscoveredMsg struct {
 	err        error
 }
 
+// ollamaContextWindowDiscoveredMsg carries the result of an async /api/show
+// probe against a local Ollama daemon (see ollamaContextWindowDiscoveryCmd).
+// A zero contextWindow (or a non-nil err) means the probe found nothing
+// usable and the map is left untouched, not zeroed out.
+type ollamaContextWindowDiscoveredMsg struct {
+	modelName     string
+	contextWindow int
+	err           error
+}
+
+// ollamaContextWindowDiscoveryCmd probes a local Ollama daemon's native
+// /api/show endpoint for modelName's context length. Scoped to the local
+// Ollama provider only (catalog ID "ollama", not "ollama-cloud" — a
+// different hosted service this endpoint isn't assumed to exist on): the
+// generic /v1/models discovery has no source for this metadata for
+// custom/local model tags, so without this the context gauge just never
+// shows for them (see modelContextWindow).
+func (m model) ollamaContextWindowDiscoveryCmd(descriptor providercatalog.Descriptor, baseURL string, modelName string) tea.Cmd {
+	if descriptor.ID != "ollama" {
+		return nil
+	}
+	modelName = strings.TrimSpace(modelName)
+	baseURL = strings.TrimSpace(baseURL)
+	if modelName == "" || baseURL == "" {
+		return nil
+	}
+	discover := m.discoverOllamaContextWindow
+	if discover == nil {
+		discover = func(ctx context.Context, baseURL string, model string) (int, error) {
+			return providermodeldiscovery.DiscoverOllamaContextWindow(ctx, baseURL, model, providermodeldiscovery.Options{})
+		}
+	}
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(m.ctx, 8*time.Second)
+		defer cancel()
+		window, err := discover(ctx, baseURL, modelName)
+		return ollamaContextWindowDiscoveredMsg{modelName: modelName, contextWindow: window, err: err}
+	}
+}
+
 func (m model) normalizeProfileForProvider(provider providercatalog.Descriptor) config.ProviderProfile {
 	profile := m.providerProfile
 	normalizeIdentity := profileMatchesProviderBaseURL(profile, provider) ||

@@ -2,6 +2,7 @@ package providermodeldiscovery
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -266,4 +267,62 @@ func modelIDs(models []Model) []string {
 		ids = append(ids, model.ID)
 	}
 	return ids
+}
+
+// TestDiscoverOllamaContextWindowFetchesFromNativeShowEndpoint: the generic
+// /v1/models probe never carries context-window metadata (parseModelsResponse
+// only extracts id/description), so a custom/local Ollama model tag with no
+// curated-catalog match has no other source for it. This exercises the
+// Ollama-native /api/show fallback that fills that gap.
+func TestDiscoverOllamaContextWindowFetchesFromNativeShowEndpoint(t *testing.T) {
+	var gotPath, gotMethod, gotBody string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotMethod = r.Method
+		body, _ := io.ReadAll(r.Body)
+		gotBody = string(body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"model_info": {
+				"general.architecture": "qwen2",
+				"qwen2.context_length": 131072
+			}
+		}`))
+	}))
+	defer server.Close()
+
+	window, err := DiscoverOllamaContextWindow(context.Background(), server.URL+"/v1", "kimi-k2.7-code:cloud", Options{HTTPClient: server.Client()})
+	if err != nil {
+		t.Fatalf("DiscoverOllamaContextWindow returned error: %v", err)
+	}
+	if window != 131072 {
+		t.Fatalf("context window = %d, want 131072", window)
+	}
+	if gotPath != "/api/show" {
+		t.Fatalf("requested path = %q, want /api/show (not under /v1)", gotPath)
+	}
+	if gotMethod != http.MethodPost {
+		t.Fatalf("method = %q, want POST", gotMethod)
+	}
+	if !strings.Contains(gotBody, `"kimi-k2.7-code:cloud"`) {
+		t.Fatalf("request body = %q, want it to name the model", gotBody)
+	}
+}
+
+func TestDiscoverOllamaContextWindowRequiresModelName(t *testing.T) {
+	if _, err := DiscoverOllamaContextWindow(context.Background(), "http://localhost:11434/v1", "", Options{}); err == nil {
+		t.Fatal("expected an error for an empty model name")
+	}
+}
+
+func TestDiscoverOllamaContextWindowErrorsWhenShowOmitsContextLength(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"model_info": {"general.architecture": "qwen2"}}`))
+	}))
+	defer server.Close()
+
+	if _, err := DiscoverOllamaContextWindow(context.Background(), server.URL+"/v1", "some-model", Options{HTTPClient: server.Client()}); err == nil {
+		t.Fatal("expected an error when no *.context_length key is present")
+	}
 }

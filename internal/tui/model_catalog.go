@@ -84,6 +84,13 @@ func (m model) modelContextWindow(modelName string) int {
 			return window
 		}
 	}
+	// A custom/local Ollama model tag has no curated-catalog entry, and its
+	// OpenAI-compatible /v1/models listing (the discoveredContextWindow source
+	// above) doesn't carry context-window metadata at all — see
+	// ollamaContextWindowDiscoveryCmd, the only other source for this.
+	if window := m.ollamaContextWindowByModel[trimmed]; window > 0 {
+		return window
+	}
 	// Unknown: report 0 so display gauges show no denominator. Compaction enablement
 	// applies its own positive fallback via modelregistry.AgentContextWindow.
 	return 0

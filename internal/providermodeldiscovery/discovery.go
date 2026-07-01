@@ -85,6 +85,104 @@ func Discover(ctx context.Context, profile config.ProviderProfile, options Optio
 	}
 }
 
+// DiscoverOllamaContextWindow asks a local Ollama daemon for a model's context
+// length via its native /api/show endpoint. The generic /v1/models probe
+// (parseModelsResponse) only ever returns id/description — OpenAI-compatible
+// listings don't carry context-window metadata, and a custom/local model tag
+// (e.g. a user's own Ollama pull, including a ":cloud"-tagged model proxied
+// through the local daemon) has no curated-catalog entry to borrow one from
+// either, so modelContextWindow has nothing to show for it without this. Only
+// meaningful for the local Ollama provider (baseURL like
+// http://localhost:11434/v1) — Ollama Cloud's hosted API is a different
+// service and isn't assumed to expose the same endpoint.
+func DiscoverOllamaContextWindow(ctx context.Context, baseURL string, model string, options Options) (int, error) {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return 0, fmt.Errorf("model name is required")
+	}
+	endpoint, err := ollamaShowEndpoint(baseURL)
+	if err != nil {
+		return 0, err
+	}
+	payload, err := json.Marshal(struct {
+		Model string `json:"model"`
+	}{Model: model})
+	if err != nil {
+		return 0, err
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(string(payload)))
+	if err != nil {
+		return 0, err
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Accept", "application/json")
+
+	client := options.HTTPClient
+	if client == nil {
+		client = &http.Client{Timeout: 10 * time.Second}
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		return 0, err
+	}
+	defer response.Body.Close()
+
+	body, err := io.ReadAll(io.LimitReader(response.Body, 1<<20))
+	if err != nil {
+		return 0, err
+	}
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return 0, fmt.Errorf("ollama show endpoint returned %s: %s", response.Status, strings.TrimSpace(string(body)))
+	}
+	return parseOllamaShowContextWindow(body)
+}
+
+// ollamaShowEndpoint derives the native Ollama API root from the
+// OpenAI-compatible base URL Zero stores for the provider (".../v1") and
+// appends /api/show.
+func ollamaShowEndpoint(baseURL string) (string, error) {
+	baseURL = strings.TrimSpace(baseURL)
+	if baseURL == "" {
+		return "", fmt.Errorf("provider base URL is required for ollama model discovery")
+	}
+	parsed, err := url.Parse(baseURL)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return "", fmt.Errorf("invalid provider base URL %q", baseURL)
+	}
+	path := strings.TrimRight(parsed.Path, "/")
+	path = strings.TrimSuffix(path, "/v1")
+	parsed.Path = strings.TrimRight(path, "/") + "/api/show"
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return parsed.String(), nil
+}
+
+// parseOllamaShowContextWindow extracts the context length from an
+// /api/show response. Ollama reports it under model_info with an
+// architecture-prefixed key (e.g. "llama.context_length",
+// "qwen2.context_length") — the prefix varies by model family, so this scans
+// for any key ending in ".context_length" rather than hardcoding one.
+func parseOllamaShowContextWindow(body []byte) (int, error) {
+	// model_info mixes value types (strings like "general.architecture", numbers
+	// like "*.context_length"), so decode values generically and only try to
+	// read a number out of the one key we actually care about.
+	var payload struct {
+		ModelInfo map[string]any `json:"model_info"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return 0, fmt.Errorf("decode ollama show response: %w", err)
+	}
+	for key, value := range payload.ModelInfo {
+		if !strings.HasSuffix(key, ".context_length") {
+			continue
+		}
+		if window, ok := value.(float64); ok && window > 0 {
+			return int(window), nil
+		}
+	}
+	return 0, fmt.Errorf("ollama show response did not report a context length")
+}
+
 func discoverOpenAIModels(ctx context.Context, profile config.ProviderProfile, options Options) ([]Model, error) {
 	endpoint, err := modelsEndpoint(profile.BaseURL)
 	if err != nil {

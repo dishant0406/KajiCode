@@ -490,16 +490,16 @@ func (m model) handleModelCommand(args string) (model, string) {
 // picker calls this when a model from a non-active provider is chosen, so the
 // picker can list every saved provider and switch across them (like a unified
 // provider+model selector). The key is loaded from the encrypted store / env.
-func (m model) switchProviderModel(providerName, modelID string) (model, string) {
+func (m model) switchProviderModel(providerName, modelID string) (model, string, tea.Cmd) {
 	if m.pending {
-		return m, "Model\nCannot switch providers while a run is active."
+		return m, "Model\nCannot switch providers while a run is active.", nil
 	}
 	if m.newProvider == nil {
-		return m, "Model\nProvider rebuild is not available for this TUI session."
+		return m, "Model\nProvider rebuild is not available for this TUI session.", nil
 	}
 	target, ok := m.savedProviderByName(providerName)
 	if !ok {
-		return m, "Model\nunknown provider " + strconv.Quote(providerName)
+		return m, "Model\nunknown provider " + strconv.Quote(providerName), nil
 	}
 	target = m.profileWithCredential(target)
 	target.Model = strings.TrimSpace(modelID)
@@ -508,11 +508,11 @@ func (m model) switchProviderModel(providerName, modelID string) (model, string)
 	// was deleted/unreadable the marker can still be set, and building a keyless
 	// provider would only fail later with a 401. Local/no-auth providers need no key.
 	if strings.TrimSpace(target.APIKey) == "" && strings.TrimSpace(target.AuthHeaderValue) == "" && !(hasDescriptor && descriptor.Local) {
-		return m, "Model\nprovider " + strconv.Quote(providerName) + " has no usable credential — run setup or `zero auth login " + providerName + "`."
+		return m, "Model\nprovider " + strconv.Quote(providerName) + " has no usable credential — run setup or `zero auth login " + providerName + "`.", nil
 	}
 	next, err := m.newProvider(target)
 	if err != nil {
-		return m, "Model\n" + redaction.RedactString(err.Error(), redaction.Options{ExtraSecretValues: []string{target.APIKey}})
+		return m, "Model\n" + redaction.RedactString(err.Error(), redaction.Options{ExtraSecretValues: []string{target.APIKey}}), nil
 	}
 	m.provider = next
 	m.providerProfile = target
@@ -524,7 +524,19 @@ func (m model) switchProviderModel(providerName, modelID string) (model, string)
 		_, _ = config.SetActiveProvider(m.userConfigPath, target.Name)
 		_, _ = config.SetProviderModel(m.userConfigPath, target.Name, target.Model)
 	}
-	return m, fmt.Sprintf("Model\nSwitched to %s · %s", target.Name, target.Model)
+	// Warm discovery for the provider we just switched to, same as Init() does
+	// for the provider active at launch — otherwise the context-usage gauge has
+	// no window for this provider until /model happens to be opened separately.
+	var cmds []tea.Cmd
+	if hasDescriptor {
+		if cmd := m.modelPickerProviderDiscoveryCmd(descriptor, target); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+		if cmd := m.ollamaContextWindowDiscoveryCmd(descriptor, target.BaseURL, target.Model); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	}
+	return m, fmt.Sprintf("Model\nSwitched to %s · %s", target.Name, target.Model), tea.Batch(cmds...)
 }
 
 // profileWithCredential fills a profile's APIKey for provider construction the same

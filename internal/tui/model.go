@@ -57,40 +57,41 @@ const dragEdgeScrollInterval = 70 * time.Millisecond
 const dragEdgeScrollStep = 1
 
 type model struct {
-	ctx                    context.Context
-	cwd                    string
-	userCommands           []usercommands.Command // file-sourced /commands (.zero/commands)
-	userConfigPath         string
-	doctorUserConfigPath   string
-	projectConfigPath      string
-	gitBranch              string
-	providerName           string
-	modelName              string
-	providerProfile        config.ProviderProfile
-	savedProviders         []config.ProviderProfile
-	provider               zeroruntime.Provider
-	newProvider            func(config.ProviderProfile) (zeroruntime.Provider, error)
-	probeProviderHealth    func(context.Context, providerhealth.Options) providerhealth.Result
-	discoverProviderModels func(context.Context, config.ProviderProfile) ([]providermodeldiscovery.Model, error)
-	registry               *tools.Registry
-	sessionStore           *sessions.Store
-	sandboxStore           *sandbox.GrantStore
-	mcpConfig              config.MCPConfig
-	mcpPermissionStore     *internalmcp.PermissionStore
-	mcpTokenStore          *internalmcp.TokenStore
-	mcpCommand             func(context.Context, []string) MCPCommandResult
-	sandboxSetupCommand    func(context.Context) SandboxSetupCommandResult
-	mcpViewStateCache      MCPViewState
-	mcpViewStateReady      bool
-	mcpCommandSeq          int
-	mcpCommandCancel       context.CancelFunc
-	sandboxSetupSeq        int
-	sandboxSetupInFlight   bool
-	doctorCommandSeq       int
-	doctorInFlight         bool
-	doctorFrame            int
-	activeSession          sessions.Metadata
-	sessionEvents          []sessions.Event
+	ctx                         context.Context
+	cwd                         string
+	userCommands                []usercommands.Command // file-sourced /commands (.zero/commands)
+	userConfigPath              string
+	doctorUserConfigPath        string
+	projectConfigPath           string
+	gitBranch                   string
+	providerName                string
+	modelName                   string
+	providerProfile             config.ProviderProfile
+	savedProviders              []config.ProviderProfile
+	provider                    zeroruntime.Provider
+	newProvider                 func(config.ProviderProfile) (zeroruntime.Provider, error)
+	probeProviderHealth         func(context.Context, providerhealth.Options) providerhealth.Result
+	discoverProviderModels      func(context.Context, config.ProviderProfile) ([]providermodeldiscovery.Model, error)
+	discoverOllamaContextWindow func(ctx context.Context, baseURL string, model string) (int, error)
+	registry                    *tools.Registry
+	sessionStore                *sessions.Store
+	sandboxStore                *sandbox.GrantStore
+	mcpConfig                   config.MCPConfig
+	mcpPermissionStore          *internalmcp.PermissionStore
+	mcpTokenStore               *internalmcp.TokenStore
+	mcpCommand                  func(context.Context, []string) MCPCommandResult
+	sandboxSetupCommand         func(context.Context) SandboxSetupCommandResult
+	mcpViewStateCache           MCPViewState
+	mcpViewStateReady           bool
+	mcpCommandSeq               int
+	mcpCommandCancel            context.CancelFunc
+	sandboxSetupSeq             int
+	sandboxSetupInFlight        bool
+	doctorCommandSeq            int
+	doctorInFlight              bool
+	doctorFrame                 int
+	activeSession               sessions.Metadata
+	sessionEvents               []sessions.Event
 	// titledSessions records session ids for which a model-generated title has
 	// already been attempted this process, so a finished turn re-fires the title
 	// generator at most once per session (even before its async result lands).
@@ -347,6 +348,12 @@ type model struct {
 	// catalog descriptor ID), so /model shows each provider's real current models —
 	// the same list the provider-setup wizard discovers — not the static catalog.
 	modelPickerLiveByProvider map[string][]providermodeldiscovery.Model
+	// ollamaContextWindowByModel holds context-window sizes fetched from a local
+	// Ollama daemon's native /api/show endpoint (keyed by model name), for
+	// custom/local models that have no curated-catalog entry and whose
+	// OpenAI-compatible /v1/models listing doesn't carry that metadata at all —
+	// see modelContextWindow.
+	ollamaContextWindowByModel map[string]int
 
 	// pendingImages holds image attachments staged by /image for the next user
 	// turn; pendingImageLabels are their display names (base(path)) for the chip
@@ -668,56 +675,57 @@ func newModel(ctx context.Context, options Options) model {
 	notifier.SetFocused(true)
 
 	m := model{
-		ctx:                    ctx,
-		cwd:                    cwd,
-		swarmDoneAt:            map[string]time.Time{},
-		userCommands:           loadedUserCommands,
-		composerCursorVisible:  true,
-		userConfigPath:         options.UserConfigPath,
-		doctorUserConfigPath:   doctorUserConfigPath,
-		projectConfigPath:      options.ProjectConfigPath,
-		savedProviders:         options.SavedProviders,
-		gitBranch:              gitBranch(cwd),
-		providerName:           options.ProviderName,
-		modelName:              options.ModelName,
-		providerProfile:        options.ProviderProfile,
-		favoriteModels:         favoriteModelSet(options.FavoriteModels),
-		recapsEnabled:          options.RecapsEnabled,
-		provider:               options.Provider,
-		newProvider:            options.NewProvider,
-		probeProviderHealth:    options.ProbeProviderHealth,
-		discoverProviderModels: options.DiscoverProviderModels,
-		registry:               registry,
-		sessionStore:           sessionStore,
-		sandboxStore:           sandboxStore,
-		mcpConfig:              options.MCPConfig,
-		mcpPermissionStore:     options.MCPPermissionStore,
-		mcpTokenStore:          options.MCPTokenStore,
-		mcpCommand:             options.MCPCommand,
-		sandboxSetupCommand:    options.SandboxSetupCommand,
-		agentOptions:           options.AgentOptions,
-		sessionCompactor:       options.SessionCompactor,
-		runtimeMessageSink:     options.RuntimeMessageSink,
-		permissionMode:         permissionMode,
-		reasoningEffort:        options.ReasoningEffort,
-		responseStyle:          defaultedResponseStyle(options.ResponseStyle),
-		themeMode:              resolveThemeMode(options.Theme, os.Getenv("ZERO_THEME"), options.SavedTheme),
-		hasDarkBg:              true,
-		userAgent:              options.UserAgent,
-		usageTracker:           usageTracker,
-		transcript:             initialTranscript(),
-		transcriptBodyHeights:  newTranscriptBodyHeightCache(defaultTranscriptBodyHeightCacheMaxEntries),
-		prService:              prService,
-		prState:                prService.GetState(),
-		input:                  input,
-		spinner:                runSpinner,
-		now:                    time.Now,
-		notifier:               notifier,
-		altScreen:              options.AltScreen,
-		liveUsageCounts:        map[int]int{},
-		swarmSessionMap:        map[string]string{},
-		setup:                  newSetupState(options.Setup),
-		setupSave:              options.Setup.Save,
+		ctx:                         ctx,
+		cwd:                         cwd,
+		swarmDoneAt:                 map[string]time.Time{},
+		userCommands:                loadedUserCommands,
+		composerCursorVisible:       true,
+		userConfigPath:              options.UserConfigPath,
+		doctorUserConfigPath:        doctorUserConfigPath,
+		projectConfigPath:           options.ProjectConfigPath,
+		savedProviders:              options.SavedProviders,
+		gitBranch:                   gitBranch(cwd),
+		providerName:                options.ProviderName,
+		modelName:                   options.ModelName,
+		providerProfile:             options.ProviderProfile,
+		favoriteModels:              favoriteModelSet(options.FavoriteModels),
+		recapsEnabled:               options.RecapsEnabled,
+		provider:                    options.Provider,
+		newProvider:                 options.NewProvider,
+		probeProviderHealth:         options.ProbeProviderHealth,
+		discoverProviderModels:      options.DiscoverProviderModels,
+		discoverOllamaContextWindow: options.DiscoverOllamaContextWindow,
+		registry:                    registry,
+		sessionStore:                sessionStore,
+		sandboxStore:                sandboxStore,
+		mcpConfig:                   options.MCPConfig,
+		mcpPermissionStore:          options.MCPPermissionStore,
+		mcpTokenStore:               options.MCPTokenStore,
+		mcpCommand:                  options.MCPCommand,
+		sandboxSetupCommand:         options.SandboxSetupCommand,
+		agentOptions:                options.AgentOptions,
+		sessionCompactor:            options.SessionCompactor,
+		runtimeMessageSink:          options.RuntimeMessageSink,
+		permissionMode:              permissionMode,
+		reasoningEffort:             options.ReasoningEffort,
+		responseStyle:               defaultedResponseStyle(options.ResponseStyle),
+		themeMode:                   resolveThemeMode(options.Theme, os.Getenv("ZERO_THEME"), options.SavedTheme),
+		hasDarkBg:                   true,
+		userAgent:                   options.UserAgent,
+		usageTracker:                usageTracker,
+		transcript:                  initialTranscript(),
+		transcriptBodyHeights:       newTranscriptBodyHeightCache(defaultTranscriptBodyHeightCacheMaxEntries),
+		prService:                   prService,
+		prState:                     prService.GetState(),
+		input:                       input,
+		spinner:                     runSpinner,
+		now:                         time.Now,
+		notifier:                    notifier,
+		altScreen:                   options.AltScreen,
+		liveUsageCounts:             map[int]int{},
+		swarmSessionMap:             map[string]string{},
+		setup:                       newSetupState(options.Setup),
+		setupSave:                   options.Setup.Save,
 	}
 	// Apply an explicit theme immediately; auto stays on the dark default until
 	// Init's terminal background probe resolves it (see Init / BackgroundColorMsg).
@@ -794,6 +802,13 @@ func (m model) Init() tea.Cmd {
 	// just shows the used-token count until the window is otherwise learned.
 	if descriptor, ok := m.activeProviderDescriptor(); ok {
 		if cmd := m.modelPickerProviderDiscoveryCmd(descriptor, m.providerProfile); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+		// The generic discovery above has no source for a local Ollama model's
+		// context window (see ollamaContextWindowDiscoveryCmd); probe its
+		// native /api/show separately so the gauge works for custom/local
+		// Ollama models too, not just ones in the curated catalog.
+		if cmd := m.ollamaContextWindowDiscoveryCmd(descriptor, m.providerProfile.BaseURL, m.modelName); cmd != nil {
 			cmds = append(cmds, cmd)
 		}
 	}
@@ -1988,6 +2003,14 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.applySetupOAuthDeviceCode(msg)
 	case modelPickerModelsDiscoveredMsg:
 		return m.applyModelPickerModelsDiscovered(msg), nil
+	case ollamaContextWindowDiscoveredMsg:
+		if msg.err == nil && msg.contextWindow > 0 {
+			if m.ollamaContextWindowByModel == nil {
+				m.ollamaContextWindowByModel = map[string]int{}
+			}
+			m.ollamaContextWindowByModel[msg.modelName] = msg.contextWindow
+		}
+		return m, nil
 	case mcpCommandResultMsg:
 		return m.applyMCPCommandResultMessage(msg), nil
 	}
@@ -3360,12 +3383,13 @@ func (m model) choosePicker() (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	var cmd tea.Cmd
 	switch picker.kind {
 	case pickerModel:
 		text := ""
 		if owner := strings.TrimSpace(item.OwnerProvider); owner != "" && !strings.EqualFold(owner, strings.TrimSpace(m.providerName)) {
 			// A model from another saved provider: switch provider + model together.
-			m, text = m.switchProviderModel(owner, item.Value)
+			m, text, cmd = m.switchProviderModel(owner, item.Value)
 		} else {
 			m, text = m.handleModelCommand(item.Value)
 		}
@@ -3395,7 +3419,7 @@ func (m model) choosePicker() (tea.Model, tea.Cmd) {
 			return m, tea.RequestBackgroundColor
 		}
 	}
-	return m, nil
+	return m, cmd
 }
 
 func (m model) chooseSuggestion() (tea.Model, tea.Cmd) {
