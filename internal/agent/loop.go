@@ -25,7 +25,12 @@ const maxTurnsFinalAnswerPrompt = "You have reached the tool-turn limit. Do not 
 // WITH NO OUTPUT yet is re-issued on a fresh connection before giving up. Only
 // the no-output case is retried (a partial turn would duplicate), so this is a
 // safe recovery for a stalled/dead pooled connection.
-const maxStreamStallRetries = 2
+// maxStreamStallRetries: 3 in-turn re-issues (4 attempts total) approaches
+// Codex's stream_max_retries=5 posture while staying hard-capped (opencode's
+// unbounded session retry has produced infinite loops on this same failure).
+// Affordable now that a mid-stream death is detected at the gap timeout
+// (~2m) instead of the full 5m idle window.
+const maxStreamStallRetries = 3
 
 // maxEmptyStreamRetries caps in-turn re-issues of a request whose stream
 // completed cleanly but carried nothing at all (providerEmptyStream). Observed

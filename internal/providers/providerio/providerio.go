@@ -82,6 +82,53 @@ func ContentStallTimeout(idleTimeout time.Duration) time.Duration {
 	return idleTimeout + extra
 }
 
+// DefaultStreamGapTimeout bounds the byte-silent gap AFTER a stream has
+// started delivering payloads. Once ANY payload (data or keep-alive) has
+// arrived, the backend has proven it heartbeats/streams — so a subsequent gap
+// with zero bytes is almost always a dead connection (live capture of the
+// reported "stuck for 33 minutes": ~119KB streamed, then the socket went
+// byte-frozen forever). Detecting that at 2 minutes instead of the 5-minute
+// idle default turns a ~15-minute blind wait (3 × 5m attempts) into a ~6-minute
+// bounded recovery, without touching the pre-first-byte window that slow cloud
+// proxies legitimately need (they may withhold output until the upstream model
+// produces its first token). Override with ZERO_STREAM_GAP_TIMEOUT. For
+// comparison: Codex ships the same 5m idle with 5 stream retries; opencode
+// suffers this exact freeze (idle HTTPS socket in "working" state) with no
+// mid-stream gap detection at all.
+const DefaultStreamGapTimeout = 2 * time.Minute
+
+// streamGapTimeoutEnv overrides the post-first-payload gap timeout. Accepts the
+// same forms as ZERO_STREAM_IDLE_TIMEOUT; "0"/"off" disables the tightened gap
+// (the plain idle timeout then applies for the whole stream).
+const streamGapTimeoutEnv = "ZERO_STREAM_GAP_TIMEOUT"
+
+// ResolveStreamGapTimeout selects the effective post-first-payload gap timeout
+// for a stream whose idle timeout resolved to idleTimeout. It is clamped to
+// never EXCEED the idle timeout (a gap larger than idle would be dead config),
+// and disabled entirely when the idle watchdog is disabled.
+func ResolveStreamGapTimeout(idleTimeout time.Duration) time.Duration {
+	if idleTimeout <= 0 {
+		return 0
+	}
+	gap := DefaultStreamGapTimeout
+	if raw := strings.TrimSpace(os.Getenv(streamGapTimeoutEnv)); raw != "" {
+		switch strings.ToLower(raw) {
+		case "0", "off", "none", "disabled":
+			return idleTimeout // no tightened gap: idle applies throughout
+		default:
+			if d, err := time.ParseDuration(raw); err == nil && d > 0 {
+				gap = d
+			} else if secs, err := strconv.Atoi(raw); err == nil && secs > 0 {
+				gap = time.Duration(secs) * time.Second
+			}
+		}
+	}
+	if gap > idleTimeout {
+		return idleTimeout
+	}
+	return gap
+}
+
 // streamIdleTimeoutEnv is the global override for the stream idle timeout. It
 // accepts a Go duration ("5m", "300s", "90s") or a bare number of seconds
 // ("300"). A value of "0", "off", "none", or "disabled" turns the watchdog off
@@ -317,7 +364,14 @@ func ScanSSEDataWithContext(
 		idle := time.NewTimer(idleTimeout)
 		defer idle.Stop()
 		idleC = idle.C
-		resetIdle = reset(idle, idleTimeout)
+		// The timer was armed above with the FULL idle window, which governs
+		// until the first payload (slow cloud proxies may withhold output until
+		// the upstream model produces its first token). resetIdle only runs when
+		// a payload HAS arrived — the backend has proven it streams/heartbeats —
+		// so every re-arm uses the tighter gap window: a byte-frozen socket
+		// mid-stream is a dead connection, and waiting the full idle for it just
+		// multiplies the user's blind wait per retry.
+		resetIdle = reset(idle, ResolveStreamGapTimeout(idleTimeout))
 
 		// Content watchdog: only real data lines reset it (keep-alives do not), so a
 		// stream that heartbeats without producing output is bounded instead of

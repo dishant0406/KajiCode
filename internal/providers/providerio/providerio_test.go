@@ -371,3 +371,86 @@ func TestHTTPClientReturnsStallHardenedSharedClient(t *testing.T) {
 		t.Fatal("an explicit client must be returned unchanged")
 	}
 }
+
+// Once a stream has delivered its first payload, a byte-silent gap is bounded
+// by the TIGHTER gap timeout, not the full idle window — a mid-stream frozen
+// socket (live-captured "stuck" shape: bytes flowed, then nothing forever)
+// must be detected fast so retries aren't multiplied by five-minute waits.
+func TestScanSSETightensGapAfterFirstPayload(t *testing.T) {
+	t.Setenv("ZERO_STREAM_GAP_TIMEOUT", "80ms")
+	pr, pw := io.Pipe()
+	defer func() { _ = pw.Close() }()
+
+	go func() {
+		_, _ = io.WriteString(pw, "data: first\n\n")
+		// then: byte-frozen forever
+	}()
+
+	start := time.Now()
+	done := make(chan error, 1)
+	go func() {
+		done <- ScanSSEDataWithContext(context.Background(), func() {}, pr, 2*time.Second, func(string) bool { return true })
+	}()
+	select {
+	case err := <-done:
+		if !errors.Is(err, ErrStreamIdle) {
+			t.Fatalf("err = %v, want ErrStreamIdle", err)
+		}
+		if elapsed := time.Since(start); elapsed > time.Second {
+			t.Fatalf("gap abort took %s — the tightened window (80ms) did not apply after the first payload", elapsed)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("stream not aborted")
+	}
+}
+
+// BEFORE the first payload the FULL idle window applies: slow cloud proxies may
+// withhold output until the upstream model emits its first token, so the gap
+// timeout must NOT govern the wait for the first byte.
+func TestScanSSEKeepsFullIdleBeforeFirstPayload(t *testing.T) {
+	t.Setenv("ZERO_STREAM_GAP_TIMEOUT", "30ms")
+	pr, pw := io.Pipe()
+	defer func() { _ = pw.Close() }()
+	// never write anything
+
+	start := time.Now()
+	done := make(chan error, 1)
+	go func() {
+		done <- ScanSSEDataWithContext(context.Background(), func() {}, pr, 300*time.Millisecond, func(string) bool { return true })
+	}()
+	select {
+	case err := <-done:
+		if !errors.Is(err, ErrStreamIdle) {
+			t.Fatalf("err = %v, want ErrStreamIdle", err)
+		}
+		if elapsed := time.Since(start); elapsed < 250*time.Millisecond {
+			t.Fatalf("aborted after %s — the 30ms gap timeout must not apply before the first payload", elapsed)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("stream not aborted")
+	}
+}
+
+func TestResolveStreamGapTimeout(t *testing.T) {
+	t.Setenv("ZERO_STREAM_GAP_TIMEOUT", "")
+	if got := ResolveStreamGapTimeout(5 * time.Minute); got != DefaultStreamGapTimeout {
+		t.Fatalf("default gap = %s, want %s", got, DefaultStreamGapTimeout)
+	}
+	// Clamped: the gap never exceeds the idle window.
+	if got := ResolveStreamGapTimeout(time.Minute); got != time.Minute {
+		t.Fatalf("gap = %s, want clamp to the 1m idle", got)
+	}
+	// Disabled idle disables the gap too.
+	if got := ResolveStreamGapTimeout(0); got != 0 {
+		t.Fatalf("gap with idle off = %s, want 0", got)
+	}
+	// Env override wins; "off" falls back to the idle window for the whole stream.
+	t.Setenv("ZERO_STREAM_GAP_TIMEOUT", "45s")
+	if got := ResolveStreamGapTimeout(5 * time.Minute); got != 45*time.Second {
+		t.Fatalf("env gap = %s, want 45s", got)
+	}
+	t.Setenv("ZERO_STREAM_GAP_TIMEOUT", "off")
+	if got := ResolveStreamGapTimeout(5 * time.Minute); got != 5*time.Minute {
+		t.Fatalf("off gap = %s, want the idle window", got)
+	}
+}
