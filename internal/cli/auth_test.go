@@ -182,3 +182,18 @@ func TestRunAuthLoginChatGPTRoutesToDedicatedFlow(t *testing.T) {
 		t.Fatalf("stderr = %q, want the ChatGPT-specific rejection (case-insensitive)", stderr.String())
 	}
 }
+
+// TestRunAuthLoginChatGPTRejectsScope mirrors the --device rejection: --scope
+// must not be silently dropped on the ChatGPT path. The Codex client
+// registration pins a fixed scope set (incl. api.connectors.*), so custom
+// scopes are rejected up front rather than plumbed through.
+func TestRunAuthLoginChatGPTRejectsScope(t *testing.T) {
+	withAuthStore(t)
+	var stdout, stderr bytes.Buffer
+	if code := runWithDeps([]string{"auth", "login", "chatgpt", "--scope", "custom-scope"}, &stdout, &stderr, appDeps{}); code == exitSuccess {
+		t.Fatal("auth login chatgpt --scope should be rejected")
+	}
+	if !strings.Contains(stderr.String(), "ChatGPT login does not support --scope") {
+		t.Fatalf("stderr = %q, want the ChatGPT-specific --scope rejection", stderr.String())
+	}
+}

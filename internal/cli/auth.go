@@ -311,6 +311,9 @@ func runAuthLogin(args []string, stdout io.Writer, stderr io.Writer, deps appDep
 		if parsed.device {
 			return writeExecUsageError(stderr, "ChatGPT login does not support --device (it is loopback-only)")
 		}
+		if len(parsed.scopes) > 0 {
+			return writeExecUsageError(stderr, "ChatGPT login does not support --scope (the required scopes are fixed by the Codex client registration)")
+		}
 		return runAuthChatGPT(nil, stdout, stderr, deps)
 	}
 	manager, err := newAuthManager(deps, stdout)
