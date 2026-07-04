@@ -19,6 +19,7 @@ import (
 	"github.com/Gitlawb/zero/internal/agent"
 	"github.com/Gitlawb/zero/internal/config"
 	"github.com/Gitlawb/zero/internal/doctor"
+	"github.com/Gitlawb/zero/internal/errhint"
 	"github.com/Gitlawb/zero/internal/lsp"
 	internalmcp "github.com/Gitlawb/zero/internal/mcp"
 	"github.com/Gitlawb/zero/internal/modelregistry"
@@ -1847,10 +1848,13 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.transcript = appendTranscriptRow(m.transcript, transcriptRow{kind: rowAssistant, text: text})
 			}
 			// The error row terminates the turn, so it carries the done-line
-			// metadata a final assistant row would have carried.
+			// metadata a final assistant row would have carried. A recognized
+			// provider failure (auth/rate-limit/connectivity/…) also carries a
+			// one-line next step so the user isn't left staring at a raw blob.
 			m.transcript = appendTranscriptRow(m.transcript, transcriptRow{
 				kind:        rowError,
 				text:        msg.err.Error(),
+				hint:        errhint.TUIHint(msg.err),
 				final:       true,
 				turnTools:   msg.turnTools,
 				turnElapsed: msg.turnElapsed,
