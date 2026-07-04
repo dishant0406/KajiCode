@@ -259,6 +259,9 @@ type model struct {
 	headerPrinted bool
 
 	// Composer input history (shell-style ↑/↓ recall of submitted inputs).
+	// lastPrompt is the verbatim text of the most recent submitted prompt, so
+	// /retry can resend it and /edit can recall it into the composer.
+	lastPrompt string
 	// historyIdx == len(inputHistory) means "not navigating"; historyDraft
 	// preserves whatever was typed before recall started.
 	inputHistory []string
@@ -3890,6 +3893,33 @@ func (m model) handleSubmit() (tea.Model, tea.Cmd) {
 		}
 		m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: "$ " + cmdText})
 		return m, runBashEscape(m.cwd, cmdText)
+	case commandRetry:
+		if m.pending {
+			m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: "Retry\ncannot retry while a run is in progress."})
+			return m, nil
+		}
+		if strings.TrimSpace(m.lastPrompt) == "" {
+			m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: "Retry\nno previous prompt to resend."})
+			return m, nil
+		}
+		return m.launchPrompt(m.lastPrompt)
+	case commandEdit:
+		if strings.TrimSpace(m.lastPrompt) == "" {
+			m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: "Edit\nno previous prompt to recall."})
+			return m, nil
+		}
+		m.input.SetValue(m.lastPrompt)
+		return m, nil
+	case commandCopy:
+		text := m.lastAssistantAnswer()
+		if strings.TrimSpace(text) == "" {
+			m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: "Copy\nno answer to copy yet."})
+			return m, nil
+		}
+		return m, copyTranscriptSelectionCmd(text)
+	case commandExport:
+		m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: m.handleExportCommand(command.text)})
+		return m, nil
 	case commandPrompt:
 		if intent, ok := detectMCPSetupIntent(command.text); ok {
 			return m.openMCPAddWizardFromIntent(intent), nil
@@ -3904,6 +3934,9 @@ func (m model) handleSubmit() (tea.Model, tea.Cmd) {
 // composer. Queued prompts use this path too, so session and image behavior
 // stays identical to immediate submissions.
 func (m model) launchPrompt(prompt string) (model, tea.Cmd) {
+	// Remember the verbatim prompt (before specialist/document expansion) so /retry
+	// and /edit can act on exactly what the user submitted.
+	m.lastPrompt = prompt
 	m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendUser, text: prompt})
 	if m.provider == nil {
 		m.transcript = reduceTranscript(m.transcript, transcriptAction{
