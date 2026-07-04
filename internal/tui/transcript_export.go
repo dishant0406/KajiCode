@@ -74,7 +74,9 @@ func (m model) handleExportCommand(args string) string {
 	if !filepath.IsAbs(path) && m.cwd != "" {
 		path = filepath.Join(m.cwd, path)
 	}
-	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+	// 0o600: a transcript can include tool/bash output that echoed secrets, so it
+	// must not be world/group-readable on a shared machine.
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		return "Export\nfailed to write " + path + ": " + err.Error()
 	}
 	return "Export\nwrote transcript to " + path

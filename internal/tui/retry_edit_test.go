@@ -44,3 +44,25 @@ func TestRetryWithoutPriorPromptIsNoOp(t *testing.T) {
 		t.Fatalf("/retry with no history should note there's nothing to resend, got %#v", next.transcript)
 	}
 }
+
+// /retry must not launch a run while compaction is rewriting session state — the
+// same guard a normal prompt has.
+func TestRetryBlockedDuringCompaction(t *testing.T) {
+	m := newModel(context.Background(), Options{})
+	m.lastPrompt = "do the thing"
+	m.compactInFlight = true
+	m.input.SetValue("/retry")
+
+	updated, cmd := m.Update(testKey(tea.KeyEnter))
+	next := updated.(model)
+
+	if next.pending {
+		t.Fatal("/retry must not start a run during compaction")
+	}
+	if cmd != nil {
+		t.Fatal("/retry during compaction must not return a run command")
+	}
+	if !transcriptContains(next.transcript, "Compaction is running") {
+		t.Fatalf("/retry during compaction should warn, got %#v", next.transcript)
+	}
+}

@@ -386,7 +386,7 @@ func truncateHeadTail(value string, maxBytes int) (string, int, bool) {
 	if maxBytes <= 0 || raw <= maxBytes {
 		return value, raw, false
 	}
-	marker := fmt.Sprintf("\n[zero] output truncated: %d bytes omitted from the middle — redirect to a file and read_file a range for the full text]\n", raw-maxBytes)
+	marker := fmt.Sprintf("\n[zero] output truncated: %d bytes omitted from the middle — redirect to a file and read_file a range for the full text\n", raw-maxBytes)
 	budget := maxBytes - len(marker)
 	if budget < 0 {
 		budget = 0

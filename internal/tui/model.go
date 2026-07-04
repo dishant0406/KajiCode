@@ -3927,8 +3927,22 @@ func (m model) handleSubmit() (tea.Model, tea.Cmd) {
 		m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: "$ " + cmdText})
 		return m, runBashEscape(m.cwd, cmdText)
 	case commandRetry:
+		// /retry launches a run, so it needs the same guards a normal prompt gets:
+		// never start one while exiting (would strand the shutdown flush) or during
+		// compaction (would race compactResultMsg's wholesale rewrite of
+		// transcript/sessionEvents and silently drop events).
+		if m.exiting {
+			return m, nil
+		}
 		if m.pending {
 			m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: "Retry\ncannot retry while a run is in progress."})
+			return m, nil
+		}
+		if m.compactInFlight {
+			m.transcript = reduceTranscript(m.transcript, transcriptAction{
+				kind: actionAppendSystem,
+				text: "Retry\nstatus: warning\nCompaction is running. Retry once it finishes.",
+			})
 			return m, nil
 		}
 		if strings.TrimSpace(m.lastPrompt) == "" {

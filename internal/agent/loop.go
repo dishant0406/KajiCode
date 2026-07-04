@@ -174,9 +174,6 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 			Tools:           exposed,
 			ReasoningEffort: options.ReasoningEffort,
 		}
-		// Raw (uncalibrated) estimate of this request's input, paired below with the
-		// provider's reported prompt tokens to calibrate future compaction triggers.
-		requestTokenEstimate := estimateTokens(messages) + estimateToolDefTokens(exposed)
 
 		// Report the per-category context budget for this turn so a surface can
 		// show utilization. Opt-in: a no-op when OnContext is unset.
@@ -356,7 +353,12 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 		// Calibrate the compaction token estimator against the provider's real
 		// prompt-token count for the request we just sent, so later turns trigger
 		// compaction near true capacity instead of ~15% early on code-heavy history.
-		compactor.calibrate(requestTokenEstimate, collected.Usage.InputTokens)
+		// Recompute the estimate HERE (not at request-build time): a reactive
+		// compaction may have replaced `messages` with a smaller set and re-sent, so
+		// this reflects the request that actually produced collected.Usage. The
+		// assistant reply is appended below, after this, so `messages` is still the
+		// sent request.
+		compactor.calibrate(estimateTokens(messages)+estimateToolDefTokens(exposed), collected.Usage.InputTokens)
 
 		// Carry the turn's terminal stop reason so a final answer cut off at the
 		// output token cap (or by a content filter) is reported as truncated. A

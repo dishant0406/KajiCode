@@ -28,6 +28,13 @@ func TestClassify(t *testing.T) {
 		{"deadline", "provider stream error: context deadline exceeded (Client.Timeout exceeded)", Connectivity},
 		{"provider-marked but no sub-signature", "provider error: something totally unexpected happened", Unknown},
 
+		// An incidental number that merely contains a status-code digit run must NOT
+		// be mis-bucketed (digit-boundary check), even behind a provider marker.
+		{"incidental latency number", "provider error: request completed in 4290ms then failed", Unknown},
+		{"incidental request id", "provider error: request id 14015 failed unexpectedly", Unknown},
+		{"standalone 401 still auth", "provider request error: got 401 from upstream", Auth},
+		{"standalone 429 still rate limit", "provider error: 429 returned", RateLimit},
+
 		// Local (non-provider) failures must NOT be classified — no provider marker,
 		// so no bogus recovery hint attaches to them.
 		{"local fs permission denied", "open /etc/shadow: permission denied", Unknown},

@@ -70,12 +70,20 @@ func TestHandleExportCommandWritesFile(t *testing.T) {
 	if !strings.Contains(msg, "wrote transcript to") {
 		t.Fatalf("export status = %q", msg)
 	}
-	data, err := os.ReadFile(filepath.Join(dir, "out.txt"))
+	outPath := filepath.Join(dir, "out.txt")
+	data, err := os.ReadFile(outPath)
 	if err != nil {
 		t.Fatalf("reading exported file: %v", err)
 	}
 	if !strings.Contains(string(data), "you: hello") || !strings.Contains(string(data), "zero: hi there") {
 		t.Fatalf("exported content = %q", string(data))
+	}
+	// The transcript may contain secrets echoed in tool output; it must not be
+	// world/group-readable.
+	if info, err := os.Stat(outPath); err != nil {
+		t.Fatalf("stat exported file: %v", err)
+	} else if perm := info.Mode().Perm(); perm != 0o600 {
+		t.Fatalf("exported file mode = %o, want 0600", perm)
 	}
 
 	// No-arg export derives a timestamped filename in cwd.

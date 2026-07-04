@@ -60,10 +60,10 @@ func Classify(err error) Category {
 	}
 	switch {
 	case containsAny(m, "auth error:", "unauthorized", "api key", "api_key", "invalid_api_key",
-		"authentication", "permission denied", "forbidden", "401", "403"):
+		"authentication", "permission denied", "forbidden") || containsStatusCode(m, "401", "403"):
 		return Auth
 	case containsAny(m, "rate limit", "rate_limit", "too many requests", "quota",
-		"resource_exhausted", "overloaded", "429", "529"):
+		"resource_exhausted", "overloaded") || containsStatusCode(m, "429", "529"):
 		return RateLimit
 	case containsAny(m, "context length", "context window", "maximum context", "context_length_exceeded",
 		"too many tokens", "prompt is too long", "reduce the length", "maximum context length"):
@@ -127,4 +127,32 @@ func containsAny(haystack string, needles ...string) bool {
 		}
 	}
 	return false
+}
+
+// containsStatusCode reports whether haystack contains any of the given HTTP
+// status codes as a standalone number — not embedded in a longer digit run like
+// "completed in 4290ms" or "request id 14015" — so an incidental number can't be
+// mis-bucketed as an auth/rate-limit failure.
+func containsStatusCode(haystack string, codes ...string) bool {
+	for _, code := range codes {
+		for from := 0; ; {
+			rel := strings.Index(haystack[from:], code)
+			if rel < 0 {
+				break
+			}
+			pos := from + rel
+			beforeOK := pos == 0 || !isASCIIDigit(haystack[pos-1])
+			end := pos + len(code)
+			afterOK := end >= len(haystack) || !isASCIIDigit(haystack[end])
+			if beforeOK && afterOK {
+				return true
+			}
+			from = pos + 1
+		}
+	}
+	return false
+}
+
+func isASCIIDigit(b byte) bool {
+	return b >= '0' && b <= '9'
 }
