@@ -98,6 +98,49 @@ func TestCoalescerFlushesOnRunSwitch(t *testing.T) {
 	}
 }
 
+// Under concurrency (the frame timer firing while a non-text message is sent),
+// forwarding must stay serialized and ordered: buffered text is always delivered
+// before a following non-text message, never after it. Run with -race to catch
+// the interleaving CodeRabbit flagged.
+func TestCoalescerOrdersTextBeforeNonTextUnderConcurrency(t *testing.T) {
+	for iter := 0; iter < 200; iter++ {
+		rec := &recorder{}
+		c := newTextCoalescer(rec.forward)
+
+		// Buffer text, then let the timer race against an inline non-text send.
+		c.send(agentTextMsg{runID: 1, delta: "before-tool"})
+		done := make(chan struct{})
+		go func() {
+			c.send(toolCallStreamStartMsg{runID: 1, id: "t1", name: "bash"})
+			close(done)
+		}()
+		<-done
+
+		// Give the timer a chance to also fire, then settle.
+		time.Sleep(2 * streamCoalesceInterval)
+		c.flush()
+
+		got := rec.snapshot()
+		textIdx, toolIdx := -1, -1
+		for i, m := range got {
+			switch m.(type) {
+			case agentTextMsg:
+				if textIdx == -1 {
+					textIdx = i
+				}
+			case toolCallStreamStartMsg:
+				toolIdx = i
+			}
+		}
+		if textIdx == -1 || toolIdx == -1 {
+			t.Fatalf("iter %d: missing messages: %#v", iter, got)
+		}
+		if textIdx > toolIdx {
+			t.Fatalf("iter %d: text (%d) forwarded after tool-call (%d): %#v", iter, textIdx, toolIdx, got)
+		}
+	}
+}
+
 // The frame timer flushes buffered text on its own without an explicit flush or a
 // following message.
 func TestCoalescerTimerFlushes(t *testing.T) {
