@@ -25,7 +25,12 @@ const maxTurnsFinalAnswerPrompt = "You have reached the tool-turn limit. Do not 
 // WITH NO OUTPUT yet is re-issued on a fresh connection before giving up. Only
 // the no-output case is retried (a partial turn would duplicate), so this is a
 // safe recovery for a stalled/dead pooled connection.
-const maxStreamStallRetries = 2
+//
+// Set to 1 (not 2): each attempt can itself idle for the full stream timeout
+// (~5min) before the stall is even detected, so 2 retries left an interactive
+// session frozen for ~15min. One retry keeps the common single-hiccup recovery
+// while bounding the worst case to ~2× the idle timeout.
+const maxStreamStallRetries = 1
 
 const (
 	toolResultMetaControl       = "control"
