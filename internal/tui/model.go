@@ -3870,6 +3870,11 @@ func (m model) handleSubmit() (tea.Model, tea.Cmd) {
 		// Scrollback above can't be un-printed; a faint divider marks where the
 		// cleared surface ended and the frontier restarts for the fresh transcript.
 		m.resetFlushFrontier("· cleared ·")
+		// /clear wipes the transcript but not the session, so loops keep running;
+		// say so rather than let them silently fire into a "cleared" screen.
+		if m.loopActive() {
+			m = m.appendLoopSystem(m.loopFooterSummary() + " still running — /loop stop all to end them.")
+		}
 		return m, nil
 	case commandNew:
 		// A fresh session mid-run would strand the in-flight turn's events; make the

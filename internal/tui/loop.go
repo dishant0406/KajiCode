@@ -360,11 +360,33 @@ func (m model) advanceLoop(id, finalAnswer string, runErr error) model {
 	}
 
 	if l.mode == loopModeSelfPaced {
-		l.nextRunAt = m.now().Add(clampSelfPaceDelay(m.loopNextWake))
+		// A model-chosen delay (loopNextWake, set via the loop_control channel) wins;
+		// otherwise fall back to an adaptive cadence that checks back often while work
+		// is fresh and settles to a slow heartbeat as iterations accrue.
+		delay := m.loopNextWake
+		if delay <= 0 {
+			delay = adaptiveSelfPaceDelay(l.iteration)
+		}
+		l.nextRunAt = m.now().Add(clampSelfPaceDelay(delay))
 	} else {
 		l.nextRunAt = m.now().Add(l.interval)
 	}
 	return m
+}
+
+// adaptiveSelfPaceDelay picks a self-paced loop's next-wake by iteration: frequent
+// early (work is actively progressing), slowing to a heartbeat as it matures.
+func adaptiveSelfPaceDelay(iteration int) time.Duration {
+	switch {
+	case iteration < 2:
+		return 2 * time.Minute
+	case iteration < 5:
+		return 5 * time.Minute
+	case iteration < 10:
+		return 15 * time.Minute
+	default:
+		return 30 * time.Minute
+	}
 }
 
 func (m model) findLoop(id string) *loopState {

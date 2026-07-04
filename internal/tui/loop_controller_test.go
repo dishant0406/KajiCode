@@ -133,6 +133,29 @@ func TestFireDueLoopSkipsWhenBusy(t *testing.T) {
 	}
 }
 
+func TestAdaptiveSelfPaceDelayWidensOverTime(t *testing.T) {
+	if adaptiveSelfPaceDelay(0) >= adaptiveSelfPaceDelay(5) {
+		t.Error("early iterations should check back sooner than later ones")
+	}
+	if adaptiveSelfPaceDelay(20) != 30*time.Minute {
+		t.Errorf("a mature loop should settle to a 30m heartbeat, got %v", adaptiveSelfPaceDelay(20))
+	}
+}
+
+func TestLoopFooterSummary(t *testing.T) {
+	now := time.Date(2026, 7, 5, 15, 0, 0, 0, time.UTC)
+	m := loopTestModel(t, now)
+	if m.loopFooterSummary() != "" {
+		t.Error("no loops -> empty footer summary")
+	}
+	m = startFixedLoop(m, "a", 5*time.Minute)
+	m.loops[0].nextRunAt = now.Add(5 * time.Minute)
+	got := m.loopFooterSummary()
+	if got == "" || got[:6] != "1 loop" {
+		t.Fatalf("footer summary = %q, want it to start with a loop count", got)
+	}
+}
+
 func TestValidateLoopTargetRejectsBuiltin(t *testing.T) {
 	if _, ok := validateLoopTarget("/model list"); ok {
 		t.Error("looping a built-in command should be rejected")
