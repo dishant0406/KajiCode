@@ -76,24 +76,29 @@ type model struct {
 	discoverProviderModels      func(context.Context, config.ProviderProfile) ([]providermodeldiscovery.Model, error)
 	discoverOllamaContextWindow func(ctx context.Context, baseURL string, model string) (int, error)
 	registry                    *tools.Registry
-	sessionStore                *sessions.Store
-	sandboxStore                *sandbox.GrantStore
-	mcpConfig                   config.MCPConfig
-	mcpPermissionStore          *internalmcp.PermissionStore
-	mcpTokenStore               *internalmcp.TokenStore
-	mcpCommand                  func(context.Context, []string) MCPCommandResult
-	sandboxSetupCommand         func(context.Context) SandboxSetupCommandResult
-	mcpViewStateCache           MCPViewState
-	mcpViewStateReady           bool
-	mcpCommandSeq               int
-	mcpCommandCancel            context.CancelFunc
-	sandboxSetupSeq             int
-	sandboxSetupInFlight        bool
-	doctorCommandSeq            int
-	doctorInFlight              bool
-	doctorFrame                 int
-	activeSession               sessions.Metadata
-	sessionEvents               []sessions.Event
+	// lspManager is created once per session and reused across prompts so gopls (and
+	// other language servers) stay warm — a fresh manager per run would cold-start
+	// the server on the first edit of every turn. Nil when cwd is unknown; runs then
+	// fall back to a per-run manager. Torn down in quit().
+	lspManager           *lsp.Manager
+	sessionStore         *sessions.Store
+	sandboxStore         *sandbox.GrantStore
+	mcpConfig            config.MCPConfig
+	mcpPermissionStore   *internalmcp.PermissionStore
+	mcpTokenStore        *internalmcp.TokenStore
+	mcpCommand           func(context.Context, []string) MCPCommandResult
+	sandboxSetupCommand  func(context.Context) SandboxSetupCommandResult
+	mcpViewStateCache    MCPViewState
+	mcpViewStateReady    bool
+	mcpCommandSeq        int
+	mcpCommandCancel     context.CancelFunc
+	sandboxSetupSeq      int
+	sandboxSetupInFlight bool
+	doctorCommandSeq     int
+	doctorInFlight       bool
+	doctorFrame          int
+	activeSession        sessions.Metadata
+	sessionEvents        []sessions.Event
 	// titledSessions records session ids for which a model-generated title has
 	// already been attempted this process, so a finished turn re-fires the title
 	// generator at most once per session (even before its async result lands).
@@ -758,6 +763,11 @@ func newModel(ctx context.Context, options Options) model {
 	// Streaming text always renders statically at base ink (the disabled path in
 	// styleStreamingLine), so no accent glow and no per-line fade ticks.
 	m.fadeDisabled = true
+	// One session-long LSP manager (cheap to build — servers start lazily on the
+	// first Check), reused across prompts so gopls stays warm between turns.
+	if cwd != "" {
+		m.lspManager = lsp.NewManager(cwd)
+	}
 	m.refreshMCPViewState()
 	return m
 }
@@ -887,7 +897,20 @@ func (m model) noBlockingModal() bool {
 func (m model) quit() (tea.Model, tea.Cmd) {
 	m.stopPRWatcher()
 	m.stopAllBackgroundTerminalSessions()
+	m.shutdownLSPManager()
 	return m, tea.Quit
+}
+
+// shutdownLSPManager gracefully stops the session-long language servers on exit.
+// Best-effort with a short deadline so a slow server can't hang the quit; the
+// servers are our child processes and would be reaped on exit regardless.
+func (m model) shutdownLSPManager() {
+	if m.lspManager == nil {
+		return
+	}
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	_ = m.lspManager.Shutdown(shutdownCtx)
 }
 
 func (m model) handleCtrlC() (tea.Model, tea.Cmd) {
@@ -4158,12 +4181,18 @@ func (m model) runAgentWithOptions(runID int, runCtx context.Context, prompt str
 		// matching exec; the per-turn lsp.Manager is torn down when this run
 		// returns; auto-fix vs report-only follows the active permission mode.
 		if !runOptions.specDraft && options.Cwd != "" {
-			lspManager := lsp.NewManager(options.Cwd)
-			defer func() {
-				shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				defer cancel()
-				_ = lspManager.Shutdown(shutdownCtx)
-			}()
+			// Prefer the session-long manager (kept warm across prompts). Only when it
+			// is absent — e.g. cwd was unknown at construction, or a test built the
+			// model directly — fall back to a per-run manager that is shut down here.
+			lspManager := m.lspManager
+			if lspManager == nil {
+				lspManager = lsp.NewManager(options.Cwd)
+				defer func() {
+					shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+					defer cancel()
+					_ = lspManager.Shutdown(shutdownCtx)
+				}()
+			}
 			options.SelfCorrect = agent.NewSelfCorrector(options.Cwd, agent.NewLSPDiagnosticsChecker(lspManager), agent.NewProjectVerifier(options.Cwd), agent.SelfCorrectConfig{
 				Enabled:      true,
 				IncludeTests: m.selfCorrectTests,
