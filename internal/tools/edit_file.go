@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -95,6 +96,32 @@ func (tool editFileTool) RunWithOptions(_ context.Context, args map[string]any, 
 			if !strings.Contains(newString, "\r\n") {
 				newString = strings.ReplaceAll(newString, "\n", "\r\n")
 			}
+		}
+	}
+
+	// Fuzzy fallback: when the exact string (and its CRLF translation) is absent,
+	// run a cascade of tolerant matchers (trimmed lines, block anchors, collapsed
+	// whitespace, indentation drift, escape normalization) to locate the span the
+	// model intended. Only a span that occurs literally in the file is accepted,
+	// so the replacement applied below is still exact.
+	if occurrences == 0 {
+		findOld, findNew := oldString, newString
+		if strings.Contains(content, "\r\n") && !strings.Contains(findOld, "\r\n") {
+			findOld = strings.ReplaceAll(findOld, "\n", "\r\n")
+			findNew = strings.ReplaceAll(findNew, "\n", "\r\n")
+		}
+		search, ferr := fuzzyEditMatch(content, findOld, replaceAll)
+		switch {
+		case ferr == nil:
+			oldString = search
+			newString = findNew
+			occurrences = strings.Count(content, search)
+		case errors.Is(ferr, errEditFuzzyAmbiguous):
+			return errorResult("Error: old_string matches multiple locations in " + relativePath + " even after fuzzy matching. Provide more surrounding context to make the match unique, or pass replace_all: true.")
+		case errors.Is(ferr, errEditFuzzyNotFound):
+			// Fall through to the exact-match error below.
+		default:
+			return errorResult("Error editing " + relativePath + ": " + ferr.Error())
 		}
 	}
 
