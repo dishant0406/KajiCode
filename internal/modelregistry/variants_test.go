@@ -11,45 +11,72 @@ func testRegistry(t *testing.T) Registry {
 	return registry
 }
 
-// Every id declared in the mapping must resolve in the default registry — a typo
-// (or a model removed from the catalog) fails loudly here rather than silently
-// making /fast a no-op.
-func TestFastVariantPairsResolve(t *testing.T) {
+// expectedFastPairs is the known-good base->fast mapping. It is a literal
+// regression guard: if the catalog silently drops or mis-wires a FastVariantID,
+// the forward/reverse assertions below fail loudly rather than making /fast a
+// quiet no-op. Keep in sync with the FastVariantID fields in catalog.go.
+var expectedFastPairs = map[string]string{
+	"claude-sonnet-4.5": "claude-haiku-4.5",
+	"gpt-4.1":           "gpt-4.1-mini",
+	"gpt-4o":            "gpt-4o-mini",
+	"gemini-2.5-pro":    "gemini-2.5-flash",
+}
+
+// Every FastVariantID declared in the catalog must resolve to a real, non-self,
+// non-deprecated model. NewRegistry already rejects an unresolvable id at build
+// time; this additionally guards the runtime availability contract that /fast and
+// the "f" marker depend on.
+func TestCatalogFastVariantsResolve(t *testing.T) {
 	registry := testRegistry(t)
-	for _, pair := range fastVariantPairs {
-		for _, id := range []string{pair.base, pair.fast} {
-			if _, ok := registry.Resolve(id); !ok {
-				t.Errorf("fastVariantPairs references %q, which does not resolve in the default registry", id)
-			}
+	for _, entry := range registry.List(ListOptions{IncludeDeprecated: true}) {
+		if entry.FastVariantID == "" {
+			continue
+		}
+		target, ok := registry.Resolve(entry.FastVariantID)
+		if !ok {
+			t.Errorf("model %q fast variant %q does not resolve", entry.ID, entry.FastVariantID)
+			continue
+		}
+		if target.ID == entry.ID {
+			t.Errorf("model %q names itself as its fast variant", entry.ID)
+		}
+		if target.Status == ModelStatusDeprecated {
+			t.Errorf("model %q fast variant %q is deprecated", entry.ID, entry.FastVariantID)
 		}
 	}
 }
 
-// No model may be both a base and a fast, or the two directions become
-// ambiguous (a model would be "currently fast" AND have a fast variant).
+// No model may be both a base and a fast, or the two directions become ambiguous
+// (a model would be "currently fast" AND advertise a fast variant). Derived from
+// the registry so a bad catalog edit — e.g. chaining mini->nano — is caught.
 func TestFastVariantPairsUnambiguous(t *testing.T) {
 	registry := testRegistry(t)
 	role := map[string]string{} // canonical id -> "base" | "fast"
-	for _, pair := range fastVariantPairs {
-		for id, r := range map[string]string{pair.base: "base", pair.fast: "fast"} {
-			entry, ok := registry.Resolve(id)
-			if !ok {
-				continue
-			}
-			if prev, seen := role[entry.ID]; seen && prev != r {
-				t.Fatalf("model %q is declared as both a base and a fast variant", entry.ID)
-			}
-			role[entry.ID] = r
+	assign := func(id, r string) {
+		entry, ok := registry.Resolve(id)
+		if !ok {
+			return
 		}
+		if prev, seen := role[entry.ID]; seen && prev != r {
+			t.Fatalf("model %q is declared as both a base and a fast variant", entry.ID)
+		}
+		role[entry.ID] = r
+	}
+	for _, entry := range registry.List(ListOptions{IncludeDeprecated: true}) {
+		if entry.FastVariantID == "" {
+			continue
+		}
+		assign(entry.ID, "base")
+		assign(entry.FastVariantID, "fast")
 	}
 }
 
+// The known pairs must be present and wired in both directions, and neither end
+// may leak into the other role (a base is not itself fast; a fast has no fast).
 func TestFastVariantAndBaseVariant(t *testing.T) {
 	registry := testRegistry(t)
 
-	for _, pair := range fastVariantPairs {
-		base, fast := pair.base, pair.fast
-
+	for base, fast := range expectedFastPairs {
 		// base -> fast (forward), and the fast id has NO fast variant of its own.
 		if got, ok := registry.FastVariant(base); !ok {
 			t.Errorf("FastVariant(%q) = not found, want the fast variant", base)
@@ -68,6 +95,26 @@ func TestFastVariantAndBaseVariant(t *testing.T) {
 		}
 		if _, ok := registry.BaseVariant(base); ok {
 			t.Errorf("BaseVariant(%q) resolved, but a base model is not a fast variant", base)
+		}
+	}
+}
+
+// HasFastVariant is the TUI marker predicate: true only for base models with an
+// available fast variant, false for the fast models themselves, unpaired models,
+// and unknown ids.
+func TestHasFastVariant(t *testing.T) {
+	registry := testRegistry(t)
+	for base, fast := range expectedFastPairs {
+		if !registry.HasFastVariant(base) {
+			t.Errorf("HasFastVariant(%q) = false, want true", base)
+		}
+		if registry.HasFastVariant(fast) {
+			t.Errorf("HasFastVariant(%q) = true, want false (a fast model has no fast variant)", fast)
+		}
+	}
+	for _, id := range []string{"claude-opus-4.1", "definitely-not-a-real-model", ""} {
+		if registry.HasFastVariant(id) {
+			t.Errorf("HasFastVariant(%q) = true, want false", id)
 		}
 	}
 }

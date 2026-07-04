@@ -110,7 +110,14 @@ type ModelEntry struct {
 	// during mid-run escalation. Empty means no escalation target (e.g. top-tier
 	// models). Resolved and availability-checked by Registry.UpgradeTarget.
 	UpgradeTargetID string
-	Description     string
+	// FastVariantID, when set, names a genuinely faster same-family model this one
+	// can drop down to (e.g. claude-sonnet-4.5 -> claude-haiku-4.5). Empty means no
+	// fast variant. It is the single source of truth for the /fast command and the
+	// "f" fast-mode marker: Registry.FastVariant walks it forward and BaseVariant
+	// walks it in reverse, so a model is "in fast mode" iff another model names it
+	// here. Resolved and availability-checked like UpgradeTargetID.
+	FastVariantID string
+	Description   string
 }
 
 // DeprecationRule describes how a deprecated model is phased out and what to use
@@ -366,6 +373,18 @@ func NewRegistry(entries []ModelEntry) (Registry, error) {
 		}
 		if _, ok := registry.Get(targetID); !ok {
 			return Registry{}, fmt.Errorf("model %q upgrade target %q does not resolve to a known model", entry.ID, targetID)
+		}
+	}
+	// A non-empty FastVariantID must resolve to a known model, mirroring the
+	// UpgradeTargetID check — otherwise /fast and the "f" fast-mode marker would
+	// silently vanish at runtime on a catalog typo instead of failing loudly here.
+	for _, entry := range registry.models {
+		fastID := strings.TrimSpace(entry.FastVariantID)
+		if fastID == "" {
+			continue
+		}
+		if _, ok := registry.Get(fastID); !ok {
+			return Registry{}, fmt.Errorf("model %q fast variant %q does not resolve to a known model", entry.ID, fastID)
 		}
 	}
 	return registry, nil

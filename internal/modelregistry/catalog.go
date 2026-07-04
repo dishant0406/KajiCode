@@ -3,6 +3,7 @@ package modelregistry
 import (
 	"fmt"
 	"strings"
+	"sync"
 )
 
 const DefaultModelID = "gpt-4.1"
@@ -42,8 +43,20 @@ type ListOptions struct {
 	Capability        ModelCapability
 }
 
-func DefaultRegistry() (Registry, error) {
+// defaultRegistry builds the default registry exactly once and caches the result.
+// The default catalog is static, every accessor returns clones, and a built
+// Registry is never mutated (concurrent reads of its maps are safe), so a single
+// shared instance is correct — and it avoids re-cloning all entries and
+// recompiling every fuzzy-match regex on the per-frame TUI paths (title chip,
+// context gauge, pickers) that call DefaultRegistry each render.
+var defaultRegistry = sync.OnceValues(func() (Registry, error) {
 	return NewRegistry(DefaultModelEntries())
+})
+
+// DefaultRegistry returns the shared, immutable default model registry, building
+// it on first use.
+func DefaultRegistry() (Registry, error) {
+	return defaultRegistry()
 }
 
 func DefaultModelEntries() []ModelEntry {
@@ -76,11 +89,13 @@ func decorateModelDepth(entries []ModelEntry) {
 		patterns      []string
 		deprecation   *DeprecationRule
 		upgradeTarget string
+		fastVariant   string
 	}{
 		"claude-sonnet-4.5": {
 			defaultEffort: ReasoningEffortMedium,
 			patterns:      []string{`(?i)^sonnet[^a-z0-9]*4[.\s]?5$`},
 			upgradeTarget: "claude-opus-4.1",
+			fastVariant:   "claude-haiku-4.5",
 		},
 		"claude-opus-4.1": {
 			defaultEffort: ReasoningEffortHigh,
@@ -94,6 +109,7 @@ func decorateModelDepth(entries []ModelEntry) {
 		"gemini-2.5-pro": {
 			defaultEffort: ReasoningEffortMedium,
 			patterns:      []string{`(?i)^gemini[^a-z0-9]*pro$`},
+			fastVariant:   "gemini-2.5-flash",
 		},
 		"gemini-2.5-flash": {
 			defaultEffort: ReasoningEffortLow,
@@ -101,6 +117,12 @@ func decorateModelDepth(entries []ModelEntry) {
 		},
 		"gemini-2.5-flash-lite": {
 			upgradeTarget: "gemini-2.5-flash",
+		},
+		"gpt-4.1": {
+			fastVariant: "gpt-4.1-mini",
+		},
+		"gpt-4o": {
+			fastVariant: "gpt-4o-mini",
 		},
 		"gpt-4.1-mini": {
 			upgradeTarget: "gpt-4.1",
@@ -142,6 +164,9 @@ func decorateModelDepth(entries []ModelEntry) {
 		}
 		if extra.upgradeTarget != "" {
 			entries[index].UpgradeTargetID = extra.upgradeTarget
+		}
+		if extra.fastVariant != "" {
+			entries[index].FastVariantID = extra.fastVariant
 		}
 	}
 }
