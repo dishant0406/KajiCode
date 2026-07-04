@@ -157,27 +157,30 @@ func (tool bashTool) run(ctx context.Context, args map[string]any, engine *zeroS
 			}
 		}
 		markLikelySandboxDenial(meta, plan, exitCode, stdout.String(), stderrText)
-		outText, errText := budgetBashOutput(stdout.String(), stderrText, meta)
+		outText, errText, truncated := budgetBashOutput(stdout.String(), stderrText, meta)
 		return Result{
-			Status: StatusError,
-			Output: formatBashOutputWithShellHint(commandText, outText, errText, exitCode, meta),
-			Meta:   meta,
+			Status:    StatusError,
+			Output:    formatBashOutputWithShellHint(commandText, outText, errText, exitCode, meta),
+			Truncated: truncated,
+			Meta:      meta,
 		}
 	}
 
 	markLikelySandboxDenial(meta, plan, exitCode, stdout.String(), stderrText)
-	outText, errText := budgetBashOutput(stdout.String(), stderrText, meta)
+	outText, errText, truncated := budgetBashOutput(stdout.String(), stderrText, meta)
 	if meta[SandboxLikelyDeniedMeta] == "true" {
 		return Result{
-			Status: StatusError,
-			Output: formatBashOutputWithShellHint(commandText, outText, errText, exitCode, meta),
-			Meta:   meta,
+			Status:    StatusError,
+			Output:    formatBashOutputWithShellHint(commandText, outText, errText, exitCode, meta),
+			Truncated: truncated,
+			Meta:      meta,
 		}
 	}
 	return Result{
-		Status: StatusOK,
-		Output: formatBashOutput(outText, errText, exitCode),
-		Meta:   meta,
+		Status:    StatusOK,
+		Output:    formatBashOutput(outText, errText, exitCode),
+		Truncated: truncated,
+		Meta:      meta,
 	}
 }
 
@@ -359,19 +362,20 @@ const bashOutputBudgetBytes = 96 * 1024
 // counts plus a truncated flag in meta (mirroring outputBudgetMeta's shape for
 // the read/search tools). Detection that needs the full output (sandbox-denial
 // scanning) must run on the raw strings before this is applied.
-func budgetBashOutput(stdout string, stderr string, meta map[string]string) (string, string) {
+func budgetBashOutput(stdout string, stderr string, meta map[string]string) (string, string, bool) {
 	outText, outRaw, outTrunc := truncateHeadTail(stdout, bashOutputBudgetBytes)
 	errText, errRaw, errTrunc := truncateHeadTail(stderr, bashOutputBudgetBytes)
+	truncated := outTrunc || errTrunc
 	if meta != nil {
 		emitted := len(outText) + len(errText)
 		meta["raw_bytes"] = strconv.Itoa(outRaw + errRaw)
 		meta["emitted_bytes"] = strconv.Itoa(emitted)
 		meta["estimated_tokens"] = strconv.Itoa(estimatedTokensFromBytes(emitted))
-		if outTrunc || errTrunc {
+		if truncated {
 			meta["truncated"] = "true"
 		}
 	}
-	return outText, errText
+	return outText, errText, truncated
 }
 
 // truncateHeadTail keeps the first and last halves of value when it exceeds

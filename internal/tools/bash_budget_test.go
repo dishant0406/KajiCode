@@ -9,9 +9,12 @@ import (
 // Small output passes through untouched and records raw==emitted, no truncated flag.
 func TestBudgetBashOutputSmallPassesThrough(t *testing.T) {
 	meta := map[string]string{}
-	out, errStr := budgetBashOutput("hello\n", "warn\n", meta)
+	out, errStr, truncated := budgetBashOutput("hello\n", "warn\n", meta)
 	if out != "hello\n" || errStr != "warn\n" {
 		t.Fatalf("small output altered: out=%q err=%q", out, errStr)
+	}
+	if truncated {
+		t.Fatalf("small output must report truncated=false")
 	}
 	if meta["truncated"] == "true" {
 		t.Fatalf("small output must not be flagged truncated: %v", meta)
@@ -29,8 +32,11 @@ func TestBudgetBashOutputTruncatesHeadAndTail(t *testing.T) {
 	big := head + strings.Repeat("x", bashOutputBudgetBytes) + tail
 
 	meta := map[string]string{}
-	out, _ := budgetBashOutput(big, "", meta)
+	out, _, truncated := budgetBashOutput(big, "", meta)
 
+	if !truncated {
+		t.Fatalf("oversized output must report truncated=true")
+	}
 	if !strings.Contains(out, "FIRST_LINE_MARKER") {
 		t.Fatalf("head lost after truncation")
 	}
