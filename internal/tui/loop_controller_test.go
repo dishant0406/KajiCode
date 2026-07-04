@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	tea "charm.land/bubbletea/v2"
 )
 
 func loopTestModel(t *testing.T, now time.Time) model {
@@ -153,6 +155,47 @@ func TestLoopFooterSummary(t *testing.T) {
 	got := m.loopFooterSummary()
 	if got == "" || got[:6] != "1 loop" {
 		t.Fatalf("footer summary = %q, want it to start with a loop count", got)
+	}
+}
+
+func TestLoopCommandThroughSubmit(t *testing.T) {
+	now := time.Date(2026, 7, 5, 12, 0, 0, 0, time.UTC)
+	m := loopTestModel(t, now)
+	m.input.SetValue("/loop 5m tidy the imports")
+	updated, _ := m.Update(testKey(tea.KeyEnter))
+	next := updated.(model)
+	if len(next.loops) != 1 {
+		t.Fatalf("submitting /loop should create a loop, got %d", len(next.loops))
+	}
+	if next.loops[0].mode != loopModeFixed || next.loops[0].interval != 5*time.Minute {
+		t.Fatalf("unexpected loop from submit: %+v", next.loops[0])
+	}
+	if !next.loopTicking {
+		t.Fatalf("submitting /loop should start the poll ticker")
+	}
+
+	// /loop stop all through the same path clears it.
+	next.input.SetValue("/loop stop all")
+	updated2, _ := next.Update(testKey(tea.KeyEnter))
+	final := updated2.(model)
+	if len(final.loops) != 0 {
+		t.Fatalf("/loop stop all should clear loops, got %d", len(final.loops))
+	}
+}
+
+func TestStaleLoopTickIgnored(t *testing.T) {
+	now := time.Date(2026, 7, 5, 12, 0, 0, 0, time.UTC)
+	m := loopTestModel(t, now)
+	m = startFixedLoop(m, "x", time.Minute)
+	m.loopSeq = 7
+	// A tick from before the seq changed must be dropped and stop the ticker.
+	updated, cmd := m.Update(loopTickMsg{seq: 3})
+	next := updated.(model)
+	if next.loopTicking {
+		t.Error("a stale loop tick should stop the ticker")
+	}
+	if cmd != nil {
+		t.Error("a stale loop tick should not reschedule")
 	}
 }
 
