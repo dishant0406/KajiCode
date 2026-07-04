@@ -4380,6 +4380,21 @@ func (m *model) cancelRun() {
 		m.runCancel()
 	}
 	m.clearStreamingToolCall() // a cancelled file-write must not linger into the next run
+	// A cancelled loop iteration bypasses the agentResponseMsg completion seam (its
+	// late message is drained through flushRunIDs, not advanceLoop), so clear the
+	// loop tag here and re-arm the interrupted loop for its next cadence. Otherwise
+	// the loop is left "running" forever (nextRunAt stays zero) and the NEXT
+	// unrelated turn would be misattributed as this loop's completion.
+	if m.activeLoopID != "" {
+		if l := m.findLoop(m.activeLoopID); l != nil {
+			if l.mode == loopModeSelfPaced {
+				l.nextRunAt = m.now().Add(clampSelfPaceDelay(adaptiveSelfPaceDelay(l.iteration)))
+			} else {
+				l.nextRunAt = m.now().Add(l.interval)
+			}
+		}
+		m.activeLoopID = ""
+	}
 	// Remember the in-flight run — and the session it was recording into — so
 	// its final agentResponseMsg is still drained for session-event persistence
 	// after activeRunID is cleared. Otherwise the checkpoint blobs it captured

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -196,6 +197,59 @@ func TestStaleLoopTickIgnored(t *testing.T) {
 	}
 	if cmd != nil {
 		t.Error("a stale loop tick should not reschedule")
+	}
+}
+
+func TestLoopStopsAfterConsecutiveFailures(t *testing.T) {
+	now := time.Date(2026, 7, 5, 12, 0, 0, 0, time.UTC)
+	m := loopTestModel(t, now)
+	m = startFixedLoop(m, "flaky", time.Minute)
+	id := m.loops[0].id
+	boom := errors.New("boom")
+	for i := 0; i < loopMaxFailures && len(m.loops) > 0; i++ {
+		m = m.advanceLoop(id, "", boom)
+	}
+	if len(m.loops) != 0 {
+		t.Fatalf("loop should stop after %d consecutive failed iterations", loopMaxFailures)
+	}
+}
+
+func TestLoopFailureCounterResetsOnSuccess(t *testing.T) {
+	now := time.Date(2026, 7, 5, 12, 0, 0, 0, time.UTC)
+	m := loopTestModel(t, now)
+	m = startFixedLoop(m, "recovers", time.Minute)
+	id := m.loops[0].id
+	m = m.advanceLoop(id, "", errors.New("x"))
+	m = m.advanceLoop(id, "", errors.New("x"))
+	m = m.advanceLoop(id, "back to healthy", nil) // a success resets the streak
+	if len(m.loops) != 1 {
+		t.Fatalf("a recovered failure streak should not stop the loop")
+	}
+	if m.loops[0].failRun != 0 {
+		t.Fatalf("a successful iteration should reset failRun, got %d", m.loops[0].failRun)
+	}
+}
+
+func TestCancelRunClearsActiveLoopAndRearms(t *testing.T) {
+	now := time.Date(2026, 7, 5, 12, 0, 0, 0, time.UTC)
+	m := loopTestModel(t, now)
+	m = startFixedLoop(m, "x", 5*time.Minute)
+	m.activeLoopID = m.loops[0].id
+	m.loops[0].nextRunAt = time.Time{} // as if the iteration is running
+	m.pending = true
+	m.activeRunID = 7
+	m.runCancel = func() {}
+
+	m.cancelRun()
+
+	if m.activeLoopID != "" {
+		t.Fatal("cancel should clear the active-loop tag so the next turn isn't misattributed")
+	}
+	if m.loops[0].nextRunAt.IsZero() {
+		t.Fatal("cancel should re-arm the interrupted loop, not leave it running forever")
+	}
+	if !m.loops[0].nextRunAt.Equal(now.Add(5 * time.Minute)) {
+		t.Fatalf("re-armed nextRunAt = %v, want +5m", m.loops[0].nextRunAt)
 	}
 }
 

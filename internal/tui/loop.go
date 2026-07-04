@@ -44,6 +44,12 @@ const (
 	// no-progress result should stop rather than churn.
 	loopDoomThreshold = 5
 
+	// loopMaxFailures ends a loop after this many consecutive failed iterations, so
+	// a loop whose iterations keep erroring stops instead of churning to the
+	// iteration cap (a failed turn has no final answer, so the doom guard can't see
+	// the lack of progress).
+	loopMaxFailures = 3
+
 	// loopPollInterval is how often the controller checks whether a loop is due.
 	// A loop only fires while idle, so this is a cheap between-turn poll.
 	loopPollInterval = 1 * time.Second
@@ -63,7 +69,10 @@ type loopState struct {
 	// final answers past loopDoomThreshold end the loop.
 	lastResult string
 	repeatRun  int
-	paused     bool
+	// failRun counts consecutive failed iterations; past loopMaxFailures the loop
+	// stops (a failed turn has no final answer for the doom guard to compare).
+	failRun int
+	paused  bool
 }
 
 func (l *loopState) iterationCap() int {
@@ -342,6 +351,11 @@ func (m model) advanceLoop(id, finalAnswer string, runErr error) model {
 		return m // stopped mid-run
 	}
 	l.iteration++
+	if runErr != nil {
+		l.failRun++
+	} else {
+		l.failRun = 0
+	}
 	res := strings.TrimSpace(finalAnswer)
 	if res != "" && res == l.lastResult {
 		l.repeatRun++
@@ -353,6 +367,8 @@ func (m model) advanceLoop(id, finalAnswer string, runErr error) model {
 	switch {
 	case m.loopDone:
 		return m.removeLoop(id, fmt.Sprintf("Loop %s finished — the task reported done after %d iteration(s).", id, l.iteration))
+	case l.failRun >= loopMaxFailures:
+		return m.removeLoop(id, fmt.Sprintf("Loop %s stopped after %d consecutive failed iterations.", id, l.failRun))
 	case l.iteration >= l.iterationCap():
 		return m.removeLoop(id, fmt.Sprintf("Loop %s stopped at its %d-iteration cap.", id, l.iteration))
 	case l.repeatRun >= loopDoomThreshold:
