@@ -1075,6 +1075,8 @@ func executeToolCall(ctx context.Context, registry *tools.Registry, call ToolCal
 		// Per-session file version tracker so write_file/edit_file refuse to clobber
 		// a file that changed on disk outside Zero since it was last read.
 		FileTracker: options.FileTracker,
+		// Inline post-edit diagnostics for mutating tools (nil = disabled).
+		Diagnostics: options.FileDiagnostics,
 		// Forward the run's operator tool filters so a filter-aware tool
 		// (tool_search) never discloses or loads an operator-hidden deferred tool.
 		EnabledTools:  options.EnabledTools,

@@ -44,7 +44,7 @@ func (tool writeFileTool) Run(ctx context.Context, args map[string]any) Result {
 	return tool.RunWithOptions(ctx, args, RunOptions{})
 }
 
-func (tool writeFileTool) RunWithOptions(_ context.Context, args map[string]any, options RunOptions) Result {
+func (tool writeFileTool) RunWithOptions(ctx context.Context, args map[string]any, options RunOptions) Result {
 	requestedPath, err := aliasedStringArg(args, []string{"path", "file", "file_path", "filename"}, "", true, false)
 	if err != nil {
 		return errorResult("Error: Invalid arguments for write_file: " + err.Error())
@@ -126,6 +126,7 @@ func (tool writeFileTool) RunWithOptions(_ context.Context, args map[string]any,
 		lines++
 	}
 	summary := fmt.Sprintf("%s %s (%d lines).", verb, relativePath, lines)
+	summary += inlineDiagnostics(ctx, options, absolutePath, relativePath)
 	result := okResult(summary)
 	result.ChangedFiles = []string{relativePath}
 	// Card-only preview: a real unified diff (all-green for a create, red/green for

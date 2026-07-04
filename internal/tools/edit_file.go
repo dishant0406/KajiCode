@@ -45,7 +45,7 @@ func (tool editFileTool) Run(ctx context.Context, args map[string]any) Result {
 	return tool.RunWithOptions(ctx, args, RunOptions{})
 }
 
-func (tool editFileTool) RunWithOptions(_ context.Context, args map[string]any, options RunOptions) Result {
+func (tool editFileTool) RunWithOptions(ctx context.Context, args map[string]any, options RunOptions) Result {
 	requestedPath, err := aliasedStringArg(args, []string{"path", "file", "file_path", "filename"}, "", true, false)
 	if err != nil {
 		return errorResult("Error: Invalid arguments for edit_file: " + err.Error())
@@ -157,6 +157,7 @@ func (tool editFileTool) RunWithOptions(_ context.Context, args map[string]any, 
 		suffix = "s"
 	}
 	summary := fmt.Sprintf("Successfully edited %s (replaced %d occurrence%s).", relativePath, replacedCount, suffix)
+	summary += inlineDiagnostics(ctx, options, absolutePath, relativePath)
 	result := okResult(summary)
 	result.ChangedFiles = []string{relativePath}
 	// Card-only preview (Display.Preview): the model's Output stays the one-line
