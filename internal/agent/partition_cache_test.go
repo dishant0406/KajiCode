@@ -16,7 +16,7 @@ type countingSchemaTool struct {
 	calls *int
 }
 
-func (t countingSchemaTool) Name() string       { return t.name }
+func (t countingSchemaTool) Name() string        { return t.name }
 func (t countingSchemaTool) Description() string { return "counts schema reads" }
 func (t countingSchemaTool) Parameters() tools.Schema {
 	*t.calls++

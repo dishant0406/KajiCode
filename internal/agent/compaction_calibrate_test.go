@@ -24,8 +24,8 @@ func TestCalibrationConvergesTowardActual(t *testing.T) {
 
 func TestCalibrateIgnoresDegenerateSamples(t *testing.T) {
 	state := &compactionState{enabled: true}
-	state.calibrate(0, 500)   // zero estimate
-	state.calibrate(500, 0)   // zero actual
+	state.calibrate(0, 500) // zero estimate
+	state.calibrate(500, 0) // zero actual
 	if state.calibrationRatio != 0 {
 		t.Fatalf("degenerate samples must not move the ratio, got %v", state.calibrationRatio)
 	}
