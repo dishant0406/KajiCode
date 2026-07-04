@@ -157,24 +157,26 @@ func (tool bashTool) run(ctx context.Context, args map[string]any, engine *zeroS
 			}
 		}
 		markLikelySandboxDenial(meta, plan, exitCode, stdout.String(), stderrText)
+		outText, errText := budgetBashOutput(stdout.String(), stderrText, meta)
 		return Result{
 			Status: StatusError,
-			Output: formatBashOutputWithShellHint(commandText, stdout.String(), stderrText, exitCode, meta),
+			Output: formatBashOutputWithShellHint(commandText, outText, errText, exitCode, meta),
 			Meta:   meta,
 		}
 	}
 
 	markLikelySandboxDenial(meta, plan, exitCode, stdout.String(), stderrText)
+	outText, errText := budgetBashOutput(stdout.String(), stderrText, meta)
 	if meta[SandboxLikelyDeniedMeta] == "true" {
 		return Result{
 			Status: StatusError,
-			Output: formatBashOutputWithShellHint(commandText, stdout.String(), stderrText, exitCode, meta),
+			Output: formatBashOutputWithShellHint(commandText, outText, errText, exitCode, meta),
 			Meta:   meta,
 		}
 	}
 	return Result{
 		Status: StatusOK,
-		Output: formatBashOutput(stdout.String(), stderrText, exitCode),
+		Output: formatBashOutput(outText, errText, exitCode),
 		Meta:   meta,
 	}
 }
@@ -343,6 +345,51 @@ func formatBashOutput(stdout string, stderr string, exitCode int) string {
 		return "Command completed with no output."
 	}
 	return strings.Join(parts, "\n")
+}
+
+// bashOutputBudgetBytes caps each of stdout/stderr shown to the model. bash is the
+// one tool that can emit unbounded output (`cat large.log`, `find /`, verbose test
+// runs); every other read/search tool already budgets its output. Head+tail
+// truncation keeps both the start and the end of an oversized stream, since
+// build/test failures usually surface at the tail.
+const bashOutputBudgetBytes = 96 * 1024
+
+// budgetBashOutput truncates stdout and stderr to bashOutputBudgetBytes each,
+// keeping the head and tail of anything larger, and records raw/emitted byte
+// counts plus a truncated flag in meta (mirroring outputBudgetMeta's shape for
+// the read/search tools). Detection that needs the full output (sandbox-denial
+// scanning) must run on the raw strings before this is applied.
+func budgetBashOutput(stdout string, stderr string, meta map[string]string) (string, string) {
+	outText, outRaw, outTrunc := truncateHeadTail(stdout, bashOutputBudgetBytes)
+	errText, errRaw, errTrunc := truncateHeadTail(stderr, bashOutputBudgetBytes)
+	if meta != nil {
+		emitted := len(outText) + len(errText)
+		meta["raw_bytes"] = strconv.Itoa(outRaw + errRaw)
+		meta["emitted_bytes"] = strconv.Itoa(emitted)
+		meta["estimated_tokens"] = strconv.Itoa(estimatedTokensFromBytes(emitted))
+		if outTrunc || errTrunc {
+			meta["truncated"] = "true"
+		}
+	}
+	return outText, errText
+}
+
+// truncateHeadTail keeps the first and last halves of value when it exceeds
+// maxBytes, dropping the middle behind a marker. Returns the possibly-truncated
+// text, the raw byte length, and whether truncation happened.
+func truncateHeadTail(value string, maxBytes int) (string, int, bool) {
+	raw := len(value)
+	if maxBytes <= 0 || raw <= maxBytes {
+		return value, raw, false
+	}
+	marker := fmt.Sprintf("\n[zero] output truncated: %d bytes omitted from the middle — redirect to a file and read_file a range for the full text]\n", raw-maxBytes)
+	budget := maxBytes - len(marker)
+	if budget < 0 {
+		budget = 0
+	}
+	head := budget / 2
+	tail := budget - head
+	return utf8Prefix(value, head) + marker + utf8Suffix(value, tail), raw, true
 }
 
 func formatBashOutputWithShellHint(command string, stdout string, stderr string, exitCode int, meta map[string]string) string {
