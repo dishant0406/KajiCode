@@ -20,6 +20,16 @@ const (
 	toolNameUpdatePlan = "update_plan"
 	toolNameToolSearch = "tool_search"
 	toolNameSkill      = "skill"
+	toolNameWriteFile  = "write_file"
+	toolNameEditFile   = "edit_file"
+)
+
+// maxRecentEdits caps how many edited files are carried across a compaction, and
+// maxEditNoteBytes caps each edit's one-line note, so a long editing run can't
+// bloat the preserved-state block.
+const (
+	maxRecentEdits   = 20
+	maxEditNoteBytes = 160
 )
 
 const (
@@ -100,10 +110,103 @@ func formatPlanArguments(arguments string) string {
 }
 
 // skillEntry is a named preserved body. It began as loaded-skill state and is
-// reused for loaded tools and project instruction blocks.
+// reused for loaded tools, project instruction blocks, and recent file edits.
 type skillEntry struct {
 	name string
 	body string
+}
+
+// recentEdits returns the files mutated by write_file/edit_file calls in messages
+// — latest note per path, in first-seen order — as skillEntry{name: path, body:
+// note}. After compaction elides the editing turns, this tells the model WHAT it
+// changed in each file (from the tool's result) so it need not re-read to
+// rediscover its own footprint. Capped at maxRecentEdits paths.
+func recentEdits(messages []zeroruntime.Message) []skillEntry {
+	pathByID := map[string]string{}
+	order := make([]string, 0)
+	seen := map[string]bool{}
+	for _, message := range messages {
+		for _, call := range message.ToolCalls {
+			if call.Name != toolNameWriteFile && call.Name != toolNameEditFile {
+				continue
+			}
+			path := editPathFromArguments(call.Arguments)
+			if path == "" {
+				continue
+			}
+			if call.ID != "" {
+				pathByID[call.ID] = path
+			}
+			if !seen[path] {
+				seen[path] = true
+				order = append(order, path)
+			}
+		}
+	}
+	if len(order) == 0 {
+		return nil
+	}
+
+	noteByPath := map[string]string{}
+	for _, message := range messages {
+		if message.Role != zeroruntime.MessageRoleTool || message.ToolCallID == "" {
+			continue
+		}
+		if path, ok := pathByID[message.ToolCallID]; ok {
+			noteByPath[path] = editNote(message.Content)
+		}
+	}
+
+	// Keep the most recent maxRecentEdits paths (the tail of first-seen order).
+	if len(order) > maxRecentEdits {
+		order = order[len(order)-maxRecentEdits:]
+	}
+	entries := make([]skillEntry, 0, len(order))
+	for _, path := range order {
+		entries = append(entries, skillEntry{name: path, body: noteByPath[path]})
+	}
+	return entries
+}
+
+// editPathFromArguments pulls the target file path from a write_file/edit_file
+// call's JSON arguments (path/file/file_path/filename aliases). Returns "" on
+// malformed arguments or no path.
+func editPathFromArguments(arguments string) string {
+	var parsed struct {
+		Path     string `json:"path"`
+		File     string `json:"file"`
+		FilePath string `json:"file_path"`
+		Filename string `json:"filename"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(arguments)), &parsed); err != nil {
+		return ""
+	}
+	for _, candidate := range []string{parsed.Path, parsed.File, parsed.FilePath, parsed.Filename} {
+		if s := strings.TrimSpace(candidate); s != "" {
+			return s
+		}
+	}
+	return ""
+}
+
+// editNote reduces an edit tool's result to a single short line (its first
+// non-empty line, byte-capped on a rune boundary) for the preserved summary.
+func editNote(content string) string {
+	for _, line := range strings.Split(content, "\n") {
+		s := strings.TrimSpace(line)
+		if s == "" {
+			continue
+		}
+		if len(s) > maxEditNoteBytes {
+			limit := maxEditNoteBytes
+			for limit > 0 && !utf8.RuneStart(s[limit]) {
+				limit--
+			}
+			s = s[:limit] + "…"
+		}
+		return s
+	}
+	return ""
 }
 
 // loadedSkills returns the skills loaded via the skill tool in messages — the
@@ -310,9 +413,15 @@ func capBody(body string) string {
 // preservedState is the JSON shape of the carried-across-compaction block.
 type preservedState struct {
 	Plan                string                 `json:"plan,omitempty"`
+	RecentEdits         []preservedEdit        `json:"recent_edits,omitempty"`
 	Tools               []preservedTool        `json:"tools,omitempty"`
 	Skills              []preservedSkill       `json:"skills,omitempty"`
 	ProjectInstructions []preservedInstruction `json:"project_instructions,omitempty"`
+}
+
+type preservedEdit struct {
+	Path string `json:"path"`
+	Note string `json:"note,omitempty"`
 }
 
 type preservedTool struct {
@@ -347,6 +456,11 @@ func appendPreservedState(summary string, middle []zeroruntime.Message) string {
 		plan = priorState.Plan
 	}
 
+	// Recent edits: merge edits preserved earlier with fresh write_file/edit_file
+	// results in middle (newer note per path wins), so the model keeps an
+	// authoritative record of what it changed across repeated compactions.
+	edits := capRecentEdits(mergeSkillEntries(preservedEditsToEntries(priorState.RecentEdits), recentEdits(middle)))
+
 	// Tools: preserve deferred tool_search schemas from the transcript. Fresh
 	// loads override older carried copies by name.
 	tools := mergeSkillEntries(preservedToolsToEntries(priorState.Tools), loadedToolSchemas(middle))
@@ -360,19 +474,42 @@ func appendPreservedState(summary string, middle []zeroruntime.Message) string {
 		projectInstructionEntries(middle),
 	)
 
-	if block := formatPreservedState(plan, tools, skills, instructions); block != "" {
+	if block := formatPreservedState(plan, edits, tools, skills, instructions); block != "" {
 		summary += "\n\n" + block
 	}
 	return summary
 }
 
+// capRecentEdits bounds the preserved edit list to the most recent maxRecentEdits
+// entries after a merge, so repeated compactions can't grow it without limit.
+func capRecentEdits(entries []skillEntry) []skillEntry {
+	if len(entries) > maxRecentEdits {
+		return entries[len(entries)-maxRecentEdits:]
+	}
+	return entries
+}
+
+func preservedEditsToEntries(edits []preservedEdit) []skillEntry {
+	entries := make([]skillEntry, 0, len(edits))
+	for _, e := range edits {
+		if e.Path == "" {
+			continue
+		}
+		entries = append(entries, skillEntry{name: e.Path, body: e.Note})
+	}
+	return entries
+}
+
 // formatPreservedState renders state as the labelled, single-line
 // JSON block. Returns "" when there is nothing to preserve.
-func formatPreservedState(plan string, tools, skills, instructions []skillEntry) string {
-	if plan == "" && len(tools) == 0 && len(skills) == 0 && len(instructions) == 0 {
+func formatPreservedState(plan string, edits, tools, skills, instructions []skillEntry) string {
+	if plan == "" && len(edits) == 0 && len(tools) == 0 && len(skills) == 0 && len(instructions) == 0 {
 		return ""
 	}
 	state := preservedState{Plan: plan}
+	for _, e := range edits {
+		state.RecentEdits = append(state.RecentEdits, preservedEdit{Path: e.name, Note: e.body})
+	}
 	for _, t := range tools {
 		state.Tools = append(state.Tools, preservedTool{Name: t.name, Body: t.body})
 	}
