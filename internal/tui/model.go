@@ -190,10 +190,23 @@ type model struct {
 	// like a frozen terminal (for ANY provider, not just slow ones). Zero = idle.
 	turnStartedAt time.Time
 	queuedMessage string
-	exiting       bool
-	runCancel     context.CancelFunc
-	runID         int
-	activeRunID   int
+	// loops holds the session's active /loop definitions (see loop.go). activeLoopID
+	// tags the in-flight run when it is a loop iteration (empty = a user turn), so the
+	// completion seam knows whether to advance a loop. loopSeq invalidates a stale
+	// pending poll tick when loops are stopped; loopTicking guards against scheduling
+	// a second poll ticker. loopNextWake carries a self-paced iteration's model-chosen
+	// delay from the loop_control tool back to the completion seam.
+	loops        []*loopState
+	activeLoopID string
+	loopSeq      int
+	loopCounter  int
+	loopTicking  bool
+	loopNextWake time.Duration
+	loopDone     bool
+	exiting      bool
+	runCancel    context.CancelFunc
+	runID        int
+	activeRunID  int
 	// flushRunIDs holds the ids of runs cancelled while still in flight, mapped
 	// to the session they were recording into AT CANCEL TIME. Each cancelled
 	// agent goroutine keeps running to completion and returns its accumulated
@@ -1896,6 +1909,16 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.clearComposer()
 		m.clearSuggestions()
 		return m, nil
+	case loopTickMsg:
+		// Idle poll for due loops. A stale tick (loops changed) or an empty loop set
+		// ends the ticker; otherwise fire the earliest due loop if idle and reschedule.
+		if msg.seq != m.loopSeq || len(m.loops) == 0 {
+			m.loopTicking = false
+			return m, nil
+		}
+		var fireCmd tea.Cmd
+		m, fireCmd = m.fireDueLoopIfIdle()
+		return m, tea.Batch(fireCmd, m.scheduleLoopTick())
 	case agentResponseMsg:
 		if msg.runID != m.activeRunID {
 			// A run cancelled while in flight still finishes in its goroutine and
@@ -2065,8 +2088,25 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// complete once the turn settles.
 		var sweepCmd tea.Cmd
 		m, sweepCmd = m.maybeGitSweep()
+		// If this run was a loop iteration, advance that loop (schedule its next wake
+		// or stop it). Done before launchQueuedMessageIfReady so a user's queued prompt
+		// still wins the immediate re-launch; the loop fires on the next idle tick.
+		var loopTickCmd tea.Cmd
+		if loopID := m.activeLoopID; loopID != "" {
+			m.activeLoopID = ""
+			loopFinalAnswer := ""
+			for _, row := range msg.rows {
+				if row.kind == rowAssistant && row.final {
+					loopFinalAnswer = row.text
+				}
+			}
+			m = m.advanceLoop(loopID, loopFinalAnswer, msg.err)
+			// advanceLoop -> removeLoop may have stopped the ticker; restart it if
+			// other loops remain.
+			m, loopTickCmd = m.ensureLoopTick()
+		}
 		next, queuedCmd := m.launchQueuedMessageIfReady()
-		return next, tea.Batch(titleCmd, recapCmd, sweepCmd, queuedCmd)
+		return next, tea.Batch(titleCmd, recapCmd, sweepCmd, queuedCmd, loopTickCmd)
 	case sessionTitleGeneratedMsg:
 		return m.handleSessionTitleGenerated(msg)
 	case recapGeneratedMsg:
@@ -3840,6 +3880,8 @@ func (m model) handleSubmit() (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m.startNewSession(), nil
+	case commandLoop:
+		return m.handleLoopCommand(command.text)
 	case commandExit:
 		// /exit gets the same protection as Ctrl+C: cancel any in-flight run and
 		// defer the quit until its checkpoint session events flush — quitting

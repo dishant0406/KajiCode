@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	tea "charm.land/bubbletea/v2"
 )
 
 // The /loop command repeats a prompt or slash command in one of two modes:
@@ -215,6 +217,295 @@ func clampLoopInterval(d time.Duration) (time.Duration, string) {
 	default:
 		return d, ""
 	}
+}
+
+// loopTickMsg is the between-turn poll that fires a due loop while the session is
+// idle. seq invalidates a tick left over from before the loop set changed.
+type loopTickMsg struct{ seq int }
+
+// handleLoopCommand dispatches a parsed `/loop ...` invocation.
+func (m model) handleLoopCommand(args string) (model, tea.Cmd) {
+	cmd := parseLoopCommand(args)
+	switch cmd.action {
+	case loopActionList:
+		return m.appendLoopSystem(m.loopListText()), nil
+	case loopActionUsage:
+		if len(m.loops) > 0 {
+			return m.appendLoopSystem(m.loopListText()), nil
+		}
+		return m.appendLoopSystem(loopUsageText()), nil
+	case loopActionStop:
+		return m.stopLoop(cmd.targetID)
+	case loopActionStopAll:
+		return m.stopAllLoops()
+	case loopActionStart:
+		return m.startLoop(cmd)
+	}
+	return m, nil
+}
+
+// startLoop registers a new loop and (re)starts the idle poll ticker. The first
+// iteration fires on the next idle tick (nextRunAt = now).
+func (m model) startLoop(cmd loopCommand) (model, tea.Cmd) {
+	if reason, ok := validateLoopTarget(cmd.prompt); !ok {
+		return m.appendLoopSystem(reason), nil
+	}
+	m.loopCounter++
+	id := "L" + strconv.Itoa(m.loopCounter)
+	loop := &loopState{
+		id:        id,
+		mode:      cmd.mode,
+		prompt:    cmd.prompt,
+		interval:  cmd.interval,
+		createdAt: m.now(),
+		nextRunAt: m.now(), // fire the first iteration on the next idle tick
+	}
+	m.loops = append(m.loops, loop)
+	note := ""
+	if cmd.note != "" {
+		note = " (" + cmd.note + ")"
+	}
+	m = m.appendLoopSystem(fmt.Sprintf(
+		"Loop %s started — %s%s. Runs while this session is idle; stop with /loop stop %s.",
+		id, loop.cadenceText(), note, id))
+	return m.ensureLoopTick()
+}
+
+// stopLoop stops one loop by id, or the single active loop when the id is omitted.
+func (m model) stopLoop(id string) (model, tea.Cmd) {
+	if len(m.loops) == 0 {
+		return m.appendLoopSystem("No active loops."), nil
+	}
+	if id == "" {
+		if len(m.loops) == 1 {
+			return m.removeLoop(m.loops[0].id, "Loop "+m.loops[0].id+" stopped."), nil
+		}
+		return m.appendLoopSystem("Multiple loops active — use /loop stop <id> or /loop stop all.\n" + m.loopListText()), nil
+	}
+	if m.findLoop(id) == nil {
+		return m.appendLoopSystem("No loop " + id + ". " + m.loopListText()), nil
+	}
+	return m.removeLoop(id, "Loop "+id+" stopped."), nil
+}
+
+func (m model) stopAllLoops() (model, tea.Cmd) {
+	if len(m.loops) == 0 {
+		return m.appendLoopSystem("No active loops."), nil
+	}
+	n := len(m.loops)
+	m.loops = nil
+	m.loopSeq++ // invalidate the pending poll tick
+	m.loopTicking = false
+	return m.appendLoopSystem(fmt.Sprintf("Stopped all %d loop(s).", n)), nil
+}
+
+// fireDueLoopIfIdle fires the earliest due loop when the session is idle. Called
+// from the poll tick; a no-op while a turn, modal, or queued user message is
+// pending (the loop simply waits for the next idle tick).
+func (m model) fireDueLoopIfIdle() (model, tea.Cmd) {
+	if m.loopBusy() || len(m.loops) == 0 {
+		return m, nil
+	}
+	now := m.now()
+	var due *loopState
+	for _, l := range m.loops {
+		if l.due(now) && (due == nil || l.nextRunAt.Before(due.nextRunAt)) {
+			due = l
+		}
+	}
+	if due == nil {
+		return m, nil
+	}
+	m.activeLoopID = due.id
+	due.nextRunAt = time.Time{} // mark running
+	m.loopNextWake = 0
+	m.loopDone = false
+	return m.fireLoopPrompt(due.prompt)
+}
+
+// fireLoopPrompt runs a loop's prompt as a turn — a custom /command if it resolves
+// to one, otherwise a plain prompt.
+func (m model) fireLoopPrompt(prompt string) (model, tea.Cmd) {
+	if strings.HasPrefix(strings.TrimSpace(prompt), "/") {
+		if next, teaCmd, ok := m.handleUserCommand(prompt); ok {
+			return next, teaCmd
+		}
+	}
+	return m.launchPrompt(prompt)
+}
+
+// advanceLoop updates a loop after one of its iterations completes: doom-loop and
+// cap checks, then schedules the next wake (or stops the loop).
+func (m model) advanceLoop(id, finalAnswer string, runErr error) model {
+	l := m.findLoop(id)
+	if l == nil {
+		return m // stopped mid-run
+	}
+	l.iteration++
+	res := strings.TrimSpace(finalAnswer)
+	if res != "" && res == l.lastResult {
+		l.repeatRun++
+	} else {
+		l.repeatRun = 0
+	}
+	l.lastResult = res
+
+	switch {
+	case m.loopDone:
+		return m.removeLoop(id, fmt.Sprintf("Loop %s finished — the task reported done after %d iteration(s).", id, l.iteration))
+	case l.iteration >= l.iterationCap():
+		return m.removeLoop(id, fmt.Sprintf("Loop %s stopped at its %d-iteration cap.", id, l.iteration))
+	case l.repeatRun >= loopDoomThreshold:
+		return m.removeLoop(id, fmt.Sprintf("Loop %s stopped — %d identical results in a row (no progress).", id, l.repeatRun))
+	}
+
+	if l.mode == loopModeSelfPaced {
+		l.nextRunAt = m.now().Add(clampSelfPaceDelay(m.loopNextWake))
+	} else {
+		l.nextRunAt = m.now().Add(l.interval)
+	}
+	return m
+}
+
+func (m model) findLoop(id string) *loopState {
+	for _, l := range m.loops {
+		if l.id == id {
+			return l
+		}
+	}
+	return nil
+}
+
+func (m model) removeLoop(id, note string) model {
+	kept := make([]*loopState, 0, len(m.loops))
+	for _, l := range m.loops {
+		if l.id != id {
+			kept = append(kept, l)
+		}
+	}
+	m.loops = kept
+	m.loopSeq++ // invalidate the pending poll tick; a fresh one is scheduled if loops remain
+	m.loopTicking = false
+	if note != "" {
+		m = m.appendLoopSystem(note)
+	}
+	return m
+}
+
+// ensureLoopTick starts the idle poll ticker if it is not already running.
+func (m model) ensureLoopTick() (model, tea.Cmd) {
+	if m.loopTicking || len(m.loops) == 0 {
+		return m, nil
+	}
+	m.loopTicking = true
+	return m, m.scheduleLoopTick()
+}
+
+func (m model) scheduleLoopTick() tea.Cmd {
+	seq := m.loopSeq
+	return tea.Tick(loopPollInterval, func(time.Time) tea.Msg {
+		return loopTickMsg{seq: seq}
+	})
+}
+
+// loopBusy reports whether the session is too busy for a loop to fire — a turn,
+// modal, queued user message, or compaction is in flight. Mirrors the guard in
+// launchQueuedMessageIfReady so loops and queued prompts never collide.
+func (m model) loopBusy() bool {
+	return m.pending || m.exiting || m.compactInFlight || m.hasQueuedMessage() ||
+		m.pendingPermission != nil || m.pendingAskUser != nil || m.pendingSpecReview != nil
+}
+
+func (m model) appendLoopSystem(text string) model {
+	m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: text})
+	return m
+}
+
+// loopActive reports whether any loop is running (for the footer + leave warning).
+func (m model) loopActive() bool { return len(m.loops) > 0 }
+
+// loopFooterSummary renders the persistent "N loops · next 3:05pm" footer segment,
+// or "" when no loops are active.
+func (m model) loopFooterSummary() string {
+	if len(m.loops) == 0 {
+		return ""
+	}
+	var next time.Time
+	for _, l := range m.loops {
+		if l.nextRunAt.IsZero() || l.paused {
+			continue
+		}
+		if next.IsZero() || l.nextRunAt.Before(next) {
+			next = l.nextRunAt
+		}
+	}
+	label := fmt.Sprintf("%d loop", len(m.loops))
+	if len(m.loops) != 1 {
+		label += "s"
+	}
+	if next.IsZero() {
+		return label
+	}
+	return label + " · next " + next.Format("3:04pm")
+}
+
+func (m model) loopListText() string {
+	if len(m.loops) == 0 {
+		return "No active loops."
+	}
+	var b strings.Builder
+	b.WriteString("Active loops:\n")
+	now := m.now()
+	for _, l := range m.loops {
+		when := "running"
+		if !l.nextRunAt.IsZero() {
+			if d := l.nextRunAt.Sub(now); d > 0 {
+				when = "next in " + formatLoopDuration(d.Round(time.Second))
+			} else {
+				when = "due"
+			}
+		}
+		b.WriteString(fmt.Sprintf("  %s · %s · iter %d · %s · %s\n",
+			l.id, l.cadenceText(), l.iteration, when, truncateLoopPrompt(l.prompt)))
+	}
+	b.WriteString("Stop with /loop stop <id> or /loop stop all.")
+	return b.String()
+}
+
+func loopUsageText() string {
+	return "Repeat a prompt or command:\n" +
+		"  /loop 5m /babysit-prs   — run a command every 5 minutes\n" +
+		"  /loop watch CI every 2m — trailing interval form\n" +
+		"  /loop keep tidying docs — self-paced (the model picks its own cadence and stops when done)\n" +
+		"  /loop list              — show active loops\n" +
+		"  /loop stop [id|all]     — stop a loop\n" +
+		"Loops run while this session is idle and stop when you close it."
+}
+
+// validateLoopTarget rejects looping a built-in command (only a prompt or a custom
+// /command may loop).
+func validateLoopTarget(prompt string) (string, bool) {
+	p := strings.TrimSpace(prompt)
+	if p == "" {
+		return "Nothing to loop — give a prompt or a /command.", false
+	}
+	if strings.HasPrefix(p, "/") {
+		parsed := parseCommand(p)
+		if parsed.kind != commandPrompt && parsed.kind != commandUnknown {
+			return "A loop can only run a prompt or a custom /command, not a built-in like " + strings.Fields(p)[0] + ".", false
+		}
+	}
+	return "", true
+}
+
+func truncateLoopPrompt(prompt string) string {
+	const max = 48
+	p := strings.TrimSpace(strings.ReplaceAll(prompt, "\n", " "))
+	runes := []rune(p)
+	if len(runes) <= max {
+		return p
+	}
+	return strings.TrimSpace(string(runes[:max])) + "…"
 }
 
 // clampSelfPaceDelay bounds a model-chosen self-paced delay to the self-pace
