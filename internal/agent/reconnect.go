@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"strings"
 	"time"
 
@@ -17,9 +18,19 @@ import (
 // times. We retry ONLY the connect (not a partially-consumed stream), so no
 // already-forwarded OnText is ever duplicated.
 const (
-	maxStreamReconnects = 2
-	streamReconnectBase = 500 * time.Millisecond
+	// maxStreamReconnects is how many times the connect is re-issued after a
+	// transient disconnect. 4 (not 2): with jittered exponential backoff this rides
+	// out a multi-second network blip (~0.5s + 1s + 2s + 4s worst case) instead of
+	// dying on a 2s hiccup and re-burning every token on a restart.
+	maxStreamReconnects = 4
+	// streamReconnectMax caps a single backoff so the tail attempts don't wait
+	// minutes on a long outage.
+	streamReconnectMax = 8 * time.Second
 )
+
+// streamReconnectBase is the first-retry delay (doubled each subsequent attempt).
+// A var, not a const, so tests can shrink it to keep the exhaustion path fast.
+var streamReconnectBase = 500 * time.Millisecond
 
 // reconnectNotifier is called before each retry with the 1-based attempt number
 // and the max, so the caller can surface a "Reconnecting N/max" notice. Nil is
@@ -73,7 +84,7 @@ func streamWithReconnect(ctx context.Context, provider Provider, request zerorun
 		if notify != nil {
 			notify(attempt, maxStreamReconnects)
 		}
-		if waitErr := sleepWithContext(ctx, backoffFor(attempt)); waitErr != nil {
+		if waitErr := sleepWithContext(ctx, jitteredBackoff(attempt)); waitErr != nil {
 			return nil, err // ctx cancelled while waiting; surface the original error
 		}
 		stream, err = provider.StreamCompletion(ctx, request)
@@ -96,6 +107,13 @@ func shouldReconnect(ctx context.Context, err error) bool {
 	if isContextLimitError(msg) || isImageRejectionError(err) {
 		return false
 	}
+	// Transport-level disconnects only. HTTP 5xx statuses are deliberately NOT
+	// matched here: 503 already exhausted providerio.SendWithRetry (retrying it
+	// again is a redundant double-retry), and 502/500/504 are non-idempotent by
+	// providerio's rule (the completion POST may have been processed), so replaying
+	// the connect risks duplicate billable work. A genuine transport failure (EOF,
+	// reset, refused, timeout) means no response was received, which is safe to
+	// reconnect.
 	for _, needle := range []string{
 		"eof",
 		"connection reset",
@@ -106,8 +124,6 @@ func shouldReconnect(ctx context.Context, err error) bool {
 		"timed out",
 		"temporarily unavailable",
 		"i/o timeout",
-		"503",
-		"502",
 		"server closed",
 		"unexpected end",
 	} {
@@ -118,12 +134,29 @@ func shouldReconnect(ctx context.Context, err error) bool {
 	return false
 }
 
+// backoffFor is the deterministic exponential base delay for a 1-based attempt,
+// capped at streamReconnectMax. Jitter is layered on separately (jitteredBackoff).
 func backoffFor(attempt int) time.Duration {
 	d := streamReconnectBase
 	for i := 1; i < attempt; i++ {
+		if d >= streamReconnectMax {
+			return streamReconnectMax
+		}
 		d *= 2
 	}
+	if d > streamReconnectMax {
+		d = streamReconnectMax
+	}
 	return d
+}
+
+// jitteredBackoff adds up to 50% random jitter on top of backoffFor so concurrent
+// runs (swarm members, a cron fleet) that all trip on the same outage don't
+// reconnect in lockstep and hammer a recovering endpoint. Never shorter than the
+// deterministic base, so backoff still grows attempt over attempt.
+func jitteredBackoff(attempt int) time.Duration {
+	base := backoffFor(attempt)
+	return base + time.Duration(rand.Int63n(int64(base/2)+1))
 }
 
 func sleepWithContext(ctx context.Context, d time.Duration) error {
