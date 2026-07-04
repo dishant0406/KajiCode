@@ -43,8 +43,12 @@ const (
 	toolFailureHintAt = 2
 	// toolFailureStopAt halts the run after a tool fails this many times in a row
 	// with the same error, so NO model (weak or strong) burns turns looping on a
-	// bad call.
-	toolFailureStopAt = 4
+	// bad call. Set to 6 (not 4): a corrective hint fires at toolFailureHintAt (2),
+	// and a model iterating on a genuinely tricky edit can legitimately fail a few
+	// times after the hint while converging — stopping at 4 cut those runs short.
+	// The streak still resets the moment the tool succeeds or hits a different
+	// error, so this only affects true same-error loops.
+	toolFailureStopAt = 6
 
 	// maxContinueNudges bounds how many times the headless completion gate
 	// (Options.RequireCompletionSignal) re-prompts a model that stopped without a
