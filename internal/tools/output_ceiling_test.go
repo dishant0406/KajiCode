@@ -35,7 +35,7 @@ func newCeilingFakeTool(name, output string) ceilingFakeTool {
 // An unbudgeted tool's oversized output is capped at the universal ceiling,
 // head and tail survive, and the full output is spilled to a re-readable file.
 func TestOutputCeilingCapsUnbudgetedTool(t *testing.T) {
-	t.Setenv("TMPDIR", t.TempDir())
+	setTestTempDir(t)
 	big := "HEAD_MARK\n" + strings.Repeat("z", defaultOutputCeilingTokens*4*3) + "\nTAIL_MARK"
 
 	registry := NewRegistry()
@@ -98,7 +98,7 @@ func TestOutputCeilingSmallOutputUntouched(t *testing.T) {
 
 // ZERO_TOOL_OUTPUT_CEILING_TOKENS tightens, loosens, or disables the ceiling.
 func TestOutputCeilingEnvOverride(t *testing.T) {
-	t.Setenv("TMPDIR", t.TempDir())
+	setTestTempDir(t)
 	big := strings.Repeat("z", 100*1024)
 
 	t.Setenv(outputCeilingEnv, "1000")
@@ -124,6 +124,7 @@ func TestSelfBudgetingExemptionList(t *testing.T) {
 		NewBashTool(dir),
 		NewExecCommandTool(dir, newExecSessionManager()),
 		NewReadFileTool(dir),
+		NewReadMinifiedFileTool(dir),
 		NewGrepTool(dir),
 		NewGlobTool(dir),
 		NewListDirectoryTool(dir),

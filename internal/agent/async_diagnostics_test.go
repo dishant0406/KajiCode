@@ -221,3 +221,52 @@ func TestRunDeliversAsyncDiagnosticsNudgeNextTurn(t *testing.T) {
 		t.Fatalf("checked path = %q, want %q", checkedPath, want)
 	}
 }
+
+// When the run hits the maxTurns ceiling right after an edit turn, the
+// final-answer request must still carry the diagnostics nudge — otherwise an
+// error introduced by the last edit would go unreported in the summary.
+func TestRunDrainsAsyncDiagnosticsBeforeMaxTurnsFinalAnswer(t *testing.T) {
+	registry := tools.NewRegistry()
+	registry.Register(changedFilesTool{})
+	provider := &mockProvider{
+		turns: [][]zeroruntime.StreamEvent{
+			{
+				{Type: zeroruntime.StreamEventToolCallStart, ToolCallID: "call-1", ToolName: "fake_edit"},
+				{Type: zeroruntime.StreamEventToolCallDelta, ToolCallID: "call-1", ArgumentsFragment: `{}`},
+				{Type: zeroruntime.StreamEventToolCallEnd, ToolCallID: "call-1"},
+				{Type: zeroruntime.StreamEventDone},
+			},
+			{
+				{Type: zeroruntime.StreamEventText, Content: "summary"},
+				{Type: zeroruntime.StreamEventDone},
+			},
+		},
+	}
+
+	result, err := Run(context.Background(), "fix main.go", provider, Options{
+		Registry: registry,
+		Cwd:      filepath.FromSlash("/ws"),
+		MaxTurns: 1,
+		FileDiagnostics: func(context.Context, string) string {
+			return "main.go:1:1 error: boom"
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.FinalAnswer != "summary" {
+		t.Fatalf("final answer = %q", result.FinalAnswer)
+	}
+	if len(provider.requests) != 2 {
+		t.Fatalf("expected the max-turns final-answer request, got %d requests", len(provider.requests))
+	}
+	found := false
+	for _, message := range provider.requests[1].Messages {
+		if message.Role == zeroruntime.MessageRoleUser && strings.HasPrefix(message.Content, asyncDiagnosticsNudge) {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("max-turns final-answer request missing the diagnostics nudge")
+	}
+}

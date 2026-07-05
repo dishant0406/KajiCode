@@ -405,7 +405,7 @@ func budgetBashCapture(out string, outTotal int, errStr string, errTotal int, me
 	errText, errRaw, errTrunc := truncateHeadTailWithTotal(errStr, errTotal, bashOutputBudgetBytes)
 	truncated := outTrunc || errTrunc
 	if truncated {
-		if spillPath := spillBashStreams(out, errStr); spillPath != "" {
+		if spillPath := spillBashStreams(out, outTotal, errStr, errTotal); spillPath != "" {
 			hint := "\n[zero] captured output saved to " + spillPath + " (grep or read_file it instead of re-running)"
 			if errTrunc {
 				errText += hint
@@ -433,10 +433,13 @@ func budgetBashCapture(out string, outTotal int, errStr string, errTotal int, me
 // the spill directory as one sectioned file and returns its path, or "" when
 // spilling fails. The spill holds up to bashCaptureBudgetBytes of head and
 // tail per stream — everything zero kept in memory, which is more than the
-// emit budget shows the model but not necessarily the whole output (the
-// capture middle is discarded as it streams; the in-text truncation marker
-// reports the true omitted size).
-func spillBashStreams(stdout, stderr string) string {
+// emit budget shows the model but not necessarily the whole output. When the
+// capture itself dropped the middle of a stream (total exceeds the retained
+// bytes), a gap marker is inserted at the head/tail junction so the spilled
+// log never reads as contiguous when it is not.
+func spillBashStreams(stdout string, stdoutTotal int, stderr string, stderrTotal int) string {
+	stdout = sectionWithCaptureGap(stdout, stdoutTotal)
+	stderr = sectionWithCaptureGap(stderr, stderrTotal)
 	var combined strings.Builder
 	combined.Grow(len(stdout) + len(stderr) + 64)
 	combined.WriteString("### stdout\n")
@@ -447,6 +450,20 @@ func spillBashStreams(stdout, stderr string) string {
 	combined.WriteString("### stderr\n")
 	combined.WriteString(stderr)
 	return spillTruncatedOutput("bash", combined.String())
+}
+
+// sectionWithCaptureGap marks the point where boundedBuffer dropped the middle
+// of a stream. When total exceeds the retained bytes, the retained text is the
+// frozen head (bashCaptureBudgetBytes, always full once overflow happened)
+// followed immediately by the rolling tail — the junction sits at the head cap,
+// snapped back to a rune boundary.
+func sectionWithCaptureGap(text string, total int) string {
+	if total <= len(text) || len(text) <= bashCaptureBudgetBytes {
+		return text
+	}
+	head := utf8Prefix(text, bashCaptureBudgetBytes)
+	marker := fmt.Sprintf("\n[zero] capture gap: %d bytes omitted from the middle of this stream\n", total-len(text))
+	return head + marker + text[len(head):]
 }
 
 // boundedBuffer is an io.Writer that retains at most headCap bytes from the start

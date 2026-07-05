@@ -697,6 +697,17 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 	// mid-run, not a natural completion (a finished run returns via the no-tool-call
 	// success path before this). Under the headless completion gate that is INCOMPLETE,
 	// not success, so a run that loops to the turn limit isn't reported as done.
+	//
+	// The final-answer call is one more model request, so diagnostics from the
+	// LAST turn's edits get the same pre-request drain the loop gives every
+	// other turn — otherwise an error introduced by the final edit would go
+	// unreported in the summary.
+	if nudge := postEditDiagnostics.drain(ctx); nudge != "" {
+		messages = append(messages, zeroruntime.Message{
+			Role:    zeroruntime.MessageRoleUser,
+			Content: nudge,
+		})
+	}
 	if answer, finalMessages, finishReason := finalAnswerAfterMaxTurns(ctx, provider, messages, options); strings.TrimSpace(answer) != "" {
 		result.FinalAnswer = answer
 		result.FinishReason = finishReason
