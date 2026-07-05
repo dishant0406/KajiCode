@@ -3,10 +3,13 @@ package tui
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+
+	"github.com/Gitlawb/zero/internal/usercommands"
 )
 
 func loopTestModel(t *testing.T, now time.Time) model {
@@ -63,8 +66,11 @@ func TestSelfPacedUsesModelDelay(t *testing.T) {
 	m := loopTestModel(t, now)
 	m, _ = m.startLoop(loopCommand{action: loopActionStart, mode: loopModeSelfPaced, prompt: "keep tidying"})
 	id := m.loops[0].id
-	m.loopNextWake = 10 * time.Minute // as if set by the loop_control tool
-	m = m.advanceLoop(id, "progress", nil)
+	// The model carries its chosen next wake in the reply's control line.
+	m = m.advanceLoop(id, "made progress\nLOOP: CONTINUE 10m", nil)
+	if len(m.loops) == 0 {
+		t.Fatal("a CONTINUE control line should keep the loop running")
+	}
 	if !m.loops[0].nextRunAt.Equal(now.Add(10 * time.Minute)) {
 		t.Fatalf("self-paced nextRunAt = %v, want +10m", m.loops[0].nextRunAt)
 	}
@@ -73,12 +79,39 @@ func TestSelfPacedUsesModelDelay(t *testing.T) {
 func TestLoopDoneStops(t *testing.T) {
 	now := time.Date(2026, 7, 5, 12, 0, 0, 0, time.UTC)
 	m := loopTestModel(t, now)
-	m = startFixedLoop(m, "finish the task", time.Minute)
+	m, _ = m.startLoop(loopCommand{action: loopActionStart, mode: loopModeSelfPaced, prompt: "finish the task"})
 	id := m.loops[0].id
-	m.loopDone = true
-	m = m.advanceLoop(id, "all done", nil)
+	m = m.advanceLoop(id, "all done\nLOOP: DONE", nil)
 	if len(m.loops) != 0 {
 		t.Fatalf("loop should stop when the task reports done, %d remain", len(m.loops))
+	}
+}
+
+func TestFixedLoopIgnoresControlLine(t *testing.T) {
+	now := time.Date(2026, 7, 5, 12, 0, 0, 0, time.UTC)
+	m := loopTestModel(t, now)
+	m = startFixedLoop(m, "watch CI", time.Minute)
+	id := m.loops[0].id
+	// A fixed-interval loop never runs the playbook, so a stray control line in the
+	// output is not a completion signal — it keeps its wall-clock cadence.
+	m = m.advanceLoop(id, "LOOP: DONE", nil)
+	if len(m.loops) != 1 {
+		t.Fatal("a fixed-interval loop should ignore a control line and keep running")
+	}
+	if !m.loops[0].nextRunAt.Equal(now.Add(time.Minute)) {
+		t.Fatalf("fixed nextRunAt = %v, want +1m", m.loops[0].nextRunAt)
+	}
+}
+
+func TestLoopExpiresByAge(t *testing.T) {
+	now := time.Date(2026, 7, 5, 12, 0, 0, 0, time.UTC)
+	m := loopTestModel(t, now)
+	m = startFixedLoop(m, "forgotten", time.Minute)
+	id := m.loops[0].id
+	m.loops[0].createdAt = now.Add(-loopMaxAge - time.Hour) // created past the age cap
+	m = m.advanceLoop(id, "still going", nil)
+	if len(m.loops) != 0 {
+		t.Fatal("a loop past its age cap should auto-expire")
 	}
 }
 
@@ -119,6 +152,15 @@ func TestStopLoopByID(t *testing.T) {
 	if len(m.loops) != 1 || m.findLoop(id) != nil {
 		t.Fatalf("stopLoop(%s) should remove exactly that loop", id)
 	}
+	// Bare stop with a single active loop stops that sole loop (parseLoopCommand
+	// leaves the target empty and stopLoop special-cases the one-loop case).
+	soleID := m.loops[0].id
+	m, _ = m.stopLoop("")
+	if len(m.loops) != 0 || m.findLoop(soleID) != nil {
+		t.Fatalf("bare stop should remove the sole active loop")
+	}
+	m = startFixedLoop(m, "c", time.Minute)
+	m = startFixedLoop(m, "d", time.Minute)
 	m, _ = m.stopAllLoops()
 	if len(m.loops) != 0 {
 		t.Fatalf("stopAllLoops should clear all loops")
@@ -133,6 +175,17 @@ func TestFireDueLoopSkipsWhenBusy(t *testing.T) {
 	got, cmd := m.fireDueLoopIfIdle()
 	if got.activeLoopID != "" || cmd != nil {
 		t.Fatalf("a due loop must not fire while a turn is pending")
+	}
+}
+
+func TestFireDueLoopSkipsBehindModal(t *testing.T) {
+	now := time.Date(2026, 7, 5, 12, 0, 0, 0, time.UTC)
+	m := loopTestModel(t, now)
+	m = startFixedLoop(m, "poll", time.Minute) // due immediately
+	m.picker = &commandPicker{}                // e.g. an open /resume session picker
+	got, cmd := m.fireDueLoopIfIdle()
+	if got.activeLoopID != "" || cmd != nil {
+		t.Fatal("a due loop must not launch a run behind an open picker/modal — it would complete into whatever session the user switches to")
 	}
 }
 
@@ -154,7 +207,7 @@ func TestLoopFooterSummary(t *testing.T) {
 	m = startFixedLoop(m, "a", 5*time.Minute)
 	m.loops[0].nextRunAt = now.Add(5 * time.Minute)
 	got := m.loopFooterSummary()
-	if got == "" || got[:6] != "1 loop" {
+	if !strings.HasPrefix(got, "1 loop") {
 		t.Fatalf("footer summary = %q, want it to start with a loop count", got)
 	}
 }
@@ -254,13 +307,112 @@ func TestCancelRunClearsActiveLoopAndRearms(t *testing.T) {
 }
 
 func TestValidateLoopTargetRejectsBuiltin(t *testing.T) {
-	if _, ok := validateLoopTarget("/model list"); ok {
+	now := time.Date(2026, 7, 5, 12, 0, 0, 0, time.UTC)
+	m := loopTestModel(t, now)
+	if _, ok := m.validateLoopTarget("/model list"); ok {
 		t.Error("looping a built-in command should be rejected")
 	}
-	if _, ok := validateLoopTarget("keep improving docs"); !ok {
+	if _, ok := m.validateLoopTarget("keep improving docs"); !ok {
 		t.Error("a plain prompt should be a valid loop target")
 	}
-	if _, ok := validateLoopTarget(""); ok {
+	if _, ok := m.validateLoopTarget(""); ok {
 		t.Error("an empty target should be rejected")
+	}
+	// A custom command that does not exist is rejected up front, so it is never
+	// scheduled and then re-sent as literal "/…" text on every tick.
+	if _, ok := m.validateLoopTarget("/babysit-prs"); ok {
+		t.Error("an unresolved custom command should be rejected")
+	}
+	// A registered custom command is accepted.
+	m.userCommands = []usercommands.Command{{Name: "babysit-prs", Template: "check the PRs"}}
+	if _, ok := m.validateLoopTarget("/babysit-prs"); !ok {
+		t.Error("an existing custom command should be a valid loop target")
+	}
+}
+
+func TestClearLoopsForSessionSwitch(t *testing.T) {
+	now := time.Date(2026, 7, 5, 12, 0, 0, 0, time.UTC)
+	m := loopTestModel(t, now)
+	m = startFixedLoop(m, "a", time.Minute)
+	m = startFixedLoop(m, "b", time.Minute)
+	m.activeLoopID = m.loops[0].id
+	m, n := m.clearLoopsForSessionSwitch()
+	if n != 2 || len(m.loops) != 0 || m.activeLoopID != "" || m.loopTicking {
+		t.Fatalf("session switch should clear all loop state; got n=%d loops=%d active=%q ticking=%v",
+			n, len(m.loops), m.activeLoopID, m.loopTicking)
+	}
+}
+
+func TestStartNewSessionStopsLoops(t *testing.T) {
+	now := time.Date(2026, 7, 5, 12, 0, 0, 0, time.UTC)
+	m := loopTestModel(t, now)
+	m = startFixedLoop(m, "x", time.Minute)
+	m = m.startNewSession()
+	if len(m.loops) != 0 || m.loopTicking {
+		t.Fatal("/new should stop loops tied to the previous session")
+	}
+}
+
+func TestLoopClearRequiresConfirm(t *testing.T) {
+	now := time.Date(2026, 7, 5, 12, 0, 0, 0, time.UTC)
+	m := loopTestModel(t, now)
+	m = startFixedLoop(m, "x", time.Minute)
+
+	// First /clear with a loop active arms the confirm and does not clear yet.
+	m.input.SetValue("/clear")
+	u1, _ := m.Update(testKey(tea.KeyEnter))
+	n1 := u1.(model)
+	if n1.loopLeavePrompt != commandClear {
+		t.Fatal("first /clear with active loops should arm the confirm, not clear")
+	}
+	if len(n1.loops) != 1 {
+		t.Fatal("the loop should still be active after the warning")
+	}
+
+	// A different command disarms the confirm.
+	n1.input.SetValue("/loop list")
+	u2, _ := n1.Update(testKey(tea.KeyEnter))
+	n2 := u2.(model)
+	if n2.loopLeavePrompt != commandEmpty {
+		t.Fatal("an intervening command should disarm the leave confirm")
+	}
+
+	// Re-arm, then a second consecutive /clear confirms (disarms + clears).
+	n2.input.SetValue("/clear")
+	u3, _ := n2.Update(testKey(tea.KeyEnter))
+	n3 := u3.(model)
+	n3.input.SetValue("/clear")
+	u4, _ := n3.Update(testKey(tea.KeyEnter))
+	n4 := u4.(model)
+	if n4.loopLeavePrompt != commandEmpty {
+		t.Fatal("a second consecutive /clear should confirm and disarm")
+	}
+	if len(n4.loops) != 1 {
+		t.Fatal("/clear keeps loops running (it wipes the screen, not the session)")
+	}
+}
+
+func TestLeaveConfirmDisarmedByQueuedPrompt(t *testing.T) {
+	now := time.Date(2026, 7, 5, 12, 0, 0, 0, time.UTC)
+	m := loopTestModel(t, now)
+	m = startFixedLoop(m, "x", time.Minute)
+
+	// Arm the /clear confirm.
+	m.input.SetValue("/clear")
+	u1, _ := m.Update(testKey(tea.KeyEnter))
+	n1 := u1.(model)
+	if n1.loopLeavePrompt != commandClear {
+		t.Fatal("first /clear should arm the confirm")
+	}
+
+	// A prompt submitted while a run streams is queued via an early return in
+	// handleSubmit; it must still disarm the confirm (the disarm runs before those
+	// returns). Otherwise a later /clear would be treated as the second press.
+	n1.pending = true
+	n1.input.SetValue("a follow-up question")
+	u2, _ := n1.Update(testKey(tea.KeyEnter))
+	n2 := u2.(model)
+	if n2.loopLeavePrompt != commandEmpty {
+		t.Fatal("a queued prompt should disarm the leave confirm; the early return must not skip the disarm")
 	}
 }

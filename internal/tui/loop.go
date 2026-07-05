@@ -13,13 +13,17 @@ import (
 // The /loop command repeats a prompt or slash command in one of two modes:
 //
 //   - Fixed interval — `/loop 5m <prompt>` re-fires on a wall-clock cadence.
-//   - Self-paced     — bare `/loop <prompt>` lets the model finish an iteration,
-//     pick its own next wake (via the loop_control tool), and stop when done.
+//   - Self-paced     — bare `/loop <prompt>` runs a maintenance playbook: the model
+//     does one increment of work each iteration and ends its reply with a control
+//     line (`LOOP: DONE` / `LOOP: CONTINUE [interval]`) that stops the loop or picks
+//     the next wake. With no control line it falls back to an adaptive cadence.
 //
 // Loops are foreground and session-scoped: a tick only fires while the session is
-// idle between turns (it never interrupts a streaming turn), and the loop lives
-// with its session. Everything here is pure/loop-local; the wiring into the turn
-// lifecycle (ticker, launch, continuation) lives in model.go.
+// idle between turns (it never interrupts a streaming turn), the loop lives with the
+// session that created it, and switching sessions (/new, /resume) stops it. Safety
+// rails cap iterations, age, consecutive failures, and no-progress repetition.
+// Everything here is pure/loop-local; the turn-lifecycle wiring (ticker, launch,
+// continuation) lives in model.go.
 
 type loopMode int
 
@@ -34,6 +38,10 @@ const (
 	loopMinInterval   = 30 * time.Second
 	loopMaxInterval   = 24 * time.Hour
 	loopMaxIterations = 500 // hard ceiling; the loop auto-stops after this many
+
+	// loopMaxAge auto-expires a loop this long after it was created, so a forgotten
+	// loop stops on its own even if it never reaches the iteration cap.
+	loopMaxAge = 24 * time.Hour
 
 	loopSelfPaceMin     = 1 * time.Minute
 	loopSelfPaceMax     = 1 * time.Hour
@@ -120,6 +128,13 @@ type loopCommand struct {
 }
 
 var loopIntervalRe = regexp.MustCompile(`^(\d+)(s|m|h|d)$`)
+
+// loopControlRe matches a self-paced loop's control line at the start of a line,
+// tolerant of a leading markdown bullet/quote marker and any trailing note after
+// the keyword: "LOOP: DONE", "- loop: continue", "LOOP: CONTINUE 10m — still tidying".
+// The leading ^ anchor keeps a mid-sentence mention ("I'll emit LOOP: DONE when…")
+// from matching; parseLoopControl normalizes CRLF first so `$` can reach line end.
+var loopControlRe = regexp.MustCompile(`(?im)^[^\S\r\n]*(?:[-*>•][^\S\r\n]*)?loop:[^\S\r\n]*(done|continue)\b(?:[^\S\r\n]+(\d+[smhd])\b)?.*$`)
 
 // parseLoopCommand interprets the arguments to `/loop`. Forms:
 //
@@ -256,7 +271,7 @@ func (m model) handleLoopCommand(args string) (model, tea.Cmd) {
 // startLoop registers a new loop and (re)starts the idle poll ticker. The first
 // iteration fires on the next idle tick (nextRunAt = now).
 func (m model) startLoop(cmd loopCommand) (model, tea.Cmd) {
-	if reason, ok := validateLoopTarget(cmd.prompt); !ok {
+	if reason, ok := m.validateLoopTarget(cmd.prompt); !ok {
 		return m.appendLoopSystem(reason), nil
 	}
 	m.loopCounter++
@@ -327,9 +342,18 @@ func (m model) fireDueLoopIfIdle() (model, tea.Cmd) {
 	}
 	m.activeLoopID = due.id
 	due.nextRunAt = time.Time{} // mark running
-	m.loopNextWake = 0
-	m.loopDone = false
-	return m.fireLoopPrompt(due.prompt)
+	return m.fireLoopPrompt(due.firePrompt())
+}
+
+// firePrompt is the text actually sent for this iteration. A self-paced plain
+// prompt is wrapped in the maintenance playbook so the model knows to do one
+// increment of work and end with a LOOP: control line; a /command or a
+// fixed-interval prompt is sent verbatim.
+func (l *loopState) firePrompt() string {
+	if l.mode == loopModeSelfPaced && !strings.HasPrefix(strings.TrimSpace(l.prompt), "/") {
+		return loopSelfPacePlaybook(l)
+	}
+	return l.prompt
 }
 
 // fireLoopPrompt runs a loop's prompt as a turn — a custom /command if it resolves
@@ -343,8 +367,10 @@ func (m model) fireLoopPrompt(prompt string) (model, tea.Cmd) {
 	return m.launchPrompt(prompt)
 }
 
-// advanceLoop updates a loop after one of its iterations completes: doom-loop and
-// cap checks, then schedules the next wake (or stops the loop).
+// advanceLoop updates a loop after one of its iterations completes: it folds the
+// result into the failure/no-progress guards, honors a self-paced DONE/next-wake
+// control line, enforces the iteration and age caps, then schedules the next wake
+// (or stops the loop).
 func (m model) advanceLoop(id, finalAnswer string, runErr error) model {
 	l := m.findLoop(id)
 	if l == nil {
@@ -364,22 +390,31 @@ func (m model) advanceLoop(id, finalAnswer string, runErr error) model {
 	}
 	l.lastResult = res
 
+	// Only self-paced iterations run the playbook, so only they can carry a control
+	// line; a failed turn has no trustworthy final answer to read one from.
+	done, wake := false, time.Duration(0)
+	if l.mode == loopModeSelfPaced && runErr == nil {
+		done, wake = parseLoopControl(finalAnswer)
+	}
+
 	switch {
-	case m.loopDone:
+	case done:
 		return m.removeLoop(id, fmt.Sprintf("Loop %s finished — the task reported done after %d iteration(s).", id, l.iteration))
 	case l.failRun >= loopMaxFailures:
 		return m.removeLoop(id, fmt.Sprintf("Loop %s stopped after %d consecutive failed iterations.", id, l.failRun))
 	case l.iteration >= l.iterationCap():
 		return m.removeLoop(id, fmt.Sprintf("Loop %s stopped at its %d-iteration cap.", id, l.iteration))
+	case !l.createdAt.IsZero() && m.now().Sub(l.createdAt) >= loopMaxAge:
+		return m.removeLoop(id, fmt.Sprintf("Loop %s expired after %s.", id, formatLoopDuration(loopMaxAge)))
 	case l.repeatRun >= loopDoomThreshold:
 		return m.removeLoop(id, fmt.Sprintf("Loop %s stopped — %d identical results in a row (no progress).", id, l.repeatRun))
 	}
 
 	if l.mode == loopModeSelfPaced {
-		// A model-chosen delay (loopNextWake, set via the loop_control channel) wins;
-		// otherwise fall back to an adaptive cadence that checks back often while work
-		// is fresh and settles to a slow heartbeat as iterations accrue.
-		delay := m.loopNextWake
+		// A model-chosen next wake (from the control line) wins; otherwise fall back to
+		// an adaptive cadence that checks back often while work is fresh and settles to
+		// a slow heartbeat as iterations accrue.
+		delay := wake
 		if delay <= 0 {
 			delay = adaptiveSelfPaceDelay(l.iteration)
 		}
@@ -388,6 +423,49 @@ func (m model) advanceLoop(id, finalAnswer string, runErr error) model {
 		l.nextRunAt = m.now().Add(l.interval)
 	}
 	return m
+}
+
+// parseLoopControl reads a self-paced loop's control signal from the model's final
+// answer. The last control line wins (the model may reference the protocol before
+// emitting it). Returns done=true to stop the loop, or a next-wake hint (0 = none).
+func parseLoopControl(answer string) (done bool, wake time.Duration) {
+	// Normalize CRLF/CR so the line-end anchor can reach `$` (Go's (?m)$ sits right
+	// before `\n`, and the horizontal-whitespace class can't consume a stray `\r`).
+	norm := strings.ReplaceAll(answer, "\r\n", "\n")
+	norm = strings.ReplaceAll(norm, "\r", "\n")
+	matches := loopControlRe.FindAllStringSubmatch(norm, -1)
+	if len(matches) == 0 {
+		return false, 0
+	}
+	last := matches[len(matches)-1]
+	if strings.EqualFold(last[1], "done") {
+		return true, 0
+	}
+	if last[2] != "" {
+		if d, ok := parseLoopInterval(last[2]); ok {
+			return false, d
+		}
+	}
+	return false, 0
+}
+
+// loopSelfPacePlaybook wraps a self-paced loop's goal in the maintenance-loop
+// instructions the model follows each iteration: do one real increment of work,
+// then emit a single control line so the harness knows whether to stop or when to
+// wake next — the self-paced maintenance playbook the feature ships with.
+func loopSelfPacePlaybook(l *loopState) string {
+	var b strings.Builder
+	b.WriteString("You are running in a self-paced maintenance loop (iteration ")
+	b.WriteString(strconv.Itoa(l.iteration + 1))
+	b.WriteString("). Do one concrete increment of work toward the goal below — actual work, not just a plan — then stop and report.\n\n")
+	b.WriteString("Goal: ")
+	b.WriteString(strings.TrimSpace(l.prompt))
+	b.WriteString("\n\nEnd your reply with a control line — on its own line, starting with \"LOOP:\":\n")
+	b.WriteString("  LOOP: DONE          — the goal is fully met; the loop stops.\n")
+	b.WriteString("  LOOP: CONTINUE      — more to do; the loop wakes again automatically.\n")
+	b.WriteString("  LOOP: CONTINUE 10m  — more to do; wake after the delay you name (e.g. 5m, 1h).\n")
+	b.WriteString("A short note after the keyword is fine. Report DONE only when the goal is genuinely complete — the loop trusts that signal to stop.")
+	return b.String()
 }
 
 // adaptiveSelfPaceDelay picks a self-paced loop's next-wake by iteration: frequent
@@ -447,11 +525,14 @@ func (m model) scheduleLoopTick() tea.Cmd {
 }
 
 // loopBusy reports whether the session is too busy for a loop to fire — a turn,
-// modal, queued user message, or compaction is in flight. Mirrors the guard in
-// launchQueuedMessageIfReady so loops and queued prompts never collide.
+// queued user message, compaction, or ANY blocking modal (permission/askUser/spec
+// review, provider or MCP wizard, MCP manager, or an open picker) is in flight.
+// The modal check is load-bearing: a loop must not launch a run behind an open
+// /resume picker, or that run would complete into whatever session the user then
+// switches to. Mirrors launchQueuedMessageIfReady so loops and queued prompts never
+// collide.
 func (m model) loopBusy() bool {
-	return m.pending || m.exiting || m.compactInFlight || m.hasQueuedMessage() ||
-		m.pendingPermission != nil || m.pendingAskUser != nil || m.pendingSpecReview != nil
+	return m.pending || m.exiting || m.compactInFlight || m.hasQueuedMessage() || !m.noBlockingModal()
 }
 
 func (m model) appendLoopSystem(text string) model {
@@ -520,20 +601,45 @@ func loopUsageText() string {
 		"Loops run while this session is idle and stop when you close it."
 }
 
-// validateLoopTarget rejects looping a built-in command (only a prompt or a custom
-// /command may loop).
-func validateLoopTarget(prompt string) (string, bool) {
+// validateLoopTarget rejects looping a built-in command or an unresolved custom
+// command — only a prompt or an existing custom /command (.zero/commands/<name>.md)
+// may loop. Resolving custom commands up front stops a typo'd `/loop 5m /nope` from
+// being scheduled and then re-sent as literal text on every tick.
+func (m model) validateLoopTarget(prompt string) (string, bool) {
 	p := strings.TrimSpace(prompt)
 	if p == "" {
 		return "Nothing to loop — give a prompt or a /command.", false
 	}
 	if strings.HasPrefix(p, "/") {
-		parsed := parseCommand(p)
-		if parsed.kind != commandPrompt && parsed.kind != commandUnknown {
+		switch parseCommand(p).kind {
+		case commandPrompt:
+			// A bare "/" or similar that isn't a command — treat as a plain prompt.
+		case commandUnknown:
+			name, _ := splitUserCommand(p)
+			if _, ok := m.lookupUserCommand(name); !ok {
+				return "No command /" + name + " — a loop can only run a prompt or an existing custom /command.", false
+			}
+		default:
 			return "A loop can only run a prompt or a custom /command, not a built-in like " + strings.Fields(p)[0] + ".", false
 		}
 	}
 	return "", true
+}
+
+// clearLoopsForSessionSwitch drops every active loop and its ticker. Loops belong to
+// the session that created them; carrying them across /new or /resume would fire the
+// old session's prompt into an unrelated conversation. Returns the count cleared so
+// the caller can note it. Pure state reset — no transcript writes.
+func (m model) clearLoopsForSessionSwitch() (model, int) {
+	n := len(m.loops)
+	if n == 0 {
+		return m, 0
+	}
+	m.loops = nil
+	m.activeLoopID = ""
+	m.loopTicking = false
+	m.loopSeq++ // invalidate any pending poll tick
+	return m, n
 }
 
 func truncateLoopPrompt(prompt string) string {

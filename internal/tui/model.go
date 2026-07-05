@@ -194,19 +194,18 @@ type model struct {
 	// tags the in-flight run when it is a loop iteration (empty = a user turn), so the
 	// completion seam knows whether to advance a loop. loopSeq invalidates a stale
 	// pending poll tick when loops are stopped; loopTicking guards against scheduling
-	// a second poll ticker. loopNextWake carries a self-paced iteration's model-chosen
-	// delay from the loop_control tool back to the completion seam.
-	loops        []*loopState
-	activeLoopID string
-	loopSeq      int
-	loopCounter  int
-	loopTicking  bool
-	loopNextWake time.Duration
-	loopDone     bool
-	exiting      bool
-	runCancel    context.CancelFunc
-	runID        int
-	activeRunID  int
+	// a second poll ticker. loopLeavePrompt arms a one-shot confirm before /clear or
+	// /quit while loops are active (see handleSubmit).
+	loops           []*loopState
+	activeLoopID    string
+	loopSeq         int
+	loopCounter     int
+	loopTicking     bool
+	loopLeavePrompt commandKind
+	exiting         bool
+	runCancel       context.CancelFunc
+	runID           int
+	activeRunID     int
 	// flushRunIDs holds the ids of runs cancelled while still in flight, mapped
 	// to the session they were recording into AT CANCEL TIME. Each cancelled
 	// agent goroutine keeps running to completion and returns its accumulated
@@ -3829,6 +3828,13 @@ func (m model) handleSubmit() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	command := parseCommand(input)
+	// A pending /clear or /quit leave-confirmation is armed for the immediately-next
+	// repeat of that same command only; any other submission — including one queued
+	// or deferred by the early returns below — disarms it. Runs before those returns
+	// so an interposed prompt can't be skipped over and leave the gate falsely armed.
+	if m.loopLeavePrompt != commandEmpty && command.kind != m.loopLeavePrompt {
+		m.loopLeavePrompt = commandEmpty
+	}
 	// While exiting (Ctrl+C waiting on the cancelled run's checkpoint flush) a
 	// new run must not start: the deferred tea.Quit would abort it mid-flight
 	// and orphan its checkpoint blobs — the exact loss flushRunIDs prevents.
@@ -3862,6 +3868,14 @@ func (m model) handleSubmit() (tea.Model, tea.Cmd) {
 		m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: helpText()})
 		return m, nil
 	case commandClear:
+		// A foreground loop keeps firing after /clear (it wipes the screen, not the
+		// session), so warn once before clearing the context it will run into.
+		if m.loopActive() && m.loopLeavePrompt != commandClear {
+			m.loopLeavePrompt = commandClear
+			m = m.appendLoopSystem(m.loopFooterSummary() + " still running — /clear keeps them firing behind a cleared screen. Run /clear again to confirm, or /loop stop all first.")
+			return m, nil
+		}
+		m.loopLeavePrompt = commandEmpty
 		m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionClear})
 		// Clearing wipes the visible transcript only — the session's context is
 		// intact, so the next prompt still replays the full history. Say so, and
@@ -3888,6 +3902,14 @@ func (m model) handleSubmit() (tea.Model, tea.Cmd) {
 	case commandLoop:
 		return m.handleLoopCommand(command.text)
 	case commandExit:
+		// Closing the session stops its foreground loops mid-task; warn once so a
+		// token-spending loop isn't ended by reflex.
+		if m.loopActive() && m.loopLeavePrompt != commandExit {
+			m.loopLeavePrompt = commandExit
+			m = m.appendLoopSystem(m.loopFooterSummary() + " active — closing the session stops them. Run /exit again to confirm, or /loop stop all first.")
+			return m, nil
+		}
+		m.loopLeavePrompt = commandEmpty
 		// /exit gets the same protection as Ctrl+C: cancel any in-flight run and
 		// defer the quit until its checkpoint session events flush — quitting
 		// immediately would orphan the blobs and break /rewind.

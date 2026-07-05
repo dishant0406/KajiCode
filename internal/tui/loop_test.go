@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -92,6 +93,50 @@ func TestFormatLoopDuration(t *testing.T) {
 		if got := formatLoopDuration(d); got != want {
 			t.Errorf("formatLoopDuration(%v) = %q, want %q", d, got, want)
 		}
+	}
+}
+
+func TestParseLoopControl(t *testing.T) {
+	cases := []struct {
+		in   string
+		done bool
+		wake time.Duration
+	}{
+		{"did the work\nLOOP: DONE", true, 0},
+		{"progress\nLOOP: CONTINUE", false, 0},
+		{"progress\nLOOP: CONTINUE 10m", false, 10 * time.Minute},
+		{"progress\n- loop: continue 1h", false, time.Hour},                     // markdown bullet, lowercase
+		{"LOOP: CONTINUE 5m\n...more...\nLOOP: DONE", true, 0},                  // last control line wins
+		{"no control line here", false, 0},                                      // absent -> adaptive
+		{"LOOP: DONE — all tests pass", true, 0},                                // a trailing note is fine
+		{"progress\nLOOP: CONTINUE 5m — still tidying", false, 5 * time.Minute}, // note after the interval
+		{"work done.\r\nLOOP: DONE\r\n", true, 0},                               // CRLF endings still parse
+		{"work\r\nLOOP: CONTINUE 10m\r\n", false, 10 * time.Minute},             // CRLF + interval
+		{"I will emit LOOP: DONE when finished", false, 0},                      // mid-sentence mention doesn't match
+		{"LOOP: CONTINUE 99z", false, 0},                                        // bad unit -> continue, no wake hint
+	}
+	for _, c := range cases {
+		done, wake := parseLoopControl(c.in)
+		if done != c.done || wake != c.wake {
+			t.Errorf("parseLoopControl(%q) = (%v,%v), want (%v,%v)", c.in, done, wake, c.done, c.wake)
+		}
+	}
+}
+
+func TestFirePromptWrapsSelfPacedOnly(t *testing.T) {
+	self := &loopState{mode: loopModeSelfPaced, prompt: "tidy the docs"}
+	got := self.firePrompt()
+	if !strings.Contains(got, "LOOP: DONE") || !strings.Contains(got, "tidy the docs") {
+		t.Errorf("self-paced firePrompt should embed the playbook and goal, got %q", got)
+	}
+	fixed := &loopState{mode: loopModeFixed, prompt: "check the build"}
+	if fixed.firePrompt() != "check the build" {
+		t.Errorf("fixed-interval firePrompt should be verbatim, got %q", fixed.firePrompt())
+	}
+	// A self-paced /command is a real command, not a goal — send it verbatim, no playbook.
+	cmd := &loopState{mode: loopModeSelfPaced, prompt: "/babysit"}
+	if cmd.firePrompt() != "/babysit" {
+		t.Errorf("self-paced /command firePrompt should be verbatim, got %q", cmd.firePrompt())
 	}
 }
 
