@@ -13,6 +13,7 @@ package tools
 import (
 	"errors"
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -218,22 +219,33 @@ func blockAnchorReplacer(content, find string) []string {
 		return similarity / float64(linesToCheck)
 	}
 
-	best := candidates[0]
-	if len(candidates) > 1 {
-		bestSimilarity := -1.0
-		for _, candidate := range candidates {
-			if s := middleSimilarity(candidate); s > bestSimilarity {
-				bestSimilarity = s
-				best = candidate
-			}
+	// Return EVERY candidate that clears the similarity threshold, best first.
+	// Picking only the best would hide competing blocks from fuzzyEditMatch's
+	// distinct-candidate ambiguity check and could silently edit the wrong
+	// block; with all qualifying spans surfaced, one clear winner still
+	// resolves (single candidate) while two plausible blocks are rejected as
+	// ambiguous. replaceAll consumers take the first (most similar) span.
+	type scoredSpan struct {
+		span       span
+		similarity float64
+	}
+	var qualifying []scoredSpan
+	for _, candidate := range candidates {
+		if s := middleSimilarity(candidate); s >= editAnchorSimilarityThreshold {
+			qualifying = append(qualifying, scoredSpan{span: candidate, similarity: s})
 		}
-		if bestSimilarity < editAnchorSimilarityThreshold {
-			return nil
-		}
-	} else if middleSimilarity(best) < editAnchorSimilarityThreshold {
+	}
+	if len(qualifying) == 0 {
 		return nil
 	}
-	return []string{strings.Join(contentLines[best.start:best.end+1], "\n")}
+	sort.SliceStable(qualifying, func(i, j int) bool {
+		return qualifying[i].similarity > qualifying[j].similarity
+	})
+	spans := make([]string, 0, len(qualifying))
+	for _, scored := range qualifying {
+		spans = append(spans, strings.Join(contentLines[scored.span.start:scored.span.end+1], "\n"))
+	}
+	return spans
 }
 
 var editWhitespaceRun = regexp.MustCompile(`\s+`)

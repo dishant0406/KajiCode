@@ -17,11 +17,32 @@ type probeTool struct {
 	name       string
 	sideEffect tools.SideEffect
 	delay      time.Duration
+	// shared, when set, receives this probe's start/end entries too, so a test
+	// can observe ordering ACROSS probes (e.g. reads vs a write barrier).
+	shared *probeLog
 
 	mu        sync.Mutex
 	active    int
 	maxActive int
 	log       []string
+}
+
+// probeLog is a mutex-guarded event log shared between probes.
+type probeLog struct {
+	mu      sync.Mutex
+	entries []string
+}
+
+func (log *probeLog) append(entry string) {
+	log.mu.Lock()
+	defer log.mu.Unlock()
+	log.entries = append(log.entries, entry)
+}
+
+func (log *probeLog) snapshot() []string {
+	log.mu.Lock()
+	defer log.mu.Unlock()
+	return append([]string(nil), log.entries...)
 }
 
 func (tool *probeTool) Name() string        { return tool.name }
@@ -45,7 +66,13 @@ func (tool *probeTool) Run(_ context.Context, args map[string]any) tools.Result 
 	}
 	tool.log = append(tool.log, "start:"+id)
 	tool.mu.Unlock()
+	if tool.shared != nil {
+		tool.shared.append("start:" + id)
+	}
 	time.Sleep(tool.delay)
+	if tool.shared != nil {
+		tool.shared.append("end:" + id)
+	}
 	tool.mu.Lock()
 	tool.active--
 	tool.log = append(tool.log, "end:"+id)
@@ -127,10 +154,9 @@ func TestRunExecutesConsecutiveReadsConcurrently(t *testing.T) {
 }
 
 func TestRunParallelReadsNeverSpanMutatingCall(t *testing.T) {
-	read := &probeTool{name: "probe_read", sideEffect: tools.SideEffectRead, delay: 30 * time.Millisecond}
-	write := &probeTool{name: "probe_write", sideEffect: tools.SideEffectWrite}
-	// Shared log across both probes so relative ordering is observable.
-	write.mu = sync.Mutex{}
+	shared := &probeLog{}
+	read := &probeTool{name: "probe_read", sideEffect: tools.SideEffectRead, delay: 30 * time.Millisecond, shared: shared}
+	write := &probeTool{name: "probe_write", sideEffect: tools.SideEffectWrite, shared: shared}
 	registry := tools.NewRegistry()
 	registry.Register(read)
 	registry.Register(write)
@@ -151,32 +177,26 @@ func TestRunParallelReadsNeverSpanMutatingCall(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The write must start only after r1+r2 finished, and r3/r4 must start only
-	// after the write finished: batches never cross a mutating call.
-	index := func(log []string, entry string) int {
+
+	// Cross-probe ordering on the SHARED log: the write must start only after
+	// both first-batch reads finished, and both second-batch reads must start
+	// only after the write finished — batches never cross a mutating call.
+	log := shared.snapshot()
+	index := func(entry string) int {
 		for i, e := range log {
 			if e == entry {
 				return i
 			}
 		}
+		t.Fatalf("entry %q missing from shared log: %v", entry, log)
 		return -1
 	}
-	readLog := func() []string { read.mu.Lock(); defer read.mu.Unlock(); return append([]string(nil), read.log...) }()
-	writeLog := func() []string { write.mu.Lock(); defer write.mu.Unlock(); return append([]string(nil), write.log...) }()
-	if index(writeLog, "start:w") == -1 {
-		t.Fatalf("write probe never ran: %v", writeLog)
+	writeStart, writeEnd := index("start:w"), index("end:w")
+	if firstBatchMaxEnd := max(index("end:r1"), index("end:r2")); writeStart < firstBatchMaxEnd {
+		t.Fatalf("write started before the first read batch finished: %v", log)
 	}
-	for _, entry := range []string{"end:r1", "end:r2"} {
-		if index(readLog, entry) == -1 {
-			t.Fatalf("first read batch incomplete: %v", readLog)
-		}
-	}
-	// r3/r4 must appear strictly after r1/r2 in the read log (the write barrier
-	// between the two batches forces full separation).
-	firstBatchMaxEnd := max(index(readLog, "end:r1"), index(readLog, "end:r2"))
-	secondBatchMinStart := min(index(readLog, "start:r3"), index(readLog, "start:r4"))
-	if secondBatchMinStart < firstBatchMaxEnd {
-		t.Fatalf("second read batch started before first batch ended: %v", readLog)
+	if secondBatchMinStart := min(index("start:r3"), index("start:r4")); secondBatchMinStart < writeEnd {
+		t.Fatalf("second read batch started before the write finished: %v", log)
 	}
 	if read.maxActive < 2 {
 		t.Fatalf("reads within a batch must overlap, max concurrency was %d", read.maxActive)

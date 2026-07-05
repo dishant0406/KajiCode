@@ -335,3 +335,35 @@ func TestEditFuzzyDistinctCandidatesAreAmbiguous(t *testing.T) {
 		t.Fatalf("file must be unchanged, got %q", after)
 	}
 }
+
+func TestEditFuzzyBlockAnchorTwoPlausibleBlocksAmbiguous(t *testing.T) {
+	// Two blocks share the same first/last anchor lines and BOTH interiors sit
+	// above the similarity threshold. Picking the "best" one would silently
+	// edit a block the model may not have meant; both must surface so the
+	// cascade reports ambiguity and the file stays untouched.
+	initial := strings.Join([]string{
+		"func setup(cfg Config) {",
+		"\tvalue := compute(alpha, beta, gamma)",
+		"}",
+		"",
+		"func setup(cfg Config) {",
+		"\tvalue := compute(alpha, delta, gamma)",
+		"}",
+		"",
+	}, "\n")
+	find := strings.Join([]string{
+		"func setup(cfg Config) {",
+		"\tvalue := compute(alpha, omega, gamma)",
+		"}",
+	}, "\n")
+	result, after := runEdit(t, t.TempDir(), initial, map[string]any{
+		"old_string": find,
+		"new_string": "func setup(cfg Config) {}",
+	})
+	if result.Status != StatusError || !strings.Contains(result.Output, "multiple locations") {
+		t.Fatalf("two plausible anchor blocks must be ambiguous, got %q", result.Output)
+	}
+	if after != initial {
+		t.Fatalf("file must be unchanged, got %q", after)
+	}
+}
