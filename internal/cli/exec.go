@@ -711,9 +711,10 @@ func runExec(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) in
 // sessions); it is a no-op when self-correct is off.
 func newExecSelfCorrector(enabled bool, workspaceRoot string, autonomy string) (*agent.SelfCorrector, func(context.Context, string) string, func()) {
 	// The manager is created regardless of --self-correct: it also backs the
-	// always-on inline post-edit diagnostics (agent.NewFileDiagnostics), and it
-	// stays lazy — no language server is spawned unless an edited file's
-	// language actually has one installed on PATH.
+	// always-on background post-edit diagnostics (agent.NewFileDiagnostics,
+	// collected off the tool-call path by the loop), and it stays lazy — no
+	// language server is spawned unless an edited file's language actually has
+	// one installed on PATH.
 	manager := lsp.NewManager(workspaceRoot)
 	cleanup := func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

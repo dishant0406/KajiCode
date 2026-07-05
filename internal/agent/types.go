@@ -285,11 +285,13 @@ type Options struct {
 	// ceiling and the autonomy gate. nil disables it entirely (the loop is
 	// byte-identical to before). One instance per run — it holds attempt state.
 	SelfCorrect *SelfCorrector
-	// FileDiagnostics, when set, is passed to mutating tools so edit_file /
-	// write_file append error-severity language diagnostics for the file they
-	// just wrote directly to their tool output — the model sees an error it
-	// introduced in the same turn instead of a later verification pass. Build
-	// one with NewFileDiagnostics. nil disables inline diagnostics.
+	// FileDiagnostics, when set, checks files changed by mutating tools for
+	// error-severity language diagnostics IN THE BACKGROUND and appends any
+	// errors as a nudge before the model's next request — the model still sees
+	// an error it introduced at its next decision point, but no tool call ever
+	// blocks on the language server (the old inline path stalled every edit on
+	// a ≥300ms debounce, 10s cap). Build one with NewFileDiagnostics. nil
+	// disables post-edit diagnostics.
 	FileDiagnostics func(ctx context.Context, absPath string) string
 
 	// RequireCompletionSignal gates run completion for HEADLESS exec. Without it,

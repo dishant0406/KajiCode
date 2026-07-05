@@ -137,6 +137,12 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 	guards := newGuardState()
 	compactor := newCompactionState(options)
 
+	// Background post-edit diagnostics: files changed by mutating tools are
+	// checked off the tool-call critical path and any errors are appended as a
+	// nudge before the NEXT request (see async_diagnostics.go). nil when no
+	// FileDiagnostics callback is wired; every method no-ops on nil.
+	postEditDiagnostics := newAsyncDiagnostics(options.FileDiagnostics, options.Cwd)
+
 	// loaded tracks deferred-eligible tools the model has pulled via tool_search
 	// during THIS run. It is consulted by partitionTools each turn to expose a
 	// loaded tool's full schema; it lives only for the run (v1 within-run scope).
@@ -158,6 +164,17 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 	result := Result{Messages: copyMessages(messages)}
 	for turn := 0; turn < maxTurns; turn++ {
 		result.Turns = turn + 1
+
+		// Deliver background post-edit diagnostics from the previous turn's edits
+		// BEFORE compaction so the nudge is part of the request being budgeted.
+		// A brief wait at most (asyncDiagnosticsDrainTimeout); an unfinished check
+		// simply delivers on a later turn.
+		if nudge := postEditDiagnostics.drain(ctx); nudge != "" {
+			messages = append(messages, zeroruntime.Message{
+				Role:    zeroruntime.MessageRoleUser,
+				Content: nudge,
+			})
+		}
 
 		// Build the per-turn tool list first so proactive compaction can include
 		// the tool-definition tokens (they ride on every request) in its estimate.
@@ -590,11 +607,14 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 				failureHint = toolFailureHint(call.Name, toolSchemaJSON(registry, call.Name), toolResult.Output)
 			}
 
-			// Post-edit self-correction: collect the files this successful mutating
-			// tool changed; verification runs once over the union after the batch.
-			// A read-only tool (no ChangedFiles) never contributes.
-			if options.SelfCorrect != nil && toolResult.Status == tools.StatusOK && len(toolResult.ChangedFiles) > 0 {
+			// Collect the files this successful mutating tool changed. Self-correct
+			// verification runs once over the union after the batch; background
+			// diagnostics start NOW so the language server analyzes while the rest
+			// of the batch executes. A read-only tool (no ChangedFiles) never
+			// contributes.
+			if toolResult.Status == tools.StatusOK && len(toolResult.ChangedFiles) > 0 {
 				changedFilesThisBatch = append(changedFilesThisBatch, toolResult.ChangedFiles...)
+				postEditDiagnostics.enqueue(ctx, toolResult.ChangedFiles)
 			}
 		}
 
@@ -1100,8 +1120,12 @@ func executeToolCall(ctx context.Context, registry *tools.Registry, call ToolCal
 		// Per-session file version tracker so write_file/edit_file refuse to clobber
 		// a file that changed on disk outside Zero since it was last read.
 		FileTracker: options.FileTracker,
-		// Inline post-edit diagnostics for mutating tools (nil = disabled).
-		Diagnostics: options.FileDiagnostics,
+		// Post-edit diagnostics are NOT forwarded to the tools: they used to run
+		// synchronously inside edit_file/write_file and block every mutating tool
+		// call on the language server (≥300ms debounce floor, 10s cap). The loop
+		// now checks changed files in the background and nudges the model before
+		// its next request instead (see async_diagnostics.go). The tools' inline
+		// mechanism (tools.RunOptions.Diagnostics) stays for direct API callers.
 		// Forward the run's operator tool filters so a filter-aware tool
 		// (tool_search) never discloses or loads an operator-hidden deferred tool.
 		EnabledTools:  options.EnabledTools,
