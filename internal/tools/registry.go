@@ -123,12 +123,23 @@ func (registry *Registry) Run(ctx context.Context, name string, args map[string]
 func (registry *Registry) RunWithOptions(ctx context.Context, name string, args map[string]any, options RunOptions) (result Result) {
 	// Every return path passes through scrubResultSecrets exactly once, so denial,
 	// permission, and unknown-tool error messages (which can echo secret-bearing
-	// args/paths) are redacted at the boundary just like tool output.
-	defer func() { result = scrubResultSecrets(result) }()
+	// args/paths) are redacted at the boundary just like tool output. The output
+	// ceiling runs after the scrub so the transcript and the spill file agree on
+	// what was hidden.
+	ceilingExempt := false
+	defer func() {
+		result = scrubResultSecrets(result)
+		if !ceilingExempt {
+			result = enforceOutputCeiling(name, result)
+		}
+	}()
 
 	tool, ok := registry.Get(name)
 	if !ok {
 		return errorResult(`Error: Unknown tool "` + name + `".`)
+	}
+	if _, ok := tool.(selfBudgeting); ok {
+		ceilingExempt = true
 	}
 	if rejecter, ok := tool.(PrePermissionRejecter); ok {
 		if res, rejected := rejecter.RejectBeforePermission(args); rejected {

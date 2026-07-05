@@ -126,8 +126,8 @@ func (tool bashTool) run(ctx context.Context, args map[string]any, engine *zeroS
 	// can't grow Zero's memory before truncation: only the head+tail each stream
 	// will ever surface to the model are retained, the middle is discarded as it
 	// streams, and the true size is counted for the truncation marker.
-	stdout := newBoundedBuffer(bashOutputBudgetBytes, bashOutputBudgetBytes)
-	stderr := newBoundedBuffer(bashOutputBudgetBytes, bashOutputBudgetBytes)
+	stdout := newBoundedBuffer(bashCaptureBudgetBytes, bashCaptureBudgetBytes)
+	stderr := newBoundedBuffer(bashCaptureBudgetBytes, bashCaptureBudgetBytes)
 	command.Stdout = stdout
 	command.Stderr = stderr
 
@@ -370,12 +370,21 @@ func formatBashOutput(stdout string, stderr string, exitCode int) string {
 	return strings.Join(parts, "\n")
 }
 
-// bashOutputBudgetBytes caps each of stdout/stderr shown to the model. bash is the
-// one tool that can emit unbounded output (`cat large.log`, `find /`, verbose test
-// runs); every other read/search tool already budgets its output. Head+tail
-// truncation keeps both the start and the end of an oversized stream, since
-// build/test failures usually surface at the tail.
-const bashOutputBudgetBytes = 96 * 1024
+// bashOutputBudgetBytes caps each of stdout/stderr shown to the model (32 KiB
+// ≈ 8k tokens per stream). bash is the one tool that can emit unbounded output
+// (`cat large.log`, `find /`, verbose test runs); a chatty build log at the old
+// 96 KiB budget injected ~24k tokens per call and was then re-billed on every
+// following turn. Head+tail truncation keeps both the start and the end of an
+// oversized stream, since build/test failures usually surface at the tail, and
+// the full captured text is spilled to disk so nothing is lost — the model
+// greps/reads the spill instead of re-running the command.
+const bashOutputBudgetBytes = 32 * 1024
+
+// bashCaptureBudgetBytes bounds the head and tail retained IN MEMORY per
+// stream during capture. Deliberately larger than the emit budget: the extra
+// retained bytes never reach the transcript, but they make the spill file —
+// the model's recovery path — cover 6× more of the output.
+const bashCaptureBudgetBytes = 96 * 1024
 
 // budgetBashOutput truncates stdout and stderr to bashOutputBudgetBytes each,
 // keeping the head and tail of anything larger, and records raw/emitted byte
@@ -395,6 +404,19 @@ func budgetBashCapture(out string, outTotal int, errStr string, errTotal int, me
 	outText, outRaw, outTrunc := truncateHeadTailWithTotal(out, outTotal, bashOutputBudgetBytes)
 	errText, errRaw, errTrunc := truncateHeadTailWithTotal(errStr, errTotal, bashOutputBudgetBytes)
 	truncated := outTrunc || errTrunc
+	if truncated {
+		if spillPath := spillBashStreams(out, errStr); spillPath != "" {
+			hint := "\n[zero] captured output saved to " + spillPath + " (grep or read_file it instead of re-running)"
+			if errTrunc {
+				errText += hint
+			} else {
+				outText += hint
+			}
+			if meta != nil {
+				meta["spill_path"] = spillPath
+			}
+		}
+	}
 	if meta != nil {
 		emitted := len(outText) + len(errText)
 		meta["raw_bytes"] = strconv.Itoa(outRaw + errRaw)
@@ -405,6 +427,26 @@ func budgetBashCapture(out string, outTotal int, errStr string, errTotal int, me
 		}
 	}
 	return outText, errText, truncated
+}
+
+// spillBashStreams writes the retained (capture-bounded) stdout and stderr to
+// the spill directory as one sectioned file and returns its path, or "" when
+// spilling fails. The spill holds up to bashCaptureBudgetBytes of head and
+// tail per stream — everything zero kept in memory, which is more than the
+// emit budget shows the model but not necessarily the whole output (the
+// capture middle is discarded as it streams; the in-text truncation marker
+// reports the true omitted size).
+func spillBashStreams(stdout, stderr string) string {
+	var combined strings.Builder
+	combined.Grow(len(stdout) + len(stderr) + 64)
+	combined.WriteString("### stdout\n")
+	combined.WriteString(stdout)
+	if !strings.HasSuffix(stdout, "\n") {
+		combined.WriteString("\n")
+	}
+	combined.WriteString("### stderr\n")
+	combined.WriteString(stderr)
+	return spillTruncatedOutput("bash", combined.String())
 }
 
 // boundedBuffer is an io.Writer that retains at most headCap bytes from the start
