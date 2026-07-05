@@ -24,6 +24,7 @@ const (
 	pickerEffort
 	pickerSession
 	pickerTheme
+	pickerSkill
 )
 
 // pickerItem is one selectable row: Label is shown, Value is passed to the
@@ -223,6 +224,35 @@ func (m model) newModelPicker() *commandPicker {
 		return nil
 	}
 	return &commandPicker{kind: pickerModel, title: "Choose a model", items: items, allItems: append([]pickerItem{}, items...), selected: 0}
+}
+
+// newSkillPicker lists the installed skills for browse-and-run: type to filter,
+// arrow keys to select, Enter runs the chosen skill immediately. Selection is by
+// the skill's EXACT name (item.Value), so even skills the slash path cannot
+// reach — names shadowed by a builtin or user command, or names that don't fit
+// a slash token — are runnable here: picking from the Skills picker is
+// unambiguous. Returns nil when no skills are installed (the caller falls back
+// to the install-hint card).
+func (m model) newSkillPicker() *commandPicker {
+	installed := m.installedSkills()
+	items := make([]pickerItem, 0, len(installed))
+	for _, skill := range installed {
+		name := strings.TrimSpace(skill.Name)
+		if name == "" {
+			continue
+		}
+		label := name
+		if slash := skillSlashName(name); slash != "" {
+			// Show the slash form where one exists — it doubles as documentation
+			// of the direct "/name [args]" invocation.
+			label = "/" + slash
+		}
+		items = append(items, pickerItem{Label: label, Value: name, Meta: strings.TrimSpace(skill.Description)})
+	}
+	if len(items) == 0 {
+		return nil
+	}
+	return &commandPicker{kind: pickerSkill, title: "pick a skill · ⏎ fills /name — add your request", items: items, allItems: append([]pickerItem{}, items...), selected: 0}
 }
 
 // modelPickerProviders returns the providers to list in /model: all saved

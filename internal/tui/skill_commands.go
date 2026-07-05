@@ -73,6 +73,68 @@ func (m model) launchOrDeferExpandedPrompt(prompt string) (model, tea.Cmd, bool)
 	return next, teaCmd, true
 }
 
+// takenSlashNames returns every slash token already claimed by a builtin
+// command (or alias) or a user command — the names a typed "/x" would dispatch
+// to before ever reaching a skill.
+func (m model) takenSlashNames() map[string]bool {
+	taken := map[string]bool{}
+	for _, command := range commandDefinitions {
+		taken[strings.TrimPrefix(command.name, "/")] = true
+		for _, alias := range command.aliases {
+			taken[strings.TrimPrefix(alias, "/")] = true
+		}
+	}
+	for _, cmd := range m.userCommands {
+		taken[cmd.Name] = true
+	}
+	return taken
+}
+
+// chooseSkillFromPicker handles Enter on a skill-picker row. Most skills want a
+// request ("review WHICH pr?"), so selection fills the composer with
+// "/name " — cursor at the end — for the user to complete and submit (Enter
+// again runs it bare). Skills whose names cannot be typed as a slash command
+// (non-slash shapes, or names shadowed by a builtin or user command) fall back
+// to running immediately: the picker is the only path that reaches them, and an
+// unfillable composer would be a dead end.
+func (m model) chooseSkillFromPicker(item pickerItem) (model, tea.Cmd) {
+	slash := skillSlashName(item.Value)
+	if slash == "" || m.takenSlashNames()[slash] {
+		return m.invokeSkillByName(item.Value)
+	}
+	m.input.SetValue("/" + slash + " ")
+	m.input.CursorEnd()
+	return m, nil
+}
+
+// invokeSkillByName runs the installed skill with the given EXACT raw name (the
+// skill-picker path). The same run-state guards as slash invocation apply; the
+// picker offers no args affordance, so the prompt is the skill body alone.
+func (m model) invokeSkillByName(name string) (model, tea.Cmd) {
+	for _, skill := range m.installedSkills() {
+		if strings.TrimSpace(skill.Name) != name {
+			continue
+		}
+		body := strings.TrimSpace(skill.Content)
+		if body == "" {
+			m.transcript = reduceTranscript(m.transcript, transcriptAction{
+				kind: actionAppendError,
+				text: "skill " + name + " has an empty SKILL.md body (" + skill.Path + ")",
+			})
+			return m, nil
+		}
+		next, teaCmd, _ := m.launchOrDeferExpandedPrompt(body)
+		return next, teaCmd
+	}
+	// The picker row came from a slightly older load (TTL cache) and the skill
+	// has since been removed.
+	m.transcript = reduceTranscript(m.transcript, transcriptAction{
+		kind: actionAppendError,
+		text: "skill " + name + " is no longer installed",
+	})
+	return m, nil
+}
+
 // lookupSkillCommand returns the installed skill whose slash name matches the
 // given (lowercased) name. Linear scan over a fresh load — skills are re-read
 // per invocation so a skill installed mid-session is invocable without a

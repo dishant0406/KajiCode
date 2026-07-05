@@ -3733,6 +3733,11 @@ func (m model) choosePicker() (tea.Model, tea.Cmd) {
 		if text != "" {
 			m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: text})
 		}
+	case pickerSkill:
+		// Fill the composer with "/name " so the user adds their request before
+		// submitting (a bare second Enter runs it without one); names the slash
+		// path cannot reach run immediately instead.
+		m, cmd = m.chooseSkillFromPicker(item)
 	case pickerTheme:
 		// The hovered palette is already live from the preview; handleThemeCommand
 		// records the choice (m.themeMode) and re-applies it, and reports the switch.
@@ -3849,6 +3854,12 @@ func (m model) handleSubmit() (tea.Model, tea.Cmd) {
 		m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: m.toolsText()})
 		return m, nil
 	case commandSkills:
+		// With skills installed, /skills opens a searchable picker (like /model);
+		// the text card remains only as the no-skills install hint.
+		if picker := m.newSkillPicker(); picker != nil {
+			m.picker = picker
+			return m, nil
+		}
 		m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: m.skillsText()})
 		return m, nil
 	case commandMCP:

@@ -699,85 +699,18 @@ func (m model) debugText() string {
 	})
 }
 
-// truncateSkillListDescription keeps a /skills row readable: the command card
-// hard-truncates each rendered line at card width, so a very long trigger-rich
-// description is cut deliberately (with an ellipsis) rather than arbitrarily.
-func truncateSkillListDescription(desc string) string {
-	desc = strings.TrimSpace(desc)
-	const maxRunes = 140
-	runes := []rune(desc)
-	if len(runes) <= maxRunes {
-		return desc
-	}
-	return strings.TrimSpace(string(runes[:maxRunes])) + "…"
-}
-
-// skillsText renders the /skills listing: every installed skill (default dir
-// merged with plugin skill roots), its slash-invocation form when the name fits
-// a slash token, and how to run one. Skills are re-read on each invocation so a
-// skill installed mid-session shows up without a restart.
+// skillsText is the /skills fallback when NO skills are installed — an install
+// hint. With skills present /skills opens the searchable skill picker instead
+// (see newSkillPicker), matching how /model works.
 func (m model) skillsText() string {
-	installed := m.installedSkills()
-	if len(installed) == 0 {
-		return renderCommandOutput(commandOutput{
-			Title:  "Skills",
-			Status: commandStatusInfo,
-			Sections: []commandSection{{
-				Lines: []string{"No skills installed."},
-			}},
-			Hints: []string{
-				"install one: create <skills-dir>/<name>/SKILL.md (see `zero skills`)",
-			},
-		})
-	}
-	// A "/name" label is shown ONLY when typing it would actually run the skill:
-	// names shadowed by a builtin (or alias), a user command, or an earlier skill
-	// with the same lowercased name — and names that don't fit a slash token —
-	// are listed bare with a "(via skill tool)" note instead, so the listing
-	// never advertises a dead invocation.
-	taken := map[string]bool{}
-	for _, command := range commandDefinitions {
-		taken[strings.TrimPrefix(command.name, "/")] = true
-		for _, alias := range command.aliases {
-			taken[strings.TrimPrefix(alias, "/")] = true
-		}
-	}
-	for _, cmd := range m.userCommands {
-		taken[cmd.Name] = true
-	}
-	lines := make([]string, 0, len(installed))
-	for _, skill := range installed {
-		name := strings.TrimSpace(skill.Name)
-		if name == "" {
-			continue
-		}
-		slash := skillSlashName(name)
-		invocable := slash != "" && !taken[slash]
-		if slash != "" {
-			taken[slash] = true
-		}
-		label := name + " -"
-		if invocable {
-			label = "/" + slash + " -"
-		}
-		if desc := truncateSkillListDescription(skill.Description); desc != "" {
-			label += " " + desc
-		}
-		if !invocable {
-			label += " (via skill tool)"
-		}
-		lines = append(lines, strings.TrimSuffix(label, " -"))
-	}
 	return renderCommandOutput(commandOutput{
 		Title:  "Skills",
-		Status: commandStatusOK,
+		Status: commandStatusInfo,
 		Sections: []commandSection{{
-			Title: "Installed",
-			Lines: lines,
+			Lines: []string{"No skills installed."},
 		}},
 		Hints: []string{
-			"run one directly: /<skill-name> [request]",
-			"the model can also load skills on demand via the skill tool",
+			"install one: create <skills-dir>/<name>/SKILL.md (see `zero skills`)",
 		},
 	})
 }

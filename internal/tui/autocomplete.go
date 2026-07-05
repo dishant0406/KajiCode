@@ -203,16 +203,7 @@ func (m model) matchSkillSuggestions(token string) []commandSuggestion {
 	if prefix == "" || m.loadSkills == nil {
 		return nil
 	}
-	taken := map[string]bool{}
-	for _, command := range commandDefinitions {
-		taken[strings.TrimPrefix(command.name, "/")] = true
-		for _, alias := range command.aliases {
-			taken[strings.TrimPrefix(alias, "/")] = true
-		}
-	}
-	for _, cmd := range m.userCommands {
-		taken[cmd.Name] = true
-	}
+	taken := m.takenSlashNames()
 	var out []commandSuggestion
 	// Read through the loader (not the startup snapshot in agentOptions) so the
 	// palette matches what dispatch will actually resolve — a skill installed or

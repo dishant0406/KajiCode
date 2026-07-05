@@ -205,7 +205,8 @@ func TestSkillsCommandResolves(t *testing.T) {
 	}
 }
 
-func TestSkillsCommandListsInstalled(t *testing.T) {
+// With skills installed, /skills opens a searchable picker (like /model).
+func TestSkillsCommandOpensPicker(t *testing.T) {
 	m := newSkillTestModel(t,
 		skills.Skill{Name: "deploy-checks", Description: "Run the pre-deploy suite.", Content: "x"},
 		skills.Skill{Name: "has space", Description: "tool-only skill", Content: "x"},
@@ -213,15 +214,67 @@ func TestSkillsCommandListsInstalled(t *testing.T) {
 
 	next := submitInput(t, m, "/skills")
 
-	if !transcriptContains(next.transcript, "/deploy-checks - Run the pre-deploy suite.") {
-		t.Fatalf("installed skill should be listed with its slash form, got %#v", next.transcript)
+	if next.picker == nil || next.picker.kind != pickerSkill {
+		t.Fatalf("/skills should open the skill picker, got %#v", next.picker)
 	}
-	// A non-slash-invocable name is still listed, without the leading slash.
-	if !transcriptContains(next.transcript, "has space - tool-only skill") {
-		t.Fatalf("non-invocable skill should still be listed, got %#v", next.transcript)
+	labels := map[string]string{}
+	for _, item := range next.picker.items {
+		labels[item.Label] = item.Value
 	}
-	if !transcriptContains(next.transcript, "/<skill-name>") {
-		t.Fatalf("usage hint missing, got %#v", next.transcript)
+	if labels["/deploy-checks"] != "deploy-checks" {
+		t.Fatalf("slash-invocable skill should show its slash form, got %#v", labels)
+	}
+	// A non-slash-shaped name is still selectable (bare label, exact-name value).
+	if labels["has space"] != "has space" {
+		t.Fatalf("non-slash skill should be listed bare but selectable, got %#v", labels)
+	}
+}
+
+// Enter on a picker row fills the composer with "/name " so the user can add
+// their request (which PR? which file?) before submitting — it must NOT fire
+// the skill with no request attached.
+func TestSkillPickerEnterFillsComposer(t *testing.T) {
+	m := newSkillTestModel(t, skills.Skill{Name: "reviewer", Content: "Review the diff for correctness."})
+
+	next := submitInput(t, m, "/skills")
+	if next.picker == nil {
+		t.Fatal("picker should be open")
+	}
+	updated, _ := next.Update(testKey(tea.KeyEnter))
+	after := updated.(model)
+
+	if after.picker != nil {
+		t.Fatal("picker should close on Enter")
+	}
+	if got := after.input.Value(); got != "/reviewer " {
+		t.Fatalf("composer should be filled with the invocation, got %q", got)
+	}
+	if transcriptContains(after.transcript, "Review the diff for correctness.") {
+		t.Fatalf("skill must not run before the user submits, got %#v", after.transcript)
+	}
+
+	// A second Enter submits the (bare) invocation and runs the skill.
+	final, _ := after.Update(testKey(tea.KeyEnter))
+	done := final.(model)
+	if !transcriptContains(done.transcript, "Review the diff for correctness.") {
+		t.Fatalf("submitting the filled composer should run the skill, got %#v", done.transcript)
+	}
+}
+
+// Picker selection is by exact name, so a skill shadowed by a builtin (dead on
+// the slash path) is still runnable from the picker.
+func TestSkillPickerRunsBuiltinShadowedSkill(t *testing.T) {
+	m := newSkillTestModel(t, skills.Skill{Name: "help", Description: "shadowed", Content: "Shadowed skill body."})
+
+	next := submitInput(t, m, "/skills")
+	if next.picker == nil {
+		t.Fatal("picker should be open")
+	}
+	updated, _ := next.Update(testKey(tea.KeyEnter))
+	after := updated.(model)
+
+	if !transcriptContains(after.transcript, "Shadowed skill body.") {
+		t.Fatalf("picker must run the shadowed skill directly, got %#v", after.transcript)
 	}
 }
 
@@ -312,32 +365,6 @@ func TestCaseCollidingSkillsAdvertisedOnce(t *testing.T) {
 	}
 	if rows != 1 {
 		t.Fatalf("case-colliding skills must yield exactly one /deploy row, got %d", rows)
-	}
-}
-
-// /skills must not print a "/name" invocation label for a skill that a builtin
-// or user command shadows — typing it would never run the skill.
-func TestSkillsCommandShadowedSkillListedBare(t *testing.T) {
-	m := newSkillTestModel(t, skills.Skill{Name: "help", Description: "shadowed by the builtin", Content: "x"})
-
-	next := submitInput(t, m, "/skills")
-
-	if transcriptContains(next.transcript, "/help - shadowed") {
-		t.Fatalf("shadowed skill must not carry a slash label, got %#v", next.transcript)
-	}
-	if !transcriptContains(next.transcript, "help - shadowed by the builtin (via skill tool)") {
-		t.Fatalf("shadowed skill should be listed bare with the tool note, got %#v", next.transcript)
-	}
-}
-
-func TestSkillsCommandLongDescriptionTruncated(t *testing.T) {
-	long := strings.Repeat("very long trigger description ", 12) // ~360 chars
-	m := newSkillTestModel(t, skills.Skill{Name: "wordy", Description: long, Content: "x"})
-
-	next := submitInput(t, m, "/skills")
-
-	if !transcriptContains(next.transcript, "…") {
-		t.Fatalf("long description should be truncated with an ellipsis, got %#v", next.transcript)
 	}
 }
 
