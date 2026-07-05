@@ -194,9 +194,12 @@ func TestShadowedSkillNotSuggested(t *testing.T) {
 		AgentOptions: agent.Options{Skills: infos},
 	})
 
+	// Assert on the advertised NAME with a skill-marked Desc, not on the exact
+	// fallback Desc format — the invariant is that no skill row carries a
+	// builtin/user-command name, regardless of description wording.
 	for _, token := range []string{"/hel", "/ses", "/dep"} {
-		for _, s := range m.matchCommandSuggestions(token) {
-			if s.Desc == "Skill: /help" || s.Desc == "Skill: /sessions" || s.Desc == "Skill: /deploy" {
+		for _, s := range m.matchSkillSuggestions(token) {
+			if s.Name == "/help" || s.Name == "/sessions" || s.Name == "/deploy" {
 				t.Fatalf("shadowed skill advertised for %q: %#v", token, s)
 			}
 		}
@@ -343,6 +346,11 @@ func TestSkillInvocationWarnsDuringCompaction(t *testing.T) {
 	}
 	if !transcriptContains(next.transcript, "Compaction is running") {
 		t.Fatalf("compaction warning expected, got %#v", next.transcript)
+	}
+	// The typed invocation is restored for an easy re-submit (the dispatch path
+	// cleared the composer before the guard could fire).
+	if got := next.input.Value(); got != "/reviewer" {
+		t.Fatalf("typed invocation should be restored into the composer, got %q", got)
 	}
 }
 

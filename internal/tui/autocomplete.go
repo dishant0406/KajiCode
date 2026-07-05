@@ -189,7 +189,13 @@ func (m model) matchCommandSuggestions(token string) []commandSuggestion {
 		return command.kind != commandSandboxSetup || m.sandboxSetupCommand != nil
 	})
 	out = append(out, m.matchUserCommandSuggestions(token)...)
-	return append(out, m.matchSkillSuggestions(token)...)
+	out = append(out, m.matchSkillSuggestions(token)...)
+	// Each source caps itself, but the merged list must honor the shared cap too
+	// (three sources could otherwise stack up to ~3x the palette bound).
+	if len(out) > maxCommandSuggestions {
+		out = out[:maxCommandSuggestions]
+	}
+	return out
 }
 
 // matchSkillSuggestions returns installed skills whose slash name has the typed

@@ -39,7 +39,7 @@ func (m model) handleSkillCommand(raw string) (model, tea.Cmd, bool) {
 		})
 		return m, nil, true
 	}
-	return m.launchOrDeferExpandedPrompt(skillInvocationPrompt(body, args))
+	return m.launchOrDeferExpandedPrompt(raw, skillInvocationPrompt(body, args))
 }
 
 // bareSkillInvocationNote is appended when a skill is invoked with no request.
@@ -68,8 +68,12 @@ func skillInvocationPrompt(body, args string) string {
 // turn, and compaction-in-flight warns instead of racing the compactor. The
 // EXPANDED prompt is what gets queued — the queue flush path resubmits text as
 // a literal prompt, so queuing the raw "/name args" would send it to the model
-// as prose instead of re-dispatching it.
-func (m model) launchOrDeferExpandedPrompt(prompt string) (model, tea.Cmd, bool) {
+// as prose instead of re-dispatching it. raw is the typed invocation; on the
+// compaction warning it is restored into the composer for an easy re-submit
+// (the commandUnknown dispatch cleared the composer before we got here, unlike
+// the plain-prompt path whose guard fires before the clear). Empty raw (the
+// picker path has no typed form) restores nothing.
+func (m model) launchOrDeferExpandedPrompt(raw, prompt string) (model, tea.Cmd, bool) {
 	if m.exiting {
 		return m, nil, true
 	}
@@ -77,6 +81,10 @@ func (m model) launchOrDeferExpandedPrompt(prompt string) (model, tea.Cmd, bool)
 		return m.queueMessage(prompt), nil, true
 	}
 	if m.compactInFlight {
+		if strings.TrimSpace(raw) != "" {
+			m.input.SetValue(raw)
+			m.input.CursorEnd()
+		}
 		m.transcript = reduceTranscript(m.transcript, transcriptAction{
 			kind: actionAppendSystem,
 			text: "Compact\nstatus: warning\nCompaction is running. Re-run the command when it finishes.",
@@ -137,7 +145,7 @@ func (m model) invokeSkillByName(name string) (model, tea.Cmd) {
 			})
 			return m, nil
 		}
-		next, teaCmd, _ := m.launchOrDeferExpandedPrompt(skillInvocationPrompt(body, ""))
+		next, teaCmd, _ := m.launchOrDeferExpandedPrompt("", skillInvocationPrompt(body, ""))
 		return next, teaCmd
 	}
 	// The picker row came from a slightly older load (TTL cache) and the skill
