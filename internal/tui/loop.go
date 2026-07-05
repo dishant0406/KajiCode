@@ -274,6 +274,14 @@ func (m model) startLoop(cmd loopCommand) (model, tea.Cmd) {
 	if reason, ok := m.validateLoopTarget(cmd.prompt); !ok {
 		return m.appendLoopSystem(reason), nil
 	}
+	// A /command loop must be fixed-interval. Self-paced mode drives a free-form
+	// goal through the playbook + LOOP: control line (see firePrompt), which a
+	// custom command's expanded template never carries — so a bare self-paced
+	// /command would silently degrade to adaptive polling with no way to report
+	// done. Require an explicit interval for command loops instead.
+	if cmd.mode == loopModeSelfPaced && strings.HasPrefix(strings.TrimSpace(cmd.prompt), "/") {
+		return m.appendLoopSystem("A /command loop needs an interval — e.g. /loop 5m " + strings.Fields(cmd.prompt)[0] + ". Self-paced mode (no interval) is for a free-form goal."), nil
+	}
 	m.loopCounter++
 	id := "L" + strconv.Itoa(m.loopCounter)
 	loop := &loopState{
@@ -302,14 +310,16 @@ func (m model) stopLoop(id string) (model, tea.Cmd) {
 	}
 	if id == "" {
 		if len(m.loops) == 1 {
-			return m.removeLoop(m.loops[0].id, "Loop "+m.loops[0].id+" stopped."), nil
+			return m.removeLoop(m.loops[0].id, "Loop "+m.loops[0].id+" stopped.").ensureLoopTick()
 		}
 		return m.appendLoopSystem("Multiple loops active — use /loop stop <id> or /loop stop all.\n" + m.loopListText()), nil
 	}
 	if m.findLoop(id) == nil {
 		return m.appendLoopSystem("No loop " + id + ". " + m.loopListText()), nil
 	}
-	return m.removeLoop(id, "Loop "+id+" stopped."), nil
+	// removeLoop stops the poll ticker; re-arm it so any OTHER loops that remain
+	// keep firing (ensureLoopTick no-ops when this was the last loop).
+	return m.removeLoop(id, "Loop "+id+" stopped.").ensureLoopTick()
 }
 
 func (m model) stopAllLoops() (model, tea.Cmd) {

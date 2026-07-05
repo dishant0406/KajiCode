@@ -148,9 +148,14 @@ func TestStopLoopByID(t *testing.T) {
 	m = startFixedLoop(m, "a", time.Minute)
 	m = startFixedLoop(m, "b", time.Minute)
 	id := m.loops[0].id
-	m, _ = m.stopLoop(id)
+	m, cmd := m.stopLoop(id)
 	if len(m.loops) != 1 || m.findLoop(id) != nil {
 		t.Fatalf("stopLoop(%s) should remove exactly that loop", id)
+	}
+	// Stopping one of several loops must keep the poll ticker alive for the rest:
+	// removeLoop kills the ticker, so stopLoop has to re-arm it (jatmn).
+	if cmd == nil || !m.loopTicking {
+		t.Fatal("stopping one of several loops must leave the remaining loop scheduled (ticker re-armed)")
 	}
 	// Bare stop with a single active loop stops that sole loop (parseLoopCommand
 	// leaves the target empty and stopLoop special-cases the one-loop case).
@@ -187,6 +192,9 @@ func TestFireDueLoopSkipsBehindModal(t *testing.T) {
 	if got.activeLoopID != "" || cmd != nil {
 		t.Fatal("a due loop must not launch a run behind an open picker/modal — it would complete into whatever session the user switches to")
 	}
+	if got.loops[0].nextRunAt.IsZero() {
+		t.Fatal("a loop skipped because a modal is open must stay scheduled, not have its next run cleared")
+	}
 }
 
 func TestAdaptiveSelfPaceDelayWidensOverTime(t *testing.T) {
@@ -207,8 +215,9 @@ func TestLoopFooterSummary(t *testing.T) {
 	m = startFixedLoop(m, "a", 5*time.Minute)
 	m.loops[0].nextRunAt = now.Add(5 * time.Minute)
 	got := m.loopFooterSummary()
-	if !strings.HasPrefix(got, "1 loop") {
-		t.Fatalf("footer summary = %q, want it to start with a loop count", got)
+	wantWake := "next " + now.Add(5*time.Minute).Format("3:04pm")
+	if !strings.HasPrefix(got, "1 loop") || !strings.Contains(got, wantWake) {
+		t.Fatalf("footer summary = %q, want it to start with a loop count and contain %q", got, wantWake)
 	}
 }
 
@@ -330,6 +339,24 @@ func TestValidateLoopTargetRejectsBuiltin(t *testing.T) {
 	}
 }
 
+func TestSelfPacedCommandLoopRejected(t *testing.T) {
+	now := time.Date(2026, 7, 5, 12, 0, 0, 0, time.UTC)
+	m := loopTestModel(t, now)
+	m.userCommands = []usercommands.Command{{Name: "babysit-prs", Template: "check the PRs"}}
+	// A /command with no interval parses as self-paced, but self-paced mode drives
+	// a free-form goal via the playbook + LOOP: protocol, which a command's
+	// expanded template never carries — so a bare self-paced /command is rejected.
+	m, _ = m.startLoop(loopCommand{action: loopActionStart, mode: loopModeSelfPaced, prompt: "/babysit-prs"})
+	if len(m.loops) != 0 {
+		t.Fatal("a bare self-paced /command loop should be rejected (a command loop needs an interval)")
+	}
+	// The same command with an interval (fixed) is accepted.
+	m, _ = m.startLoop(loopCommand{action: loopActionStart, mode: loopModeFixed, prompt: "/babysit-prs", interval: 5 * time.Minute})
+	if len(m.loops) != 1 {
+		t.Fatal("a fixed-interval /command loop should be accepted")
+	}
+}
+
 func TestClearLoopsForSessionSwitch(t *testing.T) {
 	now := time.Date(2026, 7, 5, 12, 0, 0, 0, time.UTC)
 	m := loopTestModel(t, now)
@@ -389,6 +416,21 @@ func TestLoopClearRequiresConfirm(t *testing.T) {
 	}
 	if len(n4.loops) != 1 {
 		t.Fatal("/clear keeps loops running (it wipes the screen, not the session)")
+	}
+	// The confirmed clear must actually wipe the transcript, not silently no-op:
+	// only the clear path appends the "Transcript cleared" note, and the pre-clear
+	// loop-start row must be gone.
+	clearedNote, staleRow := false, false
+	for _, r := range n4.transcript {
+		if strings.Contains(r.text, "Transcript cleared") {
+			clearedNote = true
+		}
+		if strings.Contains(r.text, "Loop L1 started") {
+			staleRow = true
+		}
+	}
+	if !clearedNote || staleRow {
+		t.Fatalf("the second /clear must wipe the transcript (clearedNote=%v staleRow=%v)", clearedNote, staleRow)
 	}
 }
 
