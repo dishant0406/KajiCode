@@ -719,7 +719,7 @@ func newExecSelfCorrector(enabled bool, workspaceRoot string, autonomy string) (
 		defer cancel()
 		_ = manager.Shutdown(ctx)
 	}
-	fileDiagnostics := agent.NewFileDiagnostics(manager)
+	fileDiagnostics := agent.NewFileDiagnostics(manager, workspaceRoot)
 	if !enabled {
 		return nil, fileDiagnostics, cleanup
 	}

@@ -114,7 +114,10 @@ func (tool editFileTool) RunWithOptions(ctx context.Context, args map[string]any
 		switch {
 		case ferr == nil:
 			oldString = search
-			newString = findNew
+			// The model's new_string was written at old_string's (mismatched)
+			// indentation; re-shape it to the span actually being replaced so a
+			// tolerant match never strips indentation or a trailing CR.
+			newString = adaptReplacementToSpan(search, findOld, findNew)
 			occurrences = strings.Count(content, search)
 		case errors.Is(ferr, errEditFuzzyAmbiguous):
 			return errorResult("Error: old_string matches multiple locations in " + relativePath + " even after fuzzy matching. Provide more surrounding context to make the match unique, or pass replace_all: true.")

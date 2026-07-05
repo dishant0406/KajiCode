@@ -47,11 +47,13 @@ func TestEditFuzzyLineTrimmed(t *testing.T) {
 	initial := "func a() {\n\tx := 1\n\treturn x\n}\n"
 	result, after := runEdit(t, t.TempDir(), initial, map[string]any{
 		"old_string": "x := 1\nreturn x",
-		"new_string": "\ty := 2\n\treturn y",
+		"new_string": "y := 2\nreturn y",
 	})
 	if result.Status != StatusOK {
 		t.Fatalf("expected ok, got %q", result.Output)
 	}
+	// new_string was written at old_string's outdented shape; the span's
+	// indentation must be re-applied so the file keeps its tabs.
 	if !strings.Contains(after, "\ty := 2\n\treturn y\n}") {
 		t.Fatalf("unexpected content: %q", after)
 	}
@@ -112,13 +114,66 @@ func TestEditFuzzyIndentationFlexible(t *testing.T) {
 	initial := "if ok {\n\t\tfor i := range xs {\n\t\t\tsum += xs[i]\n\t\t}\n}\n"
 	result, after := runEdit(t, t.TempDir(), initial, map[string]any{
 		"old_string": "for i := range xs {\n\tsum += xs[i]\n}",
-		"new_string": "\t\tsum += total(xs)",
+		"new_string": "sum += total(xs)",
 	})
 	if result.Status != StatusOK {
 		t.Fatalf("expected ok, got %q", result.Output)
 	}
-	if !strings.Contains(after, "total(xs)") || strings.Contains(after, "range xs") {
+	// The replacement lands at the span's real depth (two tabs), not at
+	// old_string's outdented depth.
+	if !strings.Contains(after, "\t\tsum += total(xs)") || strings.Contains(after, "range xs") {
 		t.Fatalf("unexpected content: %q", after)
+	}
+}
+
+func TestEditFuzzyCRLFLineTrimmedPreservesCarriageReturns(t *testing.T) {
+	// CRLF file + a multi-line outdented old_string: the resolved span carries
+	// tabs and trailing CRs; the replacement must inherit both so the file's
+	// CRLF pairs and indentation survive the edit.
+	initial := "func a() {\r\n\tx := 1\r\n\treturn x\r\n}\r\n"
+	result, after := runEdit(t, t.TempDir(), initial, map[string]any{
+		"old_string": "x := 1\nreturn x",
+		"new_string": "y := 2\nreturn y",
+	})
+	if result.Status != StatusOK {
+		t.Fatalf("expected ok, got %q", result.Output)
+	}
+	if !strings.Contains(after, "\ty := 2\r\n\treturn y\r\n}") {
+		t.Fatalf("unexpected content: %q", after)
+	}
+	if strings.Contains(after, "\n\treturn y\n") {
+		t.Fatalf("bare LF introduced into CRLF file: %q", after)
+	}
+}
+
+func TestUniformIndentDelta(t *testing.T) {
+	cases := []struct {
+		span, find string
+		want       string
+		ok         bool
+	}{
+		{"\tx := 1\n\treturn x", "x := 1\nreturn x", "\t", true},
+		{"\t\tfor {\n\t\t\tgo()\n\t\t}", "for {\n\tgo()\n}", "\t\t", true},
+		{"x := 1", "x := 1", "", true},                          // no shift needed
+		{"\tx := 1\n  return x", "x := 1\nreturn x", "", false}, // mixed delta
+		{"\ta\n\tb\n\tc", "a\nb", "", false},                    // line-count mismatch
+		{"  a", "\ta", "", false},                               // find indent not a suffix
+	}
+	for _, c := range cases {
+		got, ok := uniformIndentDelta(c.span, c.find)
+		if ok != c.ok || (ok && got != c.want) {
+			t.Errorf("uniformIndentDelta(%q, %q) = %q,%v want %q,%v", c.span, c.find, got, ok, c.want, c.ok)
+		}
+	}
+}
+
+func TestAdaptReplacementLeavesNonUniformSpansAlone(t *testing.T) {
+	// Block-anchor style match with a drifted interior: no uniform delta, so
+	// the replacement must pass through untouched.
+	span := "\tfunc h() {\n\t\t// drifted comment\n\t}"
+	find := "func h() {\n// different comment\n}"
+	if got := adaptReplacementToSpan(span, find, "replacement()"); got != "replacement()" {
+		t.Fatalf("non-uniform span must not re-indent: %q", got)
 	}
 }
 

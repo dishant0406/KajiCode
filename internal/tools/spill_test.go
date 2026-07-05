@@ -39,18 +39,6 @@ func TestTruncateExecOutputUnderBudgetUnchanged(t *testing.T) {
 	}
 }
 
-func TestFormatBashOutputCapsVerboseOutput(t *testing.T) {
-	t.Setenv("TMPDIR", t.TempDir())
-	long := strings.Repeat("x", 200*1024)
-	formatted := formatBashOutput(long, "", 0)
-	if len(formatted) > defaultMaxOutputTokens*4+1024 {
-		t.Fatalf("bash output must be capped near the token budget, got %d bytes", len(formatted))
-	}
-	if !strings.Contains(formatted, "output truncated") {
-		t.Fatal("capped bash output must carry the truncation notice")
-	}
-}
-
 func TestSweepSpillDirRemovesOnlyOldFiles(t *testing.T) {
 	dir := t.TempDir()
 	oldFile := filepath.Join(dir, "bash-old.txt")

@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,10 +22,30 @@ import (
 // are opportunistically removed whenever a new spill happens.
 const spillRetention = 7 * 24 * time.Hour
 
-// spillDir returns the shared spill directory, creating it on first use.
+// spillDir returns the per-user spill directory, creating it on first use.
+// Hardened for shared temp dirs (Linux /tmp): the name carries the uid so
+// users cannot collide, and a pre-existing path is only accepted when it is a
+// real directory (not a symlink that would redirect spills) owned by the
+// current user. Any doubt fails the spill — it is best-effort anyway.
 func spillDir() (string, error) {
-	dir := filepath.Join(os.TempDir(), "zero-tool-output")
+	name := "zero-tool-output"
+	if uid := os.Getuid(); uid >= 0 {
+		name = fmt.Sprintf("zero-tool-output-%d", uid)
+	}
+	dir := filepath.Join(os.TempDir(), name)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	// MkdirAll follows symlinks and leaves an existing directory untouched, so
+	// verify what is actually at the path.
+	info, err := os.Lstat(dir)
+	if err != nil {
+		return "", err
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("spill path %s is not a directory", dir)
+	}
+	if err := checkSpillDirOwner(info); err != nil {
 		return "", err
 	}
 	return dir, nil

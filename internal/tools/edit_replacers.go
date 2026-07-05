@@ -422,6 +422,75 @@ func contextAwareReplacer(content, find string) []string {
 	return candidates
 }
 
+// adaptReplacementToSpan re-shapes the model's replacement to the span a
+// tolerant matcher resolved. When old_string only matched after normalization,
+// new_string was written at old_string's (wrong) shape, so applying it raw
+// would strip the file's indentation or drop a trailing CR:
+//
+//  1. Uniform re-indent: when every span line equals delta + the corresponding
+//     find line's indentation (the line-trimmed / indentation-flexible shapes),
+//     the same delta is prepended to every non-blank replacement line. Any
+//     line that breaks the uniform-delta relationship disables the shift —
+//     block-anchor matches with a drifted interior are left untouched.
+//  2. Trailing CR: a span from a CRLF file ends mid-line at "\r" (candidates
+//     are built by joining lines split on "\n"); the replacement gets the same
+//     trailing "\r" so the file's CRLF pairs stay intact.
+func adaptReplacementToSpan(span, find, replacement string) string {
+	if delta, ok := uniformIndentDelta(span, find); ok && delta != "" {
+		lines := strings.Split(replacement, "\n")
+		for i, line := range lines {
+			if strings.TrimSpace(line) == "" {
+				continue
+			}
+			lines[i] = delta + line
+		}
+		replacement = strings.Join(lines, "\n")
+	}
+	if strings.HasSuffix(span, "\r") && !strings.HasSuffix(replacement, "\r") {
+		replacement += "\r"
+	}
+	return replacement
+}
+
+// uniformIndentDelta returns the indentation prefix that, prepended to every
+// non-blank find line, yields the corresponding span line's indentation. ok is
+// false when line counts differ, any line pair disagrees on the delta, or the
+// span is not simply a uniformly deeper-indented copy of find.
+func uniformIndentDelta(span, find string) (string, bool) {
+	spanLines := strings.Split(span, "\n")
+	findLines := splitFindLines(find)
+	if len(spanLines) != len(findLines) {
+		return "", false
+	}
+	leadingWhitespace := func(line string) string {
+		return line[:len(line)-len(strings.TrimLeft(line, " \t"))]
+	}
+	delta := ""
+	haveDelta := false
+	for i := range findLines {
+		spanLine := strings.TrimSuffix(spanLines[i], "\r")
+		findLine := strings.TrimSuffix(findLines[i], "\r")
+		if strings.TrimSpace(spanLine) == "" && strings.TrimSpace(findLine) == "" {
+			continue
+		}
+		spanIndent := leadingWhitespace(spanLine)
+		findIndent := leadingWhitespace(findLine)
+		if !strings.HasSuffix(spanIndent, findIndent) {
+			return "", false
+		}
+		lineDelta := spanIndent[:len(spanIndent)-len(findIndent)]
+		if !haveDelta {
+			delta = lineDelta
+			haveDelta = true
+			continue
+		}
+		if lineDelta != delta {
+			return "", false
+		}
+	}
+	return delta, haveDelta
+}
+
 // levenshtein computes edit distance with a two-row rolling matrix.
 func levenshtein(a, b string) int {
 	if a == "" {

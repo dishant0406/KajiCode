@@ -4326,7 +4326,7 @@ func (m model) runAgentWithOptions(runID int, runCtx context.Context, prompt str
 			// Inline post-edit diagnostics: edit_file/write_file append error
 			// diagnostics for the file they just wrote to their own output, so the
 			// model sees a break in the same turn. Shares the run's lazy manager.
-			options.FileDiagnostics = agent.NewFileDiagnostics(lspManager)
+			options.FileDiagnostics = agent.NewFileDiagnostics(lspManager, options.Cwd)
 		}
 
 		// Some providers synthesize tool-call ids that repeat within a run (e.g.

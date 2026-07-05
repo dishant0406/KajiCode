@@ -3,6 +3,8 @@ package agent
 import (
 	"context"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/Gitlawb/zero/internal/lsp"
@@ -18,9 +20,12 @@ const fileDiagnosticsTimeout = 10 * time.Second
 // checks it against the file's language server, and formats error-severity
 // diagnostics for the model. Warnings and hints are excluded — nagging about
 // style on every edit is noise, while a type error the edit just introduced is
-// exactly what the model should see before its next step. Returns nil when
-// manager is nil, disabling inline diagnostics entirely.
-func NewFileDiagnostics(manager *lsp.Manager) func(context.Context, string) string {
+// exactly what the model should see before its next step. Diagnostics are
+// rendered with workspace-relative paths: the absolute path would put the
+// local username/home directory into the model prompt and session transcript
+// on every edit. Returns nil when manager is nil, disabling inline diagnostics
+// entirely.
+func NewFileDiagnostics(manager *lsp.Manager, workspaceRoot string) func(context.Context, string) string {
 	if manager == nil {
 		return nil
 	}
@@ -39,6 +44,19 @@ func NewFileDiagnostics(manager *lsp.Manager) func(context.Context, string) stri
 		if len(errors) == 0 {
 			return ""
 		}
-		return lsp.FormatDiagnostics(absPath, errors)
+		return lsp.FormatDiagnostics(diagnosticsDisplayPath(workspaceRoot, absPath), errors)
 	}
+}
+
+// diagnosticsDisplayPath renders absPath relative to the workspace root for
+// model-facing output, falling back to the file's base name when the path is
+// outside the workspace (a bare name still identifies the file without
+// exposing the directory layout).
+func diagnosticsDisplayPath(workspaceRoot, absPath string) string {
+	if workspaceRoot != "" {
+		if rel, err := filepath.Rel(workspaceRoot, absPath); err == nil && !strings.HasPrefix(rel, "..") {
+			return rel
+		}
+	}
+	return filepath.Base(absPath)
 }
