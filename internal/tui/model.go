@@ -29,6 +29,7 @@ import (
 	"github.com/Gitlawb/zero/internal/providers/providerio"
 	"github.com/Gitlawb/zero/internal/sandbox"
 	"github.com/Gitlawb/zero/internal/sessions"
+	"github.com/Gitlawb/zero/internal/skills"
 	"github.com/Gitlawb/zero/internal/streamjson"
 	"github.com/Gitlawb/zero/internal/tools"
 	"github.com/Gitlawb/zero/internal/usage"
@@ -62,6 +63,7 @@ type model struct {
 	ctx                         context.Context
 	cwd                         string
 	userCommands                []usercommands.Command // file-sourced /commands (.zero/commands)
+	loadSkills                  func() []skills.Skill  // lazy installed-skills loader for /skills + /<skill-name>
 	userConfigPath              string
 	doctorUserConfigPath        string
 	projectConfigPath           string
@@ -735,6 +737,7 @@ func newModel(ctx context.Context, options Options) model {
 		cwd:                         cwd,
 		swarmDoneAt:                 map[string]time.Time{},
 		userCommands:                loadedUserCommands,
+		loadSkills:                  options.LoadSkills,
 		composerCursorVisible:       true,
 		userConfigPath:              options.UserConfigPath,
 		doctorUserConfigPath:        doctorUserConfigPath,
@@ -3845,6 +3848,9 @@ func (m model) handleSubmit() (tea.Model, tea.Cmd) {
 	case commandTools:
 		m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: m.toolsText()})
 		return m, nil
+	case commandSkills:
+		m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: m.skillsText()})
+		return m, nil
 	case commandMCP:
 		if strings.TrimSpace(command.text) == "" {
 			return m.openMCPManager(), nil
@@ -4038,6 +4044,11 @@ func (m model) handleSubmit() (tea.Model, tea.Cmd) {
 		// from .zero/commands/<name>.md — expand its template and run it as a
 		// normal prompt before reporting "unknown".
 		if next, cmd, handled := m.handleUserCommand(command.text); handled {
+			return next, cmd
+		}
+		// Then an installed skill: "/<skill-name> [args]" runs the skill directly
+		// (deterministic invocation, vs waiting for the model to pull it in).
+		if next, cmd, handled := m.handleSkillCommand(command.text); handled {
 			return next, cmd
 		}
 		m.transcript = reduceTranscript(m.transcript, transcriptAction{

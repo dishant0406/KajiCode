@@ -191,10 +191,19 @@ func specialistDelegationContext(options Options) string {
 // when no skills are installed, so a skill-less run reproduces the previous prompt
 // byte-for-byte.
 // skillsContextListBudget bounds the bytes spent listing individual skills so a
-// workspace with dozens of them can't bloat every turn's prompt. Skills past the
-// budget are summarized as a count rather than dropped — the model can still load
-// any of them by name (an unknown name returns the full list from the skill tool).
-const skillsContextListBudget = 640
+// workspace with an extreme number of them can't bloat every turn's prompt.
+// Skills past the budget are summarized as a count rather than dropped — the
+// model can still load any of them by name (an unknown name returns the full
+// list from the skill tool).
+//
+// The budget is deliberately generous — roughly 18 skills with maximally long
+// (200-rune, ASCII) descriptions, or 40+ with typical terser ones; non-ASCII
+// descriptions consume it faster since the budget counts bytes. This list is
+// the model's ONLY discovery surface, so a skill squeezed out of it effectively
+// never triggers. The previous 640-byte cap silently broke invocation for
+// anyone with more than ~6 skills — the model cannot match a request against a
+// skill it cannot see.
+const skillsContextListBudget = 4096
 
 func skillsContext(options Options) string {
 	if len(options.Skills) == 0 {
@@ -202,7 +211,7 @@ func skillsContext(options Options) string {
 	}
 	var b strings.Builder
 	b.WriteString("<available_skills>\n")
-	b.WriteString("Reusable, on-demand instruction sets you can load with the skill tool. When a request matches one, call skill with its exact name to pull in its guidance before acting — do not guess names or skip a relevant skill.\n")
+	b.WriteString("Reusable, on-demand instruction sets you can load with the skill tool. Before acting on a request, scan this list; when the request matches a skill's name or description, call skill with its exact name FIRST and follow the loaded guidance — do not guess names, do not skip a matching skill, and do not substitute your own approach for its instructions.\n")
 	listed, spent, omitted := 0, 0, 0
 	for _, info := range options.Skills {
 		name := strings.TrimSpace(info.Name)
@@ -232,9 +241,11 @@ func skillsContext(options Options) string {
 }
 
 // truncateForSkillLine keeps a skill's one-line description short so a single
-// verbose description can't dominate the skills-list budget.
+// verbose description can't dominate the skills-list budget. The cap is roomy on
+// purpose: the description carries the skill's trigger conditions ("use when…"),
+// and truncating those is what stops the model from ever invoking the skill.
 func truncateForSkillLine(desc string) string {
-	const maxDescRunes = 100
+	const maxDescRunes = 200
 	runes := []rune(desc)
 	if len(runes) <= maxDescRunes {
 		return desc

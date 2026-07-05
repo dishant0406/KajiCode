@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Gitlawb/zero/internal/agent"
@@ -782,6 +783,14 @@ func runInteractiveTUIWithSetup(stderr io.Writer, deps appDeps, permissionMode a
 			Specialists:    specialistRuntime.specialists,
 			Skills:         pluginActivation.skillInfos(deps.skillsDir()),
 		},
+		// LoadSkills backs /skills and direct /<skill-name> invocation in the TUI.
+		// It resolves against the same merged set (default dir + plugin skill
+		// roots) as the skill tool and the system-prompt list, re-read per use so
+		// newly installed skills work without a restart.
+		LoadSkills: cachedSkillsLoader(func() []skills.Skill {
+			merged, _ := plugins.MergedSkillsLoaded(deps.skillsDir(), pluginActivation.skillRoots)
+			return merged
+		}),
 		PermissionMode: permissionMode,
 		Notify:         resolved.Notify,
 		KeyBindings:    resolved.KeyBindings,
@@ -1276,4 +1285,27 @@ Flags:
       --no-notify                   Disable notifications for this run
 `)
 	return err
+}
+
+// cachedSkillsLoader memoizes a skills loader for a short interval. The TUI
+// calls the loader from autocomplete on every "/x" keystroke; without a cache
+// each keystroke would re-read every SKILL.md body. Two seconds is fresh enough
+// that a newly installed skill still shows up "immediately" while typing.
+func cachedSkillsLoader(load func() []skills.Skill) func() []skills.Skill {
+	var (
+		mu     sync.Mutex
+		at     time.Time
+		cached []skills.Skill
+	)
+	const ttl = 2 * time.Second
+	return func() []skills.Skill {
+		mu.Lock()
+		defer mu.Unlock()
+		if cached != nil && time.Since(at) < ttl {
+			return cached
+		}
+		cached = load()
+		at = time.Now()
+		return cached
+	}
 }

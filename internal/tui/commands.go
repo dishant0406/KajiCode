@@ -46,6 +46,7 @@ const (
 	commandCopy
 	commandExport
 	commandNew
+	commandSkills
 	commandUnknown
 )
 
@@ -130,6 +131,13 @@ var commandDefinitions = []commandDefinition{
 		group:       commandGroupTools,
 		description: "List registered tools.",
 		kind:        commandTools,
+	},
+	{
+		name:        "/skills",
+		usage:       "/skills",
+		group:       commandGroupTools,
+		description: "List installed skills; run one directly with /<skill-name> [args].",
+		kind:        commandSkills,
 	},
 	{
 		name:        "/context",
