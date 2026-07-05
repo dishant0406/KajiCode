@@ -51,19 +51,31 @@ func parallelSafeToolCall(registry *tools.Registry, call ToolCall, options Optio
 }
 
 // executeParallelReadBatch runs calls[start:end] concurrently (bounded by
-// maxParallelReadTools) and returns results indexed relative to start. Any
-// permission prompt that still occurs (a sandbox preflight can demand one even
-// for an auto-allowed read) is serialized so an interactive front-end never
-// sees two prompts at once.
+// maxParallelReadTools) and returns results indexed relative to start. All
+// execution-side callbacks that can fire inside executeToolCall are serialized
+// behind one mutex: a permission prompt (a sandbox preflight can demand one
+// even for an auto-allowed read) must never appear twice at once on an
+// interactive front-end, and OnPermission event handlers append to shared
+// session-recording state without their own locking — two batched reads under
+// a granted extra root would otherwise race (the pre-batch serial loop never
+// had two callbacks in flight at once).
 func executeParallelReadBatch(ctx context.Context, registry *tools.Registry, calls []ToolCall, start, end int, permissionMode PermissionMode, options Options) []precomputedToolResult {
 	batchOptions := options
+	var callbackMutex sync.Mutex
 	if options.OnPermissionRequest != nil {
-		var promptMutex sync.Mutex
 		inner := options.OnPermissionRequest
 		batchOptions.OnPermissionRequest = func(ctx context.Context, request PermissionRequest) (PermissionDecision, error) {
-			promptMutex.Lock()
-			defer promptMutex.Unlock()
+			callbackMutex.Lock()
+			defer callbackMutex.Unlock()
 			return inner(ctx, request)
+		}
+	}
+	if options.OnPermission != nil {
+		inner := options.OnPermission
+		batchOptions.OnPermission = func(event PermissionEvent) {
+			callbackMutex.Lock()
+			defer callbackMutex.Unlock()
+			inner(event)
 		}
 	}
 

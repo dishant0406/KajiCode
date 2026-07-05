@@ -317,3 +317,21 @@ func TestLevenshtein(t *testing.T) {
 		}
 	}
 }
+
+func TestEditFuzzyDistinctCandidatesAreAmbiguous(t *testing.T) {
+	// Two same-content blocks at DIFFERENT indentation: each resolved span is
+	// distinct and occurs exactly once, so the old literal-uniqueness check
+	// passed and silently edited the first block. Distinct-shaped candidates
+	// from one strategy must instead report ambiguity and leave the file alone.
+	initial := "\tif x {\n\t\tgo()\n\t}\nmid\n\t\tif x {\n\t\t\tgo()\n\t\t}\n"
+	result, after := runEdit(t, t.TempDir(), initial, map[string]any{
+		"old_string": "if x {\n\tgo()\n}",
+		"new_string": "stop()",
+	})
+	if result.Status != StatusError || !strings.Contains(result.Output, "multiple locations") {
+		t.Fatalf("distinct fuzzy candidates must be ambiguous, got %q", result.Output)
+	}
+	if after != initial {
+		t.Fatalf("file must be unchanged, got %q", after)
+	}
+}

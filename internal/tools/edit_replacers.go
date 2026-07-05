@@ -45,26 +45,42 @@ func fuzzyEditMatch(content, find string, replaceAll bool) (string, error) {
 	}
 	found := false
 	for _, replacer := range replacers {
+		// Collect the replacer's DISTINCT candidate spans that literally occur in
+		// content. Two or more distinct spans from one strategy (e.g. duplicate
+		// blocks at different indentation, each occurring once) mean the model's
+		// intent is genuinely ambiguous — silently editing the first would be a
+		// wrong-span write, so it is rejected instead.
+		var candidates []string
+		seen := map[string]bool{}
 		for _, search := range replacer(content, find) {
-			if search == "" {
+			if search == "" || seen[search] {
 				continue
 			}
-			index := strings.Index(content, search)
-			if index < 0 {
+			seen[search] = true
+			if strings.Index(content, search) < 0 {
 				continue
 			}
-			found = true
-			if isDisproportionateEditMatch(search, find) {
-				return "", errors.New("refusing replacement because the matched span is much larger than old_string; re-read the file and provide the full exact old_string for the intended replacement")
-			}
-			if replaceAll {
-				return search, nil
-			}
-			if strings.LastIndex(content, search) != index {
-				continue
-			}
+			candidates = append(candidates, search)
+		}
+		if len(candidates) == 0 {
+			continue
+		}
+		found = true
+		if !replaceAll && len(candidates) > 1 {
+			return "", errEditFuzzyAmbiguous
+		}
+		search := candidates[0]
+		if isDisproportionateEditMatch(search, find) {
+			return "", errors.New("refusing replacement because the matched span is much larger than old_string; re-read the file and provide the full exact old_string for the intended replacement")
+		}
+		if replaceAll {
 			return search, nil
 		}
+		if strings.Index(content, search) == strings.LastIndex(content, search) {
+			return search, nil
+		}
+		// The single candidate occurs at multiple positions; a later, stricter
+		// strategy may still resolve a unique span, so keep cascading.
 	}
 	if !found {
 		return "", errEditFuzzyNotFound
