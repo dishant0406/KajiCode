@@ -136,6 +136,11 @@ func runExec(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) in
 		return exitSuccess
 	}
 
+	// Refresh the models.dev pricing/limits cache in the background when stale;
+	// the overlay is read at registry construction from the cache file, so this
+	// benefits the next run and never blocks or fails this one.
+	go func() { _ = modelregistry.RefreshModelsDevCache(context.Background()) }()
+
 	// A mode seeds model/effort/max-turns/tool filters as a preset. Expand it up
 	// front — before tool-filter validation and the --list-tools branch — so a
 	// mode-injected tool filter is validated and reflected in --list-tools, and a
@@ -500,9 +505,10 @@ func runExec(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) in
 	// by default the corrector is nil, leaving the agent loop byte-identical. When
 	// on we verify with both the workspace test plan and LSP diagnostics over the
 	// changed files; the autonomy gate inside the corrector still decides whether
-	// failures auto-fix or just report. lspShutdown tears down any language-server
-	// sessions the LSP half spawned (no-op when self-correct is off).
-	selfCorrector, lspShutdown := newExecSelfCorrector(options.selfCorrect, workspaceRoot, options.autonomy)
+	// failures auto-fix or just report. fileDiagnostics (always on, lazy) gives
+	// edit_file/write_file inline error diagnostics for the file they just wrote.
+	// lspShutdown tears down any language-server sessions either half spawned.
+	selfCorrector, fileDiagnostics, lspShutdown := newExecSelfCorrector(options.selfCorrect, workspaceRoot, options.autonomy)
 	defer lspShutdown()
 	result, err := agent.Run(runCtx, agentPrompt, provider, agent.Options{
 		MaxTurns:         resolved.MaxTurns,
@@ -526,6 +532,7 @@ func runExec(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) in
 		PermissionMode:   permissionMode,
 		Autonomy:         options.autonomy,
 		SelfCorrect:      selfCorrector,
+		FileDiagnostics:  fileDiagnostics,
 		// Headless exec: don't accept a no-tool-call turn as "done" while work
 		// clearly remains (pending plan items / a mid-step continuation cue) —
 		// nudge to continue, and finalize as INCOMPLETE rather than false success
@@ -701,23 +708,28 @@ func runExec(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) in
 // unless a changed file's language actually has one installed on PATH. The
 // returned cleanup shuts that manager down (terminating any spawned server
 // sessions); it is a no-op when self-correct is off.
-func newExecSelfCorrector(enabled bool, workspaceRoot string, autonomy string) (*agent.SelfCorrector, func()) {
-	if !enabled {
-		return nil, func() {}
-	}
+func newExecSelfCorrector(enabled bool, workspaceRoot string, autonomy string) (*agent.SelfCorrector, func(context.Context, string) string, func()) {
+	// The manager is created regardless of --self-correct: it also backs the
+	// always-on inline post-edit diagnostics (agent.NewFileDiagnostics), and it
+	// stays lazy — no language server is spawned unless an edited file's
+	// language actually has one installed on PATH.
 	manager := lsp.NewManager(workspaceRoot)
+	cleanup := func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = manager.Shutdown(ctx)
+	}
+	fileDiagnostics := agent.NewFileDiagnostics(manager)
+	if !enabled {
+		return nil, fileDiagnostics, cleanup
+	}
 	corrector := agent.NewSelfCorrector(workspaceRoot, agent.NewLSPDiagnosticsChecker(manager), agent.NewProjectVerifier(workspaceRoot), agent.SelfCorrectConfig{
 		Enabled:      true,
 		IncludeTests: true,
 		IncludeLSP:   true,
 		Autonomy:     autonomy,
 	})
-	cleanup := func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_ = manager.Shutdown(ctx)
-	}
-	return corrector, cleanup
+	return corrector, fileDiagnostics, cleanup
 }
 
 func deferredEligibleCount(registry *tools.Registry, permissionMode agent.PermissionMode, enabledTools []string, disabledTools []string) int {

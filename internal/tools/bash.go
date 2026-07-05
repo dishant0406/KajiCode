@@ -367,7 +367,12 @@ func formatBashOutput(stdout string, stderr string, exitCode int) string {
 	if len(parts) == 0 {
 		return "Command completed with no output."
 	}
-	return strings.Join(parts, "\n")
+	// Cap the context cost of a verbose command at the same default budget as
+	// exec_command (head/tail window); the full output is spilled to disk and
+	// referenced in the truncation notice, so nothing is lost. Previously bash
+	// output was unbounded — one chatty build log could flood the context.
+	output, _ := truncateExecOutputSpill(strings.Join(parts, "\n"), defaultMaxOutputTokens, "bash")
+	return output
 }
 
 // bashOutputBudgetBytes caps each of stdout/stderr shown to the model. bash is the

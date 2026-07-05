@@ -40,6 +40,12 @@ type RunOptions struct {
 	// tool-call progress in the specialist card. nil is a no-op (the default
 	// for every non-Task tool).
 	Progress func(streamjson.Event)
+	// Diagnostics, when set, returns a formatted language-diagnostics block for
+	// a file a mutating tool just wrote ("" when clean or no server available).
+	// edit_file/write_file append it to their output so the model sees an error
+	// it introduced in the same turn instead of waiting for a later verification
+	// pass. nil disables inline diagnostics.
+	Diagnostics func(ctx context.Context, absPath string) string
 }
 
 type sandboxAwareTool interface {
