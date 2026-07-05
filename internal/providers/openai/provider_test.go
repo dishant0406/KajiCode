@@ -1303,4 +1303,17 @@ func TestOpenAIRequestPromptCacheKey(t *testing.T) {
 	if req.PromptCacheKey != "" {
 		t.Fatalf("kill switch ignored; PromptCacheKey = %q", req.PromptCacheKey)
 	}
+
+	// Explicitly-falsy kill switch values must NOT disable forwarding — only
+	// truthy values flip the toggle (same parsing as ZERO_FORMAT_ON_WRITE).
+	for _, value := range []string{"0", "false", "FALSE"} {
+		t.Setenv("ZERO_DISABLE_PROMPT_CACHE_KEY", value)
+		req = provider.openAIRequest(zeroruntime.CompletionRequest{
+			Messages:       messages,
+			PromptCacheKey: "sess_123",
+		})
+		if req.PromptCacheKey != "sess_123" {
+			t.Fatalf("ZERO_DISABLE_PROMPT_CACHE_KEY=%q must be a no-op; PromptCacheKey = %q", value, req.PromptCacheKey)
+		}
+	}
 }
