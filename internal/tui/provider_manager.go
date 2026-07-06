@@ -10,6 +10,7 @@ package tui
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -305,13 +306,19 @@ func (m model) deleteManagerSelection() (model, tea.Cmd) {
 		wizard.manageStatus = "Delete failed: " + err.Error()
 		return m, nil
 	}
-	// Best-effort: drop the stored key so no orphaned secret lingers.
-	if store, storeErr := config.ProviderKeyStore(); storeErr == nil {
-		_, _ = store.Delete(name)
-	}
 	m.savedProviders = cfg.Providers
 
 	notes := []string{"Deleted " + name + "."}
+	// Drop the stored key from the store BESIDE the edited config (the store
+	// the key was captured into), surfacing a failure instead of letting a
+	// lingering secret read as a clean removal.
+	keyStore, storeErr := config.ProviderKeyStoreAt(filepath.Dir(m.userConfigPath))
+	if storeErr == nil {
+		_, storeErr = keyStore.Delete(name)
+	}
+	if storeErr != nil {
+		notes = append(notes, "Warning: its stored API key could not be deleted ("+storeErr.Error()+").")
+	}
 	if strings.EqualFold(strings.TrimSpace(m.providerName), strings.TrimSpace(name)) {
 		notes = append(notes, "This session keeps running on it until you switch.")
 	} else if active := strings.TrimSpace(cfg.ActiveProvider); active != "" && !strings.EqualFold(active, name) {
@@ -477,10 +484,9 @@ func (m model) saveManagerEdit() (model, tea.Cmd) {
 		}
 	}
 	profile := config.ProviderProfile{
-		Name:        newName,
-		BaseURL:     strings.TrimSpace(wizard.editDraft.BaseURL),
-		Model:       strings.TrimSpace(wizard.editDraft.Model),
-		Description: strings.TrimSpace(wizard.editDraft.Description),
+		Name:    newName,
+		BaseURL: strings.TrimSpace(wizard.editDraft.BaseURL),
+		Model:   strings.TrimSpace(wizard.editDraft.Model),
 	}
 	if key := strings.TrimSpace(wizard.editDraft.APIKey); key != "" {
 		profile.APIKey = key
@@ -490,6 +496,17 @@ func (m model) saveManagerEdit() (model, tea.Cmd) {
 	if err != nil {
 		wizard.err = err.Error()
 		return m, nil
+	}
+	// Description is set VERBATIM through its dedicated setter: the upsert merge
+	// treats an empty field as "unchanged", which would make clearing a
+	// description report success while the old text reappears in the list.
+	if strings.TrimSpace(wizard.editDraft.Description) != strings.TrimSpace(wizard.editOriginal.Description) {
+		if described, descErr := config.SetProviderDescription(m.userConfigPath, newName, wizard.editDraft.Description); descErr == nil {
+			cfg = described
+		} else {
+			wizard.err = descErr.Error()
+			return m, nil
+		}
 	}
 	m.savedProviders = cfg.Providers
 

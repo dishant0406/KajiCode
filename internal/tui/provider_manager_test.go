@@ -277,3 +277,85 @@ func readManagerConfig(t *testing.T, path string) config.FileConfig {
 	}
 	return cfg
 }
+
+// TestProviderManagerEditKeyPersistsStoredMarker: replacing the key of a
+// provider that previously had NO stored-key marker (e.g. env-authed) must
+// persist apiKeyStored — otherwise the secret sits in the credential store
+// while every ApplyStoredAPIKey gate skips it (PR #560 review, P2).
+func TestProviderManagerEditKeyPersistsStoredMarker(t *testing.T) {
+	m := managerTestModel(t)
+	// Reshape "backup" into an env-authed profile with no marker and no inline key.
+	seedCfg := readManagerConfig(t, m.userConfigPath)
+	seedCfg.Providers[1].APIKey = ""
+	seedCfg.Providers[1].APIKeyEnv = "BACKUP_API_KEY"
+	data, err := json.MarshalIndent(seedCfg, "", "  ")
+	if err != nil {
+		t.Fatalf("encode config: %v", err)
+	}
+	if err := os.WriteFile(m.userConfigPath, data, 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	m = managerKey(t, m, testKey(tea.KeyDown)) // select "backup"
+	m = managerKey(t, m, testKeyText("e"))
+	for range 3 { // Name → Endpoint → Model → API key
+		m = managerKey(t, m, testKey(tea.KeyDown))
+	}
+	m = managerKey(t, m, testKey(tea.KeyEnter))
+	if m.providerWizard.editField != providerEditFieldAPIKey {
+		t.Fatalf("expected API key editor, got field %v", m.providerWizard.editField)
+	}
+	m.providerWizard.editBuffer = "sk-new-secret"
+	m = managerKey(t, m, testKey(tea.KeyEnter))
+	m = managerKey(t, m, testKey(tea.KeyDown)) // Description
+	m = managerKey(t, m, testKey(tea.KeyDown)) // Save
+	next, _ := m.handleProviderWizardKey(testKey(tea.KeyEnter))
+	if next.providerWizard == nil || next.providerWizard.step != providerWizardStepManage {
+		t.Fatalf("save should return to the list, err=%q", next.providerWizard.err)
+	}
+
+	persisted := readManagerConfig(t, next.userConfigPath)
+	backup := persisted.Providers[1]
+	if !backup.APIKeyStored {
+		t.Fatalf("apiKeyStored marker must persist after a key edit: %+v", backup)
+	}
+	if backup.APIKey != "" {
+		t.Fatalf("cleartext key must never land in config.json: %+v", backup)
+	}
+	store, err := config.ProviderKeyStoreAt(filepath.Dir(next.userConfigPath))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	if key, ok, err := store.Get("backup"); err != nil || !ok || key != "sk-new-secret" {
+		t.Fatalf("key must be captured into the store beside the config, got key=%q ok=%v err=%v", key, ok, err)
+	}
+}
+
+// TestProviderManagerDescriptionClearPersists: clearing a description must
+// actually persist (the upsert merge treats empty as "unchanged" — PR #560, P3).
+func TestProviderManagerDescriptionClearPersists(t *testing.T) {
+	m := managerTestModel(t) // opengateway has description "Main gateway"
+	m = managerKey(t, m, testKeyText("e"))
+	for range 4 { // Name → Endpoint → Model → API key → Description
+		m = managerKey(t, m, testKey(tea.KeyDown))
+	}
+	m = managerKey(t, m, testKey(tea.KeyEnter))
+	if m.providerWizard.editField != providerEditFieldDescription {
+		t.Fatalf("expected description editor, got field %v", m.providerWizard.editField)
+	}
+	m.providerWizard.editBuffer = ""
+	m = managerKey(t, m, testKey(tea.KeyEnter))
+	m = managerKey(t, m, testKey(tea.KeyDown)) // Save
+	next, _ := m.handleProviderWizardKey(testKey(tea.KeyEnter))
+	if next.providerWizard == nil || next.providerWizard.step != providerWizardStepManage {
+		t.Fatalf("save should return to the list, err=%q", next.providerWizard.err)
+	}
+
+	persisted := readManagerConfig(t, next.userConfigPath)
+	if persisted.Providers[0].Description != "" {
+		t.Fatalf("cleared description must persist, got %q", persisted.Providers[0].Description)
+	}
+	if row, ok := next.providerWizard.currentManagerRow(); !ok || row.profile.Description != "" {
+		t.Fatalf("manager rows must reflect the cleared description: %+v", row.profile)
+	}
+}

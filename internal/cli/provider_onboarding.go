@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"io"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"unicode"
@@ -355,14 +356,22 @@ func runProvidersRemove(args []string, stdout io.Writer, stderr io.Writer, deps 
 	if err != nil {
 		return writeAppError(stderr, err.Error(), exitCrash)
 	}
-	keyRemoved, keyErr := config.ForgetProviderKey(name)
+	// Delete the key from the store BESIDE the config being edited — the same
+	// store setup/rename write to — not the default-path store, so a
+	// non-default config path cannot leave the encrypted key behind.
+	keyRemoved, keyErr := removeStoredProviderKeyAt(configPath, name)
 	if options.json {
-		if err := writePrettyJSON(stdout, map[string]any{
+		payload := map[string]any{
 			"removed":        name,
 			"keyRemoved":     keyRemoved,
 			"activeProvider": cfg.ActiveProvider,
 			"configPath":     configPath,
-		}); err != nil {
+		}
+		if keyErr != nil {
+			// A lingering secret must not read as a clean removal.
+			payload["keyError"] = keyErr.Error()
+		}
+		if err := writePrettyJSON(stdout, payload); err != nil {
 			return exitCrash
 		}
 		return exitSuccess
@@ -370,7 +379,11 @@ func runProvidersRemove(args []string, stdout io.Writer, stderr io.Writer, deps 
 	if _, err := fmt.Fprintf(stdout, "Removed provider %s\n", name); err != nil {
 		return exitCrash
 	}
-	if keyErr == nil && keyRemoved {
+	if keyErr != nil {
+		if _, err := fmt.Fprintf(stderr, "warning: its stored API key could not be deleted and remains in the credential store: %v\n", keyErr); err != nil {
+			return exitCrash
+		}
+	} else if keyRemoved {
 		if _, err := fmt.Fprintln(stdout, "Deleted its stored API key."); err != nil {
 			return exitCrash
 		}
@@ -385,6 +398,17 @@ func runProvidersRemove(args []string, stdout io.Writer, stderr io.Writer, deps 
 		}
 	}
 	return exitSuccess
+}
+
+// removeStoredProviderKeyAt deletes a provider's API key from the credential
+// store co-located with configPath (the store SecureProviderProfile captured
+// it into and RenameProvider migrates within).
+func removeStoredProviderKeyAt(configPath string, provider string) (bool, error) {
+	store, err := config.ProviderKeyStoreAt(filepath.Dir(configPath))
+	if err != nil {
+		return false, err
+	}
+	return store.Delete(provider)
 }
 
 // runProvidersRename renames a saved provider profile, migrating its stored

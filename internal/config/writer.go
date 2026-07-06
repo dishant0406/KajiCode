@@ -31,6 +31,20 @@ func UpsertProvider(path string, profile ProviderProfile, setActive bool) (FileC
 	}
 
 	mergeProvider(&cfg, profile)
+	// mergeProfile deliberately ignores APIKeyStored — during resolve-time
+	// layering a project config must not be able to claim the user's stored
+	// keys. This user-config WRITE path re-applies the marker: capturing a key
+	// via SecureProviderProfile onto a previously env/no-key profile must
+	// persist apiKeyStored, or the secret sits in the credential store while
+	// every ApplyStoredAPIKey gate skips it (PR #560 review).
+	if profile.APIKeyStored {
+		for index := range cfg.Providers {
+			if cfg.Providers[index].Name == profile.Name {
+				cfg.Providers[index].APIKeyStored = true
+				break
+			}
+		}
+	}
 	if setActive || strings.TrimSpace(cfg.ActiveProvider) == "" {
 		cfg.ActiveProvider = profile.Name
 	}
@@ -225,19 +239,61 @@ func RenameProvider(path string, oldName string, newName string) (FileConfig, er
 		return cfg, nil
 	}
 
+	previousName := cfg.Providers[index].Name
+	keyMigrated := false
 	if cfg.Providers[index].APIKeyStored {
-		if err := migrateStoredProviderKey(path, cfg.Providers[index].Name, newName); err != nil {
+		if err := migrateStoredProviderKey(path, previousName, newName); err != nil {
 			return FileConfig{}, fmt.Errorf("migrate stored key for %q: %w", oldName, err)
 		}
+		keyMigrated = true
 	}
-	if strings.EqualFold(strings.TrimSpace(cfg.ActiveProvider), strings.TrimSpace(cfg.Providers[index].Name)) {
+	if strings.EqualFold(strings.TrimSpace(cfg.ActiveProvider), strings.TrimSpace(previousName)) {
 		cfg.ActiveProvider = newName
 	}
 	cfg.Providers[index].Name = newName
 	if err := writeConfigFile(path, cfg); err != nil {
+		if keyMigrated {
+			// Compensate best-effort: config.json still names the OLD profile, so
+			// move the key back where that config can find it — otherwise a failed
+			// rewrite strands the key under a name no profile carries.
+			_ = migrateStoredProviderKey(path, newName, previousName)
+		}
 		return FileConfig{}, err
 	}
 	return cfg, nil
+}
+
+// SetProviderDescription sets a provider's description VERBATIM — including to
+// empty. The generic UpsertProvider merge treats empty fields as "leave
+// unchanged", so clearing a description needs this dedicated setter.
+func SetProviderDescription(path string, name string, description string) (FileConfig, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return FileConfig{}, fmt.Errorf("config path is required")
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return FileConfig{}, fmt.Errorf("provider name is required")
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return FileConfig{}, fmt.Errorf("read config %s: %w", path, err)
+	}
+	cfg := FileConfig{}
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return FileConfig{}, fmt.Errorf("invalid config JSON %s: %w", path, err)
+	}
+	for index := range cfg.Providers {
+		if strings.EqualFold(strings.TrimSpace(cfg.Providers[index].Name), name) {
+			cfg.Providers[index].Description = strings.TrimSpace(description)
+			if err := writeConfigFile(path, cfg); err != nil {
+				return FileConfig{}, err
+			}
+			return cfg, nil
+		}
+	}
+	return FileConfig{}, fmt.Errorf("provider %q not found", name)
 }
 
 // migrateStoredProviderKey moves a credential-store entry to a new provider

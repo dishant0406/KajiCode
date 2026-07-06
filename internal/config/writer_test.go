@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"runtime"
@@ -630,5 +631,112 @@ func TestRenameProviderRejectsCollisionAndUnknown(t *testing.T) {
 	}
 	if string(after) != string(before) {
 		t.Fatalf("config was rewritten by a rejected rename")
+	}
+}
+
+func TestUpsertProviderPreservesStoredKeyMarkerOnExistingProfile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "zero.json")
+	// An env-keyed profile with NO stored-key marker — the shape a provider has
+	// before its key is captured into the credential store.
+	writeConfigFixture(t, path, FileConfig{
+		ActiveProvider: "groq",
+		Providers: []ProviderProfile{
+			{Name: "groq", ProviderKind: ProviderKindOpenAICompatible, BaseURL: "https://api.groq.com/openai/v1", APIKeyEnv: "GROQ_API_KEY", Model: "m1"},
+		},
+	}, 0o600)
+
+	// The manager/setup edit paths persist a SecureProviderProfile-shaped
+	// profile: key already in the store, marker set, inline key cleared.
+	cfg, err := UpsertProvider(path, ProviderProfile{Name: "groq", APIKeyStored: true}, false)
+	if err != nil {
+		t.Fatalf("UpsertProvider() error = %v", err)
+	}
+	if !cfg.Providers[0].APIKeyStored {
+		t.Fatalf("APIKeyStored marker must survive the merge, got %+v", cfg.Providers[0])
+	}
+	if cfg.Providers[0].APIKeyEnv != "GROQ_API_KEY" || cfg.Providers[0].BaseURL == "" {
+		t.Fatalf("other fields must be preserved: %+v", cfg.Providers[0])
+	}
+	persisted := readConfigFixture(t, path)
+	if !persisted.Providers[0].APIKeyStored {
+		t.Fatalf("marker not persisted to disk: %+v", persisted.Providers[0])
+	}
+}
+
+func TestSetProviderDescriptionSetsAndClears(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "zero.json")
+	writeConfigFixture(t, path, FileConfig{
+		ActiveProvider: "alpha",
+		Providers: []ProviderProfile{
+			{Name: "alpha", ProviderKind: ProviderKindOpenAICompatible, BaseURL: "https://a.example.com/v1", Model: "m1", Description: "old text"},
+		},
+	}, 0o600)
+
+	cfg, err := SetProviderDescription(path, " ALPHA ", "new text")
+	if err != nil {
+		t.Fatalf("SetProviderDescription() error = %v", err)
+	}
+	if cfg.Providers[0].Description != "new text" {
+		t.Fatalf("description not set: %+v", cfg.Providers[0])
+	}
+
+	// Clearing must persist too — the reason this setter exists (UpsertProvider's
+	// merge treats an empty description as "leave unchanged").
+	cfg, err = SetProviderDescription(path, "alpha", "  ")
+	if err != nil {
+		t.Fatalf("SetProviderDescription(clear) error = %v", err)
+	}
+	if cfg.Providers[0].Description != "" {
+		t.Fatalf("description not cleared: %+v", cfg.Providers[0])
+	}
+	persisted := readConfigFixture(t, path)
+	if persisted.Providers[0].Description != "" {
+		t.Fatalf("cleared description not persisted: %+v", persisted.Providers[0])
+	}
+
+	if _, err := SetProviderDescription(path, "ghost", "x"); err == nil {
+		t.Fatal("unknown provider must error")
+	}
+}
+
+func TestRenameProviderRollsBackKeyMigrationWhenConfigWriteFails(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("uses chflags uchg to force the config write to fail; macOS only")
+	}
+	dir := t.TempDir()
+	t.Setenv("ZERO_CRED_STORAGE", "encrypted-file")
+	path := filepath.Join(dir, "config.json")
+	writeConfigFixture(t, path, FileConfig{
+		ActiveProvider: "oldname",
+		Providers: []ProviderProfile{
+			{Name: "oldname", ProviderKind: ProviderKindOpenAICompatible, BaseURL: "https://a.example.com/v1", APIKeyStored: true, Model: "m1"},
+		},
+	}, 0o600)
+	store, err := ProviderKeyStoreAt(dir)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	if err := store.Set("oldname", "sk-secret"); err != nil {
+		t.Fatalf("seed store: %v", err)
+	}
+
+	// Immutable flag: temp-file creation and store writes in the directory keep
+	// working, but the final rename over config.json fails — the exact window
+	// where a migrated key would otherwise strand under the new name.
+	if out, err := exec.Command("chflags", "uchg", path).CombinedOutput(); err != nil {
+		t.Skipf("chflags uchg unavailable: %v (%s)", err, out)
+	}
+	t.Cleanup(func() { _ = exec.Command("chflags", "nouchg", path).Run() })
+
+	if _, err := RenameProvider(path, "oldname", "newname"); err == nil {
+		t.Fatal("expected the config write to fail under the immutable flag")
+	}
+
+	key, ok, err := store.Get("oldname")
+	if err != nil || !ok || key != "sk-secret" {
+		t.Fatalf("key must be rolled back to the old name, got key=%q ok=%v err=%v", key, ok, err)
+	}
+	if _, ok, _ := store.Get("newname"); ok {
+		t.Fatalf("rolled-back migration must not leave a key under the new name")
 	}
 }
