@@ -579,16 +579,29 @@ func (m model) profileWithCredential(profile config.ProviderProfile) config.Prov
 // uses (profile name, then catalog id, only for keyless profiles), so the switch
 // gate and the runtime can never disagree about whether a login counts.
 func oauthLoginAvailable(profile config.ProviderProfile) bool {
+	_, ok := oauthLoginName(profile)
+	return ok
+}
+
+// oauthLoginName resolves WHICH stored login serves this profile — the same
+// FirstStored selection the runtime makes. User-facing hints must name this
+// entry, not the profile: after a rename ({name:"codex", catalogID:"chatgpt"})
+// the token lives under the catalog id, and `zero auth logout codex` would
+// delete nothing while the real login stays behind.
+func oauthLoginName(profile config.ProviderProfile) (string, bool) {
 	candidates := profile.OAuthLoginCandidates()
 	if len(candidates) == 0 {
-		return false
+		return "", false
 	}
 	store, err := oauth.NewStore(oauth.StoreOptions{})
 	if err != nil {
-		return false
+		return "", false
 	}
-	_, _, ok := oauth.FirstStored(store, candidates)
-	return ok
+	_, key, ok := oauth.FirstStored(store, candidates)
+	if !ok {
+		return "", false
+	}
+	return strings.TrimPrefix(key, oauth.KeyPrefixProvider), true
 }
 
 func (m model) savedProviderByName(name string) (config.ProviderProfile, bool) {

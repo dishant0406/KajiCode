@@ -324,8 +324,8 @@ func (m model) deleteManagerSelection() (model, tea.Cmd) {
 	} else if active := strings.TrimSpace(cfg.ActiveProvider); active != "" && !strings.EqualFold(active, name) {
 		notes = append(notes, "Active provider: "+active+".")
 	}
-	if oauthLoginAvailable(config.ProviderProfile{Name: row.profile.Name, CatalogID: row.profile.CatalogID}) {
-		notes = append(notes, "OAuth login kept — remove with `zero auth logout "+name+"`.")
+	if login, ok := oauthLoginName(config.ProviderProfile{Name: row.profile.Name, CatalogID: row.profile.CatalogID}); ok {
+		notes = append(notes, "OAuth login kept — remove with `zero auth logout "+login+"`.")
 	}
 
 	if len(m.savedProviders) == 0 {

@@ -48,6 +48,10 @@ func TestFirstUsableProviderNoneUsable(t *testing.T) {
 // A keyless local proxy (chatgpt-proxy, RequiresAuth=false) is usable without a
 // credential, so it can serve as a fallback rather than forcing onboarding.
 func TestFirstUsableProviderAcceptsKeylessLocalProxy(t *testing.T) {
+	// Isolate the OAuth token store: on a developer machine with a real xai
+	// login, the env-only xai profile would count as usable and win over the
+	// local proxy this test is about.
+	withAuthStore(t)
 	providers := []config.ProviderProfile{
 		{Name: "xai", CatalogID: "xai", APIKeyEnv: "XAI_API_KEY"},
 		{Name: "chatgpt", CatalogID: "chatgpt-proxy", BaseURL: "http://localhost:10531/v1"},
@@ -62,6 +66,7 @@ func TestFirstUsableProviderAcceptsKeylessLocalProxy(t *testing.T) {
 // BaseURL has no endpoint, so it must be skipped rather than selected as a
 // fallback that fails at first use. A stale CatalogID with a BaseURL still works.
 func TestFirstUsableProviderSkipsUnresolvableCatalogWithoutBaseURL(t *testing.T) {
+	withAuthStore(t)
 	providers := []config.ProviderProfile{
 		{Name: "ghost", CatalogID: "no-such-catalog-entry", APIKey: "k"}, // unusable: no endpoint
 		{Name: "custom", CatalogID: "no-such-catalog-entry", BaseURL: "https://api.custom.test/v1", APIKey: "k"},

@@ -11,6 +11,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/Gitlawb/zero/internal/config"
+	"github.com/Gitlawb/zero/internal/oauth"
 	"github.com/Gitlawb/zero/internal/zeroruntime"
 )
 
@@ -322,6 +323,13 @@ func TestProviderManagerEditKeyPersistsStoredMarker(t *testing.T) {
 	if backup.APIKey != "" {
 		t.Fatalf("cleartext key must never land in config.json: %+v", backup)
 	}
+	// The env reference is deliberately preserved as an explicit override: the
+	// resolver fills APIKey from a SET env var first, and the stored key applies
+	// only when the env var is absent — locked in here so a future merge change
+	// can't silently flip the precedence.
+	if backup.APIKeyEnv != "BACKUP_API_KEY" {
+		t.Fatalf("APIKeyEnv must survive a key edit as an explicit override, got %q", backup.APIKeyEnv)
+	}
 	store, err := config.ProviderKeyStoreAt(filepath.Dir(next.userConfigPath))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
@@ -357,5 +365,48 @@ func TestProviderManagerDescriptionClearPersists(t *testing.T) {
 	}
 	if row, ok := next.providerWizard.currentManagerRow(); !ok || row.profile.Description != "" {
 		t.Fatalf("manager rows must reflect the cleared description: %+v", row.profile)
+	}
+}
+
+// TestProviderManagerDeleteHintNamesActualOAuthLogin: after a rename the token
+// lives under the catalog id, not the profile name — the cleanup hint must name
+// the entry `zero auth logout` would actually delete (PR #560 review, P3).
+func TestProviderManagerDeleteHintNamesActualOAuthLogin(t *testing.T) {
+	m := managerTestModel(t)
+	// Reshape "backup" into a renamed OAuth catalog profile: keyless, named
+	// "codex", backed by a token stored under the chatgpt catalog id.
+	seedCfg := readManagerConfig(t, m.userConfigPath)
+	seedCfg.Providers[1] = config.ProviderProfile{Name: "codex", CatalogID: "chatgpt", ProviderKind: config.ProviderKindOpenAICompatible, BaseURL: "https://chatgpt.com/backend-api/codex", Model: "gpt-5.5"}
+	data, err := json.MarshalIndent(seedCfg, "", "  ")
+	if err != nil {
+		t.Fatalf("encode config: %v", err)
+	}
+	if err := os.WriteFile(m.userConfigPath, data, 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	m.savedProviders = seedCfg.Providers
+	next, _ := m.reloadProviderManagerRows()
+	m = next
+
+	store, err := oauth.NewStore(oauth.StoreOptions{})
+	if err != nil {
+		t.Fatalf("oauth store: %v", err)
+	}
+	if err := store.Save(oauth.ProviderKey("chatgpt"), oauth.Token{AccessToken: "bearer-123"}); err != nil {
+		t.Fatalf("save token: %v", err)
+	}
+
+	m = managerKey(t, m, testKey(tea.KeyDown)) // select "codex"
+	m = managerKey(t, m, testKeyText("d"))
+	next, _ = m.handleProviderWizardKey(testKeyText("y"))
+	if next.providerWizard == nil {
+		t.Fatalf("manager should stay open")
+	}
+	status := next.providerWizard.manageStatus
+	if !strings.Contains(status, "zero auth logout chatgpt") {
+		t.Fatalf("hint must name the stored login (chatgpt), got %q", status)
+	}
+	if strings.Contains(status, "logout codex") {
+		t.Fatalf("hint must not point at a login key that does not exist, got %q", status)
 	}
 }

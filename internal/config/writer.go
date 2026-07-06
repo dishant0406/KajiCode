@@ -301,6 +301,13 @@ func SetProviderDescription(path string, name string, description string) (FileC
 // never a missing key. A missing source entry is a no-op (the marker may be
 // stale); only a failed WRITE aborts the rename.
 func migrateStoredProviderKey(configPath string, oldName string, newName string) error {
+	// The store normalizes names case-insensitively, so a case-only rename
+	// (groq -> Groq) targets ONE entry: Set(new) rewrites it in place and
+	// Delete(old) would then remove the key that was just "moved". Nothing to
+	// migrate — the existing entry already serves the new name.
+	if strings.EqualFold(strings.TrimSpace(oldName), strings.TrimSpace(newName)) {
+		return nil
+	}
 	store, err := ProviderKeyStoreAt(filepath.Dir(configPath))
 	if err != nil {
 		return err

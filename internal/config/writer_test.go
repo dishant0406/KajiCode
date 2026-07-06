@@ -740,3 +740,38 @@ func TestRenameProviderRollsBackKeyMigrationWhenConfigWriteFails(t *testing.T) {
 		t.Fatalf("rolled-back migration must not leave a key under the new name")
 	}
 }
+
+// TestRenameProviderCaseOnlyKeepsStoredKey: the credential store normalizes
+// names case-insensitively, so a case-only rename targets ONE store entry —
+// migrating would Set and then Delete the same key, losing it (PR #560 review).
+func TestRenameProviderCaseOnlyKeepsStoredKey(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("ZERO_CRED_STORAGE", "encrypted-file")
+	path := filepath.Join(dir, "config.json")
+	writeConfigFixture(t, path, FileConfig{
+		ActiveProvider: "groq",
+		Providers: []ProviderProfile{
+			{Name: "groq", ProviderKind: ProviderKindOpenAICompatible, BaseURL: "https://api.groq.com/openai/v1", APIKeyStored: true, Model: "m1"},
+		},
+	}, 0o600)
+	store, err := ProviderKeyStoreAt(dir)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	if err := store.Set("groq", "sk-secret"); err != nil {
+		t.Fatalf("seed store: %v", err)
+	}
+
+	cfg, err := RenameProvider(path, "groq", "Groq")
+	if err != nil {
+		t.Fatalf("RenameProvider() error = %v", err)
+	}
+	if cfg.Providers[0].Name != "Groq" || cfg.ActiveProvider != "Groq" {
+		t.Fatalf("case-only rename must still apply to config: %+v", cfg)
+	}
+	// The store is case-insensitive: the key must remain retrievable under the
+	// new casing (same entry), not deleted by a same-entry "migration".
+	if key, ok, err := store.Get("Groq"); err != nil || !ok || key != "sk-secret" {
+		t.Fatalf("stored key lost on case-only rename: key=%q ok=%v err=%v", key, ok, err)
+	}
+}
