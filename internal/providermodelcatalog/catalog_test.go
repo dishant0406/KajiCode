@@ -47,6 +47,11 @@ func TestModelsAreProviderScoped(t *testing.T) {
 			want:     []string{"glm-4.5", "glm-4.6", "glm-4.5-air", "glm-z1-air"},
 			notWant:  []string{"gpt-4.1", "claude-sonnet-4.5"},
 		},
+		{
+			provider: "gitlawb-opengateway",
+			want:     []string{"mimo-v2.5-pro", "tencent/hy3"},
+			notWant:  []string{"openai/gpt-4.1", "claude-sonnet-4.5"},
+		},
 	}
 
 	for _, tt := range tests {

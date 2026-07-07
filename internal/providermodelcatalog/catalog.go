@@ -140,12 +140,13 @@ var curatedModels = map[string][]Model{
 	"zai":    zaiCuratedModels,
 	"zai-cn": zaiCuratedModels,
 	// OpenGateway smart-routes by model id across its upstream providers
-	// (see /health: xiaomi-mimo, minimax, qwen, google, nvidia, z-ai). These are
-	// the curated coding defaults; the gateway accepts any model its upstreams
-	// expose, so users can also type an id the picker doesn't list.
+	// (see /health: xiaomi-mimo, minimax, qwen, google, nvidia, tencent, z-ai).
+	// These are the curated coding defaults; the gateway accepts any model its
+	// upstreams expose, so users can also type an id the picker doesn't list.
 	"gitlawb-opengateway": {
 		{ID: "mimo-v2.5-pro", Description: "catalog default (Xiaomi MiMo)"},
 		{ID: "mimo-v2.5-pro-ultraspeed", Description: "fast model (Xiaomi MiMo)"},
+		{ID: "tencent/hy3", Description: "free Tencent HY3 model"},
 		{ID: "MiniMax-M3", Description: "MiniMax model"},
 		{ID: "qwen-plus", Description: "Qwen model"},
 		{ID: "gemini-2.5-pro", Description: "long-context model (Google)"},

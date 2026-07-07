@@ -56,6 +56,56 @@ func TestNewCreatesOpenAIProviderWithFactoryOptions(t *testing.T) {
 	}
 }
 
+func TestNewPassesOpenGatewayHY3ModelThrough(t *testing.T) {
+	transport := &captureTransport{
+		responseBody: "data: [DONE]\n\n",
+	}
+	client := &http.Client{Transport: transport}
+
+	provider, err := New(config.ProviderProfile{
+		Name:         "opengateway",
+		CatalogID:    "gitlawb-opengateway",
+		ProviderKind: config.ProviderKindOpenAICompatible,
+		APIKey:       "ogw_live_test",
+		Model:        "tencent/hy3",
+	}, Options{HTTPClient: client})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	stream, err := provider.StreamCompletion(context.Background(), zeroruntime.CompletionRequest{
+		Messages: []zeroruntime.Message{{Role: zeroruntime.MessageRoleUser, Content: "hello"}},
+	})
+	if err != nil {
+		t.Fatalf("StreamCompletion() error = %v", err)
+	}
+	for range stream {
+	}
+
+	if transport.request.URL.String() != "https://opengateway.gitlawb.com/v1/chat/completions" {
+		t.Fatalf("request URL = %q, want OpenGateway chat completions", transport.request.URL.String())
+	}
+	var body map[string]any
+	if err := json.NewDecoder(transport.body()).Decode(&body); err != nil {
+		t.Fatalf("decode request body: %v", err)
+	}
+	if body["model"] != "tencent/hy3" {
+		t.Fatalf("model = %q, want tencent/hy3 passthrough", body["model"])
+	}
+
+	metadata, err := ResolveRuntimeMetadata(config.ProviderProfile{
+		Name:         "opengateway",
+		CatalogID:    "gitlawb-opengateway",
+		ProviderKind: config.ProviderKindOpenAICompatible,
+		Model:        "tencent/hy3",
+	}, Options{})
+	if err != nil {
+		t.Fatalf("ResolveRuntimeMetadata() error = %v", err)
+	}
+	if metadata.ProviderKind != config.ProviderKindOpenAICompatible || metadata.APIModel != "tencent/hy3" {
+		t.Fatalf("runtime metadata = %#v, want OpenAI-compatible tencent/hy3", metadata)
+	}
+}
+
 func TestNewThreadsCustomProviderHeaders(t *testing.T) {
 	transport := &captureTransport{
 		responseBody: "data: [DONE]\n\n",

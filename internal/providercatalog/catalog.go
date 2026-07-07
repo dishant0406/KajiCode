@@ -89,8 +89,8 @@ func RuntimeUnsupportedReason(descriptor Descriptor) string {
 var descriptors = []Descriptor{
 	// GitLawb OpenGateway — the recommended default. An OpenAI-compatible gateway
 	// that smart-routes by model id across upstream providers (xiaomi-mimo,
-	// minimax, qwen, google, nvidia, z-ai). Flat /v1/chat/completions with a
-	// Bearer ogw_live_… key; listed first and badged in every picker.
+	// minimax, qwen, google, nvidia, tencent, z-ai). Flat /v1/chat/completions
+	// with a Bearer ogw_live_… key; listed first and badged in every picker.
 	recommended(openAICompat("gitlawb-opengateway", "GitLawb OpenGateway", "https://opengateway.gitlawb.com/v1", "mimo-v2.5-pro", []string{"GITLAWB_OPENGATEWAY_API_KEY"}, "gitlawb opengateway", "opengateway")),
 	openAI("openai", "OpenAI", "https://api.openai.com/v1", "gpt-4.1", []string{"OPENAI_API_KEY"}),
 	anthropic("anthropic", "Anthropic", "https://api.anthropic.com", "claude-sonnet-4.5", []string{"ANTHROPIC_API_KEY"}),
