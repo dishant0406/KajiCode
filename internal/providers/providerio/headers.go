@@ -3,8 +3,6 @@ package providerio
 import (
 	"net/http"
 	"strings"
-
-	"github.com/Gitlawb/zero/internal/providercatalog"
 )
 
 type AuthHeaders struct {
@@ -62,19 +60,5 @@ func CopyHeaders(headers map[string]string) map[string]string {
 	for key, value := range headers {
 		copied[key] = value
 	}
-	return copied
-}
-
-func HeadersForCatalog(catalogID string, headers map[string]string) map[string]string {
-	if !strings.EqualFold(strings.TrimSpace(catalogID), providercatalog.AIMLAPIID) {
-		return headers
-	}
-	copied := CopyHeaders(headers)
-	if copied == nil {
-		copied = map[string]string{}
-	}
-	copied["X-AIMLAPI-Partner-ID"] = "Gitlawb"
-	copied["X-AIMLAPI-Integration-Repo"] = "Gitlawb/zero"
-	copied["X-AIMLAPI-Integration-Version"] = "1.0.0"
 	return copied
 }
