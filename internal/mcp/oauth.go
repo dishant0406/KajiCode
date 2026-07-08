@@ -144,9 +144,9 @@ func resolveAuthorizationServer(ctx context.Context, client *http.Client, baseUR
 	// the fallback for any endpoint the config leaves blank.
 	if strings.TrimSpace(cfg.AuthorizationEndpoint) != "" && strings.TrimSpace(cfg.TokenEndpoint) != "" {
 		metadata := authServerMetadata{
-			AuthorizationEndpoint: cfg.AuthorizationEndpoint,
-			TokenEndpoint:         cfg.TokenEndpoint,
-			RegistrationEndpoint:  cfg.RegistrationEndpoint,
+			AuthorizationEndpoint: strings.TrimSpace(cfg.AuthorizationEndpoint),
+			TokenEndpoint:         strings.TrimSpace(cfg.TokenEndpoint),
+			RegistrationEndpoint:  strings.TrimSpace(cfg.RegistrationEndpoint),
 		}
 		return metadata, nil
 	}

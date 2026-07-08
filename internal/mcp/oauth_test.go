@@ -51,7 +51,10 @@ func TestDiscoverParsesMetadata(t *testing.T) {
 
 func TestResolveEndpointsFallsBackToConfig(t *testing.T) {
 	// Server with no metadata document: discovery must fail and the resolver must
-	// fall back to the explicitly configured endpoints.
+	// fall back to the explicitly configured authorization endpoint. Only one
+	// endpoint is configured so the skip-discovery fast path does not fire;
+	// the token endpoint comes from discovery (which fails here), so the
+	// resolver must return an error for the missing token endpoint.
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 	}))
@@ -59,17 +62,37 @@ func TestResolveEndpointsFallsBackToConfig(t *testing.T) {
 
 	cfg := OAuthConfig{
 		AuthorizationEndpoint: "https://issuer.example/authorize",
-		TokenEndpoint:         "https://issuer.example/token",
 	}
-	meta, err := resolveAuthorizationServer(context.Background(), http.DefaultClient, server.URL, cfg)
+	_, err := resolveAuthorizationServer(context.Background(), http.DefaultClient, server.URL, cfg)
+	if err == nil {
+		t.Fatal("expected error for missing token endpoint when discovery fails, got nil")
+	}
+	if !strings.Contains(err.Error(), "token endpoint") {
+		t.Fatalf("error = %q, want it to mention token endpoint", err)
+	}
+}
+
+func TestResolveEndpointsSkipsDiscoveryWhenBothConfigured(t *testing.T) {
+	// When both endpoints are configured, discovery must be skipped entirely.
+	// Point the base URL at an invalid host so any discovery call would fail
+	// or hang -- if the fast path works, the test completes instantly.
+	cfg := OAuthConfig{
+		AuthorizationEndpoint: "  https://issuer.example/authorize  ",
+		TokenEndpoint:         "  https://issuer.example/token  ",
+		RegistrationEndpoint:  "  https://issuer.example/register  ",
+	}
+	meta, err := resolveAuthorizationServer(context.Background(), http.DefaultClient, "http://0.0.0.0:0/invalid", cfg)
 	if err != nil {
 		t.Fatalf("resolveAuthorizationServer() error = %v", err)
 	}
-	if meta.AuthorizationEndpoint != cfg.AuthorizationEndpoint {
-		t.Fatalf("authorization endpoint = %q, want config fallback", meta.AuthorizationEndpoint)
+	if meta.AuthorizationEndpoint != "https://issuer.example/authorize" {
+		t.Fatalf("authorization endpoint = %q, want trimmed config value", meta.AuthorizationEndpoint)
 	}
-	if meta.TokenEndpoint != cfg.TokenEndpoint {
-		t.Fatalf("token endpoint = %q, want config fallback", meta.TokenEndpoint)
+	if meta.TokenEndpoint != "https://issuer.example/token" {
+		t.Fatalf("token endpoint = %q, want trimmed config value", meta.TokenEndpoint)
+	}
+	if meta.RegistrationEndpoint != "https://issuer.example/register" {
+		t.Fatalf("registration endpoint = %q, want trimmed config value", meta.RegistrationEndpoint)
 	}
 }
 
