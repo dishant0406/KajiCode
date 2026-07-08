@@ -865,6 +865,9 @@ func mergeMCPServer(base MCPServerConfig, next MCPServerConfig) MCPServerConfig 
 	if next.disabledSet || next.Disabled {
 		base.Disabled = next.Disabled
 	}
+	if next.configured {
+		base.configured = true
+	}
 	return base
 }
 

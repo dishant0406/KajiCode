@@ -428,6 +428,16 @@ type MCPServerConfig struct {
 	OAuth       *MCPOAuthConfig   `json:"oauth,omitempty"`
 	Disabled    bool              `json:"disabled,omitempty"`
 	disabledSet bool
+	// configured is true when the user's config JSON declared an object for
+	// this server at all (i.e. UnmarshalJSON ran for it), regardless of which
+	// fields it set or what values they hold. A built-in default seeded by
+	// DefaultMCPServers() is never unmarshaled from JSON, so it starts false;
+	// any explicit entry in the user/project file — even one that happens to
+	// repeat a default's exact field values (e.g. re-declaring firecrawl's
+	// default URL) — sets it true. IsUnconfiguredDefault checks this alongside
+	// a resolved-value comparison, so redeclaring default values verbatim still
+	// counts as user-configured.
+	configured bool
 }
 
 // MCPOAuthConfig describes how to authenticate to a remote MCP server using an
@@ -621,6 +631,10 @@ func (server *MCPServerConfig) UnmarshalJSON(data []byte) error {
 		server.Disabled = *raw.Disabled
 		server.disabledSet = true
 	}
+	// This method only runs when the user's JSON actually has an object for this
+	// server key (built-in defaults are seeded as Go struct literals, never
+	// unmarshaled), so reaching here at all means the user configured it.
+	server.configured = true
 	return nil
 }
 
