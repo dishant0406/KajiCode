@@ -71,14 +71,30 @@ function platformPackageBinary() {
   return existsSync(candidate) ? candidate : null;
 }
 
-// First-run fallback for installs without a platform package (--omit=optional,
-// package managers that skip optionalDependencies, unsupported platforms with
-// a GitHub release): fetch the binary next to the wrapper, once, with the same
-// checksum-verified downloader that used to run as postinstall.
-function downloadBinaryOnFirstRun(packageRoot) {
+// Mirrors the release matrix (internal/release/release.go): the platforms a
+// GitHub Release asset exists for. android maps to the linux asset; there is
+// no windows-arm64 asset (Windows on ARM runs the x64 build under emulation).
+function releaseAssetAvailable() {
+  const platform = { linux: 'linux', android: 'linux', darwin: 'macos', win32: 'windows' }[
+    process.platform
+  ];
+  const arch = process.arch === 'x64' || process.arch === 'arm64' ? process.arch : null;
+  if (!platform || !arch) return false;
+  return !(platform === 'windows' && arch === 'arm64');
+}
+
+// Fallback for installs without a platform package (--omit=optional, package
+// managers that skip optionalDependencies): fetch the binary next to the
+// wrapper with the same checksum-verified downloader that used to run as
+// postinstall. Deliberately NOT cached on failure — a transient network error
+// self-heals on the next run — so this retries on every invocation until a
+// binary is in place. Platforms with no release asset skip the attempt.
+function downloadMissingBinary(packageRoot) {
   const downloadScript = join(packageRoot, 'scripts', 'postinstall.mjs');
-  if (!existsSync(downloadScript)) return;
-  console.error('[zero] no platform package installed — fetching the native binary (first run only).');
+  if (!existsSync(downloadScript) || !releaseAssetAvailable()) return;
+  console.error(
+    '[zero] no platform package installed — fetching the native binary from the GitHub Release (retried on each run until it succeeds).',
+  );
   spawnSync(process.execPath, [downloadScript], {
     stdio: ['ignore', 'inherit', 'inherit'],
   });
@@ -91,7 +107,7 @@ function resolveNativeBinary() {
   if (fromPlatformPackage) return fromPlatformPackage;
   const downloaded = join(packageRoot, zeroBinaryName());
   if (existsSync(downloaded)) return downloaded;
-  downloadBinaryOnFirstRun(packageRoot);
+  downloadMissingBinary(packageRoot);
   return existsSync(downloaded) ? downloaded : null;
 }
 
@@ -102,7 +118,7 @@ if (!nativePath) {
     '[zero] No native binary is available for this install.\n' +
       'Normally npm installs it as an optional dependency of @gitlawb/zero\n' +
       `(@gitlawb/zero-${process.platform}-${process.arch}), and the wrapper can\n` +
-      'also download it from the GitHub Release on first run.\n' +
+      'also download it from the GitHub Release when it is missing.\n' +
       '\n' +
       'Things to try:\n' +
       '  - reinstall without omitting optional dependencies:\n' +

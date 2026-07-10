@@ -209,7 +209,12 @@ jobs:
             echo "publishing ${dir}"
             (cd "$dir" && npm publish --access public --tag platform)
           done
-          latest="$(npm view @gitlawb/zero dist-tags.latest)"
+          # Tolerate a failed lookup (registry lag, or no latest tag yet on a
+          # bootstrap publish): under set -e a bare failure here would abort
+          # AFTER the platform payloads went out, leaving no wrapper and a
+          # re-run that fails on republishing existing versions. An empty
+          # value falls through the guard below.
+          latest="$(npm view @gitlawb/zero dist-tags.latest || true)"
           case "$latest" in
             "${version}-"*)
               echo "::error::dist-tag latest points at platform version ${latest} — a platform publish clobbered it. Fix the dist-tag before the wrapper publish." >&2

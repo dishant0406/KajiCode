@@ -126,6 +126,11 @@ func TestBuildPlatformPackagesAssemblesPublishPayloads(t *testing.T) {
 			t.Fatalf("platform package still contains wrapper-owned %q", excluded)
 		}
 	}
+	// npm only ships a license file it finds in the packed directory, so the
+	// assembly must place the repo LICENSE into every payload.
+	if _, err := os.Stat(filepath.Join(platformDir, "LICENSE")); err != nil {
+		t.Fatalf("platform package missing LICENSE: %v", err)
+	}
 
 	// npm pack drops symlinks, so the shim must now be a regular executable file.
 	shimPath := filepath.Join(platformDir, "helpers", "node_modules", ".bin", "agent-browser")
@@ -207,7 +212,7 @@ func TestBuildPlatformPackagesAssemblesPublishPayloads(t *testing.T) {
 			t.Fatalf("wrapper optionalDependencies[%q] = %q, want %q", alias, wrapperPkg.Optional[alias], spec)
 		}
 	}
-	for _, file := range []string{"bin/zero.js", "scripts/postinstall.mjs", "README.md"} {
+	for _, file := range []string{"bin/zero.js", "scripts/postinstall.mjs", "README.md", "LICENSE"} {
 		if _, err := os.Stat(filepath.Join(wrapperDir, filepath.FromSlash(file))); err != nil {
 			t.Fatalf("wrapper payload missing %s: %v", file, err)
 		}

@@ -362,8 +362,8 @@ func TestNodeWrapperRunsFirstRunDownloaderWhenBinaryMissing(t *testing.T) {
 		t.Fatalf("wrapper err = %v, want exit 1; output: %s", err, output)
 	}
 	text := string(output)
-	if !strings.Contains(text, "fetching the native binary (first run only)") {
-		t.Fatalf("output missing first-run download notice: %q", text)
+	if !strings.Contains(text, "fetching the native binary from the GitHub Release") {
+		t.Fatalf("output missing fallback download notice: %q", text)
 	}
 	if !strings.Contains(text, "skipping native binary download") {
 		t.Fatalf("output shows the downloader did not run: %q", text)

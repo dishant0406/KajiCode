@@ -289,6 +289,10 @@ function buildPlatformPackage(entry, version, artifactsDir, outDir) {
     pruneAgentBrowserBinaries(packageDir, entry);
     verifyHelperShims(packageDir, entry, assetName);
 
+    // npm only ships a license file it finds in the packed directory;
+    // package.json's license field alone does not include the text.
+    cpSync(join(repoRoot, 'LICENSE'), join(packageDir, 'LICENSE'));
+
     const wrapperPkg = readWrapperPackage();
     const manifest = {
       name: '@gitlawb/zero',
@@ -317,6 +321,9 @@ function buildWrapperPackage(version, outDir) {
   cpSync(join(repoRoot, 'bin', 'zero.js'), join(wrapperDir, 'bin', 'zero.js'));
   cpSync(join(repoRoot, 'scripts', 'postinstall.mjs'), join(wrapperDir, 'scripts', 'postinstall.mjs'));
   cpSync(join(repoRoot, 'README.md'), join(wrapperDir, 'README.md'));
+  // npm auto-includes LICENSE in the tarball only when the file is present in
+  // the directory being packed (the files whitelist cannot exclude it).
+  cpSync(join(repoRoot, 'LICENSE'), join(wrapperDir, 'LICENSE'));
   chmodSync(join(wrapperDir, 'bin', 'zero.js'), 0o755);
 
   const pkg = readWrapperPackage();

@@ -38,7 +38,7 @@ npm install -g @gitlawb/zero
 zero
 ```
 
-npm 包是一个小型包装器，其平台构建（Linux、macOS 和 Windows 的 x64/arm64，包含浏览器/终端控制辅助工具）作为可选依赖直接从 npm registry 安装——没有安装脚本，也不会从 npm 之外下载任何内容。Bun、pnpm 和 yarn 的行为完全一致，无需任何信任或批准步骤。跳过可选依赖的安装（`--omit=optional`）也能工作：包装器会在首次运行时从对应的 GitHub Release 下载二进制文件。详见 [docs/NPM_PACKAGING.md](docs/NPM_PACKAGING.md)。
+npm 包是一个小型包装器，其平台构建（Linux 和 macOS 的 x64/arm64、Windows 的 x64，包含浏览器/终端控制辅助工具）作为可选依赖直接从 npm registry 安装——没有安装脚本，也不会从 npm 之外下载任何内容。Bun、pnpm 和 yarn 的行为完全一致，无需任何信任或批准步骤。跳过可选依赖的安装（`--omit=optional`）也能工作：只要二进制文件缺失，包装器就会从对应的 GitHub Release 下载。Windows on ARM 通过模拟运行 x64 构建。详见 [docs/NPM_PACKAGING.md](docs/NPM_PACKAGING.md)。
 
 ### 安装脚本
 

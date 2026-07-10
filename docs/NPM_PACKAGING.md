@@ -61,10 +61,14 @@ plus per-platform payloads carrying the native binaries.
    pinned to the wrapper release.
 2. Fall back to a binary previously downloaded next to the wrapper.
 3. If neither exists (`--omit=optional`, package managers that skip optional
-   dependencies, unsupported platforms with a GitHub release), run the
-   **first-run downloader**: `scripts/postinstall.mjs`, the exact logic that
-   used to run as a postinstall hook (HTTPS-only, SHA-256 verified against the
-   release's own checksum file, no zip-slip), invoked by the wrapper itself.
+   dependencies), run the **fallback downloader**: `scripts/postinstall.mjs`,
+   the exact logic that used to run as a postinstall hook (HTTPS-only, SHA-256
+   verified against the release's own checksum file, no zip-slip), invoked by
+   the wrapper itself. Failures are deliberately not cached — the fetch
+   retries on every run until a binary is in place, so a transient network
+   error self-heals. Platforms with no release asset (anything outside the
+   matrix above, including windows-arm64) skip the attempt entirely rather
+   than probing the network each run.
 4. If the download is impossible too, print build-from-source guidance.
 
 There is deliberately **no `scripts.postinstall`** in any published
@@ -109,7 +113,11 @@ one is user-visible immediately.
    non-`latest` dist-tag would clobber `latest` and users would install a
    platform payload as the CLI. The workflow publishes platform versions with
    `--tag platform` and asserts `latest` survived before the wrapper publish,
-   then asserts `latest` equals the wrapper version after it.
+   then asserts `latest` equals the wrapper version after it. Both lookups
+   tolerate a failed `npm view` (registry lag, or no `latest` tag yet on a
+   bootstrap publish) — a missing value must not abort the job between the
+   platform and wrapper publishes, which would strand a half-published
+   release.
 2. **Platform versions publish before the wrapper.** The wrapper's
    `optionalDependencies` pin exact suffixed versions; publishing the wrapper
    first would create a window where installs resolve aliases that 404.

@@ -17,10 +17,11 @@ npm install -g @gitlawb/zero
 zero
 ```
 
-The package supports Linux, macOS, and Windows on x64 and arm64. It installs a
-small `zero` wrapper plus, as an optional dependency, a platform payload with
-the native binary and the bundled browser/terminal control helpers. There are
-no install scripts and nothing is downloaded from outside the npm registry, so
+The package supports Linux and macOS on x64 and arm64, and Windows on x64
+(Windows on ARM runs the x64 build under emulation). It installs a small
+`zero` wrapper plus, as an optional dependency, a platform payload with the
+native binary and the bundled browser/terminal control helpers. There are no
+install scripts and nothing is downloaded from outside the npm registry, so
 the install is silent and works identically under npm, Bun, pnpm, and yarn —
 no trust or approval steps. See [NPM_PACKAGING.md](NPM_PACKAGING.md) for the
 package architecture.
@@ -32,8 +33,11 @@ Requirements:
 
 If the install skipped optional dependencies (`npm install --omit=optional`,
 or a package manager configured to do so), the wrapper falls back to
-downloading the binary from the matching GitHub Release on first run, with
-checksum verification. To trigger that fetch manually:
+downloading the binary from the matching GitHub Release, with checksum
+verification. The fetch is retried on each run until a binary is in place (a
+transient network failure heals itself; an install directory the current user
+cannot write to keeps failing — rerun the install or the command below with
+sufficient permissions). To trigger the fetch manually:
 
 ```bash
 node "$(npm root -g)/@gitlawb/zero/scripts/postinstall.mjs"
@@ -222,8 +226,7 @@ Supported targets:
 - `linux-arm64`
 - `macos-x64`
 - `macos-arm64`
-- `windows-x64`
-- `windows-arm64`
+- `windows-x64` (Windows on ARM runs this build under emulation)
 
 Each archive must have a matching `.sha256` file. The install scripts download
 both files, verify the checksum, and then copy the binary into the install

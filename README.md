@@ -49,15 +49,15 @@ npm install -g @gitlawb/zero
 zero
 ```
 
-The npm package is a small wrapper whose platform build (Linux, macOS, and
-Windows on x64/arm64, including the browser/terminal control helpers) installs
-as an optional dependency straight from the npm registry — no install scripts,
-no downloads outside npm. Bun, pnpm, and yarn work the same way with no trust
-or approval steps. Installs that skip optional dependencies
+The npm package is a small wrapper whose platform build (Linux and macOS on
+x64/arm64, Windows on x64 — including the browser/terminal control helpers)
+installs as an optional dependency straight from the npm registry — no install
+scripts, no downloads outside npm. Bun, pnpm, and yarn work the same way with
+no trust or approval steps. Installs that skip optional dependencies
 (`--omit=optional`) still work: the wrapper fetches the binary from the
-matching GitHub Release on first run. See
-[docs/NPM_PACKAGING.md](docs/NPM_PACKAGING.md) for how the package is put
-together.
+matching GitHub Release whenever it is missing. Windows on ARM runs the x64
+build under emulation. See [docs/NPM_PACKAGING.md](docs/NPM_PACKAGING.md) for
+how the package is put together.
 
 ### Install scripts
 
