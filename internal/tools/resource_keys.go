@@ -154,12 +154,13 @@ func multiFileResourceKeys(args map[string]any) []string {
 }
 
 // applyPatchResourceKeys derives conflict keys for apply_patch: the cwd as a
-// directory key, plus any +++/--- file paths parseable from the unified diff.
-// Falls back to workspace:root when neither cwd nor paths are available so a
-// patch call is never "keyless" for the future conflict planner.
+// directory key, optional path/paths args, plus any +++/--- file paths
+// parseable from the unified diff. Falls back to workspace:root when nothing
+// is available so a patch call is never "keyless" for the future conflict planner.
 func applyPatchResourceKeys(args map[string]any) []string {
 	var keys []string
 	keys = append(keys, directoryResourceKeys(args)...)
+	keys = append(keys, multiFileResourceKeys(args)...)
 	patch := firstStringArg(args, "patch", "diff")
 	for _, p := range pathsFromUnifiedDiff(patch) {
 		if n := NormalizeResourcePath(p); n != "" {
