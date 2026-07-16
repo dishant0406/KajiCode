@@ -32,10 +32,13 @@ type TaskSet struct {
 
 // BenchTask is one benchmark task. WorkspaceFixture is the relative path of the
 // task's starting workspace; VerificationCommand (optional) is the command the
-// default runner executes to decide pass/fail after ZERO finishes.
+// default runner executes to decide pass/fail after ZERO finishes. Class groups
+// the task for the turn-benchmark's per-group latency breakdown (e.g. "nav",
+// "edit", "fix"); it is optional and ignored by the pass/fail runner.
 type BenchTask struct {
 	ID                  string   `json:"id"`
 	Name                string   `json:"name,omitempty"`
+	Class               string   `json:"class,omitempty"`
 	Prompt              string   `json:"prompt"`
 	WorkspaceFixture    string   `json:"workspaceFixture,omitempty"`
 	VerificationCommand []string `json:"verificationCommand,omitempty"`

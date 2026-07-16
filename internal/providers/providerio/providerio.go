@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Gitlawb/zero/internal/trace"
 	"github.com/Gitlawb/zero/internal/zeroruntime"
 )
 
@@ -366,6 +367,9 @@ func ScanSSEDataWithContext(
 				// NOT output, so it must not reset the content watchdog.
 				continue
 			}
+			// First non-keepalive payload = first model output. Stamp once; later
+			// real payloads are no-ops. nil recorder (untraced run) is a no-op.
+			trace.FromContext(ctx).StampFirstToken()
 			resetContent()
 			if !handle(item.data) {
 				// The provider asked to stop (e.g. it already emitted an error

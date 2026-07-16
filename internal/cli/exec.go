@@ -25,6 +25,7 @@ import (
 	"github.com/Gitlawb/zero/internal/specmode"
 	"github.com/Gitlawb/zero/internal/streamjson"
 	"github.com/Gitlawb/zero/internal/tools"
+	"github.com/Gitlawb/zero/internal/trace"
 	"github.com/Gitlawb/zero/internal/usage"
 	"github.com/Gitlawb/zero/internal/worktrees"
 	"github.com/Gitlawb/zero/internal/zeroruntime"
@@ -124,6 +125,12 @@ type execOptions struct {
 	// additional write roots for this run. Unioned with
 	// config.SandboxConfig.AdditionalWriteRoots at scope construction time.
 	addDirs []string
+	// tracePath, when set, writes a per-turn NDJSON trace (agenteval-compatible)
+	// to the given file path — or to stderr when the value is "-". Falls back to
+	// the ZERO_TRACE env var when the flag is absent. Off by default: a run
+	// without it leaves agent.Options.Trace nil and is byte-identical to before.
+	// The trace is pure observation — enabling it does not change agent behavior.
+	tracePath string
 }
 
 type execUsageError struct {
@@ -474,6 +481,21 @@ func runExec(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) in
 	if err != nil {
 		return writeAppError(stderr, "failed to create run id: "+err.Error(), exitCrash)
 	}
+	// Per-turn tracing is opt-in (--trace <path> or ZERO_TRACE=<path>). The
+	// recorder is stamped throughout agent.Run and the providerio seam; the run
+	// itself is byte-identical to an untraced run. We finish + emit on every exit
+	// path via the defer below. "-" writes NDJSON to stderr; otherwise the path
+	// is created/truncated. A failure to emit is logged to stderr, never fatal.
+	tracePath := resolveTracePath(options)
+	var traceRecorder *trace.Recorder
+	if tracePath != "" {
+		traceRecorder = trace.NewRecorder(preparedSession.Session.SessionID, runID, "")
+		defer func() {
+			if err := emitTrace(traceRecorder, tracePath, stderr); err != nil {
+				fmt.Fprintf(stderr, "[zero] failed to write trace: %s\n", err)
+			}
+		}()
+	}
 	writer := execEventWriter{
 		stdout:       stdout,
 		stderr:       stderr,
@@ -556,6 +578,7 @@ func runExec(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) in
 		Model:            resolved.Provider.Model,
 		ModelSwitcher:    modelSwitcher,
 		ReasoningEffort:  forwardEffort,
+		Trace:            traceRecorder,
 		Cwd:              workspaceRoot,
 		Images:           images,
 		Registry:         registry,
@@ -1236,4 +1259,37 @@ func execNotifyMode(options execOptions, resolved config.ResolvedConfig) string 
 		return options.notifyMode
 	}
 	return resolved.Notify.Mode
+}
+
+// resolveTracePath returns the trace destination for this run: the --trace flag
+// value when set, else the ZERO_TRACE env var, else "" (tracing off). A value of
+// "-" means "write to stderr".
+func resolveTracePath(options execOptions) string {
+	if v := strings.TrimSpace(options.tracePath); v != "" {
+		return v
+	}
+	if v := strings.TrimSpace(os.Getenv("ZERO_TRACE")); v != "" {
+		return v
+	}
+	return ""
+}
+
+// emitTrace finishes the recorder and writes the NDJSON trace to dest ("-" =>
+// stderr, otherwise a file path created/truncated). A nil recorder is a no-op
+// (tracing off). The trace is best-effort: a write error is returned to the
+// caller, which logs it but never fails the run.
+func emitTrace(recorder *trace.Recorder, dest string, stderr io.Writer) error {
+	if recorder == nil || dest == "" {
+		return nil
+	}
+	finished := recorder.Finish()
+	if strings.TrimSpace(dest) == "-" {
+		return trace.WriteNDJSON(stderr, finished)
+	}
+	file, err := os.Create(dest)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	return trace.WriteNDJSON(file, finished)
 }

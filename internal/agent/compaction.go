@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/Gitlawb/zero/internal/trace"
 	"github.com/Gitlawb/zero/internal/zeroruntime"
 )
 
@@ -418,6 +419,9 @@ func (state *compactionState) maybeCompact(
 		PreserveLast: state.preserveLast,
 		Summarize:    summarizeClosure(ctx, provider, state.onUsage),
 	})
+	if r := trace.FromContext(ctx); r != nil && err == nil {
+		r.Counter(trace.CounterCompactionCount, 1)
+	}
 	if err != nil {
 		// Summarizer failed: keep the original history. The reactive path (or a
 		// later turn) can try again; we never drop messages on failure here.
@@ -462,6 +466,9 @@ func (state *compactionState) recover(
 		PreserveLast: state.preserveLast,
 		Summarize:    summarizeClosure(ctx, provider, state.onUsage),
 	})
+	if r := trace.FromContext(ctx); r != nil && compactErr == nil {
+		r.Counter(trace.CounterCompactionCount, 1)
+	}
 	if compactErr != nil {
 		// A genuine compaction attempt was made (and failed): the budget is spent
 		// so the loop gives up rather than retrying a failing summarizer forever.
