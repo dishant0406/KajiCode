@@ -204,18 +204,47 @@ func TestWriteTextIsReadable(t *testing.T) {
 func TestAttributionRatio(t *testing.T) {
 	r := NewRecorder("s", "r", "")
 	r.Start()
-	// Attribute ~all wall time so the ratio is near 1.0.
 	r.RecordSpan(SpanGeneration, 10*time.Millisecond)
 	r.RecordSpan(SpanToolExecution, 10*time.Millisecond)
 	tr := r.Finish()
-	// Wall is at least 20ms and attributed is 20ms, so ratio should be <= 1
-	// and the run is "well attributed" (>= 0.95 only if wall is close to 20ms;
-	// we assert the lower bound instead since wall includes scheduling jitter).
-	if ratio := tr.AttributionRatio(); ratio > 1.0 {
-		t.Fatalf("attribution ratio %v exceeds 1.0", ratio)
+
+	// Attributed time is the deterministic sum of recorded span durations; it
+	// does not depend on wall-clock timing.
+	if want := 20 * time.Millisecond; tr.AttributedDuration() != want {
+		t.Fatalf("attributed = %v, want %v", tr.AttributedDuration(), want)
 	}
-	if tr.AttributedDuration() != 20*time.Millisecond {
-		t.Fatalf("attributed = %v, want 20ms", tr.AttributedDuration())
+
+	// AttributionRatio is attributed / wall. The spans are synthetic durations
+	// with no real delay, so wall is on the order of microseconds and the ratio
+	// can legitimately exceed 1.0 (overlapping parallel spans push it above 1.0
+	// in real runs too). Assert the contract — ratio == attributed/wall — rather
+	// than a fixed bound, so the test is clock-independent.
+	wall := tr.WallDuration()
+	if wall <= 0 {
+		// Clock granularity collapsed the run to zero wall; the ratio is defined 0.
+		if got := tr.AttributionRatio(); got != 0 {
+			t.Fatalf("ratio with zero wall = %v, want 0", got)
+		}
+		return
+	}
+	wantRatio := float64(tr.AttributedDuration()) / float64(wall)
+	if got := tr.AttributionRatio(); got != wantRatio {
+		t.Fatalf("ratio = %v, want %v (attributed/wall)", got, wantRatio)
+	}
+}
+
+func TestAttributionRatioZeroWall(t *testing.T) {
+	// A trace with no completed run has zero wall and a defined-zero ratio
+	// (covers the divide-by-zero guard).
+	tr := &TurnTrace{}
+	if got := tr.AttributionRatio(); got != 0 {
+		t.Fatalf("zero-wall ratio = %v, want 0", got)
+	}
+	if got := tr.AttributedDuration(); got != 0 {
+		t.Fatalf("empty attributed = %v, want 0", got)
+	}
+	if got := tr.WallDuration(); got != 0 {
+		t.Fatalf("empty wall = %v, want 0", got)
 	}
 }
 
