@@ -53,6 +53,24 @@ func TestUnknownNotThreadSafeEvenIfProviderLies(t *testing.T) {
 	}
 }
 
+func TestNormalizeClearsThreadSafeOnMutators(t *testing.T) {
+	tool := baseTool{
+		name: "writer",
+		capabilities: ToolCapabilities{
+			Effect:     EffectWorkspaceWrite,
+			ThreadSafe: true, // must be cleared on read
+		},
+	}
+	if tool.Capabilities().ThreadSafe {
+		t.Fatal("WorkspaceWrite must never surface ThreadSafe=true via Capabilities()")
+	}
+	// Wrap with Run so CapabilitiesOf's CapabilityProvider path is exercised.
+	wrapped := deferredCapableTool{baseTool: tool}
+	if CapabilitiesOf(wrapped).ThreadSafe {
+		t.Fatal("CapabilitiesOf must normalize mutator ThreadSafe away")
+	}
+}
+
 func TestValidateRejectsThreadSafeUnknown(t *testing.T) {
 	problems := ValidateCapabilities("x", ToolCapabilities{Effect: EffectUnknown, ThreadSafe: true})
 	if len(problems) == 0 {
@@ -163,12 +181,68 @@ func TestEndpointResourceKeysStripSecrets(t *testing.T) {
 	}
 }
 
+func TestEndpointResourceKeysAtInQueryDoesNotStealHost(t *testing.T) {
+	// Path/query must be stripped BEFORE userinfo so ?x=@bad cannot become the host.
+	keys := endpointResourceKeys(map[string]any{
+		"url": "https://api.example.com/v1?token=@secret",
+	})
+	if len(keys) != 1 || keys[0] != ResourceKeyEndpoint+"api.example.com" {
+		t.Fatalf("keys = %v, want endpoint:api.example.com", keys)
+	}
+}
+
+func TestProcessResourceKeysNumericSessionID(t *testing.T) {
+	// write_stdin declares session_id as integer; JSON decodes as float64.
+	keys := processResourceKeys(map[string]any{"session_id": float64(42)})
+	if len(keys) != 1 || keys[0] != ResourceKeyProcess+"42" {
+		t.Fatalf("keys = %v, want process:42", keys)
+	}
+}
+
+func TestProcessResourceKeysSessionArg(t *testing.T) {
+	// terminal_session requires "session", not session_id.
+	keys := processResourceKeys(map[string]any{"session": "term-7"})
+	if len(keys) != 1 || keys[0] != ResourceKeyProcess+"term-7" {
+		t.Fatalf("keys = %v, want process:term-7", keys)
+	}
+}
+
+func TestApplyPatchResourceKeysFromDiffAndCwd(t *testing.T) {
+	patch := "--- a/old.go\n+++ b/new.go\n@@ -1 +1 @@\n-x\n+y\n"
+	keys := applyPatchResourceKeys(map[string]any{
+		"patch": patch,
+		"cwd":   "pkg",
+	})
+	want := map[string]bool{
+		ResourceKeyDirectory + "pkg": true,
+		ResourceKeyFile + "old.go":   true,
+		ResourceKeyFile + "new.go":   true,
+	}
+	for _, k := range keys {
+		if !want[k] {
+			t.Fatalf("unexpected key %q in %v", k, keys)
+		}
+		delete(want, k)
+	}
+	if len(want) != 0 {
+		t.Fatalf("missing keys %v from %v", want, keys)
+	}
+}
+
+func TestApplyPatchResourceKeysFallbackWorkspace(t *testing.T) {
+	keys := applyPatchResourceKeys(map[string]any{"patch": "not a real diff"})
+	if len(keys) != 1 || keys[0] != ResourceKeyWorkspace+"root" {
+		t.Fatalf("keys = %v, want workspace:root fallback", keys)
+	}
+}
+
 func TestWorkspaceWriteClassifications(t *testing.T) {
 	root := t.TempDir()
 	for _, tool := range []Tool{
 		NewScopedWriteFileTool(root, nil),
 		NewScopedEditFileTool(root, nil),
 		NewScopedApplyPatchTool(root, nil),
+		NewScopedBashTool(root, nil),
 	} {
 		if got := CapabilitiesOf(tool).Effect; got != EffectWorkspaceWrite {
 			t.Errorf("%s effect = %v, want WorkspaceWrite", tool.Name(), got)
@@ -181,7 +255,7 @@ func TestWorkspaceWriteClassifications(t *testing.T) {
 
 func TestInteractiveClassifications(t *testing.T) {
 	root := t.TempDir()
-	for _, name := range []string{"ask_user", "bash", "exec_command", "write_stdin", "update_plan", "escalate_model", "request_permissions", "browser_open", "terminal_session", "desktop_action"} {
+	for _, name := range []string{"ask_user", "exec_command", "write_stdin", "update_plan", "escalate_model", "request_permissions", "browser_open", "terminal_session", "desktop_action"} {
 		var found Tool
 		for _, tool := range BuiltinCatalog(root) {
 			if tool.Name() == name {
@@ -211,9 +285,23 @@ func TestReadOnlyClassifications(t *testing.T) {
 		if found == nil {
 			t.Fatalf("tool %q not in catalog", name)
 		}
-		if got := CapabilitiesOf(found).Effect; got != EffectReadOnly {
-			t.Errorf("%s effect = %v, want ReadOnly", name, got)
+		caps := CapabilitiesOf(found)
+		if caps.Effect != EffectReadOnly {
+			t.Errorf("%s effect = %v, want ReadOnly", name, caps.Effect)
 		}
+		// Current catalog intentionally keeps read tools non-thread-safe
+		// until each is audited for shared mutable state (FileTracker, etc.).
+		if caps.ThreadSafe {
+			t.Errorf("%s ThreadSafe=true without explicit audit", name)
+		}
+	}
+}
+
+func TestValidateBuiltinCatalogRejectsUnknownRaw(t *testing.T) {
+	// Prove the gate is not a rubber stamp: raw Unknown+ThreadSafe is rejected.
+	problems := ValidateCapabilities("ghost", ToolCapabilities{Effect: EffectUnknown, ThreadSafe: true})
+	if len(problems) == 0 {
+		t.Fatal("expected ValidateCapabilities to reject Unknown+ThreadSafe")
 	}
 }
 

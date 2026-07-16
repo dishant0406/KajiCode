@@ -4,7 +4,9 @@ import "strings"
 
 // EffectClass classifies a tool's side effects for concurrency safety.
 // Concurrent execution (a later PR) must only consider tools that are both
-// ThreadSafe and not EffectUnknown; this package only declares metadata.
+// ThreadSafe and EffectReadOnly; this package only declares metadata.
+// ThreadSafe is force-cleared for every non-ReadOnly effect at read time
+// (see normalizeCapabilities).
 type EffectClass int
 
 const (
@@ -12,10 +14,12 @@ const (
 	// Never concurrency-eligible; always serialized.
 	EffectUnknown EffectClass = iota
 	// EffectReadOnly reads local or remote state without mutating it.
+	// The only effect class that may set ThreadSafe=true after audit.
 	EffectReadOnly
 	// EffectProcessRead observes a retained process, PTY, or terminal.
 	EffectProcessRead
 	// EffectWorkspaceWrite mutates the local repository or workspace.
+	// Includes one-shot shell commands that can rewrite the workspace.
 	EffectWorkspaceWrite
 	// EffectExternalWrite mutates state outside the local workspace.
 	EffectExternalWrite
@@ -73,6 +77,18 @@ func UnknownCapabilities() ToolCapabilities {
 	}
 }
 
+// normalizeCapabilities is the single read path for capability metadata.
+// ThreadSafe is cleared unless Effect is a valid EffectReadOnly — mutators,
+// interactive tools, process readers, unknown, and invalid effects must never
+// appear concurrency-eligible to a future batch planner that only checks
+// ThreadSafe && Effect.
+func normalizeCapabilities(caps ToolCapabilities) ToolCapabilities {
+	if !caps.Effect.Valid() || caps.Effect != EffectReadOnly {
+		caps.ThreadSafe = false
+	}
+	return caps
+}
+
 // CapabilitiesOf returns a tool's declared capabilities, or the fail-closed
 // unknown default when the tool does not implement CapabilityProvider.
 func CapabilitiesOf(tool Tool) ToolCapabilities {
@@ -80,12 +96,7 @@ func CapabilitiesOf(tool Tool) ToolCapabilities {
 		return UnknownCapabilities()
 	}
 	if provider, ok := tool.(CapabilityProvider); ok {
-		caps := provider.Capabilities()
-		// Guard against a buggy provider returning ThreadSafe with Unknown.
-		if caps.Effect == EffectUnknown {
-			caps.ThreadSafe = false
-		}
-		return caps
+		return normalizeCapabilities(provider.Capabilities())
 	}
 	return UnknownCapabilities()
 }
@@ -93,16 +104,7 @@ func CapabilitiesOf(tool Tool) ToolCapabilities {
 // (baseTool).Capabilities exposes the capabilities field set at construction.
 // Tools that embed baseTool inherit this method.
 func (tool baseTool) Capabilities() ToolCapabilities {
-	// Zero-value baseTool is EffectUnknown / not thread-safe.
-	if tool.capabilities.Effect == EffectUnknown {
-		// Ensure ThreadSafe cannot sneak through on an unset field.
-		return ToolCapabilities{
-			Effect:       EffectUnknown,
-			ThreadSafe:   false,
-			ResourceKeys: tool.capabilities.ResourceKeys,
-		}
-	}
-	return tool.capabilities
+	return normalizeCapabilities(tool.capabilities)
 }
 
 // Registry.Capabilities looks up a registered tool's capabilities by name.
@@ -121,6 +123,9 @@ func (registry *Registry) Capabilities(name string) ToolCapabilities {
 
 // ValidateCapabilities checks a single capability record for consistency.
 // It returns a non-empty slice of human-readable problems when invalid.
+// Note: CapabilitiesOf already normalizes ThreadSafe away for non-ReadOnly
+// effects; validation still rejects the raw combination so catalog tests
+// catch mis-declared constructors.
 func ValidateCapabilities(name string, caps ToolCapabilities) []string {
 	var problems []string
 	name = strings.TrimSpace(name)
@@ -133,8 +138,7 @@ func ValidateCapabilities(name string, caps ToolCapabilities) []string {
 	if caps.Effect == EffectUnknown && caps.ThreadSafe {
 		problems = append(problems, name+": ThreadSafe=true is forbidden with EffectUnknown")
 	}
-	// Mutating effects are never concurrency-eligible in this contract.
-	// ThreadSafe may still be true for pure read tools only.
+	// Mutating / interactive / process-read effects are never concurrency-eligible.
 	switch caps.Effect {
 	case EffectWorkspaceWrite, EffectExternalWrite, EffectInteractive, EffectProcessRead:
 		if caps.ThreadSafe {

@@ -48,22 +48,26 @@ func BuiltinCatalog(workspaceRoot string) []Tool {
 
 // ValidateBuiltinCatalog returns diagnostics for every catalog tool that is
 // missing or inconsistently classified. Empty means full coverage.
+//
+// Duplicate builtin names are always rejected: ResourceKeys is a function and
+// cannot be compared, so partial metadata comparison would miss conflict-scope
+// drift between two same-name tools.
 func ValidateBuiltinCatalog(workspaceRoot string) []string {
 	var problems []string
-	seen := map[string]ToolCapabilities{}
+	seen := map[string]struct{}{}
 	for _, tool := range BuiltinCatalog(workspaceRoot) {
 		name := tool.Name()
 		caps := CapabilitiesOf(tool)
-		if prev, ok := seen[name]; ok {
-			if prev.Effect != caps.Effect || prev.ThreadSafe != caps.ThreadSafe {
-				problems = append(problems, name+": duplicate registration with inconsistent metadata")
-			}
+		if _, ok := seen[name]; ok {
+			problems = append(problems, name+": duplicate builtin name in catalog")
 			continue
 		}
-		seen[name] = caps
+		seen[name] = struct{}{}
 		if caps.Effect == EffectUnknown {
 			problems = append(problems, name+": built-in tool remains EffectUnknown (metadata required)")
 		}
+		// Validate raw constructor declaration as well as normalized form so a
+		// mis-set ThreadSafe on a mutator is still reported.
 		problems = append(problems, ValidateCapabilities(name, caps)...)
 	}
 	return problems

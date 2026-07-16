@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"fmt"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -8,13 +9,16 @@ import (
 
 // Resource-key prefixes used for future conflict detection. Keys are pure
 // metadata in this PR — no locks or scheduling are applied.
+//
+// Unused prefixes (repository/pty/browser) are reserved for follow-up
+// classifiers so PR6 conflict keys stay vocabulary-stable.
 const (
 	ResourceKeyFile       = "file:"
 	ResourceKeyDirectory  = "directory:"
-	ResourceKeyRepository = "repository:"
+	ResourceKeyRepository = "repository:" // reserved
 	ResourceKeyProcess    = "process:"
-	ResourceKeyPTY        = "pty:"
-	ResourceKeyBrowser    = "browser:"
+	ResourceKeyPTY        = "pty:"     // reserved
+	ResourceKeyBrowser    = "browser:" // reserved
 	ResourceKeyEndpoint   = "endpoint:"
 	ResourceKeySession    = "session:"
 	ResourceKeyWorkspace  = "workspace:"
@@ -36,18 +40,14 @@ func NormalizeResourcePath(path string) string {
 	if path == "" {
 		return ""
 	}
-	// Reject obviously secret-bearing URLs from path args — keep only the path
-	// component if a scheme-like prefix appears with userinfo.
+	// Reject URL-shaped values — those use endpoint: keys.
 	if strings.Contains(path, "://") {
-		// Network endpoints use endpoint: keys, not file: — refuse to emit
-		// file keys for URL-shaped values.
 		return ""
 	}
 	cleaned := filepath.Clean(path)
 	if cleaned == "." {
 		return "."
 	}
-	// filepath.ToSlash for stable cross-platform keys in traces/tests.
 	normalized := filepath.ToSlash(cleaned)
 	normalized = strings.TrimPrefix(normalized, "./")
 	if runtime.GOOS == "windows" {
@@ -92,23 +92,26 @@ func endpointResourceKeys(args map[string]any) []string {
 	return []string{ResourceKeyEndpoint + host}
 }
 
-// sessionResourceKeys extracts a session: key from session_id args.
+// sessionResourceKeys extracts a session: key from session / session_id args.
+// Numeric session ids (JSON numbers) are coerced to strings.
 func sessionResourceKeys(args map[string]any) []string {
-	id := firstStringArg(args, "session_id", "sessionId", "session")
+	id := firstStringArg(args, "session", "session_id", "sessionId")
 	id = strings.TrimSpace(id)
 	if id == "" {
 		return nil
 	}
-	// Never put free-form content in keys — IDs only, bounded length.
 	if len(id) > 128 {
 		id = id[:128]
 	}
 	return []string{ResourceKeySession + id}
 }
 
-// processResourceKeys extracts process:/pty: keys for retained process tools.
+// processResourceKeys extracts process: keys for retained process / terminal
+// tools. Accepts session, session_id, pid, and numeric JSON values so
+// write_stdin (integer session_id) and terminal_session (string session)
+// both produce keys.
 func processResourceKeys(args map[string]any) []string {
-	id := firstStringArg(args, "session_id", "sessionId", "process_id", "pid", "id")
+	id := firstStringArg(args, "session", "session_id", "sessionId", "process_id", "pid", "id")
 	id = strings.TrimSpace(id)
 	if id == "" {
 		return nil
@@ -150,6 +153,58 @@ func multiFileResourceKeys(args map[string]any) []string {
 	return uniqueKeys(keys)
 }
 
+// applyPatchResourceKeys derives conflict keys for apply_patch: the cwd as a
+// directory key, plus any +++/--- file paths parseable from the unified diff.
+// Falls back to workspace:root when neither cwd nor paths are available so a
+// patch call is never "keyless" for the future conflict planner.
+func applyPatchResourceKeys(args map[string]any) []string {
+	var keys []string
+	keys = append(keys, directoryResourceKeys(args)...)
+	patch := firstStringArg(args, "patch", "diff")
+	for _, p := range pathsFromUnifiedDiff(patch) {
+		if n := NormalizeResourcePath(p); n != "" {
+			keys = append(keys, ResourceKeyFile+n)
+		}
+	}
+	keys = uniqueKeys(keys)
+	if len(keys) == 0 {
+		return workspaceResourceKeys(args)
+	}
+	return keys
+}
+
+// pathsFromUnifiedDiff extracts a/ and b/ file paths from unified-diff headers.
+// Malformed input returns nil; never panics.
+func pathsFromUnifiedDiff(patch string) []string {
+	if strings.TrimSpace(patch) == "" {
+		return nil
+	}
+	var out []string
+	for _, line := range strings.Split(patch, "\n") {
+		line = strings.TrimSpace(line)
+		switch {
+		case strings.HasPrefix(line, "+++ ") || strings.HasPrefix(line, "--- "):
+			rest := strings.TrimSpace(line[4:])
+			// Drop trailing tab timestamp if present.
+			if i := strings.IndexByte(rest, '\t'); i >= 0 {
+				rest = rest[:i]
+			}
+			if rest == "/dev/null" || rest == "" {
+				continue
+			}
+			// Strip a/ or b/ prefix common in git diffs.
+			if len(rest) > 2 && (rest[0] == 'a' || rest[0] == 'b') && rest[1] == '/' {
+				rest = rest[2:]
+			}
+			out = append(out, rest)
+		}
+	}
+	return out
+}
+
+// firstStringArg returns the first present argument as a string. Numeric JSON
+// values (float64/int from encoding/json) are coerced so tools that declare
+// integer session ids still yield resource keys.
 func firstStringArg(args map[string]any, keys ...string) string {
 	if args == nil {
 		return ""
@@ -159,15 +214,43 @@ func firstStringArg(args map[string]any, keys ...string) string {
 		if !ok || value == nil {
 			continue
 		}
-		if s, ok := value.(string); ok {
-			return s
+		switch typed := value.(type) {
+		case string:
+			return typed
+		case float64:
+			// JSON numbers decode as float64. Prefer integer form when exact.
+			if typed == float64(int64(typed)) {
+				return fmt.Sprintf("%d", int64(typed))
+			}
+			return fmt.Sprintf("%v", typed)
+		case float32:
+			return fmt.Sprintf("%v", typed)
+		case int:
+			return fmt.Sprintf("%d", typed)
+		case int64:
+			return fmt.Sprintf("%d", typed)
+		case int32:
+			return fmt.Sprintf("%d", typed)
+		case jsonNumber:
+			return typed.String()
 		}
 	}
 	return ""
 }
 
+// jsonNumber matches encoding/json.Number without importing encoding/json here
+// for a one-line type assert (tests may inject it).
+type jsonNumber interface {
+	String() string
+}
+
 // resourceHost returns a lower-cased host for endpoint keys, stripping
 // userinfo, path, query, and fragment. Returns "" when not parseable safely.
+//
+// Order matters: path/query/fragment are removed BEFORE userinfo so a query
+// value containing "@" cannot steal the authority (e.g.
+// https://api.example.com/v1?token=@secret → endpoint:api.example.com).
+// host:port is preserved so two services on different ports do not collide.
 func resourceHost(raw string) string {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -177,15 +260,14 @@ func resourceHost(raw string) string {
 	if idx := strings.Index(raw, "://"); idx >= 0 {
 		raw = raw[idx+3:]
 	}
-	// Strip userinfo.
-	if at := strings.LastIndex(raw, "@"); at >= 0 {
-		raw = raw[at+1:]
-	}
-	// Strip path/query/fragment.
+	// Isolate authority: strip path/query/fragment first.
 	if slash := strings.IndexAny(raw, "/?#"); slash >= 0 {
 		raw = raw[:slash]
 	}
-	// Strip port for stable host keys (optional — keep host:port for uniqueness).
+	// Strip userinfo from the authority only.
+	if at := strings.LastIndex(raw, "@"); at >= 0 {
+		raw = raw[at+1:]
+	}
 	raw = strings.TrimSpace(raw)
 	if raw == "" || strings.Contains(raw, "@") {
 		return ""

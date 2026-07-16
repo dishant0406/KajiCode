@@ -35,7 +35,7 @@ func NewScopedApplyPatchTool(workspaceRoot string, scope PathScope) Tool {
 				AdditionalProperties: false,
 			},
 			safety:       promptSafety(SideEffectWrite, "Applies patch hunks that can create, edit, or delete files."),
-			capabilities: ToolCapabilities{Effect: EffectWorkspaceWrite, ThreadSafe: false, ResourceKeys: multiFileResourceKeys},
+			capabilities: ToolCapabilities{Effect: EffectWorkspaceWrite, ThreadSafe: false, ResourceKeys: applyPatchResourceKeys},
 		},
 		workspaceRoot: normalizeWorkspaceRoot(workspaceRoot),
 		scope:         scope,
