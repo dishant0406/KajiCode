@@ -307,3 +307,26 @@ func TestRegistryAppliesSemanticBudgetToSelfManagedProcessOutput(t *testing.T) {
 		}
 	}
 }
+
+func TestRebudgetAfterHookPreservesSelfManagedExecBudget(t *testing.T) {
+	setTestTempDir(t)
+	registry := NewRegistry()
+	registry.Register(NewExecCommandTool(t.TempDir(), newExecSessionManager()))
+
+	t.Run("tight call budget remains authoritative", func(t *testing.T) {
+		args := map[string]any{"cmd": "make build", "max_output_tokens": 10}
+		result := registry.RebudgetAfterHook(ExecCommandToolName, args, Result{Status: StatusOK, Output: strings.Repeat("x", 1_000)})
+		if !result.Truncated || len(result.Output) > 40 {
+			t.Fatalf("post-hook output escaped call budget: truncated=%t bytes=%d meta=%#v", result.Truncated, len(result.Output), result.Meta)
+		}
+	})
+
+	t.Run("raised call budget is not replaced by generic ceiling", func(t *testing.T) {
+		args := map[string]any{"cmd": "make build", "max_output_tokens": 20_000}
+		output := strings.Repeat("x", 70_000)
+		result := registry.RebudgetAfterHook(ExecCommandToolName, args, Result{Status: StatusOK, Output: output})
+		if result.Truncated || result.Output != output {
+			t.Fatalf("post-hook output was incorrectly limited by generic ceiling: truncated=%t bytes=%d", result.Truncated, len(result.Output))
+		}
+	})
+}

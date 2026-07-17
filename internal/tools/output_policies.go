@@ -398,21 +398,28 @@ func collapseConsecutiveDuplicateLines(lines []string) []string {
 }
 
 func searchResultFile(line string) string {
-	// Search output is path:line: text. Locate the numeric line field from
-	// the right so a Windows drive prefix (C:) remains part of the path.
-	for end := len(line); end > 0; {
-		lineEnd := strings.LastIndex(line[:end], ":")
-		if lineEnd < 0 {
+	// Search output is path:line: text. Locate the first numeric field from
+	// the left after an optional Windows drive prefix. Match text may itself
+	// contain numeric colon-delimited fields, which are not record structure.
+	searchFrom := 0
+	if len(line) >= 2 && line[1] == ':' && ((line[0] >= 'A' && line[0] <= 'Z') || (line[0] >= 'a' && line[0] <= 'z')) {
+		searchFrom = 2
+	}
+	for searchFrom < len(line) {
+		lineStartOffset := strings.IndexByte(line[searchFrom:], ':')
+		if lineStartOffset < 0 {
 			return ""
 		}
-		lineStart := strings.LastIndex(line[:lineEnd], ":")
-		if lineStart < 0 {
+		lineStart := searchFrom + lineStartOffset
+		lineEndOffset := strings.IndexByte(line[lineStart+1:], ':')
+		if lineEndOffset < 0 {
 			return ""
 		}
+		lineEnd := lineStart + 1 + lineEndOffset
 		if _, err := strconv.Atoi(line[lineStart+1 : lineEnd]); err == nil {
 			return strings.TrimSpace(line[:lineStart])
 		}
-		end = lineStart
+		searchFrom = lineStart + 1
 	}
 	return ""
 }

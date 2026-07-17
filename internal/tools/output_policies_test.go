@@ -58,6 +58,22 @@ func TestSearchOutputPolicyPreservesWindowsPathCoverage(t *testing.T) {
 	}
 }
 
+func TestSearchResultFileIgnoresNumericMatchContent(t *testing.T) {
+	tests := []struct {
+		line string
+		want string
+	}{
+		{line: `C:\workspace\a.go:12: error code:123: failed`, want: `C:\workspace\a.go`},
+		{line: `/workspace/a.go:12: error code:123: failed`, want: `/workspace/a.go`},
+		{line: `/workspace/name:with-colon.go:12: match`, want: `/workspace/name:with-colon.go`},
+	}
+	for _, test := range tests {
+		if got := searchResultFile(test.line); got != test.want {
+			t.Errorf("searchResultFile(%q) = %q, want %q", test.line, got, test.want)
+		}
+	}
+}
+
 func TestProcessOutputPolicyCollapsesRepetitiveLogsAndKeepsDiagnostics(t *testing.T) {
 	input := "starting server\n" + strings.Repeat("polling...\n", 300) + "WARNING: queue slow\nERROR: request failed\nshutdown complete"
 	got := budgetSemanticOutput(input, outputCategoryProcess, semanticTestBudget())
