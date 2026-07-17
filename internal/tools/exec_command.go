@@ -428,11 +428,12 @@ type execCommandTool struct {
 }
 
 func (execCommandTool) outputCategory(args map[string]any) outputCategory {
-	command, _ := args["cmd"].(string)
-	if command == "" {
-		command, _ = args["command"].(string)
-	}
+	command, _ := execCommandArg(args)
 	return shellOutputCategory(command)
+}
+
+func execCommandArg(args map[string]any) (string, error) {
+	return aliasedStringArg(args, []string{"cmd", "command", "script", "shell"}, "", true, false)
 }
 
 func NewExecCommandTool(workspaceRoot string, manager *execSessionManager) Tool {
@@ -507,7 +508,7 @@ func (tool execCommandTool) StopAllExecSessions() []int {
 }
 
 func (tool execCommandTool) run(ctx context.Context, args map[string]any, engine *zeroSandbox.Engine, directBudget bool) Result {
-	commandText, err := aliasedStringArg(args, []string{"cmd", "command", "script", "shell"}, "", true, false)
+	commandText, err := execCommandArg(args)
 	if err != nil {
 		return errorResult("Error: Invalid arguments for exec_command: " + err.Error())
 	}

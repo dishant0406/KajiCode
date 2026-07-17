@@ -2,6 +2,8 @@ package trace
 
 import (
 	"bytes"
+	"encoding/json"
+	"io"
 	"strings"
 	"testing"
 )
@@ -25,8 +27,52 @@ func TestOutputBudgetTraceRoundTripContainsNoOutput(t *testing.T) {
 	if err := WriteNDJSON(&encoded, recorder.Finish()); err != nil {
 		t.Fatalf("WriteNDJSON: %v", err)
 	}
-	if strings.Contains(encoded.String(), "secret output body") {
-		t.Fatal("trace unexpectedly contains output text")
+	allowedKeys := map[string]bool{
+		"type": true, "tool": true, "category": true, "original_bytes": true, "retained_bytes": true,
+		"estimated_original_tokens": true, "estimated_retained_tokens": true, "truncated": true,
+		"reason": true, "spill_created": true,
+	}
+	findUndocumentedKey := func(record map[string]any) string {
+		for key := range record {
+			if !allowedKeys[key] {
+				return key
+			}
+		}
+		return ""
+	}
+	decoder := json.NewDecoder(strings.NewReader(encoded.String()))
+	var outputBudgetRecord map[string]any
+	for {
+		var record map[string]any
+		if err := decoder.Decode(&record); err != nil {
+			if err == io.EOF {
+				break
+			}
+			t.Fatalf("decode trace record: %v", err)
+		}
+		if record["type"] == "output_budget" {
+			outputBudgetRecord = record
+			break
+		}
+	}
+	if outputBudgetRecord == nil {
+		t.Fatal("missing output_budget trace record")
+	}
+	if key := findUndocumentedKey(outputBudgetRecord); key != "" {
+		t.Fatalf("output_budget trace contains undocumented key %q", key)
+	}
+	for key := range allowedKeys {
+		if _, exists := outputBudgetRecord[key]; !exists {
+			t.Fatalf("output_budget trace missing documented key %q", key)
+		}
+	}
+	contaminated := make(map[string]any, len(outputBudgetRecord)+1)
+	for key, value := range outputBudgetRecord {
+		contaminated[key] = value
+	}
+	contaminated["output"] = "secret output body"
+	if key := findUndocumentedKey(contaminated); key == "" {
+		t.Fatal("trace key validation would allow raw secret output")
 	}
 	parsed, err := ReadNDJSON(strings.NewReader(encoded.String()))
 	if err != nil {

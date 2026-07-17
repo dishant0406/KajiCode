@@ -24,11 +24,12 @@ type bashTool struct {
 }
 
 func (bashTool) outputCategory(args map[string]any) outputCategory {
-	command, _ := args["command"].(string)
-	if command == "" {
-		command, _ = args["cmd"].(string)
-	}
+	command, _ := bashCommandArg(args)
 	return shellOutputCategory(command)
+}
+
+func bashCommandArg(args map[string]any) (string, error) {
+	return aliasedStringArg(args, []string{"command", "cmd", "script", "shell"}, "", true, false)
 }
 
 func NewBashTool(workspaceRoot string) Tool {
@@ -83,7 +84,7 @@ func (tool bashTool) RunWithOptions(ctx context.Context, args map[string]any, op
 }
 
 func (tool bashTool) run(ctx context.Context, args map[string]any, engine *zeroSandbox.Engine, directBudget bool) Result {
-	commandText, err := aliasedStringArg(args, []string{"command", "cmd", "script", "shell"}, "", true, false)
+	commandText, err := bashCommandArg(args)
 	if err != nil {
 		return errorResult("Error: Invalid arguments for bash: " + err.Error())
 	}

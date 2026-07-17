@@ -28,6 +28,18 @@ func applyRegistryOutputBudget(tool Tool, toolName string, args map[string]any, 
 	if budgeted.truncated {
 		budgeted = attachExistingSpill(toolName, result.Output, budget, budgeted)
 	}
+	if result.Truncated {
+		budgeted.truncated = true
+		if budgeted.reason == "" {
+			budgeted.reason = result.Meta["truncation_reason"]
+			if budgeted.reason == "" {
+				budgeted.reason = "upstream_tool_budget"
+			}
+		}
+		if budgeted.spillPath == "" {
+			budgeted.spillPath = result.Meta["spill_path"]
+		}
+	}
 	result.Output = budgeted.text
 	result.Truncated = result.Truncated || budgeted.truncated
 	result.Meta = addOutputBudgetMetadata(result.Meta, budgeted)
@@ -219,6 +231,11 @@ func addOutputBudgetMetadata(meta map[string]string, output budgetedOutput) map[
 	meta[outputBudgetEstimatedOriginalTokensMeta] = strconv.Itoa(output.estimatedOriginalTokens)
 	meta[outputBudgetEstimatedRetainedTokensMeta] = strconv.Itoa(output.estimatedRetainedTokens)
 	meta[outputBudgetSpillCreatedMeta] = strconv.FormatBool(output.spillPath != "")
+	// These established fields describe the final model-visible output. Refresh
+	// them on every pass because redaction and after-tool hooks may change the
+	// text even when this pass does not newly truncate it.
+	meta["emitted_bytes"] = strconv.Itoa(output.retainedBytes)
+	meta["estimated_tokens"] = strconv.Itoa(output.estimatedRetainedTokens)
 	if output.reason != "" {
 		meta[outputBudgetReasonMeta] = output.reason
 	}
@@ -226,13 +243,6 @@ func addOutputBudgetMetadata(meta map[string]string, output budgetedOutput) map[
 		// Preserve the existing metadata vocabulary used by callers and tests.
 		if _, exists := meta["raw_bytes"]; !exists {
 			meta["raw_bytes"] = strconv.Itoa(output.originalBytes)
-		}
-		// This is the final, model-visible output after semantic budgeting. A
-		// tool may have reported its pre-budget emitted size, but retaining that
-		// value here would make the established field disagree with Output.
-		meta["emitted_bytes"] = strconv.Itoa(output.retainedBytes)
-		if _, exists := meta["estimated_tokens"]; !exists {
-			meta["estimated_tokens"] = strconv.Itoa(output.estimatedRetainedTokens)
 		}
 		meta["truncated"] = "true"
 		meta["truncation_reason"] = output.reason

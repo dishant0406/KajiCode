@@ -238,6 +238,55 @@ func TestShellOutputCategoryClassification(t *testing.T) {
 	}
 }
 
+func TestShellToolOutputCategoryUsesAllCommandAliases(t *testing.T) {
+	providers := []struct {
+		name     string
+		provider outputPolicyProvider
+	}{
+		{name: "bash", provider: NewBashTool(t.TempDir()).(outputPolicyProvider)},
+		{name: "exec_command", provider: NewExecCommandTool(t.TempDir(), newExecSessionManager()).(outputPolicyProvider)},
+	}
+	for _, provider := range providers {
+		for _, alias := range []string{"command", "cmd", "script", "shell"} {
+			t.Run(provider.name+"/"+alias, func(t *testing.T) {
+				if got := provider.provider.outputCategory(map[string]any{alias: "go test ./..."}); got != outputCategoryTest {
+					t.Fatalf("category = %q, want test", got)
+				}
+			})
+		}
+	}
+
+	if got := providers[0].provider.outputCategory(map[string]any{"command": "make build", "cmd": "go test ./..."}); got != outputCategoryProcess {
+		t.Fatalf("bash alias precedence category = %q, want process", got)
+	}
+	if got := providers[1].provider.outputCategory(map[string]any{"cmd": "go test ./...", "command": "make build"}); got != outputCategoryTest {
+		t.Fatalf("exec_command alias precedence category = %q, want test", got)
+	}
+}
+
+func TestRegistryBudgetPreservesExistingTruncationAndRefreshesMetadata(t *testing.T) {
+	output := "post-hook output"
+	result := applyRegistryOutputBudget(newCeilingFakeTool("existing_truncation", output), "existing_truncation", map[string]any{}, Result{
+		Status:    StatusOK,
+		Output:    output,
+		Truncated: true,
+		Meta: map[string]string{
+			"emitted_bytes":     "999",
+			"estimated_tokens":  "999",
+			"truncation_reason": "capture_budget",
+		},
+	})
+	if !result.Truncated || result.Meta["truncated"] != "true" || result.Meta[outputBudgetReasonMeta] != "capture_budget" {
+		t.Fatalf("prior truncation state was lost: %#v", result)
+	}
+	if result.Meta["emitted_bytes"] != strconv.Itoa(len(output)) || result.Meta["estimated_tokens"] != strconv.Itoa(estimateOutputTokens(output)) {
+		t.Fatalf("final output metadata is stale: %#v", result.Meta)
+	}
+	if result.Meta[outputBudgetSpillCreatedMeta] != "false" {
+		t.Fatalf("existing truncation unexpectedly created a new spill: %#v", result.Meta)
+	}
+}
+
 func TestSelfManagedOutputBudgetUsesSemanticTestPolicy(t *testing.T) {
 	setTestTempDir(t)
 	input := "stdout:\n" + strings.Repeat("PASS progress\n", 8_000) +
