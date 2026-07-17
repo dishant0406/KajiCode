@@ -23,6 +23,14 @@ type bashTool struct {
 	scope         PathScope
 }
 
+func (bashTool) outputCategory(args map[string]any) outputCategory {
+	command, _ := args["command"].(string)
+	if command == "" {
+		command, _ = args["cmd"].(string)
+	}
+	return shellOutputCategory(command)
+}
+
 func NewBashTool(workspaceRoot string) Tool {
 	return NewScopedBashTool(workspaceRoot, nil)
 }

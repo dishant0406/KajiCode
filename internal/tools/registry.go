@@ -131,7 +131,9 @@ func (registry *Registry) RunWithOptions(ctx context.Context, name string, args 
 	var ok bool
 	defer func() {
 		result = scrubResultSecrets(result)
-		if !ceilingExempt {
+		if ceilingExempt {
+			result = annotateSelfBudgetedOutput(tool, name, args, result)
+		} else {
 			result = applyRegistryOutputBudget(tool, name, args, result)
 			result = enforceOutputCeiling(name, result)
 		}

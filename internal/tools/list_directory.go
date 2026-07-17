@@ -15,6 +15,10 @@ type listDirectoryTool struct {
 	scope         PathScope
 }
 
+func (listDirectoryTool) outputCategory(map[string]any) outputCategory {
+	return outputCategorySearch
+}
+
 func NewListDirectoryTool(workspaceRoot string) Tool {
 	return NewScopedListDirectoryTool(workspaceRoot, nil)
 }
@@ -76,13 +80,7 @@ func (tool listDirectoryTool) Run(_ context.Context, args map[string]any) Result
 		return okResult("Directory is empty: " + relativePath)
 	}
 	output := "Contents of " + relativePath + ":\n\n" + strings.Join(entries, "\n")
-	budgeted := applyOutputBudget(output, searchOutputBudgetBytes, "use path, recursive=false, or a smaller max_depth to narrow the listing")
-	meta := outputBudgetMeta(budgeted)
-	if budgeted.Truncated {
-		meta["truncated"] = "true"
-		meta["truncation_reason"] = "byte_budget"
-	}
-	return Result{Status: StatusOK, Output: budgeted.Output, Truncated: budgeted.Truncated, Meta: meta}
+	return Result{Status: StatusOK, Output: output}
 }
 
 func listDirectoryEntries(path string, depth int, maxDepth int) ([]string, error) {

@@ -83,3 +83,86 @@ func TestRegistrySmallOutputRemainsByteIdentical(t *testing.T) {
 		t.Fatalf("small output changed: %#v", result)
 	}
 }
+
+func TestRegistryLargeFileUsesSemanticFilePolicy(t *testing.T) {
+	setTestTempDir(t)
+	root := t.TempDir()
+	var content strings.Builder
+	content.WriteString("HEAD_MARK\n")
+	for line := 0; line < 7000; line++ {
+		content.WriteString("ordinary source line with enough text to fill the output budget\n")
+	}
+	content.WriteString("TAIL_MARK\n")
+	if err := os.WriteFile(filepath.Join(root, "large.txt"), []byte(content.String()), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	registry := NewRegistry()
+	registry.Register(NewReadFileTool(root))
+	result := registry.Run(context.Background(), "read_file", map[string]any{"path": "large.txt"})
+	if !result.Truncated || result.Meta[outputBudgetCategoryMeta] != string(outputCategoryFile) {
+		t.Fatalf("large file was not semantically budgeted: truncated=%t meta=%#v", result.Truncated, result.Meta)
+	}
+	if len(result.Output) > readOutputBudgetBytes {
+		t.Fatalf("large file output = %d bytes, ceiling %d", len(result.Output), readOutputBudgetBytes)
+	}
+	for _, want := range []string{"File: large.txt", "HEAD_MARK", "TAIL_MARK"} {
+		if !strings.Contains(result.Output, want) {
+			t.Fatalf("large file output missing %q", want)
+		}
+	}
+}
+
+func TestRegistryGrepUsesSemanticMultiFileCoverage(t *testing.T) {
+	setTestTempDir(t)
+	root := t.TempDir()
+	for _, name := range []string{"a.txt", "b.txt", "c.txt", "d.txt"} {
+		body := strings.Repeat("needle "+strings.Repeat(name, 15)+"\n", 350)
+		if err := os.WriteFile(filepath.Join(root, name), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	registry := NewRegistry()
+	registry.Register(NewGrepTool(root))
+	result := registry.Run(context.Background(), "grep", map[string]any{
+		"pattern":    "needle",
+		"path":       ".",
+		"head_limit": 1400,
+	})
+	if !result.Truncated || result.Meta[outputBudgetCategoryMeta] != string(outputCategorySearch) {
+		t.Fatalf("grep was not semantically budgeted: truncated=%t meta=%#v", result.Truncated, result.Meta)
+	}
+	for _, name := range []string{"a.txt:", "b.txt:", "c.txt:", "d.txt:"} {
+		if !strings.Contains(result.Output, name) {
+			t.Fatalf("search output lost %s coverage", name)
+		}
+	}
+}
+
+func TestShellOutputCategoryClassification(t *testing.T) {
+	tests := []struct {
+		command string
+		want    outputCategory
+	}{
+		{"go test ./...", outputCategoryTest},
+		{"python -m pytest -q", outputCategoryTest},
+		{"git diff --stat main...HEAD", outputCategoryDiff},
+		{"git show HEAD", outputCategoryDiff},
+		{"make build", outputCategoryProcess},
+	}
+	for _, test := range tests {
+		if got := shellOutputCategory(test.command); got != test.want {
+			t.Errorf("shellOutputCategory(%q) = %q, want %q", test.command, got, test.want)
+		}
+	}
+}
+
+func TestSelfBudgetedToolDeclaresSemanticCategoryWithoutRebudgeting(t *testing.T) {
+	registry := NewRegistry()
+	registry.Register(NewBashTool(t.TempDir()))
+	tool, _ := registry.Get("bash")
+	result := Result{Status: StatusOK, Output: "already bounded", Meta: map[string]string{}}
+	got := annotateSelfBudgetedOutput(tool, "bash", map[string]any{"command": "go test ./..."}, result)
+	if got.Output != result.Output || got.Meta[outputBudgetCategoryMeta] != string(outputCategoryTest) {
+		t.Fatalf("self-budgeted category annotation changed output or lost category: %#v", got)
+	}
+}

@@ -18,6 +18,8 @@ type readFileTool struct {
 	scope         PathScope
 }
 
+func (readFileTool) outputCategory(map[string]any) outputCategory { return outputCategoryFile }
+
 func NewReadFileTool(workspaceRoot string) Tool {
 	return NewScopedReadFileTool(workspaceRoot, nil)
 }
@@ -50,10 +52,14 @@ func NewScopedReadFileTool(workspaceRoot string, scope PathScope) Tool {
 }
 
 func (tool readFileTool) Run(ctx context.Context, args map[string]any) Result {
-	return tool.RunWithOptions(ctx, args, RunOptions{})
+	return tool.run(args, RunOptions{}, true)
 }
 
 func (tool readFileTool) RunWithOptions(_ context.Context, args map[string]any, options RunOptions) Result {
+	return tool.run(args, options, false)
+}
+
+func (tool readFileTool) run(args map[string]any, options RunOptions, directBudget bool) Result {
 	requestedPath, err := aliasedStringArg(args, []string{"path", "file", "file_path", "filepath", "filename"}, "", true, false)
 	if err != nil {
 		return errorResult("Error: Invalid arguments for read_file: " + err.Error())
@@ -86,7 +92,11 @@ func (tool readFileTool) RunWithOptions(_ context.Context, args map[string]any, 
 	// not the authoritative content hash.
 	options.FileTracker.RecordHash(absolutePath, stats.hash, stats.info)
 
-	return renderReadFileRange(absolutePath, relativePath, stats.lines, startLine, endLine, maxLines)
+	result := renderReadFileRange(absolutePath, relativePath, stats.lines, startLine, endLine, maxLines)
+	if directBudget {
+		return applyLegacyByteBudgetToResult(result, readOutputBudgetBytes, "use start_line/end_line or max_lines to continue with a smaller range")
+	}
+	return result
 }
 
 func renderReadFileRange(absolutePath string, relativePath string, total int, startLine int, endLine int, maxLines int) Result {
@@ -114,7 +124,10 @@ func renderReadFileRange(absolutePath string, relativePath string, total int, st
 		header = fmt.Sprintf("File: %s (lines %d-%d of %d)", relativePath, startLine, lastLine, total)
 	}
 
-	budgetedOutput := newOutputBudgetBuilder(readOutputBudgetBytes, "use start_line/end_line or max_lines to continue with a smaller range")
+	// The shared registry boundary applies the file policy after redaction. Build
+	// the requested range here without a second byte-prefix truncation so that
+	// policy can retain both its beginning and end.
+	budgetedOutput := newOutputBudgetBuilder(0, "")
 	budgetedOutput.WriteString(header)
 	budgetedOutput.WriteString("\n\n")
 	if err := appendReadFileRange(budgetedOutput, absolutePath, startLine, selectedLines, width); err != nil {
@@ -128,15 +141,15 @@ func renderReadFileRange(absolutePath string, relativePath string, total int, st
 	}
 
 	budgeted := budgetedOutput.Result()
-	meta := outputBudgetMeta(budgeted)
-	if budgeted.Truncated {
+	meta := map[string]string{}
+	if truncated {
 		meta["truncated"] = "true"
-		meta["truncation_reason"] = "byte_budget"
+		meta["truncation_reason"] = "max_lines"
 	}
 	return Result{
 		Status:    StatusOK,
 		Output:    budgeted.Output,
-		Truncated: truncated || budgeted.Truncated,
+		Truncated: truncated,
 		Meta:      meta,
 	}
 }

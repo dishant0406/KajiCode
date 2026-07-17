@@ -18,6 +18,8 @@ type globTool struct {
 	scope         PathScope
 }
 
+func (globTool) outputCategory(map[string]any) outputCategory { return outputCategorySearch }
+
 func NewGlobTool(workspaceRoot string) Tool {
 	return NewScopedGlobTool(workspaceRoot, nil)
 }
@@ -110,22 +112,17 @@ func (tool globTool) runWith(ctx context.Context, args map[string]any, exclude r
 	if truncated {
 		output += fmt.Sprintf("\n\n[truncated: showing first %d of %d matches; increase limit or narrow cwd/pattern]", len(matches), totalMatches)
 	}
-	budgeted := applyOutputBudget(output, searchOutputBudgetBytes, "increase limit or narrow cwd/pattern")
-	meta := outputBudgetMeta(budgeted)
+	meta := map[string]string{}
 	meta["pattern"] = pattern
-	if truncated || budgeted.Truncated {
+	if truncated {
 		meta["truncated"] = "true"
-		if budgeted.Truncated {
-			meta["truncation_reason"] = "byte_budget"
-		} else {
-			meta["truncation_reason"] = "limit"
-		}
+		meta["truncation_reason"] = "limit"
 	}
 
 	return Result{
 		Status:    StatusOK,
-		Output:    budgeted.Output,
-		Truncated: truncated || budgeted.Truncated,
+		Output:    output,
+		Truncated: truncated,
 		Meta:      meta,
 	}
 }

@@ -31,17 +31,12 @@ const outputCeilingEnv = "ZERO_TOOL_OUTPUT_CEILING_TOKENS"
 // package can opt out, so an MCP-served tool can never exempt itself.
 type selfBudgeting interface{ managesOutputBudget() }
 
-// The exemption list, kept in one place. Each of these applies its own budget
-// before returning: bash (bashOutputBudgetBytes per stream + spill),
-// exec_command (model-raisable token budget + spill), read tools (128 KiB),
-// search tools (64 KiB).
-func (bashTool) managesOutputBudget()             {}
-func (execCommandTool) managesOutputBudget()      {}
-func (readFileTool) managesOutputBudget()         {}
-func (readMinifiedFileTool) managesOutputBudget() {}
-func (grepTool) managesOutputBudget()             {}
-func (globTool) managesOutputBudget()             {}
-func (listDirectoryTool) managesOutputBudget()    {}
+// The exemption list, kept in one place. Shell/process tools retain their
+// established capture-aware budgets: bash (per-stream budget + spill) and
+// exec_command (model-raisable budget + spill). File/search tools now use the
+// shared post-redaction semantic boundary.
+func (bashTool) managesOutputBudget()        {}
+func (execCommandTool) managesOutputBudget() {}
 
 func resolveOutputCeilingTokens() int {
 	raw := strings.TrimSpace(os.Getenv(outputCeilingEnv))
@@ -61,6 +56,12 @@ func resolveOutputCeilingTokens() int {
 // and the spill file agree on what was hidden.
 func enforceOutputCeiling(toolName string, result Result) Result {
 	ceiling := resolveOutputCeilingTokens()
+	switch toolName {
+	case "read_file", "read_minified_file":
+		ceiling = readOutputBudgetBytes / 4
+	case "grep", "glob", "list_directory":
+		ceiling = searchOutputBudgetBytes / 4
+	}
 	if ceiling <= 0 {
 		return result
 	}

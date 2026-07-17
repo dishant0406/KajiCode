@@ -1,7 +1,6 @@
 package tools
 
 import (
-	"fmt"
 	"strconv"
 	"strings"
 )
@@ -19,19 +18,12 @@ const (
 // applyRegistryOutputBudget is the common post-redaction semantic budgeting
 // boundary for tools that do not already own a deliberate output budget.
 func applyRegistryOutputBudget(tool Tool, toolName string, args map[string]any, result Result) Result {
-	ceilingTokens := resolveOutputCeilingTokens()
-	if ceilingTokens <= 0 {
+	budget := registryOutputBudget(toolName)
+	if budget.maxEstimatedTokens <= 0 && budget.hardMaxBytes <= 0 {
 		return result // preserve ZERO_TOOL_OUTPUT_CEILING_TOKENS=0 semantics
 	}
 
-	category := outputCategoryDefault
-	if provider, ok := tool.(outputPolicyProvider); ok {
-		category = provider.outputCategory(args)
-	}
-	budget := outputBudget{
-		maxEstimatedTokens: ceilingTokens,
-		hardMaxBytes:       ceilingTokens * 4,
-	}
+	category := resolveOutputCategory(tool, toolName, args)
 	budgeted := budgetSemanticOutput(result.Output, category, budget)
 	if budgeted.truncated {
 		budgeted = attachExistingSpill(toolName, result.Output, budget, budgeted)
@@ -40,6 +32,86 @@ func applyRegistryOutputBudget(tool Tool, toolName string, args map[string]any, 
 	result.Truncated = result.Truncated || budgeted.truncated
 	result.Meta = addOutputBudgetMetadata(result.Meta, budgeted)
 	return result
+}
+
+func registryOutputBudget(toolName string) outputBudget {
+	switch toolName {
+	case "read_file", "read_minified_file":
+		return outputBudget{maxEstimatedTokens: readOutputBudgetBytes / 4, hardMaxBytes: readOutputBudgetBytes}
+	case "grep", "glob", "list_directory":
+		return outputBudget{maxEstimatedTokens: searchOutputBudgetBytes / 4, hardMaxBytes: searchOutputBudgetBytes}
+	default:
+		ceilingTokens := resolveOutputCeilingTokens()
+		if ceilingTokens <= 0 {
+			return outputBudget{}
+		}
+		return outputBudget{maxEstimatedTokens: ceilingTokens, hardMaxBytes: ceilingTokens * 4}
+	}
+}
+
+func resolveOutputCategory(tool Tool, toolName string, args map[string]any) outputCategory {
+	if provider, ok := tool.(outputPolicyProvider); ok {
+		if category := provider.outputCategory(args); category != "" {
+			return category
+		}
+	}
+	switch toolName {
+	case "Task", "swarm_collect":
+		return outputCategoryWorker
+	case "apply_patch":
+		return outputCategoryDiff
+	case "write_stdin":
+		return outputCategoryProcess
+	default:
+		return outputCategoryDefault
+	}
+}
+
+// annotateSelfBudgetedOutput records the same compact metadata for tools whose
+// existing capture/budget implementation remains authoritative in PR11. It
+// does not re-budget their text or claim that raw_bytes represents every byte a
+// subprocess produced beyond its established capture limits.
+func annotateSelfBudgetedOutput(tool Tool, toolName string, args map[string]any, result Result) Result {
+	retainedBytes := len(result.Output)
+	originalBytes := retainedBytes
+	if parsed, err := strconv.Atoi(result.Meta["raw_bytes"]); err == nil && parsed > originalBytes {
+		originalBytes = parsed
+	}
+	retainedTokens := estimateOutputTokens(result.Output)
+	originalTokens := retainedTokens
+	if originalBytes > retainedBytes {
+		originalTokens = max(originalTokens, estimatedTokensFromBytes(originalBytes))
+	}
+	reason := result.Meta["truncation_reason"]
+	if result.Truncated && reason == "" {
+		reason = "upstream_tool_budget"
+	}
+	observed := budgetedOutput{
+		text:                    result.Output,
+		originalBytes:           originalBytes,
+		retainedBytes:           retainedBytes,
+		estimatedOriginalTokens: originalTokens,
+		estimatedRetainedTokens: retainedTokens,
+		truncated:               result.Truncated,
+		category:                resolveOutputCategory(tool, toolName, args),
+		reason:                  reason,
+		spillPath:               result.Meta["spill_path"],
+	}
+	result.Meta = addOutputBudgetMetadata(result.Meta, observed)
+	return result
+}
+
+func shellOutputCategory(command string) outputCategory {
+	normalized := strings.ToLower(strings.TrimSpace(command))
+	if containsAny(normalized,
+		"go test", "pytest", "python -m pytest", "cargo test", "npm test", "npm run test",
+		"pnpm test", "yarn test", "bun test", "dotnet test", "mvn test", "gradle test", "phpunit") {
+		return outputCategoryTest
+	}
+	if containsAny(normalized, "git diff", "git show", "git format-patch", " diff -u", "diff --git") || strings.HasPrefix(normalized, "diff ") {
+		return outputCategoryDiff
+	}
+	return outputCategoryProcess
 }
 
 // attachExistingSpill reuses Zero's hardened per-user spill directory. output
@@ -61,6 +133,7 @@ func attachExistingSpill(toolName, output string, budget outputBudget, current b
 		// An unusually long temp path or tiny configured ceiling can leave no
 		// room for the full notice. Keep the safe bounded result; the spill still
 		// exists but is intentionally not advertised with a chopped reference.
+		current.spillPath = path
 		return current
 	}
 	base.text = text
@@ -85,9 +158,15 @@ func addOutputBudgetMetadata(meta map[string]string, output budgetedOutput) map[
 	}
 	if output.truncated {
 		// Preserve the existing metadata vocabulary used by callers and tests.
-		meta["raw_bytes"] = strconv.Itoa(output.originalBytes)
-		meta["emitted_bytes"] = strconv.Itoa(output.retainedBytes)
-		meta["estimated_tokens"] = strconv.Itoa(output.estimatedRetainedTokens)
+		if _, exists := meta["raw_bytes"]; !exists {
+			meta["raw_bytes"] = strconv.Itoa(output.originalBytes)
+		}
+		if _, exists := meta["emitted_bytes"]; !exists {
+			meta["emitted_bytes"] = strconv.Itoa(output.retainedBytes)
+		}
+		if _, exists := meta["estimated_tokens"]; !exists {
+			meta["estimated_tokens"] = strconv.Itoa(output.estimatedRetainedTokens)
+		}
 		meta["truncated"] = "true"
 		meta["truncation_reason"] = output.reason
 	}
@@ -95,8 +174,4 @@ func addOutputBudgetMetadata(meta map[string]string, output budgetedOutput) map[
 		meta["spill_path"] = output.spillPath
 	}
 	return meta
-}
-
-func outputBudgetDebugString(output budgetedOutput) string {
-	return fmt.Sprintf("category=%s original=%d retained=%d truncated=%t reason=%s", output.category, output.originalBytes, output.retainedBytes, output.truncated, output.reason)
 }

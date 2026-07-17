@@ -123,11 +123,6 @@ func TestSelfBudgetingExemptionList(t *testing.T) {
 	exempt := []Tool{
 		NewBashTool(dir),
 		NewExecCommandTool(dir, newExecSessionManager()),
-		NewReadFileTool(dir),
-		NewReadMinifiedFileTool(dir),
-		NewGrepTool(dir),
-		NewGlobTool(dir),
-		NewListDirectoryTool(dir),
 	}
 	for _, tool := range exempt {
 		if _, ok := tool.(selfBudgeting); !ok {
@@ -136,5 +131,10 @@ func TestSelfBudgetingExemptionList(t *testing.T) {
 	}
 	if _, ok := NewWebFetchTool().(selfBudgeting); ok {
 		t.Error("web_fetch must NOT be exempt — the ceiling is its only budget")
+	}
+	for _, tool := range []Tool{NewReadFileTool(dir), NewReadMinifiedFileTool(dir), NewGrepTool(dir), NewGlobTool(dir), NewListDirectoryTool(dir)} {
+		if _, ok := tool.(selfBudgeting); ok {
+			t.Errorf("%s must use the shared post-redaction budget boundary", tool.Name())
+		}
 	}
 }

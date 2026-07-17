@@ -21,6 +21,8 @@ type grepTool struct {
 	scope         PathScope
 }
 
+func (grepTool) outputCategory(map[string]any) outputCategory { return outputCategorySearch }
+
 type grepMatch struct {
 	file string
 	line int
@@ -455,13 +457,7 @@ func (collector *grepFileListCollector) result() Result {
 		return okResult("No matches found.")
 	}
 	sort.Strings(collector.files)
-	budgeted := applyOutputBudget(strings.Join(collector.files, "\n"), searchOutputBudgetBytes, "narrow path/glob/pattern to continue")
-	meta := outputBudgetMeta(budgeted)
-	if budgeted.Truncated {
-		meta["truncated"] = "true"
-		meta["truncation_reason"] = "byte_budget"
-	}
-	return Result{Status: StatusOK, Output: budgeted.Output, Truncated: budgeted.Truncated, Meta: meta}
+	return Result{Status: StatusOK, Output: strings.Join(collector.files, "\n")}
 }
 
 type grepContentCollector struct {
@@ -494,20 +490,15 @@ func (collector *grepContentCollector) result() Result {
 	if truncated {
 		output += fmt.Sprintf("\n\n[truncated: showing first %d matches; narrow path/glob/pattern or increase head_limit]", len(lines))
 	}
-	budgeted := applyOutputBudget(output, searchOutputBudgetBytes, "narrow path/glob/pattern or increase head_limit")
-	meta := outputBudgetMeta(budgeted)
-	if truncated || budgeted.Truncated {
+	meta := map[string]string{}
+	if truncated {
 		meta["truncated"] = "true"
-		if budgeted.Truncated {
-			meta["truncation_reason"] = "byte_budget"
-		} else {
-			meta["truncation_reason"] = "head_limit"
-		}
+		meta["truncation_reason"] = "head_limit"
 	}
 	return Result{
 		Status:    StatusOK,
-		Output:    budgeted.Output,
-		Truncated: truncated || budgeted.Truncated,
+		Output:    output,
+		Truncated: truncated,
 		Meta:      meta,
 	}
 }

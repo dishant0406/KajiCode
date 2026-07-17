@@ -427,6 +427,14 @@ type execCommandTool struct {
 	manager       *execSessionManager
 }
 
+func (execCommandTool) outputCategory(args map[string]any) outputCategory {
+	command, _ := args["cmd"].(string)
+	if command == "" {
+		command, _ = args["command"].(string)
+	}
+	return shellOutputCategory(command)
+}
+
 func NewExecCommandTool(workspaceRoot string, manager *execSessionManager) Tool {
 	return NewScopedExecCommandTool(workspaceRoot, nil, manager)
 }
@@ -692,6 +700,10 @@ func (session *execSession) collect(ctx context.Context, wait time.Duration) (st
 type writeStdinTool struct {
 	baseTool
 	manager *execSessionManager
+}
+
+func (writeStdinTool) outputCategory(map[string]any) outputCategory {
+	return outputCategoryProcess
 }
 
 func NewWriteStdinTool(manager *execSessionManager) Tool {

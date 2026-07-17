@@ -223,11 +223,35 @@ func newOutputBudgetBuilder(maxBytes int, hint string) *outputBudgetBuilder {
 
 func (builder *outputBudgetBuilder) WriteString(value string) {
 	builder.rawBytes += len(value)
-	if builder.maxBytes <= 0 || builder.builder.Len() >= builder.maxBytes {
+	if builder.maxBytes <= 0 {
+		builder.builder.WriteString(value)
+		return
+	}
+	if builder.builder.Len() >= builder.maxBytes {
 		return
 	}
 	remaining := builder.maxBytes - builder.builder.Len()
 	builder.builder.WriteString(utf8Prefix(value, remaining))
+}
+
+// applyLegacyByteBudgetToResult preserves direct Tool.Run behavior for callers
+// that intentionally bypass Registry.RunWithOptions. Agent/MCP execution uses
+// the registry's post-redaction semantic boundary instead.
+func applyLegacyByteBudgetToResult(result Result, maxBytes int, hint string) Result {
+	budgeted := applyOutputBudget(result.Output, maxBytes, hint)
+	result.Output = budgeted.Output
+	result.Truncated = result.Truncated || budgeted.Truncated
+	if result.Meta == nil {
+		result.Meta = map[string]string{}
+	}
+	for key, value := range outputBudgetMeta(budgeted) {
+		result.Meta[key] = value
+	}
+	if budgeted.Truncated {
+		result.Meta["truncated"] = "true"
+		result.Meta["truncation_reason"] = "byte_budget"
+	}
+	return result
 }
 
 func (builder *outputBudgetBuilder) Result() outputBudgetResult {
