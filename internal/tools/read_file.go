@@ -39,8 +39,10 @@ func NewScopedReadFileTool(workspaceRoot string, scope PathScope) Tool {
 				AdditionalProperties: false,
 			},
 			safety: readOnlySafety("Reads file contents without modifying files."),
-			// ThreadSafe=false: may update FileTracker session state on read.
-			capabilities: ToolCapabilities{Effect: EffectReadOnly, ThreadSafe: false, ResourceKeys: fileResourceKeys},
+			// ThreadSafe: FileTracker is mutex-guarded; concurrent reads of
+			// distinct paths are safe. Same-path calls still serialize via
+			// resource-key conflict detection in the agent parallel planner.
+			capabilities: ToolCapabilities{Effect: EffectReadOnly, ThreadSafe: true, ResourceKeys: fileResourceKeys},
 		},
 		workspaceRoot: normalizeWorkspaceRoot(workspaceRoot),
 		scope:         scope,

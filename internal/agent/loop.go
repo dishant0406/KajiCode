@@ -632,10 +632,9 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 			// The scan happens lazily at the run's first index — never ahead of a
 			// pending mutating call — so read-after-write ordering is preserved.
 			if index >= precomputedEnd {
-				runEnd := index
-				for runEnd < len(collected.ToolCalls) && parallelSafeToolCall(registry, collected.ToolCalls[runEnd], options) {
-					runEnd++
-				}
+				// Capability-safe consecutive run (ReadOnly+ThreadSafe, no
+				// resource-key conflicts). See extendParallelRun.
+				runEnd := extendParallelRun(registry, collected.ToolCalls, index, options)
 				if runEnd-index >= 2 {
 					batchSpan := options.Trace.Span(trace.SpanToolExecution)
 					precomputed = executeParallelReadBatch(ctx, registry, collected.ToolCalls, index, runEnd, permissionMode, options)
