@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -14,6 +15,38 @@ import (
 
 type propagationOutputTool struct {
 	output string
+}
+
+func TestOutputBudgetHookHelperProcess(t *testing.T) {
+	for index, arg := range os.Args {
+		if arg != "--zero-output-budget-hook" || index+1 >= len(os.Args) {
+			continue
+		}
+		if _, err := os.Stdout.WriteString(os.Args[index+1]); err != nil {
+			os.Exit(2)
+		}
+		os.Exit(0)
+	}
+}
+
+func largeOutputBudgetHookDispatcher() *hooks.Dispatcher {
+	feedback := strings.Repeat("hook feedback ", 200)
+	return hooks.NewDispatcher(hooks.DispatcherOptions{Config: hooks.Config{
+		Enabled: true,
+		Hooks: []hooks.Definition{{
+			ID:      "large-feedback",
+			Event:   hooks.EventAfterTool,
+			Matcher: "propagation_output",
+			Command: os.Args[0],
+			Args: []string{
+				"-test.run=TestOutputBudgetHookHelperProcess",
+				"--",
+				"--zero-output-budget-hook",
+				feedback,
+			},
+			Enabled: true,
+		}},
+	}})
 }
 
 func (tool propagationOutputTool) Name() string        { return "propagation_output" }
@@ -82,17 +115,7 @@ func TestExecuteToolCallRebudgetsOversizedAfterToolFeedback(t *testing.T) {
 	t.Setenv("ZERO_TOOL_OUTPUT_CEILING_TOKENS", "80")
 	registry := tools.NewRegistry()
 	registry.Register(propagationOutputTool{output: "tool output"})
-	dispatcher := hooks.NewDispatcher(hooks.DispatcherOptions{Config: hooks.Config{
-		Enabled: true,
-		Hooks: []hooks.Definition{{
-			ID:      "large-feedback",
-			Event:   hooks.EventAfterTool,
-			Matcher: "propagation_output",
-			Command: "echo",
-			Args:    []string{strings.Repeat("hook feedback ", 200)},
-			Enabled: true,
-		}},
-	}})
+	dispatcher := largeOutputBudgetHookDispatcher()
 
 	result, abortErr := executeToolCall(context.Background(), registry, ToolCall{
 		ID:        "call-hook-budget",
@@ -114,17 +137,7 @@ func TestRunTraceReflectsPostHookBudget(t *testing.T) {
 	t.Setenv("ZERO_TOOL_OUTPUT_CEILING_TOKENS", "80")
 	registry := tools.NewRegistry()
 	registry.Register(propagationOutputTool{output: "tool output"})
-	dispatcher := hooks.NewDispatcher(hooks.DispatcherOptions{Config: hooks.Config{
-		Enabled: true,
-		Hooks: []hooks.Definition{{
-			ID:      "large-feedback",
-			Event:   hooks.EventAfterTool,
-			Matcher: "propagation_output",
-			Command: "echo",
-			Args:    []string{strings.Repeat("hook feedback ", 200)},
-			Enabled: true,
-		}},
-	}})
+	dispatcher := largeOutputBudgetHookDispatcher()
 	provider := &mockProvider{turns: [][]zeroruntime.StreamEvent{
 		{
 			{Type: zeroruntime.StreamEventToolCallStart, ToolCallID: "call-hook-trace", ToolName: "propagation_output"},
