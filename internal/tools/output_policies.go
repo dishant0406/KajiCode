@@ -241,20 +241,91 @@ func retainPrioritizedLines(lines []string, priorities []int, budget outputBudge
 
 func retainPrioritizedUnits(units []diffUnit, priorities []int, budget outputBudget) string {
 	selected := map[int]bool{}
-	best := ""
+	indexes := make([]int, 0, len(priorities))
+	cost := retainedUnitCost{}
 	for _, index := range priorities {
 		if index < 0 || index >= len(units) || selected[index] {
 			continue
 		}
-		selected[index] = true
-		candidate := renderSelectedUnits(units, selected)
-		if !fitsOutputBudget(candidate, budget) {
-			delete(selected, index)
+		position := sort.SearchInts(indexes, index)
+		previous, next := -1, len(units)
+		if position > 0 {
+			previous = indexes[position-1]
+		}
+		if position < len(indexes) {
+			next = indexes[position]
+		}
+
+		candidate := cost
+		candidate.add(units[index].text)
+		if len(indexes) == 0 {
+			candidate.addOmission(index)
+			candidate.addOmission(len(units) - index - 1)
+		} else {
+			candidate.removeOmission(next - previous - 1)
+			candidate.addOmission(index - previous - 1)
+			candidate.addOmission(next - index - 1)
+		}
+		if !candidate.fits(budget) {
 			continue
 		}
-		best = candidate
+		selected[index] = true
+		indexes = append(indexes, 0)
+		copy(indexes[position+1:], indexes[position:])
+		indexes[position] = index
+		cost = candidate
 	}
-	return best
+	return renderSelectedUnits(units, selected)
+}
+
+// retainedUnitCost tracks the exact rendered size of selected units without
+// repeatedly rebuilding the full candidate text. Newlines between rendered
+// parts add bytes but no estimated tokens, so the token components remain
+// additive even as priorities select units out of source order.
+type retainedUnitCost struct {
+	textBytes     int
+	asciiNonSpace int
+	nonASCIIBytes int
+	parts         int
+}
+
+func (cost *retainedUnitCost) add(text string) {
+	ascii, nonASCII := outputTokenComponents(text)
+	cost.textBytes += len(text)
+	cost.asciiNonSpace += ascii
+	cost.nonASCIIBytes += nonASCII
+	cost.parts++
+}
+
+func (cost *retainedUnitCost) remove(text string) {
+	ascii, nonASCII := outputTokenComponents(text)
+	cost.textBytes -= len(text)
+	cost.asciiNonSpace -= ascii
+	cost.nonASCIIBytes -= nonASCII
+	cost.parts--
+}
+
+func (cost *retainedUnitCost) addOmission(count int) {
+	if count > 0 {
+		cost.add(omittedSectionsMarker(count))
+	}
+}
+
+func (cost *retainedUnitCost) removeOmission(count int) {
+	if count > 0 {
+		cost.remove(omittedSectionsMarker(count))
+	}
+}
+
+func (cost retainedUnitCost) fits(budget outputBudget) bool {
+	bytes := cost.textBytes + max(0, cost.parts-1)
+	tokens := (cost.asciiNonSpace+3)/4 + cost.nonASCIIBytes
+	return (budget.hardMaxBytes <= 0 || bytes <= budget.hardMaxBytes) &&
+		(budget.maxEstimatedTokens <= 0 || tokens <= budget.maxEstimatedTokens)
+}
+
+func omittedSectionsMarker(count int) string {
+	return fmt.Sprintf("[zero] ... %d section(s) omitted ...", count)
 }
 
 func renderSelectedUnits(units []diffUnit, selected map[int]bool) string {
@@ -271,15 +342,15 @@ func renderSelectedUnits(units []diffUnit, selected map[int]bool) string {
 	for _, index := range indexes {
 		if previous >= 0 && index != previous+1 {
 			omitted := index - previous - 1
-			parts = append(parts, fmt.Sprintf("[zero] ... %d section(s) omitted ...", omitted))
+			parts = append(parts, omittedSectionsMarker(omitted))
 		} else if previous < 0 && index > 0 {
-			parts = append(parts, fmt.Sprintf("[zero] ... %d section(s) omitted ...", index))
+			parts = append(parts, omittedSectionsMarker(index))
 		}
 		parts = append(parts, units[index].text)
 		previous = index
 	}
 	if previous < len(units)-1 {
-		parts = append(parts, fmt.Sprintf("[zero] ... %d section(s) omitted ...", len(units)-previous-1))
+		parts = append(parts, omittedSectionsMarker(len(units)-previous-1))
 	}
 	return strings.Join(parts, "\n")
 }

@@ -64,8 +64,11 @@ type outputPolicyProvider interface {
 // overestimating multilingual text and emoji rather than letting them bypass a
 // budget. Existing hard byte ceilings remain the final safety limit.
 func estimateOutputTokens(value string) int {
-	asciiNonSpace := 0
-	nonASCIIBytes := 0
+	asciiNonSpace, nonASCIIBytes := outputTokenComponents(value)
+	return (asciiNonSpace+3)/4 + nonASCIIBytes
+}
+
+func outputTokenComponents(value string) (asciiNonSpace int, nonASCIIBytes int) {
 	for index := 0; index < len(value); {
 		r, size := utf8.DecodeRuneInString(value[index:])
 		if r == utf8.RuneError && size == 1 {
@@ -75,7 +78,7 @@ func estimateOutputTokens(value string) int {
 			index++
 			continue
 		}
-		if r <= utf8.RuneSelf {
+		if r < utf8.RuneSelf {
 			switch r {
 			case ' ', '\t', '\n', '\r', '\f', '\v':
 			default:
@@ -86,7 +89,7 @@ func estimateOutputTokens(value string) int {
 		}
 		index += size
 	}
-	return (asciiNonSpace+3)/4 + nonASCIIBytes
+	return asciiNonSpace, nonASCIIBytes
 }
 
 const defaultSemanticTruncationNotice = "\n[zero] output truncated\n"
@@ -118,7 +121,10 @@ func budgetDefaultOutput(output string, budget outputBudget) budgetedOutput {
 	// estimate and the hard byte ceiling. fitsOutputBudget is monotonic as this
 	// window grows, so binary search avoids repeatedly trimming one rune at a time.
 	low, high := 0, maxContentBytes
-	best := defaultSemanticTruncationNotice
+	best := ""
+	if fitsOutputBudget(defaultSemanticTruncationNotice, budget) {
+		best = defaultSemanticTruncationNotice
+	}
 	for low <= high {
 		window := low + (high-low)/2
 		candidate := defaultHeadTail(output, window)

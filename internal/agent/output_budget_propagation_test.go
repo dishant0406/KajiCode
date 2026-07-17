@@ -2,11 +2,14 @@ package agent
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/Gitlawb/zero/internal/hooks"
 	"github.com/Gitlawb/zero/internal/tools"
 	"github.com/Gitlawb/zero/internal/trace"
+	"github.com/Gitlawb/zero/internal/zeroruntime"
 )
 
 type propagationOutputTool struct {
@@ -72,5 +75,80 @@ func TestRecordOutputBudgetTraceUsesOnlyCompactMetadata(t *testing.T) {
 	event := events[0]
 	if event.Tool != "grep" || event.Category != "search" || event.OriginalBytes != 1000 || event.RetainedBytes != 100 || !event.SpillCreated {
 		t.Fatalf("unexpected trace event: %#v", event)
+	}
+}
+
+func TestExecuteToolCallRebudgetsOversizedAfterToolFeedback(t *testing.T) {
+	t.Setenv("ZERO_TOOL_OUTPUT_CEILING_TOKENS", "80")
+	registry := tools.NewRegistry()
+	registry.Register(propagationOutputTool{output: "tool output"})
+	dispatcher := hooks.NewDispatcher(hooks.DispatcherOptions{Config: hooks.Config{
+		Enabled: true,
+		Hooks: []hooks.Definition{{
+			ID:      "large-feedback",
+			Event:   hooks.EventAfterTool,
+			Matcher: "propagation_output",
+			Command: "echo",
+			Args:    []string{strings.Repeat("hook feedback ", 200)},
+			Enabled: true,
+		}},
+	}})
+
+	result, abortErr := executeToolCall(context.Background(), registry, ToolCall{
+		ID:        "call-hook-budget",
+		Name:      "propagation_output",
+		Arguments: `{}`,
+	}, PermissionModeAuto, Options{Hooks: dispatcher})
+	if abortErr != nil {
+		t.Fatalf("executeToolCall abort error: %v", abortErr)
+	}
+	if !result.Truncated || len(result.Output) > 80*4 {
+		t.Fatalf("afterTool feedback bypassed output budget: truncated=%t bytes=%d meta=%#v", result.Truncated, len(result.Output), result.Meta)
+	}
+	if result.Meta["output_budget_category"] == "" || result.Meta["output_budget_retained_bytes"] != strconv.Itoa(len(result.Output)) {
+		t.Fatalf("post-hook budget metadata does not describe final output: %#v", result.Meta)
+	}
+}
+
+func TestRunTraceReflectsPostHookBudget(t *testing.T) {
+	t.Setenv("ZERO_TOOL_OUTPUT_CEILING_TOKENS", "80")
+	registry := tools.NewRegistry()
+	registry.Register(propagationOutputTool{output: "tool output"})
+	dispatcher := hooks.NewDispatcher(hooks.DispatcherOptions{Config: hooks.Config{
+		Enabled: true,
+		Hooks: []hooks.Definition{{
+			ID:      "large-feedback",
+			Event:   hooks.EventAfterTool,
+			Matcher: "propagation_output",
+			Command: "echo",
+			Args:    []string{strings.Repeat("hook feedback ", 200)},
+			Enabled: true,
+		}},
+	}})
+	provider := &mockProvider{turns: [][]zeroruntime.StreamEvent{
+		{
+			{Type: zeroruntime.StreamEventToolCallStart, ToolCallID: "call-hook-trace", ToolName: "propagation_output"},
+			{Type: zeroruntime.StreamEventToolCallDelta, ToolCallID: "call-hook-trace", ArgumentsFragment: `{}`},
+			{Type: zeroruntime.StreamEventToolCallEnd, ToolCallID: "call-hook-trace"},
+			{Type: zeroruntime.StreamEventDone},
+		},
+		{{Type: zeroruntime.StreamEventText, Content: "done"}, {Type: zeroruntime.StreamEventDone}},
+	}}
+	recorder := trace.NewRecorder("session", "run", "")
+	var toolResults []ToolResult
+	if _, err := Run(context.Background(), "budget hook", provider, Options{
+		Registry:     registry,
+		Hooks:        dispatcher,
+		Trace:        recorder,
+		OnToolResult: func(result ToolResult) { toolResults = append(toolResults, result) },
+	}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(toolResults) != 1 || !toolResults[0].Truncated {
+		t.Fatalf("tool result = %#v, want one truncated post-hook result", toolResults)
+	}
+	events := recorder.Finish().OutputBudgets
+	if len(events) != 1 || !events[0].Truncated || events[0].RetainedBytes != len(toolResults[0].Output) {
+		t.Fatalf("trace does not describe final post-hook output: events=%#v result=%#v", events, toolResults[0])
 	}
 }

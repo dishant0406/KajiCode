@@ -1319,6 +1319,7 @@ func executeToolCall(ctx context.Context, registry *tools.Registry, call ToolCal
 			if didRedact {
 				result.Redacted = true
 			}
+			result = registry.RebudgetAfterHook(call.Name, args, result)
 		}
 	}
 	// Secret scrubbing happens at the registry boundary (the single point both

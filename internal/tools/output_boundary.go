@@ -34,6 +34,17 @@ func applyRegistryOutputBudget(tool Tool, toolName string, args map[string]any, 
 	return result
 }
 
+// RebudgetAfterHook reapplies the registry's redaction and output limits after
+// an afterTool hook appends model-visible feedback to a completed result. The
+// initial registry pass has already run; this second pass is limited to the
+// newly combined result so hooks cannot bypass the established safety ceiling.
+func (registry *Registry) RebudgetAfterHook(toolName string, args map[string]any, result Result) Result {
+	result = scrubResultSecrets(result)
+	tool, _ := registry.Get(toolName)
+	result = applyRegistryOutputBudget(tool, toolName, args, result)
+	return enforceOutputCeiling(toolName, result)
+}
+
 func registryOutputBudget(toolName string) outputBudget {
 	switch toolName {
 	case "read_file", "read_minified_file":

@@ -92,14 +92,14 @@ func (tool readFileTool) run(args map[string]any, options RunOptions, directBudg
 	// not the authoritative content hash.
 	options.FileTracker.RecordHash(absolutePath, stats.hash, stats.info)
 
-	result := renderReadFileRange(absolutePath, relativePath, stats.lines, startLine, endLine, maxLines)
+	maxBytes := 0
 	if directBudget {
-		return applyLegacyByteBudgetToResult(result, readOutputBudgetBytes, "use start_line/end_line or max_lines to continue with a smaller range")
+		maxBytes = readOutputBudgetBytes
 	}
-	return result
+	return renderReadFileRange(absolutePath, relativePath, stats.lines, startLine, endLine, maxLines, maxBytes)
 }
 
-func renderReadFileRange(absolutePath string, relativePath string, total int, startLine int, endLine int, maxLines int) Result {
+func renderReadFileRange(absolutePath string, relativePath string, total int, startLine int, endLine int, maxLines int, maxBytes int) Result {
 	if startLine > total {
 		return okResult(fmt.Sprintf("File: %s\n(start_line %d is past the end of the file, which has %d lines)", relativePath, startLine, total))
 	}
@@ -127,7 +127,7 @@ func renderReadFileRange(absolutePath string, relativePath string, total int, st
 	// The shared registry boundary applies the file policy after redaction. Build
 	// the requested range here without a second byte-prefix truncation so that
 	// policy can retain both its beginning and end.
-	budgetedOutput := newOutputBudgetBuilder(0, "")
+	budgetedOutput := newOutputBudgetBuilder(maxBytes, "use start_line/end_line or max_lines to continue with a smaller range")
 	budgetedOutput.WriteString(header)
 	budgetedOutput.WriteString("\n\n")
 	if err := appendReadFileRange(budgetedOutput, absolutePath, startLine, selectedLines, width); err != nil {
@@ -142,14 +142,23 @@ func renderReadFileRange(absolutePath string, relativePath string, total int, st
 
 	budgeted := budgetedOutput.Result()
 	meta := map[string]string{}
-	if truncated {
+	if maxBytes > 0 {
+		for key, value := range outputBudgetMeta(budgeted) {
+			meta[key] = value
+		}
+	}
+	if truncated || budgeted.Truncated {
 		meta["truncated"] = "true"
-		meta["truncation_reason"] = "max_lines"
+		if budgeted.Truncated {
+			meta["truncation_reason"] = "byte_budget"
+		} else {
+			meta["truncation_reason"] = "max_lines"
+		}
 	}
 	return Result{
 		Status:    StatusOK,
 		Output:    budgeted.Output,
-		Truncated: truncated,
+		Truncated: truncated || budgeted.Truncated,
 		Meta:      meta,
 	}
 }

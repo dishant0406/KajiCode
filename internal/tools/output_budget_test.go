@@ -17,6 +17,9 @@ func TestEstimateOutputTokensASCIIAndUnicode(t *testing.T) {
 	if first, second := estimateOutputTokens(unicodeText), estimateOutputTokens(unicodeText); first != second {
 		t.Fatalf("estimator is not deterministic: %d != %d", first, second)
 	}
+	if input := strings.Repeat("\u0080", 4); estimateOutputTokens(input) < len([]byte(input)) {
+		t.Fatalf("U+0080 estimate = %d, want conservative estimate >= %d", estimateOutputTokens(input), len([]byte(input)))
+	}
 }
 
 func TestBudgetDefaultOutputLeavesSmallOutputByteIdentical(t *testing.T) {
@@ -69,6 +72,19 @@ func TestBudgetDefaultOutputDeterministic(t *testing.T) {
 		got := budgetDefaultOutput(input, budget)
 		if got != want {
 			t.Fatalf("iteration %d differs:\n got %#v\nwant %#v", iteration, got, want)
+		}
+	}
+}
+
+func TestBudgetDefaultOutputTinyBudgetsNeverExceedTheirCeilings(t *testing.T) {
+	input := strings.Repeat("oversized output ", 100)
+	for _, budget := range []outputBudget{
+		{hardMaxBytes: len(defaultSemanticTruncationNotice) - 1},
+		{maxEstimatedTokens: estimateOutputTokens(defaultSemanticTruncationNotice) - 1},
+	} {
+		got := budgetDefaultOutput(input, budget)
+		if !got.truncated || !fitsOutputBudget(got.text, budget) {
+			t.Fatalf("tiny budget result does not fit: budget=%#v result=%#v", budget, got)
 		}
 	}
 }

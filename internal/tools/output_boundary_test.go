@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -83,6 +84,37 @@ func TestRegistrySmallOutputRemainsByteIdentical(t *testing.T) {
 	result := registry.Run(context.Background(), "small_identity", map[string]any{})
 	if result.Output != "hello\nworld\n" || result.Truncated {
 		t.Fatalf("small output changed: %#v", result)
+	}
+}
+
+func TestDirectReadAndSearchToolsKeepLegacyByteBudgets(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "large-read.txt"), []byte(strings.Repeat("source line with enough content\n", 7000)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if result := NewReadFileTool(root).Run(context.Background(), map[string]any{"path": "large-read.txt"}); !result.Truncated || len(result.Output) > readOutputBudgetBytes {
+		t.Fatalf("direct read_file output is not bounded: %#v", result)
+	}
+
+	for index := 0; index < 800; index++ {
+		name := fmt.Sprintf("%04d-%s.txt", index, strings.Repeat("n", 80))
+		if err := os.WriteFile(filepath.Join(root, name), []byte("match\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(root, "large-content.txt"), []byte(strings.Repeat("match "+strings.Repeat("x", 2000)+"\n", 50)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	for name, result := range map[string]Result{
+		"list_directory": NewListDirectoryTool(root).Run(context.Background(), map[string]any{"recursive": false}),
+		"glob":           NewGlobTool(root).Run(context.Background(), map[string]any{"pattern": "*.txt", "limit": 1000}),
+		"grep files":     NewGrepTool(root).Run(context.Background(), map[string]any{"pattern": "match", "output_mode": "files_with_matches"}),
+		"grep content":   NewGrepTool(root).Run(context.Background(), map[string]any{"pattern": "match", "path": "large-content.txt", "head_limit": 50}),
+	} {
+		if !result.Truncated || len(result.Output) > searchOutputBudgetBytes {
+			t.Fatalf("direct %s output is not bounded: truncated=%t bytes=%d meta=%#v", name, result.Truncated, len(result.Output), result.Meta)
+		}
 	}
 }
 

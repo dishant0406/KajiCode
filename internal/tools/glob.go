@@ -49,17 +49,25 @@ func NewScopedGlobTool(workspaceRoot string, scope PathScope) Tool {
 }
 
 func (tool globTool) Run(ctx context.Context, args map[string]any) Result {
-	return tool.runWith(ctx, args, readExcluder{})
+	return tool.runWith(ctx, args, readExcluder{}, true)
+}
+
+func (tool globTool) RunWithOptions(ctx context.Context, args map[string]any, options RunOptions) Result {
+	exclude := readExcluder{}
+	if options.Sandbox != nil {
+		exclude = sandboxReadExcluder(options.Sandbox)
+	}
+	return tool.runWith(ctx, args, exclude, false)
 }
 
 // RunWithSandbox runs glob while skipping subtrees the sandbox policy denies
 // reads to (DenyRead). With no DenyRead configured the excluder is a no-op and
 // behavior is unchanged.
 func (tool globTool) RunWithSandbox(ctx context.Context, args map[string]any, engine *sandbox.Engine) Result {
-	return tool.runWith(ctx, args, sandboxReadExcluder(engine))
+	return tool.runWith(ctx, args, sandboxReadExcluder(engine), true)
 }
 
-func (tool globTool) runWith(ctx context.Context, args map[string]any, exclude readExcluder) Result {
+func (tool globTool) runWith(ctx context.Context, args map[string]any, exclude readExcluder, directBudget bool) Result {
 	pattern, err := aliasedStringArg(args, []string{"pattern", "glob", "match", "query", "expression"}, "", true, false)
 	if err != nil {
 		return errorResult("Error: Invalid arguments for glob: " + err.Error())
@@ -119,12 +127,16 @@ func (tool globTool) runWith(ctx context.Context, args map[string]any, exclude r
 		meta["truncation_reason"] = "limit"
 	}
 
-	return Result{
+	result := Result{
 		Status:    StatusOK,
 		Output:    output,
 		Truncated: truncated,
 		Meta:      meta,
 	}
+	if directBudget {
+		return applyLegacyByteBudgetToResult(result, searchOutputBudgetBytes, "increase limit or narrow cwd/pattern")
+	}
+	return result
 }
 
 func scanGlob(ctx context.Context, root string, displayRoot string, matcher *regexp.Regexp, includeDirs bool, exclude readExcluder) ([]string, error) {
