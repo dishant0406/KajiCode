@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -656,6 +657,7 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 				toolSpan.End()
 			}
 			options.Trace.Counter(trace.CounterToolCalls, 1)
+			recordOutputBudgetTrace(options.Trace, toolResult)
 			if options.OnToolResult != nil {
 				options.OnToolResult(toolResult)
 			}
@@ -839,6 +841,28 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 		result.IncompleteReason = "reached the max-turns limit without a final answer"
 	}
 	return result, nil
+}
+
+func recordOutputBudgetTrace(recorder *trace.Recorder, result ToolResult) {
+	if recorder == nil || result.Meta["output_budget_category"] == "" {
+		return
+	}
+	parseInt := func(key string) int {
+		value, _ := strconv.Atoi(result.Meta[key])
+		return value
+	}
+	spillCreated, _ := strconv.ParseBool(result.Meta["output_budget_spill_created"])
+	recorder.EmitOutputBudget(trace.OutputBudgetEvent{
+		Tool:                    result.Name,
+		Category:                result.Meta["output_budget_category"],
+		OriginalBytes:           parseInt("output_budget_original_bytes"),
+		RetainedBytes:           parseInt("output_budget_retained_bytes"),
+		EstimatedOriginalTokens: parseInt("output_budget_estimated_original_tokens"),
+		EstimatedRetainedTokens: parseInt("output_budget_estimated_retained_tokens"),
+		Truncated:               result.Truncated,
+		Reason:                  result.Meta["output_budget_reason"],
+		SpillCreated:            spillCreated,
+	})
 }
 
 func finalAnswerAfterMaxTurns(ctx context.Context, provider Provider, messages []zeroruntime.Message, toolDefs []zeroruntime.ToolDefinition, options Options) (string, []zeroruntime.Message, string) {
@@ -1295,6 +1319,7 @@ func executeToolCall(ctx context.Context, registry *tools.Registry, call ToolCal
 			if didRedact {
 				result.Redacted = true
 			}
+			result = registry.RebudgetAfterHook(call.Name, args, result)
 		}
 	}
 	// Secret scrubbing happens at the registry boundary (the single point both
@@ -1305,6 +1330,7 @@ func executeToolCall(ctx context.Context, registry *tools.Registry, call ToolCal
 		Name:         call.Name,
 		Status:       result.Status,
 		Output:       result.Output,
+		Truncated:    result.Truncated,
 		Meta:         result.Meta,
 		Redacted:     result.Redacted,
 		ChangedFiles: result.ChangedFiles,
@@ -1615,6 +1641,7 @@ func toolResultFromPrePermissionReject(call ToolCall, result tools.Result) ToolR
 		Name:           call.Name,
 		Status:         result.Status,
 		Output:         output,
+		Truncated:      result.Truncated,
 		Meta:           meta,
 		Redacted:       result.Redacted || outputRedacted || summaryRedacted || metaRedacted,
 		ChangedFiles:   result.ChangedFiles,
@@ -1884,6 +1911,7 @@ func askUserFallbackResult(ctx context.Context, registry *tools.Registry, call T
 			Name:         call.Name,
 			Status:       result.Status,
 			Output:       result.Output,
+			Truncated:    result.Truncated,
 			Meta:         result.Meta,
 			Redacted:     result.Redacted,
 			ChangedFiles: result.ChangedFiles,
