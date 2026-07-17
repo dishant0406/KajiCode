@@ -44,6 +44,8 @@ func TestRegistryBudgetSpillFailureFallsBackToBoundedOutput(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("TMPDIR", blockedTemp)
+	t.Setenv("TMP", blockedTemp)
+	t.Setenv("TEMP", blockedTemp)
 	t.Setenv(outputCeilingEnv, "100")
 
 	registry := NewRegistry()
