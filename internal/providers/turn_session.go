@@ -54,3 +54,19 @@ func OptimizedTurnSessions(profile config.ProviderProfile, provider zeroruntime.
 	}
 	return openai.NewTurnSessionProvider(concrete, caps), true
 }
+
+// DefaultTurnSessions wraps an already-built provider in the DEFAULT (no-op)
+// turn-session adapter with the profile's resolved capability projection. It is
+// the non-optimized sibling of OptimizedTurnSessions for callers that still
+// want capabilities populated — e.g. the mid-run model-switch fallback when the
+// switched model is not eligible for the optimized session. Capability
+// resolution failure degrades to an unknown (zero) projection rather than
+// failing the wrap: the default session has no behavior that depends on
+// capabilities, so a swap must never be blocked by a projection error.
+func DefaultTurnSessions(profile config.ProviderProfile, provider zeroruntime.Provider, options Options) zeroruntime.TurnSessionProvider {
+	caps, err := resolveCapabilities(profile, options)
+	if err != nil {
+		caps = zeroruntime.ProviderCapabilities{}
+	}
+	return zeroruntime.NewProviderTurnSessionProvider(provider, caps)
+}

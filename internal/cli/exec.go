@@ -436,7 +436,9 @@ func runExec(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) in
 			if optimized, ok := providers.OptimizedTurnSessions(switchedProfile, switchedProvider, providers.Options{}); ok {
 				return optimized, nil
 			}
-			return zeroruntime.NewProviderTurnSessionProvider(switchedProvider, zeroruntime.ProviderCapabilities{}), nil
+			// Ineligible switch target: default adapter, but with the switched
+			// model's resolved capability projection preserved.
+			return providers.DefaultTurnSessions(switchedProfile, switchedProvider, providers.Options{}), nil
 		}
 	}
 

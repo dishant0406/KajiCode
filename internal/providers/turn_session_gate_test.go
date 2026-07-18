@@ -98,6 +98,25 @@ func TestOptimizedTurnSessionsRejectsCodexCatalog(t *testing.T) {
 	}
 }
 
+func TestDefaultTurnSessionsPreservesResolvedCapabilities(t *testing.T) {
+	profile := openaiEligibleProfile()
+	tsp := DefaultTurnSessions(profile, buildGateProvider(t, profile), Options{})
+	if tsp == nil {
+		t.Fatal("DefaultTurnSessions returned nil")
+	}
+	caps := tsp.Capabilities()
+	if caps.Model != "pr8-unregistered-model" {
+		t.Fatalf("Capabilities().Model = %q, want the resolved api model", caps.Model)
+	}
+	session, err := tsp.OpenTurnSession(context.Background())
+	if err != nil {
+		t.Fatalf("OpenTurnSession: %v", err)
+	}
+	if err := session.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+}
+
 func TestOptimizedTurnSessionsRejectsForeignProviderValue(t *testing.T) {
 	t.Setenv(openaiTurnSessionEnv, "1")
 	if _, ok := OptimizedTurnSessions(openaiEligibleProfile(), fakeGateProvider{}, Options{}); ok {
