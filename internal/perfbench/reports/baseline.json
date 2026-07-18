@@ -1,0 +1,534 @@
+{
+  "schemaVersion": 3,
+  "suite": "zero-baseline-turn",
+  "model": "grok-4.5",
+  "selfCorrect": false,
+  "version": "0.4.0",
+  "commit": "30e2c3f7",
+  "date": "2026-07-18T14:31:02Z",
+  "tasksAttempted": 48,
+  "tasksVerified": 34,
+  "tasksPassed": 0,
+  "latencyOnlyTasks": 14,
+  "buildCheckedTasks": 0,
+  "buildPassedTasks": 0,
+  "correctnessPassRate": 0,
+  "buildPassRate": 0,
+  "correctnessClasses": [
+    "edit",
+    "fix",
+    "nav",
+    "refactor"
+  ],
+  "latencyOnlyClasses": [
+    "longctx",
+    "longproc",
+    "parallel"
+  ],
+  "iterations": 1,
+  "perSpan": {},
+  "topLatency": [],
+  "perClass": {
+    "edit": {
+      "tasks": 10,
+      "verified": 10,
+      "passed": 0,
+      "latencyOnly": 0,
+      "wallMs": {
+        "samples": null,
+        "min": 0,
+        "median": 0,
+        "average": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "spanTotals": null
+    },
+    "fix": {
+      "tasks": 8,
+      "verified": 8,
+      "passed": 0,
+      "latencyOnly": 0,
+      "wallMs": {
+        "samples": null,
+        "min": 0,
+        "median": 0,
+        "average": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "spanTotals": null
+    },
+    "longctx": {
+      "tasks": 4,
+      "verified": 0,
+      "passed": 0,
+      "latencyOnly": 4,
+      "wallMs": {
+        "samples": null,
+        "min": 0,
+        "median": 0,
+        "average": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "spanTotals": null
+    },
+    "longproc": {
+      "tasks": 4,
+      "verified": 0,
+      "passed": 0,
+      "latencyOnly": 4,
+      "wallMs": {
+        "samples": null,
+        "min": 0,
+        "median": 0,
+        "average": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "spanTotals": null
+    },
+    "nav": {
+      "tasks": 10,
+      "verified": 10,
+      "passed": 0,
+      "latencyOnly": 0,
+      "wallMs": {
+        "samples": null,
+        "min": 0,
+        "median": 0,
+        "average": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "spanTotals": null
+    },
+    "parallel": {
+      "tasks": 6,
+      "verified": 0,
+      "passed": 0,
+      "latencyOnly": 6,
+      "wallMs": {
+        "samples": null,
+        "min": 0,
+        "median": 0,
+        "average": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "spanTotals": null
+    },
+    "refactor": {
+      "tasks": 6,
+      "verified": 6,
+      "passed": 0,
+      "latencyOnly": 0,
+      "wallMs": {
+        "samples": null,
+        "min": 0,
+        "median": 0,
+        "average": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "spanTotals": null
+    }
+  },
+  "totals": {
+    "inputTokens": 0,
+    "cachedInputTokens": 0,
+    "outputTokens": 0,
+    "modelRequests": 0,
+    "toolCalls": 0,
+    "retries": 0,
+    "reconnects": 0,
+    "compactions": 0
+  },
+  "warnings": [
+    {
+      "metric": "run",
+      "statistic": "",
+      "observed": 0,
+      "threshold": 0,
+      "unit": "",
+      "message": "task nav-01: zero exec failed: fork/exec ./zero-bench-main.exe: The system cannot find the file specified."
+    },
+    {
+      "metric": "run",
+      "statistic": "",
+      "observed": 0,
+      "threshold": 0,
+      "unit": "",
+      "message": "task nav-02: zero exec failed: fork/exec ./zero-bench-main.exe: The system cannot find the file specified."
+    },
+    {
+      "metric": "run",
+      "statistic": "",
+      "observed": 0,
+      "threshold": 0,
+      "unit": "",
+      "message": "task nav-03: zero exec failed: fork/exec ./zero-bench-main.exe: The system cannot find the file specified."
+    },
+    {
+      "metric": "run",
+      "statistic": "",
+      "observed": 0,
+      "threshold": 0,
+      "unit": "",
+      "message": "task nav-04: zero exec failed: fork/exec ./zero-bench-main.exe: The system cannot find the file specified."
+    },
+    {
+      "metric": "run",
+      "statistic": "",
+      "observed": 0,
+      "threshold": 0,
+      "unit": "",
+      "message": "task nav-05: zero exec failed: fork/exec ./zero-bench-main.exe: The system cannot find the file specified."
+    },
+    {
+      "metric": "run",
+      "statistic": "",
+      "observed": 0,
+      "threshold": 0,
+      "unit": "",
+      "message": "task nav-06: zero exec failed: fork/exec ./zero-bench-main.exe: The system cannot find the file specified."
+    },
+    {
+      "metric": "run",
+      "statistic": "",
+      "observed": 0,
+      "threshold": 0,
+      "unit": "",
+      "message": "task nav-07: zero exec failed: fork/exec ./zero-bench-main.exe: The system cannot find the file specified."
+    },
+    {
+      "metric": "run",
+      "statistic": "",
+      "observed": 0,
+      "threshold": 0,
+      "unit": "",
+      "message": "task nav-08: zero exec failed: fork/exec ./zero-bench-main.exe: The system cannot find the file specified."
+    },
+    {
+      "metric": "run",
+      "statistic": "",
+      "observed": 0,
+      "threshold": 0,
+      "unit": "",
+      "message": "task nav-09: zero exec failed: fork/exec ./zero-bench-main.exe: The system cannot find the file specified."
+    },
+    {
+      "metric": "run",
+      "statistic": "",
+      "observed": 0,
+      "threshold": 0,
+      "unit": "",
+      "message": "task nav-10: zero exec failed: fork/exec ./zero-bench-main.exe: The system cannot find the file specified."
+    },
+    {
+      "metric": "run",
+      "statistic": "",
+      "observed": 0,
+      "threshold": 0,
+      "unit": "",
+      "message": "task edit-01: zero exec failed: fork/exec ./zero-bench-main.exe: The system cannot find the file specified."
+    },
+    {
+      "metric": "run",
+      "statistic": "",
+      "observed": 0,
+      "threshold": 0,
+      "unit": "",
+      "message": "task edit-02: zero exec failed: fork/exec ./zero-bench-main.exe: The system cannot find the file specified."
+    },
+    {
+      "metric": "run",
+      "statistic": "",
+      "observed": 0,
+      "threshold": 0,
+      "unit": "",
+      "message": "task edit-03: zero exec failed: fork/exec ./zero-bench-main.exe: The system cannot find the file specified."
+    },
+    {
+      "metric": "run",
+      "statistic": "",
+      "observed": 0,
+      "threshold": 0,
+      "unit": "",
+      "message": "task edit-04: zero exec failed: fork/exec ./zero-bench-main.exe: The system cannot find the file specified."
+    },
+    {
+      "metric": "run",
+      "statistic": "",
+      "observed": 0,
+      "threshold": 0,
+      "unit": "",
+      "message": "task edit-05: zero exec failed: fork/exec ./zero-bench-main.exe: The system cannot find the file specified."
+    },
+    {
+      "metric": "run",
+      "statistic": "",
+      "observed": 0,
+      "threshold": 0,
+      "unit": "",
+      "message": "task edit-06: zero exec failed: fork/exec ./zero-bench-main.exe: The system cannot find the file specified."
+    },
+    {
+      "metric": "run",
+      "statistic": "",
+      "observed": 0,
+      "threshold": 0,
+      "unit": "",
+      "message": "task edit-07: zero exec failed: fork/exec ./zero-bench-main.exe: The system cannot find the file specified."
+    },
+    {
+      "metric": "run",
+      "statistic": "",
+      "observed": 0,
+      "threshold": 0,
+      "unit": "",
+      "message": "task edit-08: zero exec failed: fork/exec ./zero-bench-main.exe: The system cannot find the file specified."
+    },
+    {
+      "metric": "run",
+      "statistic": "",
+      "observed": 0,
+      "threshold": 0,
+      "unit": "",
+      "message": "task edit-09: zero exec failed: fork/exec ./zero-bench-main.exe: The system cannot find the file specified."
+    },
+    {
+      "metric": "run",
+      "statistic": "",
+      "observed": 0,
+      "threshold": 0,
+      "unit": "",
+      "message": "task edit-10: zero exec failed: fork/exec ./zero-bench-main.exe: The system cannot find the file specified."
+    },
+    {
+      "metric": "run",
+      "statistic": "",
+      "observed": 0,
+      "threshold": 0,
+      "unit": "",
+      "message": "task fix-01: zero exec failed: fork/exec ./zero-bench-main.exe: The system cannot find the file specified."
+    },
+    {
+      "metric": "run",
+      "statistic": "",
+      "observed": 0,
+      "threshold": 0,
+      "unit": "",
+      "message": "task fix-02: zero exec failed: fork/exec ./zero-bench-main.exe: The system cannot find the file specified."
+    },
+    {
+      "metric": "run",
+      "statistic": "",
+      "observed": 0,
+      "threshold": 0,
+      "unit": "",
+      "message": "task fix-03: zero exec failed: fork/exec ./zero-bench-main.exe: The system cannot find the file specified."
+    },
+    {
+      "metric": "run",
+      "statistic": "",
+      "observed": 0,
+      "threshold": 0,
+      "unit": "",
+      "message": "task fix-04: zero exec failed: fork/exec ./zero-bench-main.exe: The system cannot find the file specified."
+    },
+    {
+      "metric": "run",
+      "statistic": "",
+      "observed": 0,
+      "threshold": 0,
+      "unit": "",
+      "message": "task fix-05: zero exec failed: fork/exec ./zero-bench-main.exe: The system cannot find the file specified."
+    },
+    {
+      "metric": "run",
+      "statistic": "",
+      "observed": 0,
+      "threshold": 0,
+      "unit": "",
+      "message": "task fix-06: zero exec failed: fork/exec ./zero-bench-main.exe: The system cannot find the file specified."
+    },
+    {
+      "metric": "run",
+      "statistic": "",
+      "observed": 0,
+      "threshold": 0,
+      "unit": "",
+      "message": "task fix-07: zero exec failed: fork/exec ./zero-bench-main.exe: The system cannot find the file specified."
+    },
+    {
+      "metric": "run",
+      "statistic": "",
+      "observed": 0,
+      "threshold": 0,
+      "unit": "",
+      "message": "task fix-08: zero exec failed: fork/exec ./zero-bench-main.exe: The system cannot find the file specified."
+    },
+    {
+      "metric": "run",
+      "statistic": "",
+      "observed": 0,
+      "threshold": 0,
+      "unit": "",
+      "message": "task refactor-01: zero exec failed: fork/exec ./zero-bench-main.exe: The system cannot find the file specified."
+    },
+    {
+      "metric": "run",
+      "statistic": "",
+      "observed": 0,
+      "threshold": 0,
+      "unit": "",
+      "message": "task refactor-02: zero exec failed: fork/exec ./zero-bench-main.exe: The system cannot find the file specified."
+    },
+    {
+      "metric": "run",
+      "statistic": "",
+      "observed": 0,
+      "threshold": 0,
+      "unit": "",
+      "message": "task refactor-03: zero exec failed: fork/exec ./zero-bench-main.exe: The system cannot find the file specified."
+    },
+    {
+      "metric": "run",
+      "statistic": "",
+      "observed": 0,
+      "threshold": 0,
+      "unit": "",
+      "message": "task refactor-04: zero exec failed: fork/exec ./zero-bench-main.exe: The system cannot find the file specified."
+    },
+    {
+      "metric": "run",
+      "statistic": "",
+      "observed": 0,
+      "threshold": 0,
+      "unit": "",
+      "message": "task refactor-05: zero exec failed: fork/exec ./zero-bench-main.exe: The system cannot find the file specified."
+    },
+    {
+      "metric": "run",
+      "statistic": "",
+      "observed": 0,
+      "threshold": 0,
+      "unit": "",
+      "message": "task refactor-06: zero exec failed: fork/exec ./zero-bench-main.exe: The system cannot find the file specified."
+    },
+    {
+      "metric": "run",
+      "statistic": "",
+      "observed": 0,
+      "threshold": 0,
+      "unit": "",
+      "message": "task longproc-01: zero exec failed: fork/exec ./zero-bench-main.exe: The system cannot find the file specified."
+    },
+    {
+      "metric": "run",
+      "statistic": "",
+      "observed": 0,
+      "threshold": 0,
+      "unit": "",
+      "message": "task longproc-02: zero exec failed: fork/exec ./zero-bench-main.exe: The system cannot find the file specified."
+    },
+    {
+      "metric": "run",
+      "statistic": "",
+      "observed": 0,
+      "threshold": 0,
+      "unit": "",
+      "message": "task longproc-03: zero exec failed: fork/exec ./zero-bench-main.exe: The system cannot find the file specified."
+    },
+    {
+      "metric": "run",
+      "statistic": "",
+      "observed": 0,
+      "threshold": 0,
+      "unit": "",
+      "message": "task longproc-04: zero exec failed: fork/exec ./zero-bench-main.exe: The system cannot find the file specified."
+    },
+    {
+      "metric": "run",
+      "statistic": "",
+      "observed": 0,
+      "threshold": 0,
+      "unit": "",
+      "message": "task longctx-01: zero exec failed: fork/exec ./zero-bench-main.exe: The system cannot find the file specified."
+    },
+    {
+      "metric": "run",
+      "statistic": "",
+      "observed": 0,
+      "threshold": 0,
+      "unit": "",
+      "message": "task longctx-02: zero exec failed: fork/exec ./zero-bench-main.exe: The system cannot find the file specified."
+    },
+    {
+      "metric": "run",
+      "statistic": "",
+      "observed": 0,
+      "threshold": 0,
+      "unit": "",
+      "message": "task longctx-03: zero exec failed: fork/exec ./zero-bench-main.exe: The system cannot find the file specified."
+    },
+    {
+      "metric": "run",
+      "statistic": "",
+      "observed": 0,
+      "threshold": 0,
+      "unit": "",
+      "message": "task longctx-04: zero exec failed: fork/exec ./zero-bench-main.exe: The system cannot find the file specified."
+    },
+    {
+      "metric": "run",
+      "statistic": "",
+      "observed": 0,
+      "threshold": 0,
+      "unit": "",
+      "message": "task parallel-01: zero exec failed: fork/exec ./zero-bench-main.exe: The system cannot find the file specified."
+    },
+    {
+      "metric": "run",
+      "statistic": "",
+      "observed": 0,
+      "threshold": 0,
+      "unit": "",
+      "message": "task parallel-02: zero exec failed: fork/exec ./zero-bench-main.exe: The system cannot find the file specified."
+    },
+    {
+      "metric": "run",
+      "statistic": "",
+      "observed": 0,
+      "threshold": 0,
+      "unit": "",
+      "message": "task parallel-03: zero exec failed: fork/exec ./zero-bench-main.exe: The system cannot find the file specified."
+    },
+    {
+      "metric": "run",
+      "statistic": "",
+      "observed": 0,
+      "threshold": 0,
+      "unit": "",
+      "message": "task parallel-04: zero exec failed: fork/exec ./zero-bench-main.exe: The system cannot find the file specified."
+    },
+    {
+      "metric": "run",
+      "statistic": "",
+      "observed": 0,
+      "threshold": 0,
+      "unit": "",
+      "message": "task parallel-05: zero exec failed: fork/exec ./zero-bench-main.exe: The system cannot find the file specified."
+    },
+    {
+      "metric": "run",
+      "statistic": "",
+      "observed": 0,
+      "threshold": 0,
+      "unit": "",
+      "message": "task parallel-06: zero exec failed: fork/exec ./zero-bench-main.exe: The system cannot find the file specified."
+    }
+  ]
+}

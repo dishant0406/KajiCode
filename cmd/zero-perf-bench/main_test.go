@@ -101,7 +101,7 @@ func TestTurnExitCodeFailsWhenEveryTaskErrored(t *testing.T) {
 	if code := turnExitCode(allErrored, &stderr); code != 1 {
 		t.Fatalf("exit=%d, want 1 when every task errored", code)
 	}
-	if !strings.Contains(stderr.String(), "no valid samples") {
+	if !strings.Contains(stderr.String(), "no accepted benchmark sample") {
 		t.Fatalf("stderr missing explanation: %q", stderr.String())
 	}
 	partial := perfbench.TurnBenchResult{TasksAttempted: 3, TasksErrored: 2}

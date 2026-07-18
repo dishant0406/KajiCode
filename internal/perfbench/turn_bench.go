@@ -41,12 +41,17 @@ import (
 // improvement. New counts: correctness 34 (edit 10 + fix 8 + nav 10 + refactor
 // 6), build 0, latency 14 (longproc 4 + longctx 4 + parallel 6).
 //
-// v4 adds tasksErrored: the number of tasks whose every iteration died before
-// the agent produced a run (spawn failure, missing binary, crashed process).
-// Errored tasks were previously visible only in warnings, so a run where the
-// agent never launched still printed a clean-looking 0% pass summary and
-// exited 0. tasksErrored makes that state first-class: the summary surfaces
-// it, and the turn command exits nonzero when every attempted task errored.
+// v4 adds tasksErrored: the number of tasks whose every iteration produced no
+// accepted benchmark sample. That covers pre-run failures (missing binary,
+// spawn error, process crash) and harness errors after a successful agent run
+// (e.g. oracle stamping failed) alike — in every case the iteration yields no
+// usable measurement. Errored tasks were previously visible only in warnings,
+// so a run where nothing was actually measured still printed a clean-looking
+// 0% pass summary and exited 0. tasksErrored makes that state first-class:
+// the summary surfaces it, and the turn command exits nonzero when every
+// attempted task errored. Accounting: an errored oracle task stays in its
+// tier denominator as a failure; an errored latency-only task counts in
+// latencyOnlyTasks and, as always, in no pass rate.
 const TurnSchemaVersion = 4
 
 // TurnRunner runs one benchmark task and reports its outcome plus the captured
@@ -317,10 +322,11 @@ func RunTurnBench(ctx context.Context, set TaskSet, cfg TurnBenchConfig) (TurnBe
 		// in any pass rate even when the runner reports Passed — an exit-0
 		// read-only run proves the turn ran, not that the answer was right.
 		if erroredIterations == iterations {
-			// Every iteration died before the agent produced a run. The task
-			// still counts in its tier below (as a failure), but the errored
-			// state is first-class so a spawn-broken run can never print a
-			// clean-looking summary.
+			// Every iteration produced no accepted sample (spawn failure or a
+			// harness error after the run). The task still counts in its tier
+			// below — an oracle task as a failure, a latency-only task in no
+			// pass rate as always — but the errored state is first-class so a
+			// broken run can never print a clean-looking summary.
 			result.TasksErrored++
 		}
 		hasOracle := len(task.VerificationCommand) > 0
@@ -474,7 +480,7 @@ func FormatTurnBenchSummary(result TurnBenchResult) string {
 			result.LatencyOnlyTasks, result.Iterations),
 	}
 	if result.TasksErrored > 0 {
-		lines = append(lines, fmt.Sprintf("ERRORED: %d task(s) never produced an agent run (spawn/crash) — they count as FAILURES in the tier pass rates above", result.TasksErrored))
+		lines = append(lines, fmt.Sprintf("ERRORED: %d task(s) produced no accepted benchmark sample (spawn/crash or harness error) — errored oracle tasks count as failures in their tier's pass rate; latency-only tasks stay out of pass rates as always", result.TasksErrored))
 		shown := 0
 		for _, warning := range result.Warnings {
 			if warning.Metric != "run" {

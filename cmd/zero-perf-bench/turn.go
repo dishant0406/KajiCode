@@ -92,14 +92,15 @@ func runTurnCommand(args []string, getenv func(string) string, stdout io.Writer,
 	return turnExitCode(result, stderr)
 }
 
-// turnExitCode fails the command when every attempted task errored before the
-// agent produced a run: such a report measures nothing, and exiting 0 would let
-// a spawn-broken configuration (missing binary, bad path) pass as a clean
-// baseline. Partial errors keep exit 0 — the summary surfaces them loudly and
-// the surviving samples are still valid measurements.
+// turnExitCode fails the command when every attempted task errored (no
+// iteration produced an accepted benchmark sample): such a report measures
+// nothing, and exiting 0 would let a broken configuration (missing binary, bad
+// path, failing harness step) pass as a clean baseline. Partial errors keep
+// exit 0 — the summary surfaces them loudly and the surviving samples are
+// still valid measurements.
 func turnExitCode(result perfbench.TurnBenchResult, stderr io.Writer) int {
 	if result.TasksAttempted > 0 && result.TasksErrored == result.TasksAttempted {
-		_, _ = fmt.Fprintln(stderr, "[zero] Turn benchmark failed: every task errored before the agent ran (see warnings); the report contains no valid samples")
+		_, _ = fmt.Fprintln(stderr, "[zero] Turn benchmark failed: every task errored with no accepted benchmark sample (see warnings); the report contains no valid measurements")
 		return 1
 	}
 	return 0
