@@ -89,9 +89,10 @@ func TestProfileEffortVoidedByModelSwitchDrop(t *testing.T) {
 		t.Fatalf("setup: effort %q touched %v, want an explicit high", m.reasoningEffort, m.execProfileEffortTouched)
 	}
 
-	// Destination with no effort ring: "high" is known-unsupported, the drop
-	// fires, and the voided choice resets the profile's bookkeeping.
-	m, reset := m.reconcileEffortForModelSwitch(nil)
+	// Destination with an AUTHORITATIVE empty ring (a catalog model without
+	// effort controls): "high" is known-unsupported, the drop fires, and the
+	// voided choice resets the profile's bookkeeping.
+	m, reset := m.reconcileEffortForModelSwitch(nil, true)
 	if !reset {
 		t.Fatal("a dropped preference with nothing refilled must report the reset")
 	}
@@ -111,7 +112,7 @@ func TestProfileEffortVoidedByModelSwitchDrop(t *testing.T) {
 	// With the void cleared, a destination that supports the profile's level
 	// behaves like selecting the profile there: the fill returns.
 	ring := []modelregistry.ReasoningEffort{"low", "medium", "high"}
-	m, reset = m.reconcileEffortForModelSwitch(ring)
+	m, reset = m.reconcileEffortForModelSwitch(ring, true)
 	if reset {
 		t.Fatal("a refill is not a reset to auto")
 	}
@@ -130,7 +131,7 @@ func TestProfileEffortTouchedSurvivesSupportedModelSwitch(t *testing.T) {
 
 	m, _ = m.handleProfileCommand("fast")
 	m, _ = m.handleEffortCommand("high")
-	m, reset := m.reconcileEffortForModelSwitch([]modelregistry.ReasoningEffort{"low", "medium", "high"})
+	m, reset := m.reconcileEffortForModelSwitch([]modelregistry.ReasoningEffort{"low", "medium", "high"}, true)
 	if reset {
 		t.Fatal("nothing was dropped, so no reset")
 	}
@@ -139,6 +140,39 @@ func TestProfileEffortTouchedSurvivesSupportedModelSwitch(t *testing.T) {
 	}
 	if m.agentOptions.Profile.Escalate.RestoreDefaultEffort {
 		t.Fatal("an explicit choice keeps the restore disarmed")
+	}
+}
+
+// An UNKNOWN ring (live-discovered/custom target with no catalog entry) is
+// not evidence of unsupported: an explicit preference survives, exactly as it
+// does on the cross-provider picker path, while the profile's own fill still
+// retreats to models where support is known.
+func TestProfileEffortUnknownRingPreservesExplicitChoice(t *testing.T) {
+	m := profileSwitchModel(t)
+
+	m, _ = m.handleProfileCommand("fast")
+	m, _ = m.handleEffortCommand("high")
+	m, reset := m.reconcileEffortForModelSwitch(nil, false)
+	if reset {
+		t.Fatal("an unknown ring must not report a reset")
+	}
+	if m.reasoningEffort != "high" || !m.execProfileEffortTouched {
+		t.Fatalf("effort = %q touched %v, an explicit choice must survive an unknown ring", m.reasoningEffort, m.execProfileEffortTouched)
+	}
+
+	// Untouched profile fill on an unknown ring: the fill retreats (the
+	// profile only governs where support is known), with clean bookkeeping.
+	m2 := profileSwitchModel(t)
+	m2, _ = m2.handleProfileCommand("fast")
+	m2, reset = m2.reconcileEffortForModelSwitch(nil, false)
+	if reset {
+		t.Fatal("a profile-fill retreat is not an unsupported-preference reset")
+	}
+	if m2.reasoningEffort != "" || m2.execProfileAppliedEffort != "" {
+		t.Fatalf("effort = %q applied = %q, the profile fill must retreat on an unknown ring", m2.reasoningEffort, m2.execProfileAppliedEffort)
+	}
+	if m2.agentOptions.Profile.Escalate.RestoreDefaultEffort {
+		t.Fatal("no profile-governed effort, so the restore must be disarmed")
 	}
 }
 

@@ -465,11 +465,14 @@ func (m model) handleModelCommand(args string) (model, string) {
 		config.RecentModelEntry{Provider: m.providerName, Model: target.modelID},
 	)
 	// Drop a known-unsupported preference, void any profile bookkeeping the
-	// drop erased, and re-derive an active profile's per-model effort fill —
-	// all against the target's authoritative ring. resetEffort reports a
-	// dropped preference nothing refilled (shown as a reset to auto).
+	// drop erased, and re-derive an active profile's per-model effort fill.
+	// The ring is authoritative only for catalog-resolved targets
+	// (target.entry non-nil); live-discovered/custom targets carry no support
+	// knowledge, so an explicit preference survives onto them. resetEffort
+	// reports a dropped preference nothing refilled (shown as a reset to
+	// auto).
 	var resetEffort bool
-	m, resetEffort = m.reconcileEffortForModelSwitch(target.reasoningEfforts)
+	m, resetEffort = m.reconcileEffortForModelSwitch(target.reasoningEfforts, target.entry != nil)
 	effortLine := "effort: " + m.effortDisplay()
 	if resetEffort {
 		// Preference was dropped: show "auto" (model default applies), not a

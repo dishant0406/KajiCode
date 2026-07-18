@@ -164,22 +164,30 @@ func (m model) setProfileEffortRestore(restore bool) model {
 	return m
 }
 
-// reconcileEffortForModelSwitch applies the effort rules for a model switch,
-// given the destination's supported ring (nil for a model with none, or one
-// the catalog does not know). First the pre-existing generic rule: a
-// KNOWN-unsupported preference is dropped — the TUI run path forwards the
-// effort to the provider unfiltered, so it must not survive the switch, for a
-// profile-touched effort exactly as for a plain one. When that drop voids a
-// choice living under an active profile (the profile's own fill or a user
-// override of it), the profile's effort bookkeeping resets so a choice that
-// no longer exists stops binding and no stale applied/restore state remains.
+// reconcileEffortForModelSwitch applies the effort rules for a model switch.
+// efforts is the destination's supported ring and ringKnown whether that ring
+// is authoritative (a catalog entry, whose ring may be legitimately empty) or
+// missing knowledge (a live-discovered/custom model the catalog cannot vouch
+// for either way).
+//
+// First the pre-existing generic rule: a KNOWN-unsupported preference is
+// dropped — the TUI run path forwards the effort to the provider unfiltered,
+// so it must not survive the switch, for a profile-touched effort exactly as
+// for a plain one. An UNKNOWN ring never drops an explicit preference: the
+// model may well support it, matching the cross-provider picker's behavior
+// for custom models. When a drop voids a choice living under an active
+// profile (the profile's own fill or a user override of it), the profile's
+// effort bookkeeping resets so a choice that no longer exists stops binding
+// and no stale applied/restore state remains.
+//
 // Then the profile rule: an active, untouched profile re-derives its fill for
-// the destination. The second return reports whether an unsupported
-// preference was dropped and nothing refilled (the caller's
+// the destination (conservative in both directions — the fill only ever
+// applies where support is known). The second return reports whether an
+// unsupported preference was dropped and nothing refilled (the caller's
 // "(unsupported preference reset)" display case).
-func (m model) reconcileEffortForModelSwitch(efforts []modelregistry.ReasoningEffort) (model, bool) {
+func (m model) reconcileEffortForModelSwitch(efforts []modelregistry.ReasoningEffort, ringKnown bool) (model, bool) {
 	dropped := false
-	if m.reasoningEffort != "" && !reasoningEffortAllowed(efforts, m.reasoningEffort) {
+	if ringKnown && m.reasoningEffort != "" && !reasoningEffortAllowed(efforts, m.reasoningEffort) {
 		m.reasoningEffort = ""
 		dropped = true
 		if m.execProfileName != "" {
