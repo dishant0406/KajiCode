@@ -62,9 +62,7 @@ func (m model) handleEffortCommand(args string) (model, string) {
 	}
 	if args == "auto" {
 		m.reasoningEffort = ""
-		if m.execProfileName != "" {
-			m.execProfileEffortTouched = true
-		}
+		m = m.markProfileEffortTouched()
 		return m, m.effortStatusCard("auto", "Reasoning effort selection will follow the active model/provider defaults.")
 	}
 
@@ -82,9 +80,7 @@ func (m model) handleEffortCommand(args string) (model, string) {
 	}
 
 	m.reasoningEffort = requested
-	if m.execProfileName != "" {
-		m.execProfileEffortTouched = true
-	}
+	m = m.markProfileEffortTouched()
 	return m, m.effortStatusCard(string(requested), "Reasoning effort preference is stored for this TUI session.")
 }
 
@@ -138,6 +134,26 @@ func (m model) effortText() string {
 	})
 }
 
+// markProfileEffortTouched records an explicit effort choice made while a
+// profile is active: the touched bit protects the choice from a later profile
+// revert, and disarming the policy's RestoreDefaultEffort (on a clone, like
+// the /turns turn-target disarm) stops a mid-run escalation from clearing an
+// effort the user pinned by hand.
+func (m model) markProfileEffortTouched() model {
+	if m.execProfileName == "" {
+		return m
+	}
+	m.execProfileEffortTouched = true
+	if m.agentOptions.Profile != nil && m.agentOptions.Profile.Escalate != nil && m.agentOptions.Profile.Escalate.RestoreDefaultEffort {
+		policy := *m.agentOptions.Profile
+		escalate := *policy.Escalate
+		escalate.RestoreDefaultEffort = false
+		policy.Escalate = &escalate
+		m.agentOptions.Profile = &policy
+	}
+	return m
+}
+
 func (m model) availableReasoningEfforts() []modelregistry.ReasoningEffort {
 	if strings.TrimSpace(m.modelName) == "" {
 		return nil
@@ -169,10 +185,9 @@ func (m model) cycleReasoningEffort() (model, tea.Cmd) {
 		return m, nil
 	}
 	// Every branch below changes the effort; a cycle while a profile is active
-	// is an explicit user choice that must survive a later profile revert.
-	if m.execProfileName != "" {
-		m.execProfileEffortTouched = true
-	}
+	// is an explicit user choice that must survive both a later profile revert
+	// and any mid-run escalation.
+	m = m.markProfileEffortTouched()
 	if m.reasoningEffort == "" {
 		m.reasoningEffort = efforts[0]
 		return m, nil

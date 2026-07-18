@@ -161,6 +161,44 @@ func TestProfileCommandRevertLeavesCoincidingOverride(t *testing.T) {
 	}
 }
 
+// An explicit effort choice after /profile must disarm the escalation's
+// effort restore (the effort analog of the /turns pin): a mid-run escalation
+// must never clear an effort the user pinned by hand. Needs a catalog model
+// with an effort ring so the profile's fill actually applies.
+func TestProfileCommandExplicitEffortDisarmsRestore(t *testing.T) {
+	m := model{modelName: "claude-sonnet-4.5"}
+	m.agentOptions.MaxTurns = 80
+
+	m, _ = m.handleProfileCommand("fast")
+	if m.reasoningEffort != "low" {
+		t.Skipf("model catalog does not fill low effort here (got %q); disarm path not reachable", m.reasoningEffort)
+	}
+	policy := m.agentOptions.Profile
+	if policy == nil || policy.Escalate == nil || !policy.Escalate.RestoreDefaultEffort {
+		t.Fatal("profile-filled effort must arm the escalation effort restore")
+	}
+
+	m, _ = m.handleEffortCommand("high")
+	if m.reasoningEffort != "high" {
+		t.Fatalf("effort = %q, want the explicit high", m.reasoningEffort)
+	}
+	policy = m.agentOptions.Profile
+	if policy == nil || policy.Escalate == nil {
+		t.Fatal("the escalation policy must stay armed")
+	}
+	if policy.Escalate.RestoreDefaultEffort {
+		t.Fatal("an explicit /effort must disarm the effort restore")
+	}
+	if policy.Escalate.MaxTurns != 80 {
+		t.Fatalf("Escalate.MaxTurns = %d, disarming effort must not touch the turn target", policy.Escalate.MaxTurns)
+	}
+	// And the explicit choice survives a later revert (touched bit).
+	m, _ = m.handleProfileCommand("balanced")
+	if m.reasoningEffort != "high" {
+		t.Fatalf("effort = %q, the explicit high must survive the revert", m.reasoningEffort)
+	}
+}
+
 // A manual override made after selecting a profile survives the revert: the
 // profile only restores knobs that still hold the value it applied.
 func TestProfileCommandRevertLeavesManualOverride(t *testing.T) {

@@ -505,8 +505,12 @@ func runExec(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) in
 			specPermissionMode: permissionMode,
 			notifier:           notifier,
 			// The profile displaced resolved.MaxTurns above, so the spec-draft
-			// run gets the same escalation safety net as the main run.
-			profilePolicy: execProfile.Policy(displacedMaxTurns, execProfileFilledEffort),
+			// run arms the same escalation policy as the main run (in practice
+			// only the failure-streak and risky-mutation triggers can fire
+			// here: the draft runs without the completion gate or a
+			// self-corrector).
+			profilePolicy: execProfile.Policy(displacedMaxTurns,
+				specProfileEffortFilled(execProfileFilledEffort, options.specReasoningEffort)),
 		})
 	}
 
@@ -1186,6 +1190,14 @@ func applyExecProfile(options *execOptions) (execprofile.Profile, bool, error) {
 		options.selfCorrect = true
 	}
 	return profile, effortFilled, nil
+}
+
+// specProfileEffortFilled reports whether the profile's effort fill actually
+// governs the spec-draft run. An explicit --spec-reasoning-effort replaces the
+// filled effort for the draft, so the escalation's effort restore must not arm
+// there: escalation must never clear an effort the user pinned by hand.
+func specProfileEffortFilled(effortFilled bool, specReasoningEffort string) bool {
+	return effortFilled && strings.TrimSpace(specReasoningEffort) == ""
 }
 
 // applyProfileTurnBudget decides the run's turn budget once config is resolved.

@@ -158,6 +158,21 @@ func TestRunExecTraceRecordsSelectedProfile(t *testing.T) {
 	}
 }
 
+// An explicit --spec-reasoning-effort governs the spec draft's effort, so the
+// escalation effort-restore must not arm there even when the profile filled
+// the (unused) main effort.
+func TestSpecProfileEffortFilled(t *testing.T) {
+	if !specProfileEffortFilled(true, "") {
+		t.Fatal("no explicit spec effort: the profile's fill governs, restore must arm")
+	}
+	if specProfileEffortFilled(true, "high") {
+		t.Fatal("an explicit spec effort must disarm the effort restore")
+	}
+	if specProfileEffortFilled(false, "") {
+		t.Fatal("nothing filled, nothing to restore")
+	}
+}
+
 // The trace label deliberately records the SELECTED profile, balanced
 // included, so captures are self-describing. Run behavior stays identical
 // (balanced fills nothing and arms no policy); the label is the one intended
