@@ -1206,13 +1206,15 @@ func specProfileEffortFilled(effortFilled bool, specReasoningEffort string) bool
 }
 
 // applyProfileTurnBudget decides the run's turn budget once config is resolved.
-// The profile displaces the RESOLVED value, not the flag: an explicit
-// --max-turns (or a mode preset, which fills the same options field) always
-// wins and the profile backs off entirely, while an env/config budget is the
-// "balanced posture" a mid-run escalation can restore. displaced is 0 when
-// nothing was displaced, so an escalation leaves the ceiling untouched.
-func applyProfileTurnBudget(profile execprofile.Profile, explicitMaxTurns int, resolvedMaxTurns int) (effective int, displaced int) {
-	if profile.MaxTurns > 0 && explicitMaxTurns == 0 {
+// The profile displaces the RESOLVED value, not the flag: a pinned budget
+// always wins and the profile backs off entirely, while an env/config budget
+// is the "balanced posture" a mid-run escalation can restore. pinnedMaxTurns
+// is any caller-pinned budget — an explicit --max-turns flag OR a mode
+// preset's fill (both land in options.maxTurns, and a mode outranks a profile
+// just like the flag does). displaced is 0 when nothing was displaced, so an
+// escalation leaves the ceiling untouched.
+func applyProfileTurnBudget(profile execprofile.Profile, pinnedMaxTurns int, resolvedMaxTurns int) (effective int, displaced int) {
+	if profile.MaxTurns > 0 && pinnedMaxTurns == 0 {
 		return profile.MaxTurns, resolvedMaxTurns
 	}
 	return resolvedMaxTurns, 0

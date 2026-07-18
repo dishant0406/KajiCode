@@ -1,12 +1,96 @@
 package tui
 
 import (
+	"context"
 	"os"
 	"strings"
 	"testing"
 
 	"github.com/Gitlawb/zero/internal/config"
+	"github.com/Gitlawb/zero/internal/zeroruntime"
 )
+
+// profileSwitchModel builds a session on a model whose catalog entry supports
+// the fast profile's "low" effort, with a second saved provider whose custom
+// model has no catalog entry (so no effort ring) — the two directions the
+// model-switch reconciliation must handle.
+func profileSwitchModel(t *testing.T) model {
+	t.Helper()
+	return newModel(context.Background(), Options{
+		ProviderName:    "anthropic",
+		ModelName:       "claude-sonnet-4.5",
+		Provider:        &fakeProvider{},
+		ProviderProfile: config.ProviderProfile{Name: "anthropic", CatalogID: "anthropic", Model: "claude-sonnet-4.5", APIKey: "k"},
+		SavedProviders: []config.ProviderProfile{
+			{Name: "anthropic", CatalogID: "anthropic", Model: "claude-sonnet-4.5", APIKey: "k"},
+			{Name: "ollama", CatalogID: "ollama", ProviderKind: config.ProviderKindOpenAICompatible, BaseURL: "http://localhost:11434/v1", Model: "kimi-k2.7-code:cloud"},
+		},
+		NewProvider: func(config.ProviderProfile) (zeroruntime.Provider, error) {
+			return &fakeProvider{}, nil
+		},
+	})
+}
+
+// The profile's effort fill is per-model and must be re-derived on a model
+// switch: dropped when the destination does not support the level, refilled
+// when a later destination does, with the escalation's effort restore tracking
+// whether the profile currently governs the effort.
+func TestProfileEffortReconciledOnModelSwitch(t *testing.T) {
+	m := profileSwitchModel(t)
+
+	m, _ = m.handleProfileCommand("fast")
+	if m.reasoningEffort != "low" || m.agentOptions.Profile == nil || !m.agentOptions.Profile.Escalate.RestoreDefaultEffort {
+		t.Fatalf("fast on a low-supporting model must fill low and arm the restore, got effort %q", m.reasoningEffort)
+	}
+
+	// Supported -> unsupported: the profile-applied level must not survive
+	// onto a model with no effort ring.
+	m, text, ok, _ := m.switchProviderModel("ollama", "kimi-k2.7-code:cloud")
+	if !ok {
+		t.Fatalf("switch to ollama failed: %q", text)
+	}
+	if m.reasoningEffort != "" || m.execProfileAppliedEffort != "" {
+		t.Fatalf("effort = %q applied = %q, want both cleared on an unsupported destination", m.reasoningEffort, m.execProfileAppliedEffort)
+	}
+	if m.agentOptions.Profile.Escalate.RestoreDefaultEffort {
+		t.Fatal("the profile no longer governs the effort, so the restore must disarm")
+	}
+	if m.execProfileName != "fast" || m.agentOptions.MaxTurns != 30 {
+		t.Fatalf("profile must stay active across the switch: name %q turns %d", m.execProfileName, m.agentOptions.MaxTurns)
+	}
+
+	// Unsupported -> supported: switching (back) to a supporting model must
+	// behave like selecting the profile there.
+	m, text, ok, _ = m.switchProviderModel("anthropic", "claude-sonnet-4.5")
+	if !ok {
+		t.Fatalf("switch back to anthropic failed: %q", text)
+	}
+	if m.reasoningEffort != "low" || m.execProfileAppliedEffort != "low" {
+		t.Fatalf("effort = %q applied = %q, want the profile's low refilled", m.reasoningEffort, m.execProfileAppliedEffort)
+	}
+	if !m.agentOptions.Profile.Escalate.RestoreDefaultEffort {
+		t.Fatal("the profile governs the effort again, so the restore must re-arm")
+	}
+}
+
+// An explicitly touched effort is the user's choice: the reconciliation must
+// leave it alone entirely across model switches.
+func TestProfileEffortTouchedSurvivesModelSwitch(t *testing.T) {
+	m := profileSwitchModel(t)
+
+	m, _ = m.handleProfileCommand("fast")
+	m, _ = m.handleEffortCommand("high")
+	m, text, ok, _ := m.switchProviderModel("ollama", "kimi-k2.7-code:cloud")
+	if !ok {
+		t.Fatalf("switch to ollama failed: %q", text)
+	}
+	if m.reasoningEffort != "high" {
+		t.Fatalf("effort = %q, an explicit choice must survive the switch untouched", m.reasoningEffort)
+	}
+	if m.agentOptions.Profile.Escalate.RestoreDefaultEffort {
+		t.Fatal("an explicit choice keeps the restore disarmed")
+	}
+}
 
 func TestProfileCommandStatus(t *testing.T) {
 	_, out := model{}.handleProfileCommand("")
@@ -179,8 +263,8 @@ func TestProfileCommandRevertFromZeroClearsMaxTurnsEnv(t *testing.T) {
 	if m.agentOptions.MaxTurns != 0 {
 		t.Fatalf("MaxTurns = %d, want the displaced 0 restored", m.agentOptions.MaxTurns)
 	}
-	if got := os.Getenv(config.MaxTurnsEnv); got != "" {
-		t.Fatalf("env after revert = %q, want cleared", got)
+	if got, present := os.LookupEnv(config.MaxTurnsEnv); present {
+		t.Fatalf("env after revert = %q (present), want the key removed", got)
 	}
 }
 

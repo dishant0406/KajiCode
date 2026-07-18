@@ -137,20 +137,61 @@ func (m model) effortText() string {
 
 // markProfileEffortTouched records an explicit effort choice made while a
 // profile is active: the touched bit protects the choice from a later profile
-// revert, and disarming the policy's RestoreDefaultEffort (on a clone, like
-// the /turns turn-target disarm) stops a mid-run escalation from clearing an
-// effort the user pinned by hand.
+// revert, and disarming the policy's RestoreDefaultEffort stops a mid-run
+// escalation from clearing an effort the user pinned by hand.
 func (m model) markProfileEffortTouched() model {
 	if m.execProfileName == "" {
 		return m
 	}
 	m.execProfileEffortTouched = true
-	if m.agentOptions.Profile != nil && m.agentOptions.Profile.Escalate != nil && m.agentOptions.Profile.Escalate.RestoreDefaultEffort {
-		policy := *m.agentOptions.Profile
-		escalate := *policy.Escalate
-		escalate.RestoreDefaultEffort = false
-		policy.Escalate = &escalate
-		m.agentOptions.Profile = &policy
+	return m.setProfileEffortRestore(false)
+}
+
+// setProfileEffortRestore rewrites the armed policy's RestoreDefaultEffort on
+// a clone (an in-flight run may hold the current pointer), like the /turns
+// turn-target disarm. No-op when no escalation policy is armed or the flag
+// already matches.
+func (m model) setProfileEffortRestore(restore bool) model {
+	if m.agentOptions.Profile == nil || m.agentOptions.Profile.Escalate == nil ||
+		m.agentOptions.Profile.Escalate.RestoreDefaultEffort == restore {
+		return m
+	}
+	policy := *m.agentOptions.Profile
+	escalate := *policy.Escalate
+	escalate.RestoreDefaultEffort = restore
+	policy.Escalate = &escalate
+	m.agentOptions.Profile = &policy
+	return m
+}
+
+// reconcileProfileAfterModelSwitch re-derives an active profile's effort fill
+// for the model the session just switched to. The fill is per-model, not a
+// session preference: fast selected on a model without "low" fills nothing,
+// and switching to a model that supports it should behave exactly like
+// selecting the profile there (and the reverse switch must not keep sending a
+// level the destination does not support). An explicitly touched effort is the
+// user's choice and is never reconciled; the escalation's RestoreDefaultEffort
+// tracks whether the profile currently governs the effort.
+func (m model) reconcileProfileAfterModelSwitch() model {
+	if m.execProfileName == "" || m.execProfileEffortTouched {
+		return m
+	}
+	profile, ok := execprofile.Lookup(m.execProfileName)
+	if !ok || profile.ReasoningEffort == "" {
+		return m
+	}
+	want := modelregistry.ReasoningEffort(profile.ReasoningEffort)
+	supported := reasoningEffortAllowed(m.availableReasoningEfforts(), want)
+	filled := m.execProfileAppliedEffort != ""
+	switch {
+	case supported && !filled && m.reasoningEffort == "":
+		m.reasoningEffort = want
+		m.execProfileAppliedEffort = want
+		m = m.setProfileEffortRestore(true)
+	case !supported && filled && m.reasoningEffort == m.execProfileAppliedEffort:
+		m.reasoningEffort = ""
+		m.execProfileAppliedEffort = ""
+		m = m.setProfileEffortRestore(false)
 	}
 	return m
 }

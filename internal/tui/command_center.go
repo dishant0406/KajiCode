@@ -471,6 +471,15 @@ func (m model) handleModelCommand(args string) (model, string) {
 		m.reasoningEffort = ""
 		resetEffort = true
 	}
+	// An active profile's effort fill is per-model: re-derive it for the
+	// destination (fill when now supported, drop when no longer supported),
+	// leaving explicitly touched efforts alone.
+	m = m.reconcileProfileAfterModelSwitch()
+	if resetEffort && m.reasoningEffort != "" {
+		// The profile refilled its level after the drop: the effort was not
+		// reset to auto, so don't report it as such.
+		resetEffort = false
+	}
 	effortLine := "effort: " + m.effortDisplay()
 	if resetEffort {
 		// Preference was dropped: show "auto" (model default applies), not a
@@ -551,6 +560,9 @@ func (m model) switchProviderModel(providerName, modelID string) (model, string,
 	m.providerProfile = target
 	m.providerName = target.Name
 	m.modelName = target.Model
+	// An active profile's effort fill is per-model: re-derive it for the
+	// destination, exactly like handleModelCommand does.
+	m = m.reconcileProfileAfterModelSwitch()
 	// Record the outgoing pair too — see the matching comment in
 	// handleModelCommand for why (keeps the session's starting model from
 	// silently dropping out of "Recent" on the first switch away from it).
