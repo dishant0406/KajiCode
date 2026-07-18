@@ -32,6 +32,7 @@ const (
 	SpanToolPartition   = "tool_partition"   // partitioning the tool set for the prompt
 	SpanProviderConnect = "provider_connect" // client.Do in the provider seam
 	SpanProviderQueue   = "provider_queue"   // pre-send OAuth/token resolve
+	SpanProviderPrewarm = "provider_prewarm" // best-effort turn-session prewarm probe
 	SpanGeneration      = "generation"       // streaming a model completion
 	SpanToolExecution   = "tool_execution"   // executing tool calls
 	SpanPermissionWait  = "permission_wait"  // waiting on a permission prompt
@@ -53,6 +54,9 @@ const (
 	CounterInputTokens       = "input_tokens"
 	CounterCachedInputTokens = "cached_input_tokens"
 	CounterOutputTokens      = "output_tokens"
+	CounterPrewarmAttempts   = "prewarm_attempts"
+	CounterPrefixStable      = "prefix_stable"
+	CounterPrefixDrift       = "prefix_drift"
 )
 
 // Span is one named wall interval attributed to part of a run. Each stamp is
@@ -281,6 +285,10 @@ func OptionalEventKeys() []string {
 		"counter:" + CounterAcceptanceChecks,
 		"counter:" + CounterPollingTurn,
 		"counter:" + CounterModelSwitches,
+		"span:" + SpanProviderPrewarm,
+		"counter:" + CounterPrewarmAttempts,
+		"counter:" + CounterPrefixStable,
+		"counter:" + CounterPrefixDrift,
 		"event:prefix_hash",
 	}
 }
