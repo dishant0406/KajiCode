@@ -40,7 +40,14 @@ import (
 // prevents a v2→v2 cross-version comparison from misreading the jump as a model
 // improvement. New counts: correctness 34 (edit 10 + fix 8 + nav 10 + refactor
 // 6), build 0, latency 14 (longproc 4 + longctx 4 + parallel 6).
-const TurnSchemaVersion = 3
+//
+// v4 adds tasksErrored: the number of tasks whose every iteration died before
+// the agent produced a run (spawn failure, missing binary, crashed process).
+// Errored tasks were previously visible only in warnings, so a run where the
+// agent never launched still printed a clean-looking 0% pass summary and
+// exited 0. tasksErrored makes that state first-class: the summary surfaces
+// it, and the turn command exits nonzero when every attempted task errored.
+const TurnSchemaVersion = 4
 
 // TurnRunner runs one benchmark task and reports its outcome plus the captured
 // per-turn trace. A non-nil Err means the run failed to execute (process crash);
@@ -144,6 +151,7 @@ type TurnBenchResult struct {
 	Commit              string                  `json:"commit,omitempty"`
 	Date                string                  `json:"date"`
 	TasksAttempted      int                     `json:"tasksAttempted"`
+	TasksErrored        int                     `json:"tasksErrored"`
 	TasksVerified       int                     `json:"tasksVerified"`
 	TasksPassed         int                     `json:"tasksPassed"`
 	LatencyOnlyTasks    int                     `json:"latencyOnlyTasks"`
@@ -249,6 +257,7 @@ func RunTurnBench(ctx context.Context, set TaskSet, cfg TurnBenchConfig) (TurnBe
 		// runner is cold-start, so a flaky pass on one iteration and a fail on
 		// another is a real regression signal, not noise to average away.
 		passedForTask := true
+		erroredIterations := 0
 		for iter := 0; iter < iterations; iter++ {
 			outcome := cfg.Runner(ctx, task, rc)
 			if outcome.TraceIssue != "" {
@@ -266,6 +275,7 @@ func RunTurnBench(ctx context.Context, set TaskSet, cfg TurnBenchConfig) (TurnBe
 					Message: fmt.Sprintf("task %s: %v", task.ID, outcome.Err),
 				})
 				passedForTask = false
+				erroredIterations++
 				continue
 			}
 			if !outcome.Passed {
@@ -306,6 +316,13 @@ func RunTurnBench(ctx context.Context, set TaskSet, cfg TurnBenchConfig) (TurnBe
 		// counters. A latency-only task (no verificationCommand) is never counted
 		// in any pass rate even when the runner reports Passed — an exit-0
 		// read-only run proves the turn ran, not that the answer was right.
+		if erroredIterations == iterations {
+			// Every iteration died before the agent produced a run. The task
+			// still counts in its tier below (as a failure), but the errored
+			// state is first-class so a spawn-broken run can never print a
+			// clean-looking summary.
+			result.TasksErrored++
+		}
 		hasOracle := len(task.VerificationCommand) > 0
 		switch {
 		case !hasOracle:
@@ -455,6 +472,20 @@ func FormatTurnBenchSummary(result TurnBenchResult) string {
 			result.TasksPassed, result.TasksVerified, result.CorrectnessPassRate*100,
 			result.BuildPassedTasks, result.BuildCheckedTasks, result.BuildPassRate*100,
 			result.LatencyOnlyTasks, result.Iterations),
+	}
+	if result.TasksErrored > 0 {
+		lines = append(lines, fmt.Sprintf("ERRORED: %d task(s) never produced an agent run (spawn/crash) — pass rates above cover only what actually ran", result.TasksErrored))
+		shown := 0
+		for _, warning := range result.Warnings {
+			if warning.Metric != "run" {
+				continue
+			}
+			lines = append(lines, "  "+warning.Message)
+			shown++
+			if shown == 3 {
+				break
+			}
+		}
 	}
 	if result.Mode != "" {
 		lines = append(lines, "mode: "+result.Mode)
@@ -747,7 +778,15 @@ func ResolveBinary(explicit string) (string, error) {
 		if _, err := os.Stat(v); err != nil {
 			return "", fmt.Errorf("trace binary not found: %w", err)
 		}
-		return v, nil
+		// Pin the explicit path to an absolute one: the turn runner sets each
+		// child's cmd.Dir to a per-task fixture copy, so a relative path
+		// (./zero, the Makefile default) that stats fine here would fail to
+		// spawn from inside every fixture dir, silently erroring all tasks.
+		absolute, err := filepath.Abs(v)
+		if err != nil {
+			return "", fmt.Errorf("resolve trace binary path: %w", err)
+		}
+		return absolute, nil
 	}
 	if path, err := exec.LookPath("zero"); err == nil {
 		return path, nil
