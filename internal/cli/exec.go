@@ -412,6 +412,34 @@ func runExec(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) in
 		}
 	}
 
+	// Optimized OpenAI turn sessions (ZERO_OPENAI_TURN_SESSION, default off).
+	// nil when gated off or the profile is ineligible: agent.Run then wraps the
+	// provider in its default adapter — the exact code path of today. The
+	// session switcher is installed only when the run START is optimized, so
+	// the legacy ModelSwitcher path above stays untouched otherwise.
+	turnSessions, _ := providers.OptimizedTurnSessions(resolved.Provider, provider, providers.Options{})
+	var modelSessionSwitcher func(context.Context, string) (zeroruntime.TurnSessionProvider, error)
+	if options.allowEscalation && turnSessions != nil {
+		modelSessionSwitcher = func(_ context.Context, modelID string) (zeroruntime.TurnSessionProvider, error) {
+			switchedProfile := resolved.Provider
+			switchedProfile.Model = modelID
+			switchedProvider, err := deps.newProvider(switchedProfile)
+			if err != nil {
+				return nil, err
+			}
+			if switchedProvider == nil {
+				// The loop treats a nil session source as "no swap" — mirror the
+				// legacy closure's (nil, nil) contract.
+				return nil, nil
+			}
+			currentModel = modelID
+			if optimized, ok := providers.OptimizedTurnSessions(switchedProfile, switchedProvider, providers.Options{}); ok {
+				return optimized, nil
+			}
+			return zeroruntime.NewProviderTurnSessionProvider(switchedProvider, zeroruntime.ProviderCapabilities{}), nil
+		}
+	}
+
 	runMetadata, err := resolveExecRunMetadata(resolved.Provider)
 	if err != nil {
 		return writeExecProviderError(stdout, stderr, options.outputFormat, "provider_error", err.Error())
@@ -572,29 +600,31 @@ func runExec(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) in
 	hookDispatcher, hookSkip := newHookDispatcherWithExtra(workspaceRoot, pluginActivation.hooks, trustRoot)
 	emitTrustNotice(stderr, hookSkip, pluginActivation.trustSkip, mcpSkip)
 	result, err := agent.Run(runCtx, agentPrompt, provider, agent.Options{
-		MaxTurns:         resolved.MaxTurns,
-		ContextWindow:    resolveAgentContextWindow(runCtx, modelRegistry, resolved.Provider),
-		DeferThreshold:   effectiveDeferThreshold,
-		Specialists:      specialistRuntime.specialistInfos(),
-		Skills:           pluginActivation.skillInfos(deps.skillsDir()),
-		SessionID:        preparedSession.Session.SessionID,
-		CallingSessionID: options.callingSessionID,
-		CallingToolUseID: options.callingToolUseID,
-		Tag:              options.tag,
-		Depth:            options.depth,
-		SessionTitle:     sessionTitle,
-		ProviderName:     resolved.Provider.Name,
-		Model:            resolved.Provider.Model,
-		ModelSwitcher:    modelSwitcher,
-		ReasoningEffort:  forwardEffort,
-		Trace:            traceRecorder,
-		Cwd:              workspaceRoot,
-		Images:           images,
-		Registry:         registry,
-		PermissionMode:   permissionMode,
-		Autonomy:         options.autonomy,
-		SelfCorrect:      selfCorrector,
-		FileDiagnostics:  fileDiagnostics,
+		MaxTurns:             resolved.MaxTurns,
+		ContextWindow:        resolveAgentContextWindow(runCtx, modelRegistry, resolved.Provider),
+		DeferThreshold:       effectiveDeferThreshold,
+		Specialists:          specialistRuntime.specialistInfos(),
+		Skills:               pluginActivation.skillInfos(deps.skillsDir()),
+		SessionID:            preparedSession.Session.SessionID,
+		CallingSessionID:     options.callingSessionID,
+		CallingToolUseID:     options.callingToolUseID,
+		Tag:                  options.tag,
+		Depth:                options.depth,
+		SessionTitle:         sessionTitle,
+		ProviderName:         resolved.Provider.Name,
+		Model:                resolved.Provider.Model,
+		ModelSwitcher:        modelSwitcher,
+		TurnSessionProvider:  turnSessions,
+		ModelSessionSwitcher: modelSessionSwitcher,
+		ReasoningEffort:      forwardEffort,
+		Trace:                traceRecorder,
+		Cwd:                  workspaceRoot,
+		Images:               images,
+		Registry:             registry,
+		PermissionMode:       permissionMode,
+		Autonomy:             options.autonomy,
+		SelfCorrect:          selfCorrector,
+		FileDiagnostics:      fileDiagnostics,
 		// Headless exec: don't accept a no-tool-call turn as "done" while work
 		// clearly remains (pending plan items / a mid-step continuation cue) —
 		// nudge to continue, and finalize as INCOMPLETE rather than false success
