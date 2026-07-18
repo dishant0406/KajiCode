@@ -44,7 +44,8 @@ guide to extending Zero with specialists, hooks, plugins, MCP, and skills, see
 Run validation from the repository root before committing, opening a pull
 request, or completing an implementation task:
 
-1. **Formatting**: `go fmt ./...` (or `make fmt`).
+1. **Formatting check**: `make fmt-check`. If it fails, format with
+   `go fmt ./...` (or `make fmt`) and run the check again.
 2. **Vet**: `go vet ./...` (or `make vet`).
 3. **Tests**: `go test ./...`. Use `make test` for the full race-enabled suite,
    or run focused tests with `-race`, when concurrency is affected.
@@ -54,7 +55,8 @@ request, or completing an implementation task:
    `go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2 run --enable-only unused,ineffassign,staticcheck ./...`.
 7. **Security**:
    `go run golang.org/x/vuln/cmd/govulncheck@v1.3.0 ./...`.
-8. **Diff hygiene**: `git diff --check`.
+8. **Diff hygiene**: `git diff HEAD --check` (covers staged and unstaged
+   tracked changes).
 
 `make lint` currently runs the formatting check and `go vet`; it does **not**
 run golangci-lint. The pinned golangci-lint job is advisory in CI while the
