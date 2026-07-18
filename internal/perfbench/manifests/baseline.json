@@ -133,7 +133,7 @@
       "verificationCommand": [
         "bash",
         "-c",
-        "go test ./... && ! grep -RIn 'MaxRetries =' ."
+        "go test ./... && ! grep --exclude=.zero-answer.txt -RIn 'MaxRetries =' ."
       ],
       "oracleTest": "package edit\n\nvar _ = RetryLimit\n"
     },
@@ -146,7 +146,7 @@
       "verificationCommand": [
         "bash",
         "-c",
-        "go test ./... && ! grep -R receieves . && grep -R receives ."
+        "go test ./... && ! grep --exclude=.zero-answer.txt -R receieves . && grep -R receives ."
       ]
     },
     {
@@ -400,7 +400,7 @@
       "verificationCommand": [
         "bash",
         "-c",
-        "go test ./... && ! grep -R 'package refactor' . && grep -R 'package zeroapp' ."
+        "go test ./... && ! grep --exclude=.zero-answer.txt -R 'package refactor' . && grep -R 'package zeroapp' ."
       ],
       "oracleTest": "package zeroapp\n\nvar _ = Config{}\n"
     },
@@ -426,7 +426,7 @@
       "verificationCommand": [
         "bash",
         "-c",
-        "go test ./... && ! grep -R 'func Wrapper' ."
+        "go test ./... && ! grep --exclude=.zero-answer.txt -R 'func Wrapper' ."
       ],
       "oracleTest": "package refactor\n\nimport \"testing\"\n\n// TestGreetWrapped proves greetWrapped still exists and behaves as the inlined\n// Wrapper did: deleting both Wrapper and greetWrapped (or stubbing greetWrapped\n// to return \"\") fails to compile or run, so the oracle can't be passed by\n// removing the target along with its caller. Paired with the ! grep 'func\n// Wrapper' verificationCommand that proves Wrapper itself is gone.\nfunc TestGreetWrapped(t *testing.T) {\n\tif got := greetWrapped(\"x\"); got != \"hello, x\" {\n\t\tt.Fatalf(\"greetWrapped(x) = %q, want %q\", got, \"hello, x\")\n\t}\n}\n"
     },
