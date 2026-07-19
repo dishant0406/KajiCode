@@ -47,6 +47,7 @@ const (
 	commandCopy
 	commandExport
 	commandNew
+	commandBTW
 	commandSkills
 	commandLoop
 	commandVoice
@@ -191,6 +192,13 @@ var commandDefinitions = []commandDefinition{
 		group:       commandGroupSession,
 		description: "Start a fresh session; the current one stays resumable via /resume.",
 		kind:        commandNew,
+	},
+	{
+		name:        "/btw",
+		usage:       "/btw [question]",
+		group:       commandGroupSession,
+		description: "Open an isolated side conversation; run /btw again to return.",
+		kind:        commandBTW,
 	},
 	{
 		name:        "/search",

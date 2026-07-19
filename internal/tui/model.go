@@ -103,6 +103,7 @@ type model struct {
 	doctorFrame          int
 	activeSession        sessions.Metadata
 	sessionEvents        []sessions.Event
+	btw                  btwState
 	// titledSessions records session ids for which a model-generated title has
 	// already been attempted this process, so a finished turn re-fires the title
 	// generator at most once per session (even before its async result lands).
@@ -1029,6 +1030,14 @@ func (m model) shutdownLSPManager() {
 }
 
 func (m model) handleCtrlC() (tea.Model, tea.Cmd) {
+	if m.btw.active {
+		if m.composerValue() != "" && m.noBlockingModal() {
+			m.clearComposer()
+			m.clearSuggestions()
+			return m, nil
+		}
+		return m.leaveBTW()
+	}
 	if !m.pending && m.composerValue() != "" && m.noBlockingModal() && !m.transcriptDetailed && !m.subchat.active {
 		m.clearComposer()
 		m.clearSuggestions()
@@ -1108,6 +1117,9 @@ func batchCommands(cmds ...tea.Cmd) tea.Cmd {
 }
 
 func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if next, cmd, routed := m.routeBTWParentMessage(msg); routed {
+		return next, cmd
+	}
 	switch msg := msg.(type) {
 	case composerBlinkMsg:
 		switch {
@@ -4114,6 +4126,13 @@ func (m model) handleSubmit() (tea.Model, tea.Cmd) {
 // dispatchCommand runs a parsed slash/prompt command after submit/leader
 // preamble (history, composer clear, leave-prompt disarm) has already run.
 func (m model) dispatchCommand(command parsedCommand) (tea.Model, tea.Cmd) {
+	if m.btw.active && btwCommandChangesSession(command.kind) {
+		m.transcript = reduceTranscript(m.transcript, transcriptAction{
+			kind: actionAppendSystem,
+			text: command.name + " is unavailable in a BTW conversation. Return to the main session first with /btw or Ctrl+C.",
+		})
+		return m, nil
+	}
 	switch command.kind {
 	case commandEmpty:
 		return m, nil
@@ -4152,6 +4171,8 @@ func (m model) dispatchCommand(command parsedCommand) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m.startNewSession(), nil
+	case commandBTW:
+		return m.handleBTWCommand(command.text)
 	case commandLoop:
 		return m.handleLoopCommand(command.text)
 	case commandExit:

@@ -181,6 +181,32 @@ func TestStoreForkCopiesEventsAndLineage(t *testing.T) {
 	}
 }
 
+func TestStoreForkSupportsNonResumableSideSession(t *testing.T) {
+	store := NewStore(StoreOptions{RootDir: t.TempDir()})
+	parent, err := store.Create(CreateInput{SessionID: "parent", Title: "Parent"})
+	if err != nil {
+		t.Fatalf("Create parent: %v", err)
+	}
+	if _, err := store.AppendEvent(parent.SessionID, AppendEventInput{Type: EventMessage, Payload: map[string]string{"content": "context"}}); err != nil {
+		t.Fatalf("AppendEvent: %v", err)
+	}
+
+	side, err := store.Fork(parent.SessionID, ForkInput{
+		SessionID:   "side",
+		SessionKind: SessionKindSide,
+		Tag:         "btw",
+	})
+	if err != nil {
+		t.Fatalf("Fork side: %v", err)
+	}
+	if side.SessionKind != SessionKindSide || side.Tag != "btw" || side.ParentSessionID != parent.SessionID {
+		t.Fatalf("side metadata = %#v", side)
+	}
+	if IsResumableKind(side.SessionKind) {
+		t.Fatal("side sessions must not appear as resumable conversations")
+	}
+}
+
 func TestStoreForkSkipsUsageEvents(t *testing.T) {
 	store := NewStore(StoreOptions{RootDir: t.TempDir(), Now: fixedClock("2026-06-04T11:00:00Z")})
 	parent, err := store.Create(CreateInput{SessionID: "parent", Title: "Parent"})
