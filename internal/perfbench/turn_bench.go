@@ -790,7 +790,16 @@ func stampOracleAndAnswer(task BenchTask, outBuf []byte) error {
 }
 
 func buildTurnExecArgs(task BenchTask, rc RunContext, tracePath string, extraArgs []string) []string {
-	args := []string{"exec", "--output-format", "stream-json", "--trace", tracePath}
+	// --skip-permissions-unsafe is REQUIRED, not optional: without it `zero exec`
+	// runs in its default read-only posture, which exposes no write or shell tools
+	// (no edit_file/apply_patch/write_file/exec_command/bash). The mutating task
+	// classes (edit/fix/refactor) then cannot apply any change, so every run
+	// grinds to the turn ceiling or reports a no-tool blocker, and the only tasks
+	// that "pass" are ones whose oracle grep matches the stamped answer text rather
+	// than a real edit. Each task already runs in an isolated, throwaway fixture
+	// copy (see NewTurnExecRunner), so granting the full tool set has nothing to
+	// protect and is the whole point: the benchmark must measure real edits.
+	args := []string{"exec", "--skip-permissions-unsafe", "--output-format", "stream-json", "--trace", tracePath}
 	if model := strings.TrimSpace(rc.Model); model != "" {
 		args = append(args, "--model", model)
 	}

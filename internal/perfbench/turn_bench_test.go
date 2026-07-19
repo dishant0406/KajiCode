@@ -1192,6 +1192,28 @@ func TestBuildTurnExecArgsIncludesExecProfile(t *testing.T) {
 	}
 }
 
+// Every benchmark invocation MUST grant the write/shell tool set. Without
+// --skip-permissions-unsafe the agent runs read-only and cannot apply any edit,
+// so the mutating classes measure nothing but oracle/answer contamination. Each
+// task runs in an isolated throwaway fixture copy, so there is nothing to
+// protect. This is a correctness contract, not a preference.
+func TestBuildTurnExecArgsGrantsWriteTools(t *testing.T) {
+	args := buildTurnExecArgs(BenchTask{ID: "t", Prompt: "edit the file"}, RunContext{Model: "m"}, "trace.ndjson", nil)
+	found := false
+	for _, arg := range args {
+		if arg == "--skip-permissions-unsafe" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("benchmark exec args must include --skip-permissions-unsafe so the agent can apply edits, got %v", args)
+	}
+	if args[len(args)-1] != "edit the file" {
+		t.Fatalf("prompt must stay the last argument, got %v", args)
+	}
+}
+
 // The configured profile must reach the runner's RunContext and be stamped
 // into the result, so a profile A/B report is self-describing. The boundary
 // canonicalizes (case/whitespace) so equivalent postures always carry the same
