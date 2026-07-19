@@ -139,7 +139,6 @@ func ReadNDJSON(r io.Reader) (*TurnTrace, error) {
 			t.TaskStates = append(t.TaskStates, TaskStateEvent{
 				Revision:            int(parseInt64(obj["revision"])),
 				Status:              stringField(obj, "status"),
-				ObjectiveHash:       stringField(obj, "objective_hash"),
 				PlanPending:         int(parseInt64(obj["plan_pending"])),
 				PlanInProgress:      int(parseInt64(obj["plan_in_progress"])),
 				PlanCompleted:       int(parseInt64(obj["plan_completed"])),
@@ -151,7 +150,7 @@ func ReadNDJSON(r io.Reader) (*TurnTrace, error) {
 				VerificationOutcome: stringField(obj, "verification_outcome"),
 				ChangedFileCount:    int(parseInt64(obj["changed_file_count"])),
 				CompletionDecision:  stringField(obj, "completion_decision"),
-				TranscriptParity:    stringField(obj, "transcript_parity"),
+				PlanParity:          stringField(obj, "plan_parity"),
 			})
 		default:
 			// Unknown event type: tolerate (forward-compat) but only after a

@@ -1,8 +1,6 @@
 package agent
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"reflect"
 	"sort"
@@ -21,12 +19,12 @@ const (
 	taskStatusIncomplete taskStatus = "incomplete"
 )
 
-type taskStateParity string
+type taskPlanParity string
 
 const (
-	taskStateParityUnknown  taskStateParity = "unknown"
-	taskStateParityMatch    taskStateParity = "match"
-	taskStateParityMismatch taskStateParity = "mismatch"
+	taskPlanParityUnknown  taskPlanParity = "unknown"
+	taskPlanParityMatch    taskPlanParity = "match"
+	taskPlanParityMismatch taskPlanParity = "mismatch"
 )
 
 type taskPlanItem struct {
@@ -64,7 +62,7 @@ type taskStateSnapshot struct {
 	ChangedFiles       []string              `json:"changed_files,omitempty"`
 	CompletionDecision CompletionDecision    `json:"completion_decision,omitempty"`
 	CompletionReason   string                `json:"completion_reason,omitempty"`
-	TranscriptParity   taskStateParity       `json:"transcript_parity"`
+	PlanParity         taskPlanParity        `json:"plan_parity"`
 }
 
 type taskStateEventKind int
@@ -94,18 +92,16 @@ type taskState struct {
 	planObserved  bool
 }
 
-func newTaskState(objective string, recorders ...*trace.Recorder) *taskState {
+func newTaskState(objective string, recorder *trace.Recorder) *taskState {
 	state := &taskState{
 		snapshotValue: taskStateSnapshot{
-			Objective:        strings.TrimSpace(objective),
-			Status:           taskStatusActive,
-			TranscriptParity: taskStateParityUnknown,
+			Objective:  strings.TrimSpace(objective),
+			Status:     taskStatusActive,
+			PlanParity: taskPlanParityUnknown,
 		},
 		changedFiles: map[string]struct{}{},
 	}
-	if len(recorders) > 0 {
-		state.recorder = recorders[0]
-	}
+	state.recorder = recorder
 	return state
 }
 
@@ -167,7 +163,9 @@ func (state *taskState) observe(event taskStateEvent) bool {
 	}
 	if changed {
 		state.snapshotValue.Revision++
-		state.emit()
+		if event.kind != taskStateEventToolResult {
+			state.emit()
+		}
 	}
 	return changed
 }
@@ -188,18 +186,22 @@ func (state *taskState) snapshot() taskStateSnapshot {
 	return snapshot
 }
 
-func (state *taskState) compareTranscript(messages []zeroruntime.Message) taskStateParity {
+// observePlanParity compares only the latest plan projection with the plan tool
+// calls still present in messages. It mutates the snapshot and emits when the
+// parity value changes; objective, tool, and verification fields are not part of
+// this comparison.
+func (state *taskState) observePlanParity(messages []zeroruntime.Message) taskPlanParity {
 	if state == nil {
-		return taskStateParityUnknown
+		return taskPlanParityUnknown
 	}
 	transcriptPlan, found, valid := latestTaskPlan(messages)
 	tracked := state.snapshotValue.Plan.Items
-	parity := taskStateParityMatch
+	parity := taskPlanParityMatch
 	if !valid || found != state.planObserved || (found && !reflect.DeepEqual(transcriptPlan, tracked)) {
-		parity = taskStateParityMismatch
+		parity = taskPlanParityMismatch
 	}
-	if state.snapshotValue.TranscriptParity != parity {
-		state.snapshotValue.TranscriptParity = parity
+	if state.snapshotValue.PlanParity != parity {
+		state.snapshotValue.PlanParity = parity
 		state.snapshotValue.Revision++
 		state.emit()
 	}
@@ -207,9 +209,9 @@ func (state *taskState) compareTranscript(messages []zeroruntime.Message) taskSt
 }
 
 type completionContext struct {
-	Objective              string
-	PlanPending            bool
-	StateMatchesTranscript bool
+	Objective             string
+	PlanPending           bool
+	PlanMatchesTranscript bool
 }
 
 func (state *taskState) completionContext(messages []zeroruntime.Message, transcriptPlanPending bool) completionContext {
@@ -218,17 +220,18 @@ func (state *taskState) completionContext(messages []zeroruntime.Message, transc
 		return context
 	}
 	context.Objective = state.snapshotValue.Objective
-	context.StateMatchesTranscript = state.compareTranscript(messages) == taskStateParityMatch
-	if context.StateMatchesTranscript {
+	context.PlanMatchesTranscript = state.observePlanParity(messages) == taskPlanParityMatch
+	if context.PlanMatchesTranscript {
 		context.PlanPending = state.snapshotValue.Plan.Pending+state.snapshotValue.Plan.InProgress > 0
 	}
 	return context
 }
 
 func (state *taskState) snapshotForCompaction(messages []zeroruntime.Message) *taskStateSnapshot {
-	if state == nil || state.compareTranscript(messages) != taskStateParityMatch {
+	if state == nil {
 		return nil
 	}
+	state.observePlanParity(messages)
 	snapshot := state.snapshot()
 	return &snapshot
 }
@@ -238,11 +241,9 @@ func (state *taskState) emit() {
 		return
 	}
 	snapshot := state.snapshotValue
-	digest := sha256.Sum256([]byte(snapshot.Objective))
 	state.recorder.EmitTaskState(trace.TaskStateEvent{
 		Revision:            snapshot.Revision,
 		Status:              string(snapshot.Status),
-		ObjectiveHash:       hex.EncodeToString(digest[:]),
 		PlanPending:         snapshot.Plan.Pending,
 		PlanInProgress:      snapshot.Plan.InProgress,
 		PlanCompleted:       snapshot.Plan.Completed,
@@ -254,35 +255,37 @@ func (state *taskState) emit() {
 		VerificationOutcome: string(snapshot.Verification.LastOutcome),
 		ChangedFileCount:    len(snapshot.ChangedFiles),
 		CompletionDecision:  string(snapshot.CompletionDecision),
-		TranscriptParity:    string(snapshot.TranscriptParity),
+		PlanParity:          string(snapshot.PlanParity),
 	})
 }
 
 func parseTaskPlan(arguments string) ([]taskPlanItem, bool) {
-	var parsed struct {
-		Plan []struct {
-			Content string `json:"content"`
-			Step    string `json:"step"`
-			Status  string `json:"status"`
-			Notes   string `json:"notes"`
-		} `json:"plan"`
-	}
-	if json.Unmarshal([]byte(strings.TrimSpace(arguments)), &parsed) != nil {
+	var object map[string]json.RawMessage
+	if json.Unmarshal([]byte(strings.TrimSpace(arguments)), &object) != nil {
 		return nil, false
 	}
-	plan := make([]taskPlanItem, 0, len(parsed.Plan))
-	for _, raw := range parsed.Plan {
-		content := strings.TrimSpace(raw.Content)
-		if content == "" {
-			content = strings.TrimSpace(raw.Step)
-		}
-		if content == "" {
-			continue
+	rawPlan, ok := object["plan"]
+	if !ok || string(rawPlan) == "null" {
+		return nil, false
+	}
+	var parsed []struct {
+		ID      *string `json:"id"`
+		Content string  `json:"content"`
+		Status  string  `json:"status"`
+		Notes   string  `json:"notes"`
+	}
+	if json.Unmarshal(rawPlan, &parsed) != nil {
+		return nil, false
+	}
+	plan := make([]taskPlanItem, 0, len(parsed))
+	for _, raw := range parsed {
+		if raw.Content == "" {
+			return nil, false
 		}
 		plan = append(plan, taskPlanItem{
-			Content: content,
+			Content: raw.Content,
 			Status:  normalizeTaskPlanStatus(raw.Status),
-			Notes:   strings.TrimSpace(raw.Notes),
+			Notes:   raw.Notes,
 		})
 	}
 	lastInProgress := -1

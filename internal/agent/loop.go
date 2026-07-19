@@ -190,7 +190,10 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 	defer func() {
 		// A final transcript comparison is observational. It records drift but
 		// never rewrites the result or changes execution after the fact.
-		task.compareTranscript(result.Messages)
+		task.observePlanParity(result.Messages)
+		// Tool-result observations are intentionally coalesced; this final event
+		// guarantees their aggregate counts are present even on an early return.
+		task.emit()
 	}()
 	// The execution-profile posture controller. nil Options.Profile (every
 	// existing caller) makes every observe/decide call a no-op, keeping the

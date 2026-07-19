@@ -426,11 +426,11 @@ type preservedState struct {
 
 type preservedTaskState struct {
 	Objective           string     `json:"objective"`
-	Status              taskStatus `json:"status"`
-	Pending             int        `json:"pending"`
-	InProgress          int        `json:"in_progress"`
-	Completed           int        `json:"completed"`
-	Failed              int        `json:"failed"`
+	Status              taskStatus `json:"status,omitempty"`
+	Pending             int        `json:"pending,omitempty"`
+	InProgress          int        `json:"in_progress,omitempty"`
+	Completed           int        `json:"completed,omitempty"`
+	Failed              int        `json:"failed,omitempty"`
 	VerificationPassed  int        `json:"verification_passed,omitempty"`
 	VerificationFailed  int        `json:"verification_failed,omitempty"`
 	VerificationOutcome Outcome    `json:"verification_outcome,omitempty"`
@@ -463,23 +463,25 @@ type preservedInstruction struct {
 // may live only inside the injected summary message, which on a later compaction
 // lands in middle with no real tool calls left to extract. Fresh tool calls and
 // instruction blocks override the carried-forward copy by name/source.
-func appendPreservedState(summary string, middle []zeroruntime.Message, taskSnapshot *taskStateSnapshot, taskStateChecked bool) string {
+func appendPreservedState(summary string, middle []zeroruntime.Message, taskSnapshot *taskStateSnapshot) string {
 	priorState := parsePreservedStateBlock(latestSummaryContent(middle))
 	task := priorState.Task
-	if taskStateChecked {
-		task = nil
-	}
 	if taskSnapshot != nil {
 		task = &preservedTaskState{
-			Objective:           capTaskObjective(taskSnapshot.Objective),
-			Status:              taskSnapshot.Status,
-			Pending:             taskSnapshot.Plan.Pending,
-			InProgress:          taskSnapshot.Plan.InProgress,
-			Completed:           taskSnapshot.Plan.Completed,
-			Failed:              taskSnapshot.Plan.Failed,
-			VerificationPassed:  taskSnapshot.Verification.Passed,
-			VerificationFailed:  taskSnapshot.Verification.Failed,
-			VerificationOutcome: taskSnapshot.Verification.LastOutcome,
+			Objective: capTaskObjective(taskSnapshot.Objective),
+		}
+		// Plan parity corroborates only the mutable task projection. The objective
+		// comes directly from the run prompt and is immutable, so it must survive
+		// even after compaction removes the plan tool call needed for comparison.
+		if taskSnapshot.PlanParity == taskPlanParityMatch {
+			task.Status = taskSnapshot.Status
+			task.Pending = taskSnapshot.Plan.Pending
+			task.InProgress = taskSnapshot.Plan.InProgress
+			task.Completed = taskSnapshot.Plan.Completed
+			task.Failed = taskSnapshot.Plan.Failed
+			task.VerificationPassed = taskSnapshot.Verification.Passed
+			task.VerificationFailed = taskSnapshot.Verification.Failed
+			task.VerificationOutcome = taskSnapshot.Verification.LastOutcome
 		}
 	}
 

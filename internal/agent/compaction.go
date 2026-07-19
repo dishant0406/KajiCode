@@ -56,14 +56,10 @@ type CompactionOptions struct {
 	// injected so Compact stays pure and testable; the agent loop wires it to a
 	// real provider call.
 	Summarize func(toSummarize []zeroruntime.Message) (string, error)
-	// taskState is a transcript-corroborated snapshot supplied by the running
-	// agent. It is unexported so standalone callers cannot accidentally promote
-	// structured state above the messages they are compacting.
+	// taskState is a snapshot supplied by the running agent. Its immutable
+	// objective is always preserved; mutable fields are admitted only when its
+	// plan projection still matches the transcript.
 	taskState *taskStateSnapshot
-	// taskStateChecked distinguishes "no running task projection" from "the
-	// projection disagreed with the transcript". The latter must drop any older
-	// carried copy rather than silently preserving stale structured state.
-	taskStateChecked bool
 }
 
 // CompactionResult is the metadata-bearing result returned by CompactMessages.
@@ -228,7 +224,7 @@ func CompactMessages(messages []zeroruntime.Message, opts CompactionOptions) (Co
 
 	// Preserve structured state (active plan + loaded skills) from the elided
 	// middle verbatim, so it is not lost or paraphrased away by the prose summary.
-	content := appendPreservedState(summaryLabel+"\n"+summary, middle, opts.taskState, opts.taskStateChecked)
+	content := appendPreservedState(summaryLabel+"\n"+summary, middle, opts.taskState)
 
 	compacted := make([]zeroruntime.Message, 0, systemEnd+1+(len(messages)-boundary))
 	compacted = append(compacted, messages[:systemEnd]...)
@@ -374,15 +370,13 @@ func (state *compactionState) calibratedTokens(raw int) int {
 	return int(float64(raw) * state.calibrationRatio)
 }
 
-func newCompactionState(options Options, tasks ...*taskState) *compactionState {
+func newCompactionState(options Options, task *taskState) *compactionState {
 	state := &compactionState{
 		enabled:      options.ContextWindow > 0,
 		threshold:    compactionThreshold(options.ContextWindow),
 		preserveLast: options.CompactionPreserveLast,
 		onUsage:      options.OnUsage,
-	}
-	if len(tasks) > 0 {
-		state.task = tasks[0]
+		task:         task,
 	}
 	return state
 }
@@ -429,10 +423,9 @@ func (state *compactionState) maybeCompact(
 	}
 
 	compacted, err := Compact(messages, CompactionOptions{
-		PreserveLast:     state.preserveLast,
-		Summarize:        summarizeClosure(ctx, provider, state.onUsage),
-		taskState:        state.task.snapshotForCompaction(messages),
-		taskStateChecked: state.task != nil,
+		PreserveLast: state.preserveLast,
+		Summarize:    summarizeClosure(ctx, provider, state.onUsage),
+		taskState:    state.task.snapshotForCompaction(messages),
 	})
 	if err != nil {
 		// Summarizer failed: keep the original history. The reactive path (or a
@@ -481,10 +474,9 @@ func (state *compactionState) recover(
 	}
 
 	result, compactErr := Compact(messages, CompactionOptions{
-		PreserveLast:     state.preserveLast,
-		Summarize:        summarizeClosure(ctx, provider, state.onUsage),
-		taskState:        state.task.snapshotForCompaction(messages),
-		taskStateChecked: state.task != nil,
+		PreserveLast: state.preserveLast,
+		Summarize:    summarizeClosure(ctx, provider, state.onUsage),
+		taskState:    state.task.snapshotForCompaction(messages),
 	})
 	if compactErr != nil {
 		// A genuine compaction attempt was made (and failed): the budget is spent

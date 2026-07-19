@@ -29,6 +29,10 @@ type Recorder struct {
 	firstActionStamped  bool
 }
 
+// maxTaskStateEvents bounds trace growth in pathological long runs. Once full,
+// the latest aggregate replaces the tail so final state is never lost.
+const maxTaskStateEvents = 128
+
 // NewRecorder returns a ready recorder. sessionID correlates with the agent
 // session (Options.SessionID); runID is a per-Run sequence; profile is an
 // optional label (e.g. "cold", "warm") for benchmark runs.
@@ -214,7 +218,11 @@ func (r *Recorder) EmitTaskState(event TaskStateEvent) {
 	if r.finished {
 		return
 	}
-	r.tr.TaskStates = append(r.tr.TaskStates, event)
+	if len(r.tr.TaskStates) < maxTaskStateEvents {
+		r.tr.TaskStates = append(r.tr.TaskStates, event)
+		return
+	}
+	r.tr.TaskStates[len(r.tr.TaskStates)-1] = event
 }
 
 // Finish stamps CompletedAt, derives each span's parent (by interval

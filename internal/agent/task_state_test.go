@@ -19,8 +19,8 @@ func TestTaskStateReplayIsDeterministic(t *testing.T) {
 		{kind: taskStateEventCompletion, completion: completionEvaluation{Decision: CompletionUncertain, Reason: "pending work"}},
 	}
 
-	first := newTaskState("ship the change")
-	second := newTaskState("ship the change")
+	first := newTaskState("ship the change", nil)
+	second := newTaskState("ship the change", nil)
 	for _, event := range events {
 		first.observe(event)
 		second.observe(event)
@@ -38,6 +38,28 @@ func TestTaskStateReplayIsDeterministic(t *testing.T) {
 	}
 	if got.Verification.Passed != 1 || got.Verification.Failed != 0 || got.Verification.LastOutcome != OutcomePassed {
 		t.Fatalf("unexpected verification snapshot: %#v", got.Verification)
+	}
+}
+
+func TestTaskStateCoalescesToolResultsIntoNextTraceEvent(t *testing.T) {
+	recorder := trace.NewRecorder("session", "run", "")
+	state := newTaskState("objective", recorder)
+	for range 20 {
+		state.observe(taskStateEvent{kind: taskStateEventToolResult, toolResult: ToolResult{Status: tools.StatusOK}})
+	}
+	if events := recorder.Finish().TaskStates; len(events) != 0 {
+		t.Fatalf("tool results should be coalesced, got %d trace events", len(events))
+	}
+
+	recorder = trace.NewRecorder("session", "run-2", "")
+	state = newTaskState("objective", recorder)
+	for range 20 {
+		state.observe(taskStateEvent{kind: taskStateEventToolResult, toolResult: ToolResult{Status: tools.StatusOK}})
+	}
+	state.observe(taskStateEvent{kind: taskStateEventCompletion, completion: completionEvaluation{Decision: CompletionComplete}})
+	events := recorder.Finish().TaskStates
+	if len(events) != 1 || events[0].ToolsSucceeded != 20 {
+		t.Fatalf("coalesced tool total missing from completion snapshot: %#v", events)
 	}
 }
 
@@ -73,13 +95,13 @@ func TestRunEmitsTaskStateFromExistingLoopEvents(t *testing.T) {
 		t.Fatalf("expected plan, tool, completion, and parity snapshots, got %#v", events)
 	}
 	last := events[len(events)-1]
-	if last.Status != string(taskStatusComplete) || last.PlanCompleted != 1 || last.ToolsSucceeded != 1 || last.TranscriptParity != string(taskStateParityMatch) {
+	if last.Status != string(taskStatusComplete) || last.PlanCompleted != 1 || last.ToolsSucceeded != 1 || last.PlanParity != string(taskPlanParityMatch) {
 		t.Fatalf("unexpected final task snapshot: %#v", last)
 	}
 }
 
 func TestTaskStateSnapshotIsImmutable(t *testing.T) {
-	state := newTaskState("objective")
+	state := newTaskState("objective", nil)
 	state.observe(taskStateEvent{kind: taskStateEventPlan, arguments: `{"plan":[{"content":"one","status":"pending"}]}`})
 	state.observe(taskStateEvent{kind: taskStateEventToolResult, toolResult: ToolResult{Status: tools.StatusOK, ChangedFiles: []string{"one.go"}}})
 
@@ -93,26 +115,26 @@ func TestTaskStateSnapshotIsImmutable(t *testing.T) {
 	}
 }
 
-func TestTaskStateTranscriptParityUsesLatestPlan(t *testing.T) {
-	state := newTaskState("objective")
+func TestTaskStatePlanParityUsesLatestPlan(t *testing.T) {
+	state := newTaskState("objective", nil)
 	state.observe(taskStateEvent{kind: taskStateEventPlan, arguments: `{"plan":[{"content":"old","status":"completed"}]}`})
 	state.observe(taskStateEvent{kind: taskStateEventPlan, arguments: `{"plan":[{"content":"new","status":"in_progress"}]}`})
 
 	messages := []zeroruntime.Message{{Role: zeroruntime.MessageRoleAssistant, ToolCalls: []zeroruntime.ToolCall{
 		{Name: planToolName, Arguments: `{"plan":[{"content":"new","status":"in_progress"}]}`},
 	}}}
-	if parity := state.compareTranscript(messages); parity != taskStateParityMatch {
+	if parity := state.observePlanParity(messages); parity != taskPlanParityMatch {
 		t.Fatalf("parity = %q, want match", parity)
 	}
 
 	messages[0].ToolCalls[0].Arguments = `{"plan":[{"content":"different","status":"pending"}]}`
-	if parity := state.compareTranscript(messages); parity != taskStateParityMismatch {
+	if parity := state.observePlanParity(messages); parity != taskPlanParityMismatch {
 		t.Fatalf("parity = %q, want mismatch", parity)
 	}
 }
 
 func TestTaskStateMatchesPlanToolNormalization(t *testing.T) {
-	state := newTaskState("objective")
+	state := newTaskState("objective", nil)
 	arguments := `{"plan":[{"content":"first","status":"in_progress"},{"content":"second","status":"in_progress"}]}`
 	state.observe(taskStateEvent{kind: taskStateEventPlan, arguments: arguments})
 
@@ -121,27 +143,27 @@ func TestTaskStateMatchesPlanToolNormalization(t *testing.T) {
 		t.Fatalf("multiple active items were not normalized like the plan tool: %#v", snapshot.Plan)
 	}
 	messages := []zeroruntime.Message{{Role: zeroruntime.MessageRoleAssistant, ToolCalls: []zeroruntime.ToolCall{{Name: planToolName, Arguments: arguments}}}}
-	if parity := state.compareTranscript(messages); parity != taskStateParityMatch {
+	if parity := state.observePlanParity(messages); parity != taskPlanParityMatch {
 		t.Fatalf("normalized state should still match its transcript event, got %q", parity)
 	}
 
-	empty := newTaskState("objective")
+	empty := newTaskState("objective", nil)
 	empty.observe(taskStateEvent{kind: taskStateEventPlan, arguments: `{"plan":[]}`})
 	emptyMessages := []zeroruntime.Message{{Role: zeroruntime.MessageRoleAssistant, ToolCalls: []zeroruntime.ToolCall{{Name: planToolName, Arguments: `{"plan":[]}`}}}}
-	if parity := empty.compareTranscript(emptyMessages); parity != taskStateParityMatch {
+	if parity := empty.observePlanParity(emptyMessages); parity != taskPlanParityMatch {
 		t.Fatalf("explicit empty plan should match transcript, got %q", parity)
 	}
 }
 
 func TestTaskStateContextFallsBackWhenTranscriptDiffers(t *testing.T) {
-	state := newTaskState("objective")
+	state := newTaskState("objective", nil)
 	state.observe(taskStateEvent{kind: taskStateEventPlan, arguments: `{"plan":[{"content":"tracked","status":"completed"}]}`})
 	messages := []zeroruntime.Message{{Role: zeroruntime.MessageRoleAssistant, ToolCalls: []zeroruntime.ToolCall{
 		{Name: planToolName, Arguments: `{"plan":[{"content":"transcript","status":"pending"}]}`},
 	}}}
 
 	context := state.completionContext(messages, true)
-	if !context.PlanPending || context.StateMatchesTranscript {
+	if !context.PlanPending || context.PlanMatchesTranscript {
 		t.Fatalf("completion context must retain transcript truth on mismatch: %#v", context)
 	}
 	if context.Objective != "objective" {
@@ -149,8 +171,8 @@ func TestTaskStateContextFallsBackWhenTranscriptDiffers(t *testing.T) {
 	}
 }
 
-func TestTaskStateCompactionSnapshotRequiresTranscriptParity(t *testing.T) {
-	state := newTaskState("objective")
+func TestTaskStateCompactionSnapshotRetainsObjectiveOnPlanMismatch(t *testing.T) {
+	state := newTaskState("objective", nil)
 	state.observe(taskStateEvent{kind: taskStateEventPlan, arguments: `{"plan":[{"content":"verify","status":"pending"}]}`})
 	matching := []zeroruntime.Message{{Role: zeroruntime.MessageRoleAssistant, ToolCalls: []zeroruntime.ToolCall{
 		{Name: planToolName, Arguments: `{"plan":[{"content":"verify","status":"pending"}]}`},
@@ -161,7 +183,22 @@ func TestTaskStateCompactionSnapshotRequiresTranscriptParity(t *testing.T) {
 
 	mismatching := append([]zeroruntime.Message(nil), matching...)
 	mismatching[0].ToolCalls = []zeroruntime.ToolCall{{Name: planToolName, Arguments: `{"plan":[{"content":"other","status":"pending"}]}`}}
-	if snapshot := state.snapshotForCompaction(mismatching); snapshot != nil {
-		t.Fatalf("mismatching transcript must suppress compact state, got %#v", snapshot)
+	if snapshot := state.snapshotForCompaction(mismatching); snapshot == nil || snapshot.Objective != "objective" || snapshot.PlanParity != taskPlanParityMismatch {
+		t.Fatalf("plan mismatch must retain immutable objective and mark mutable state uncorroborated, got %#v", snapshot)
+	}
+}
+
+func TestParseTaskPlanRejectsArgumentsTheToolWouldReject(t *testing.T) {
+	for _, arguments := range []string{
+		`{}`,
+		`{"plan":null}`,
+		`{"plan":[{"step":"alias is not accepted"}]}`,
+		`{"plan":[{"content":""}]}`,
+		`{"plan":[{"content":"valid"},{"content":""}]}`,
+		`{"plan":[{"id":4,"content":"valid"}]}`,
+	} {
+		if plan, ok := parseTaskPlan(arguments); ok {
+			t.Fatalf("parseTaskPlan(%s) = %#v, true; want rejected", arguments, plan)
+		}
 	}
 }
