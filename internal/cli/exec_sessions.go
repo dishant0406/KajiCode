@@ -73,7 +73,7 @@ func preflightExecSession(options execOptions) error {
 			return execUsageError{"Zero session not found: " + options.resume}
 		}
 	case options.resumeLatest:
-		latest, err := store.Latest()
+		latest, err := store.LatestResumable()
 		if err != nil {
 			return err
 		}

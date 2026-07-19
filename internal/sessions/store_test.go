@@ -407,6 +407,7 @@ func TestListAndLatestResumableExcludeSubRuns(t *testing.T) {
 	mk(SessionKindSpecImpl, "spec-impl-1")
 	newestResumable := mk("", "conversation-2") // newest standalone conversation
 	mk(SessionKindChild, "child-2")             // newer overall, but a sub-run
+	mk(SessionKindSide, "side-1")               // newer overall, but non-resumable
 
 	resumable, err := store.ListResumable()
 	if err != nil {
@@ -430,7 +431,7 @@ func TestListAndLatestResumableExcludeSubRuns(t *testing.T) {
 		if latest != nil {
 			got = latest.SessionID
 		}
-		t.Fatalf("LatestResumable = %s, want newest resumable %s (must skip the newer child)", got, newestResumable.SessionID)
+		t.Fatalf("LatestResumable = %s, want newest resumable %s (must skip newer child and side sessions)", got, newestResumable.SessionID)
 	}
 }
 
@@ -559,6 +560,9 @@ func TestPrepareExecSessionResolvesResumeAndFork(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := store.AppendEvent("latest", AppendEventInput{Type: EventMessage, Payload: map[string]any{"content": "previous answer"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Create(CreateInput{SessionID: "newer-side", SessionKind: SessionKindSide}); err != nil {
 		t.Fatal(err)
 	}
 

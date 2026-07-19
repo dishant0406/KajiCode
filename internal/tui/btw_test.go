@@ -180,6 +180,65 @@ func TestBTWBlocksCommandsThatWouldReplaceItsSession(t *testing.T) {
 	}
 }
 
+func TestBTWBlocksPersistentConfigurationCommands(t *testing.T) {
+	for _, input := range []string{
+		"/model other",
+		"/provider other",
+		"/turns 100",
+		"/profile fast",
+		"/theme dark",
+		"/config recaps off",
+	} {
+		t.Run(input, func(t *testing.T) {
+			m := newBTWTestModel(t)
+			side, _ := m.handleBTWCommand("")
+			updated, _ := side.dispatchCommand(parseCommand(input))
+			got := updated.(model)
+			if !got.btw.active || got.activeSession.SessionKind != sessions.SessionKindSide {
+				t.Fatalf("%s escaped the active BTW session: active=%v metadata=%#v", input, got.btw.active, got.activeSession)
+			}
+			if !transcriptContains(got.transcript, "unavailable in a BTW conversation") {
+				t.Fatalf("%s missing blocked-command guidance: %#v", input, got.transcript)
+			}
+		})
+	}
+}
+
+func TestBTWExitBlockedWhileParentRunActive(t *testing.T) {
+	m := newBTWTestModel(t)
+	m.pending = true
+	m.activeRunID = 7
+	side, _ := m.handleBTWCommand("")
+
+	updated, cmd := side.dispatchCommand(parseCommand("/exit"))
+	got := updated.(model)
+	if cmd != nil || got.exiting || !got.btw.active {
+		t.Fatalf("/exit escaped BTW while parent was active: cmd=%v exiting=%v active=%v", cmd, got.exiting, got.btw.active)
+	}
+	if got.btw.parent == nil || !got.btw.parent.pending {
+		t.Fatalf("hidden parent run was not preserved: %#v", got.btw.parent)
+	}
+	if !transcriptContains(got.transcript, "main session is still running") {
+		t.Fatalf("missing active-parent exit guidance: %#v", got.transcript)
+	}
+}
+
+func TestBTWReturnRestartsParentSpinner(t *testing.T) {
+	m := newBTWTestModel(t)
+	m.pending = true
+	m.spinnerTicking = true
+	side, _ := m.handleBTWCommand("")
+	side.spinnerTicking = false
+
+	returned, cmd := side.leaveBTW()
+	if !returned.pending || !returned.spinnerTicking {
+		t.Fatalf("parent spinner was not restarted: pending=%v ticking=%v", returned.pending, returned.spinnerTicking)
+	}
+	if cmd == nil {
+		t.Fatal("returning to an active parent did not schedule a spinner tick")
+	}
+}
+
 func TestBTWCommandReturnsToParentSession(t *testing.T) {
 	m := newBTWTestModel(t)
 	parentID := m.activeSession.SessionID

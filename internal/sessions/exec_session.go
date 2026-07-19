@@ -89,7 +89,7 @@ func PrepareExec(options PrepareExecOptions) (PreparedExec, error) {
 	if resumeID != "" || options.ResumeLatest {
 		sessionID := resumeID
 		if sessionID == "" && options.ResumeLatest {
-			latest, err := store.Latest()
+			latest, err := store.LatestResumable()
 			if err != nil {
 				return PreparedExec{}, err
 			}

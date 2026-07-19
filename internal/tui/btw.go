@@ -153,17 +153,26 @@ func (m model) leaveBTW() (model, tea.Cmd) {
 	parent.gitSweepInFlight = false
 	var sweepCmd tea.Cmd
 	parent, sweepCmd = parent.maybeGitSweep()
+	// The side surface owns its own spinner tick chain. If the hidden parent is
+	// still active, explicitly restart that chain after restoring it.
+	parent.spinnerTicking = false
+	var spinnerCmd tea.Cmd
+	if !parent.reducedMotion && (parent.pending || parent.compactInFlight || parent.doctorInFlight || parent.sidebarHasAgents() || parent.aimlapiOnboardAnimating()) {
+		parent.spinnerTicking = true
+		spinnerCmd = parent.spinner.Tick
+	}
 	parent.transcript = reduceTranscript(parent.transcript, transcriptAction{
 		kind: actionAppendSystem,
 		text: "Returned from the isolated BTW conversation. Its messages were not added to this session.",
 	})
 	parent.resetFlushFrontier("· returned from btw ·")
-	return parent, sweepCmd
+	return parent, batchCommands(sweepCmd, spinnerCmd)
 }
 
 func btwCommandChangesSession(kind commandKind) bool {
 	switch kind {
-	case commandNew, commandResume, commandRetitle, commandSpec, commandLoop:
+	case commandNew, commandResume, commandRetitle, commandSpec, commandLoop,
+		commandModel, commandProvider, commandTurns, commandProfile, commandTheme, commandConfig:
 		return true
 	default:
 		return false

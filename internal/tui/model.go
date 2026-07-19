@@ -4126,6 +4126,14 @@ func (m model) handleSubmit() (tea.Model, tea.Cmd) {
 // dispatchCommand runs a parsed slash/prompt command after submit/leader
 // preamble (history, composer clear, leave-prompt disarm) has already run.
 func (m model) dispatchCommand(command parsedCommand) (tea.Model, tea.Cmd) {
+	if m.btw.active && command.kind == commandExit && m.btw.parent != nil &&
+		(m.btw.parent.pending || m.btw.parent.compactInFlight || len(m.btw.parent.flushRunIDs) > 0) {
+		m.transcript = reduceTranscript(m.transcript, transcriptAction{
+			kind: actionAppendSystem,
+			text: "The main session is still running. Return to it first with /btw or Ctrl+C before exiting.",
+		})
+		return m, nil
+	}
 	if m.btw.active && btwCommandChangesSession(command.kind) {
 		m.transcript = reduceTranscript(m.transcript, transcriptAction{
 			kind: actionAppendSystem,
