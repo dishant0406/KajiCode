@@ -406,3 +406,33 @@ func TestDetectInteractiveMongoEvalAndFullPaths(t *testing.T) {
 		}
 	}
 }
+
+// The hand-written segment splitter misses interactive programs hidden by
+// constructs only a real shell parser resolves (a newline separator collapsed
+// to a space; a brace group that shifts the real command position). The AST
+// second opinion must catch them (issue #473).
+func TestDetectInteractiveCommandCatchesParserBypasses(t *testing.T) {
+	for _, cmd := range []string{
+		"echo hi\nvim file.txt", // newline separator collapsed to a space by the regex path
+		"{ vim file.txt; }",     // brace group hides the real program position
+	} {
+		got := DetectInteractiveCommand(cmd, "linux")
+		if !got.Interactive {
+			t.Errorf("DetectInteractiveCommand(%q) = not interactive, want caught (parser bypass)", cmd)
+			continue
+		}
+		if got.Command != "vim" {
+			t.Errorf("DetectInteractiveCommand(%q).Command = %q, want vim", cmd, got.Command)
+		}
+	}
+}
+
+// The AST second opinion must not flag an interactive program NAME that appears
+// only inside a quoted argument (not a real command position) — the parser
+// distinguishes program from argument, so this must stay non-interactive.
+func TestDetectInteractiveCommandNoFalsePositiveOnQuotedArgument(t *testing.T) {
+	got := DetectInteractiveCommand(`echo "please run vim later"`, "linux")
+	if got.Interactive {
+		t.Fatalf("interactive name inside a quoted argument must not be flagged, got %#v", got)
+	}
+}

@@ -219,6 +219,39 @@ func DetectInteractiveCommand(command string, goos string) InteractiveCommandRes
 		}
 	}
 
+	// AST second opinion (issue #473): the hand-written segment split above
+	// mis-handles interactive programs hidden by unusual quoting, command
+	// substitution, subshells, or newline separators. Re-extract the real simple
+	// commands from the parsed shell tree and apply the SAME per-program checks
+	// used above, so a bypass is caught while every program stays classified
+	// exactly as before (ssh with a trailing command, python -c, etc. remain
+	// allowed via hasNonInteractiveFlag). A command the parser cannot handle
+	// (Windows cmd.exe, obfuscation) yields no commands and falls through
+	// unchanged — the guard never hard-blocks on a parse error.
+	for _, fields := range astCommandFields(command) {
+		first := firstProgram(fields)
+		if first == "" {
+			continue
+		}
+		program, ok := interactivePrograms[first]
+		if !ok || (program.windowsOnly && goos != "windows") {
+			continue
+		}
+		if hasNonInteractiveFlag(first, fields) {
+			continue
+		}
+		suggestion := program.suggestion
+		if goos == "windows" && program.windowsSuggestion != "" {
+			suggestion = program.windowsSuggestion
+		}
+		return InteractiveCommandResult{
+			Interactive: true,
+			Command:     first,
+			Reason:      program.reason,
+			Suggestion:  suggestion,
+		}
+	}
+
 	return InteractiveCommandResult{}
 }
 
