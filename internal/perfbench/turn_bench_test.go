@@ -753,10 +753,11 @@ echo '{"type":"run_end","exitCode":0}'
 // TestOracleAuthoritativeOnIncompleteExit is the companion to the --auto member
 // switch: under member-auto the agent's shell is sandboxed, so on a host without
 // sandbox setup its self-verification (go test/build) can't run and the turn
-// exits INCOMPLETE (nonzero) even after a correct edit. For an ORACLE-bearing
-// task the runner must treat the stamped oracle — not that exit code — as ground
-// truth: here the stub applies the real edit-01 rename but reports
-// exitCode 4, and the task must still pass because the fixture is correct.
+// exits INCOMPLETE (exit 4) even after a correct edit. For an ORACLE-bearing task
+// the runner must treat the stamped oracle — not that INCOMPLETE exit — as ground
+// truth: here the stub applies the real edit-01 rename but reports exitCode 4, and
+// the task must still pass because the fixture is correct. This defers ONLY for
+// exit 4; TestNonIncompleteExitStaysAuthoritative pins the other side.
 func TestOracleAuthoritativeOnIncompleteExit(t *testing.T) {
 	task := loadBaselineTask(t, "edit-01")
 	outcome := runTurnStub(t, task, `sed 's/const MaxRetries = 3/const RetryLimit = 3/' main.go > .zero-tmp && mv .zero-tmp main.go
@@ -770,6 +771,30 @@ echo '{"type":"run_end","exitCode":4}'
 	}
 	if strings.TrimSpace(outcome.VerifyErr) != "" {
 		t.Fatalf("a passing oracle must clear the exit-code VerifyErr, got %q", outcome.VerifyErr)
+	}
+}
+
+// TestNonIncompleteExitStaysAuthoritative is the guard the oracle-authoritative
+// change MUST NOT weaken: only INCOMPLETE (exit 4) defers to the oracle. A crash
+// (1), usage error (2), provider failure (3), or interruption (130) is a genuine
+// failure, so it stays authoritative even for an oracle-bearing task — otherwise
+// a partial edit that happens to satisfy the oracle would launder a crashed or
+// interrupted run into a pass. Here the stub applies the CORRECT edit-01 rename
+// (so the oracle WOULD pass) but reports a crash (exit 1); the task must still
+// fail, and the failure must be attributed to the exit code, not the oracle.
+func TestNonIncompleteExitStaysAuthoritative(t *testing.T) {
+	task := loadBaselineTask(t, "edit-01")
+	outcome := runTurnStub(t, task, `sed 's/const MaxRetries = 3/const RetryLimit = 3/' main.go > .zero-tmp && mv .zero-tmp main.go
+echo '{"type":"run_end","exitCode":1}'
+`)
+	if outcome.Err != nil {
+		t.Fatalf("a crash exit should be a task fail, not a harness error: %v", outcome.Err)
+	}
+	if outcome.Passed {
+		t.Fatalf("a run that exited 1 (crash) must not pass even when the edit satisfies the oracle: %+v", outcome)
+	}
+	if !strings.Contains(outcome.VerifyErr, "exit code 1") {
+		t.Fatalf("a non-INCOMPLETE nonzero exit must stay authoritative and surface its code, got VerifyErr=%q", outcome.VerifyErr)
 	}
 }
 

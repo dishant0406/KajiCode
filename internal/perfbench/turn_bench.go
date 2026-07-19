@@ -578,15 +578,26 @@ func WriteTurnBenchJSON(w io.Writer, result TurnBenchResult) error {
 	return encoder.Encode(result)
 }
 
+// execExitIncomplete mirrors internal/cli.exitIncomplete (the `zero exec` exit
+// code, 4) for a headless run the completion gate marked INCOMPLETE: the run
+// stopped without a completion signal (e.g. it couldn't self-verify because its
+// sandboxed shell was unavailable under --auto member), which is distinct from a
+// crash (1), usage error (2), provider failure (3), or interruption (130). It is
+// the ONLY nonzero exit an oracle-bearing task may defer to the oracle for; every
+// other nonzero exit stays authoritative. Kept as a local literal so perfbench
+// doesn't import the cli package; must stay in sync with that constant.
+const execExitIncomplete = 4
+
 // NewTurnExecRunner builds the production turn-benchmark runner: it invokes
 // headless `zero exec` with stream-json output AND `--trace <tmpfile>`, then
 // parses the emitted NDJSON trace into a *trace.TurnTrace. binary is the path to
 // the `zero` binary; extraArgs are appended to every invocation. Pass/fail is
 // decided by the task's oracle (OracleTest/VerificationCommand) when it has one:
 // the stamped oracle is ground truth, so an oracle-bearing task that applied the
-// right edit but exited INCOMPLETE (its sandboxed self-verification couldn't run)
-// still passes. For a latency-only task (no oracle) the stream-json run_end exit
-// code is the only signal, so a nonzero exit fails it.
+// right edit but exited INCOMPLETE (exit 4 — its sandboxed self-verification
+// couldn't run) still passes. Any OTHER nonzero exit (crash/usage/provider/
+// interrupt) stays authoritative and fails even an oracle-bearing task. For a
+// latency-only task (no oracle) any nonzero exit is the only signal, so it fails.
 func NewTurnExecRunner(binary string, extraArgs ...string) TurnRunner {
 	return func(ctx context.Context, task BenchTask, rc RunContext) TurnTaskOutcome {
 		// buildTurnExecArgs grants the write + sandboxed-shell tool set to EVERY
@@ -670,17 +681,20 @@ func NewTurnExecRunner(binary string, extraArgs ...string) TurnRunner {
 			}
 		}
 
-		// Decide what a nonzero exit means. For a latency-only task (no oracle) the
-		// exit code is the only correctness signal, so a nonzero exit is the verdict
-		// and we stop here. For an oracle-bearing task the oracle below — the
-		// compiled test / grep run against the actual fixture files — is ground
-		// truth: a run that applied the correct edit but exited INCOMPLETE (e.g. it
-		// couldn't self-verify because the sandboxed shell was unavailable under
-		// --auto member) still achieved the task, so we let the oracle decide and
-		// drop the exit-code failure. A run that really did nothing useful just
-		// fails that same oracle, so this can't turn a bad run into a pass.
+		// Decide what a nonzero exit means. We defer to the oracle for exactly ONE
+		// case: an oracle-bearing task that exited INCOMPLETE (exit 4). That is the
+		// completion gate downgrading a run whose edits may be correct but that
+		// couldn't emit a completion signal (e.g. its sandboxed self-verify couldn't
+		// run under --auto member) — the oracle below (the compiled test / grep run
+		// against the actual fixture files) is ground truth, so if the edit really
+		// landed it passes, and if the run abandoned the task the oracle fails it.
+		// Every OTHER nonzero exit stays authoritative: a crash (1), usage error
+		// (2), provider failure (3), or interruption (130) is a genuine failure, so
+		// a partial edit that happens to satisfy the oracle can't launder it into a
+		// pass. A latency-only task has no oracle to defer to, so any nonzero exit
+		// fails it.
 		if outcome.VerifyErr != "" {
-			if len(task.VerificationCommand) == 0 {
+			if len(task.VerificationCommand) == 0 || exitCode != execExitIncomplete {
 				return outcome
 			}
 			outcome.VerifyErr = ""
