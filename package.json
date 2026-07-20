@@ -1,6 +1,6 @@
 {
   "name": "@dishant0406/kajicode",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "KajiCode — a fast, multi-provider terminal coding agent.",
   "type": "module",
   "module": "bin/kajicode.js",
