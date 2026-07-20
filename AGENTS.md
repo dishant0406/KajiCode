@@ -1,71 +1,119 @@
-# Repository Guidelines for KajiCode
+# KajiCode
 
-These instructions apply to all work in this repository. For the user-facing
-guide to extending KajiCode with specialists, hooks, plugins, MCP, and skills, see
-[docs/EXTENDING.md](docs/EXTENDING.md).
+These instructions apply to all work in this repository. KajiCode is a Go CLI
+coding agent with an interactive Bubble Tea TUI, headless `exec` mode, ACP
+bridge, tool runtime, sandbox policy, local sessions, extension surfaces, and
+release/npm packaging.
 
-## 1. Contribution and Pull Request Rules
+## Build And Run
 
-- Before opening any pull request, **all contributors**—including maintainers,
-  community contributors, and coding agents—must read and follow
-  [CONTRIBUTING.md](CONTRIBUTING.md).
-- Community pull requests require an existing parent issue with the
-  `issue-approved` label. Team members may open pull requests through the
-  internal development process described in `CONTRIBUTING.md`.
-- Keep each change focused on the approved or assigned scope. Do not include
-  unrelated fixes, refactors, formatting churn, generated output, or existing
-  local changes in the same commit or pull request.
-- Discuss new implementation languages, runtimes, major dependency changes,
-  and broad architectural rewrites with maintainers before implementation.
-- Pull request descriptions must explain what changed and why, link the parent
-  issue when required, and list the tests or verification performed. Include
-  screenshots or a short recording for user-visible UI changes when practical.
+```bash
+make build                         # Build ./kajicode
+go run ./cmd/kajicode              # Run from source
+go run ./cmd/kajicode exec "..."   # Headless run
+go run ./cmd/kajicode-release build --version 0.0.0-dev
+go run ./cmd/kajicode-release smoke --version 0.0.0-dev
+```
 
-## 2. Repository and Implementation Conventions
+Use the Go version declared in `go.mod`. Do not hardcode a different local
+toolchain version in scripts, docs, or workflows.
 
-- Use the Go version declared in `go.mod`. Do not hardcode a different local
-  toolchain version in scripts or documentation.
-- Use the repository build and release commands (`make` and
-  `go run ./cmd/kajicode-release ...`) instead of inventing parallel build flows.
-- Keep tests beside their source files (`foo_test.go` next to `foo.go`). Add a
-  regression test for behavior changes and run affected concurrent code under
-  the race detector.
-- Never edit files under `third_party/`; they are vendored.
-- Prefer one cross-platform function with small conditional checks over
-  duplicated platform-specific helpers when the behavior can remain unified.
-- Do not commit generated benchmark reports from
-  `internal/perfbench/reports/*.json`; reports are configuration-specific
-  evidence, not repository state.
+## Validation
+
+Run focused checks for narrow changes and the full loop before shipping broad or
+release-facing work:
+
+```bash
+make fmt-check
+go vet ./...
+go test ./...
+go run ./cmd/kajicode-release build --version 0.0.0-dev
+go run ./cmd/kajicode-release smoke --version 0.0.0-dev
+git diff --check
+```
+
+Use `make test` when the change touches concurrency or when CI parity matters.
+Run `go run golang.org/x/vuln/cmd/govulncheck@v1.3.0 ./...` for release,
+dependency, sandbox, provider, installer, and security-sensitive work.
+
+## Architecture
+
+- The canonical architecture map is `docs/architecture.md`; keep it current
+  when changing package ownership, startup flow, agent loop behavior, sandbox
+  policy, session persistence, extension loading, or release packaging.
+- `docs/HOW_KAJICODE_WORKS.md` is the detailed deep dive. Update it when a
+  behavior needs more than the concise architecture contract can explain.
+- Keep surface code and runtime code separated:
+  - `cmd/kajicode` stays a tiny entrypoint.
+  - `internal/cli` owns command parsing, config resolution, provider/tool/sandbox
+    assembly, and launch paths.
+  - `internal/tui` owns Bubble Tea presentation state only.
+  - `internal/agent` owns model turns, tool execution, compaction, retries,
+    completion gates, and runtime callbacks.
+  - `internal/kajicoderuntime` owns provider-neutral message/tool/stream types.
+  - `internal/providers` owns provider-specific API adapters.
+  - `internal/tools` owns tool interfaces, registry entries, output budgeting,
+    redaction, and local tool implementations.
+  - `internal/sandbox` owns permission policy, grants, path/network checks, and
+    platform sandbox backends.
+  - `internal/sessions` owns durable local session metadata and event replay.
+  - `internal/mcp`, `internal/plugins`, `internal/skills`,
+    `internal/specialist`, `internal/swarm`, and `internal/hooks` own extension
+    surfaces.
+  - `cmd/kajicode-release`, `internal/release`, `scripts/install.*`,
+    `scripts/npm/*`, `package.json`, and `.github/workflows/publish-npm.yml`
+    own release and npm distribution.
+- Provider-specific, platform-specific, and extension-specific behavior must stay
+  in the package that owns that concern. Do not add hardcoded checks in unrelated
+  layers when a registry, interface, or package-local implementation already
+  exists.
+
+## Code Rules
+
+- Each file should do one thing and do it well. Prefer small files with
+  descriptive names over generic `utils` or `helpers`.
+- Keep new files under 200 lines when practical. If an existing large package
+  owns the feature, add a focused file beside it instead of making a large file
+  larger unless the local pattern clearly requires the edit.
+- Less code is better when it preserves correctness. Delete unused code and
+  replace large code with simpler code when the simpler code is easier to verify.
+- Avoid duplication. Check existing code before adding a new helper, abstraction,
+  command path, tool wrapper, or renderer.
+- Use early returns instead of nested conditionals.
+- Do not patch symptoms. Trace the real path and fix the root cause.
+- Comments should explain non-obvious contracts, safety decisions, or lifecycle
+  constraints. Do not add narration that merely restates the code.
 - Preserve the user's working tree. Do not overwrite, delete, stage, or commit
   unrelated tracked or untracked files.
 
-## 3. Required Validation
+## Feature Guidance
 
-Run validation from the repository root before committing, opening a pull
-request, or completing an implementation task:
+- TUI work belongs in `internal/tui` and should include focused view/update tests
+  for modal behavior, key handling, width/height responsiveness, and transcript
+  persistence when applicable.
+- Agent-loop changes belong in `internal/agent` and must include regression tests
+  for turn progression, tool pairing, retries, compaction, permissions, or
+  completion semantics touched by the change.
+- Tool changes belong in `internal/tools` unless they are MCP/plugin/specialist
+  tools. Include permission metadata, output-budget behavior, redaction behavior,
+  and sandbox expectations in tests.
+- Sandbox changes belong in `internal/sandbox`; test path scope, network,
+  command-risk, grant lifetime, and platform fallbacks.
+- CLI changes belong in `internal/cli`; test argument parsing, config merging,
+  exit codes, output formats, and non-interactive behavior.
+- Release changes must validate `cmd/kajicode-release`, generated checksums,
+  install scripts, npm wrapper/platform packaging, and GitHub workflow behavior.
 
-1. **Formatting check**: `make fmt-check`. If it fails, format with
-   `go fmt ./...` (or `make fmt`) and run the check again.
-2. **Vet**: `go vet ./...` (or `make vet`).
-3. **Tests**: `go test ./...`. Use `make test` for the full race-enabled suite,
-   or run focused tests with `-race`, when concurrency is affected.
-4. **Build**: `go run ./cmd/kajicode-release build`.
-5. **Smoke test**: `go run ./cmd/kajicode-release smoke`.
-6. **Advisory lint**:
-   `go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2 run --enable-only unused,ineffassign,staticcheck ./...`.
-7. **Security**:
-   `go run golang.org/x/vuln/cmd/govulncheck@v1.3.0 ./...`.
-8. **Diff hygiene**: `git diff HEAD --check` (covers staged and unstaged
-   tracked changes).
+## Pull Requests
 
-`make lint` currently runs the formatting check and `go vet`; it does **not**
-run golangci-lint. The pinned golangci-lint job is advisory in CI while the
-existing repository-wide backlog is cleaned up. Fix findings introduced by or
-related to the current change. Unrelated pre-existing advisory findings do not
-justify expanding a focused pull request; report them separately.
+- Keep each change focused on the approved or assigned scope.
+- Do not include unrelated fixes, refactors, formatting churn, generated output,
+  or existing local changes in the same commit or pull request.
+- PR descriptions should be short: what changed, why, and what was tested.
+- Include screenshots or recordings for user-visible TUI changes when practical.
 
-Formatting, vet, tests, build, smoke, diff hygiene, and govulncheck are hard
-requirements. If a related check fails, fix it. If a required check cannot run
-because of the environment or fails for an unrelated external reason, report
-the exact failure and obtain maintainer direction rather than silently ignoring
-it.
+## Code Review
+
+- Review against the purpose of the PR or issue first. Report unrelated findings
+  separately.
+- Apply review recommendations only after user confirmation.

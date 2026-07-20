@@ -4,6 +4,10 @@ This document explains KajiCode's architecture at a high level: the layers, modu
 boundaries, data flow, and runtime concepts behind the interactive TUI and the
 headless `kajicode exec` mode.
 
+For the concise canonical ownership contract that should be updated when package
+boundaries or startup/runtime/release flows change, see
+[architecture.md](architecture.md).
+
 It is written as a progressive map: each high-level section introduces the
 concepts you need for orientation, then points to the later section that explains
 the mechanics in more detail.

@@ -17,6 +17,7 @@ KajiCode.
 
 ## Maintainer Docs
 
+- [Architecture](architecture.md)
 - [How KajiCode Works](HOW_KAJICODE_WORKS.md)
 - [npm wrapper smoke checklist](NPM_WRAPPER_SMOKE.md)
 - [Benchmarks](BENCHMARK.md)
