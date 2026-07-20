@@ -49,8 +49,12 @@ jobs:
             exit 1
           fi
           if npm view "@dishant0406/kajicode@${version}" version >/dev/null 2>&1; then
-            echo "::error::@dishant0406/kajicode@${version} already exists on npm"
-            exit 1
+            current="$(node -p "require('./package.json').version")"
+            if [ "$current" != "$version" ]; then
+              echo "::error::@dishant0406/kajicode@${version} already exists on npm"
+              exit 1
+            fi
+            echo "@dishant0406/kajicode@${version} already exists on npm; retrying current release commit"
           fi
           echo "version=${version}" >> "$GITHUB_OUTPUT"
 
