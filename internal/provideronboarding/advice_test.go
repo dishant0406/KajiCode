@@ -37,6 +37,12 @@ func TestSetupCommandForOpenAICustomAndLocalProviders(t *testing.T) {
 			want:      "kajicode providers add openai --name openai --api-key-env OPENAI_API_KEY",
 		},
 		{
+			name:      "azure openai",
+			catalogID: "azure-openai",
+			profile:   "azure",
+			want:      "kajicode providers add azure-openai --name azure --base-url https://your-resource.openai.azure.com --model gpt-4.1 --api-key-env AZURE_OPENAI_API_KEY",
+		},
+		{
 			name:      "custom openai compatible",
 			catalogID: "custom-openai-compatible",
 			profile:   "custom",
@@ -110,6 +116,7 @@ func TestMissingCredentialActionUsesBuiltInProviderDefaults(t *testing.T) {
 		env  string
 	}{
 		{name: "openai", kind: config.ProviderKindOpenAI, env: "OPENAI_API_KEY"},
+		{name: "azure-openai", kind: config.ProviderKindAzureOpenAI, env: "AZURE_OPENAI_API_KEY"},
 		{name: "anthropic", kind: config.ProviderKindAnthropic, env: "ANTHROPIC_API_KEY"},
 		{name: "google", kind: config.ProviderKindGoogle, env: "GEMINI_API_KEY"},
 	}

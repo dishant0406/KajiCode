@@ -793,12 +793,10 @@ func providerWizardIsAimlapi(provider providercatalog.Descriptor) bool {
 }
 
 func providerWizardNeedsEndpoint(provider providercatalog.Descriptor) bool {
-	switch provider.ID {
-	case "custom-openai-compatible", "custom-anthropic-compatible":
+	if provider.RequiresEndpoint {
 		return true
-	default:
-		return false
 	}
+	return provider.ID == "custom-openai-compatible" || provider.ID == "custom-anthropic-compatible"
 }
 
 func providerWizardUsesTypedModel(provider providercatalog.Descriptor) bool {
@@ -1791,6 +1789,9 @@ func (wizard *providerWizardState) renderEndpointStep(width int) []string {
 }
 
 func providerWizardEndpointPlaceholder(provider providercatalog.Descriptor) string {
+	if provider.Transport == providercatalog.TransportAzureOpenAI {
+		return "https://your-resource.openai.azure.com"
+	}
 	if provider.Transport == providercatalog.TransportAnthropicCompatible {
 		return "https://api.example.com/anthropic"
 	}
@@ -1798,6 +1799,9 @@ func providerWizardEndpointPlaceholder(provider providercatalog.Descriptor) stri
 }
 
 func providerWizardEndpointHint(provider providercatalog.Descriptor) string {
+	if provider.Transport == providercatalog.TransportAzureOpenAI {
+		return "Use your Azure OpenAI resource endpoint. KajiCode appends /openai/v1."
+	}
 	if provider.Transport == providercatalog.TransportAnthropicCompatible {
 		return "Use the base URL before /v1/messages."
 	}
@@ -2165,6 +2169,8 @@ func providerWizardProviderKind(provider providercatalog.Descriptor) config.Prov
 		return config.ProviderKindAnthropicCompat
 	case providercatalog.TransportGoogle:
 		return config.ProviderKindGoogle
+	case providercatalog.TransportAzureOpenAI:
+		return config.ProviderKindAzureOpenAI
 	case providercatalog.TransportOpenAICompatible:
 		return config.ProviderKindOpenAICompatible
 	default:

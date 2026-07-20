@@ -225,7 +225,7 @@ func providerModelCheck(profile config.ProviderProfile) Check {
 	}
 	model, err := registry.Require(profile.Model)
 	if err != nil {
-		if profile.ProviderKind == config.ProviderKindOpenAICompatible || profile.ProviderKind == config.ProviderKindAnthropicCompat {
+		if profile.ProviderKind == config.ProviderKindOpenAICompatible || profile.ProviderKind == config.ProviderKindAnthropicCompat || profile.ProviderKind == config.ProviderKindAzureOpenAI {
 			return check("provider.model", "Provider model", StatusWarn, fmt.Sprintf("Custom %s model was not found in the KajiCode registry; runtime will pass it through to the configured provider. Run `kajicode doctor --connectivity` to validate the endpoint and auth.", profile.ProviderKind), map[string]any{"model": profile.Model, "provider": providerName(profile)})
 		}
 		return check("provider.model", "Provider model", StatusFail, "Provider model is invalid: "+err.Error(), map[string]any{"model": profile.Model})
@@ -311,6 +311,8 @@ func toModelProvider(profile config.ProviderProfile) modelregistry.ProviderKind 
 		return modelregistry.ProviderAnthropic
 	case config.ProviderKindGoogle:
 		return modelregistry.ProviderGoogle
+	case config.ProviderKindAzureOpenAI:
+		return modelregistry.ProviderOpenAI
 	case config.ProviderKindOpenAICompatible:
 		return modelregistry.ProviderOpenAICompatible
 	default:

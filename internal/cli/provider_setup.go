@@ -214,6 +214,9 @@ func providerCheckAPIKeyEnv(profile config.ProviderProfile) string {
 		return apiKeyEnv
 	}
 	if strings.TrimSpace(profile.CatalogID) == "" {
+		if profile.ProviderKind == config.ProviderKindAzureOpenAI {
+			return "AZURE_OPENAI_API_KEY"
+		}
 		return ""
 	}
 	descriptor, err := providercatalog.Require(profile.CatalogID)
@@ -418,6 +421,9 @@ func providerProfileForAdd(options providerAddOptions) (config.ProviderProfile, 
 	if !providercatalog.RuntimeSupported(descriptor) {
 		return config.ProviderProfile{}, fmt.Errorf("provider %q uses transport %q: %s", descriptor.ID, descriptor.Transport, providercatalog.RuntimeUnsupportedReason(descriptor))
 	}
+	if descriptor.RequiresEndpoint && (strings.TrimSpace(options.baseURL) == "" || sameProviderSetupBaseURL(options.baseURL, descriptor.DefaultBaseURL)) {
+		return config.ProviderProfile{}, fmt.Errorf("provider %q requires --base-url with your endpoint URL", descriptor.ID)
+	}
 	name := strings.TrimSpace(options.name)
 	if name == "" {
 		name = descriptor.ID
@@ -518,6 +524,8 @@ func providerKindForDescriptor(descriptor providercatalog.Descriptor) config.Pro
 		return config.ProviderKindAnthropicCompat
 	case providercatalog.TransportGoogle:
 		return config.ProviderKindGoogle
+	case providercatalog.TransportAzureOpenAI:
+		return config.ProviderKindAzureOpenAI
 	case providercatalog.TransportOpenAICompatible:
 		return config.ProviderKindOpenAICompatible
 	default:

@@ -63,6 +63,22 @@ func TestProviderCommandOpensOnboardingWizard(t *testing.T) {
 	}
 }
 
+func TestProviderWizardAzureOpenAIRequiresEndpointAndTypedModel(t *testing.T) {
+	descriptor, ok := providercatalog.Get("azure")
+	if !ok {
+		t.Fatal("Azure provider descriptor missing")
+	}
+	if !providerWizardNeedsEndpoint(descriptor) {
+		t.Fatal("Azure provider should ask for an endpoint")
+	}
+	if !providerWizardUsesTypedModel(descriptor) {
+		t.Fatal("Azure provider should use typed deployment/model input")
+	}
+	if got := providerWizardProviderKind(descriptor); got != config.ProviderKindAzureOpenAI {
+		t.Fatalf("providerWizardProviderKind() = %q, want azure-openai", got)
+	}
+}
+
 func TestProviderWizardStartsAtFirstProvider(t *testing.T) {
 	m := newModel(context.Background(), Options{
 		ProviderName: "ollama-cloud",

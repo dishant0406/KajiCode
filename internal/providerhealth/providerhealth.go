@@ -18,6 +18,7 @@ import (
 	"github.com/dishant0406/KajiCode/internal/config"
 	"github.com/dishant0406/KajiCode/internal/providercatalog"
 	"github.com/dishant0406/KajiCode/internal/providers"
+	"github.com/dishant0406/KajiCode/internal/providers/azureopenai"
 	"github.com/dishant0406/KajiCode/internal/providers/providerio"
 	"github.com/dishant0406/KajiCode/internal/redaction"
 )
@@ -356,6 +357,15 @@ func resolvedBaseURL(profile config.ProviderProfile, kind config.ProviderKind) (
 		return providerio.NormalizeBaseURL(baseURL, config.AnthropicBaseURL, "Anthropic")
 	case config.ProviderKindGoogle:
 		return providerio.NormalizeBaseURL(baseURL, config.GoogleBaseURL, "Google")
+	case config.ProviderKindAzureOpenAI:
+		if baseURL == "" {
+			return "", fmt.Errorf("azure-openai provider %s requires baseURL for connectivity probing", providerName(profile))
+		}
+		endpoint, err := azureopenai.ModelsEndpoint(baseURL)
+		if err != nil {
+			return "", err
+		}
+		return strings.TrimSuffix(endpoint, "/models"), nil
 	case config.ProviderKindOpenAICompatible, config.ProviderKindAnthropicCompat:
 		if baseURL == "" {
 			return "", fmt.Errorf("%s provider %s requires baseURL for connectivity probing", kind, providerName(profile))
@@ -500,6 +510,8 @@ func sensitiveAuthHeaderNames(profile config.ProviderProfile, kind config.Provid
 		names["x-api-key"] = struct{}{}
 	case config.ProviderKindGoogle:
 		names["x-goog-api-key"] = struct{}{}
+	case config.ProviderKindAzureOpenAI:
+		names["api-key"] = struct{}{}
 	default:
 		names["Authorization"] = struct{}{}
 	}
@@ -619,6 +631,8 @@ func healthPath(kind config.ProviderKind) string {
 		return "/v1/models"
 	case config.ProviderKindGoogle:
 		return "/v1beta/models"
+	case config.ProviderKindAzureOpenAI:
+		return "/models"
 	default:
 		return "/models"
 	}
@@ -640,6 +654,16 @@ func applyAuth(request *http.Request, profile config.ProviderProfile, kind confi
 		providerio.ApplyAuthHeaders(request, providerio.AuthHeaders{
 			APIKey:            profile.APIKey,
 			DefaultAuthHeader: "x-goog-api-key",
+			AuthHeader:        profile.AuthHeader,
+			AuthScheme:        profile.AuthScheme,
+			AuthHeaderValue:   profile.AuthHeaderValue,
+			CustomHeaders:     profile.CustomHeaders,
+		})
+	case config.ProviderKindAzureOpenAI:
+		providerio.ApplyAuthHeaders(request, providerio.AuthHeaders{
+			APIKey:            profile.APIKey,
+			DefaultAuthHeader: "api-key",
+			DefaultAuthScheme: "raw",
 			AuthHeader:        profile.AuthHeader,
 			AuthScheme:        profile.AuthScheme,
 			AuthHeaderValue:   profile.AuthHeaderValue,
@@ -778,7 +802,7 @@ func credentialRequired(profile config.ProviderProfile, providerKind config.Prov
 		}
 	}
 	switch providerKind {
-	case config.ProviderKindOpenAI, config.ProviderKindAnthropic, config.ProviderKindGoogle:
+	case config.ProviderKindOpenAI, config.ProviderKindAnthropic, config.ProviderKindGoogle, config.ProviderKindAzureOpenAI:
 		return true
 	default:
 		return false

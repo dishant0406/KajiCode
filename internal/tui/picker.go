@@ -687,6 +687,8 @@ func customProviderDescriptorForProfile(profile config.ProviderProfile) (provide
 		if !sameNormalizedProviderBaseURL(baseURL, config.OpenAIBaseURL) {
 			return providercatalog.Get("custom-openai-compatible")
 		}
+	case config.ProviderKindAzureOpenAI:
+		return providercatalog.Get("azure-openai")
 	case config.ProviderKindAnthropic:
 		if !sameNormalizedProviderBaseURL(baseURL, config.AnthropicBaseURL) {
 			return providercatalog.Get("custom-anthropic-compatible")

@@ -127,6 +127,7 @@ the key in the wizard:
 
 ```bash
 export OPENAI_API_KEY=sk-...
+export AZURE_OPENAI_API_KEY=...
 export ANTHROPIC_API_KEY=...
 export GEMINI_API_KEY=...
 export AIMLAPI_API_KEY=...
@@ -145,6 +146,22 @@ To configure Meituan LongCat (LongCat-2.0) directly, run:
 
 ```bash
 kajicode providers setup longcat --set-active
+```
+
+To configure Azure OpenAI, use your Azure OpenAI resource endpoint and deployment
+name:
+
+```bash
+export AZURE_OPENAI_API_KEY=...
+
+kajicode providers add azure-openai \
+  --name azure \
+  --base-url https://YOUR-RESOURCE.openai.azure.com \
+  --model YOUR-DEPLOYMENT-NAME \
+  --api-key-env AZURE_OPENAI_API_KEY \
+  --set-active
+
+kajicode providers check azure --connectivity
 ```
 
 MiniMax presets use the Anthropic-compatible endpoints for the global and China

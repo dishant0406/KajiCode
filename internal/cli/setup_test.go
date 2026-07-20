@@ -150,6 +150,42 @@ func TestSetupProviderOptionsUseRuntimeSupportedCatalog(t *testing.T) {
 	}
 }
 
+func TestProviderProfileForAddRequiresAzureEndpoint(t *testing.T) {
+	_, err := providerProfileForAdd(providerAddOptions{catalogID: "azure-openai", model: "kajicode-deployment"})
+	if err == nil {
+		t.Fatal("providerProfileForAdd() error = nil, want missing endpoint error")
+	}
+	if !strings.Contains(err.Error(), "requires --base-url") {
+		t.Fatalf("providerProfileForAdd() error = %q, want --base-url guidance", err.Error())
+	}
+
+	_, err = providerProfileForAdd(providerAddOptions{catalogID: "azure-openai", baseURL: "https://your-resource.openai.azure.com", model: "kajicode-deployment"})
+	if err == nil {
+		t.Fatal("providerProfileForAdd() placeholder error = nil, want endpoint error")
+	}
+}
+
+func TestProviderProfileForAddAzureOpenAI(t *testing.T) {
+	profile, err := providerProfileForAdd(providerAddOptions{
+		catalogID: "azure-openai",
+		name:      "azure",
+		baseURL:   "https://resource.openai.azure.com",
+		model:     "kajicode-deployment",
+	})
+	if err != nil {
+		t.Fatalf("providerProfileForAdd() error = %v", err)
+	}
+	if profile.ProviderKind != config.ProviderKindAzureOpenAI {
+		t.Fatalf("ProviderKind = %q, want azure-openai", profile.ProviderKind)
+	}
+	if profile.APIKeyEnv != "AZURE_OPENAI_API_KEY" {
+		t.Fatalf("APIKeyEnv = %q, want AZURE_OPENAI_API_KEY", profile.APIKeyEnv)
+	}
+	if profile.BaseURL != "https://resource.openai.azure.com" || profile.Model != "kajicode-deployment" {
+		t.Fatalf("profile = %#v, want Azure endpoint/model", profile)
+	}
+}
+
 func TestSaveSetupProviderStoresPastedAPIKey(t *testing.T) {
 	// Use the encrypted-file backend in the temp config dir so the test never
 	// touches the real OS keychain.

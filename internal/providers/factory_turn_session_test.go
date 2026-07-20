@@ -17,6 +17,7 @@ func TestNewTurnSessionProviderForEveryKind(t *testing.T) {
 	kinds := []config.ProviderKind{
 		config.ProviderKindOpenAI,
 		config.ProviderKindOpenAICompatible,
+		config.ProviderKindAzureOpenAI,
 		config.ProviderKindAnthropic,
 		config.ProviderKindAnthropicCompat,
 		config.ProviderKindGoogle,

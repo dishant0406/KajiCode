@@ -11,6 +11,7 @@ var expectedCatalogIDs = []string{
 	"gitlawb-opengateway",
 	"aimlapi",
 	"openai",
+	"azure-openai",
 	"anthropic",
 	"google",
 	"ollama-cloud",
@@ -263,9 +264,26 @@ func TestOllamaCloudAndLocalAreSeparateProviders(t *testing.T) {
 	}
 }
 
+func TestAzureOpenAICatalogDescriptor(t *testing.T) {
+	descriptor, err := Require("azure")
+	if err != nil {
+		t.Fatalf("Require(azure) error = %v", err)
+	}
+	if descriptor.ID != "azure-openai" || descriptor.Transport != TransportAzureOpenAI {
+		t.Fatalf("Azure descriptor = %#v, want azure-openai transport", descriptor)
+	}
+	if !descriptor.RequiresAuth || !descriptor.RequiresEndpoint {
+		t.Fatalf("Azure descriptor auth/endpoint flags = auth:%v endpoint:%v, want both true", descriptor.RequiresAuth, descriptor.RequiresEndpoint)
+	}
+	if !reflect.DeepEqual(descriptor.AuthEnvVars, []string{"AZURE_OPENAI_API_KEY"}) {
+		t.Fatalf("Azure AuthEnvVars = %#v, want AZURE_OPENAI_API_KEY", descriptor.AuthEnvVars)
+	}
+}
+
 func TestLookupNormalizesIDsAndAliases(t *testing.T) {
 	cases := map[string]string{
 		" OpenAI ":                     "openai",
+		"azure":                        "azure-openai",
 		"Gemini":                       "google",
 		"ollama cloud":                 "ollama-cloud",
 		"ollama local":                 "ollama",
@@ -317,6 +335,7 @@ func TestLookupNormalizesIDsAndAliases(t *testing.T) {
 func TestListByTransportPreservesCatalogOrder(t *testing.T) {
 	cases := map[Transport][]string{
 		TransportOpenAI:          {"openai"},
+		TransportAzureOpenAI:     {"azure-openai"},
 		TransportAnthropic:       {"anthropic"},
 		TransportGoogle:          {"google"},
 		TransportBedrock:         {"bedrock"},

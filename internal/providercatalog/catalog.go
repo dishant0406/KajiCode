@@ -19,6 +19,7 @@ const (
 	TransportOpenAICompat        Transport = TransportOpenAICompatible
 	TransportAnthropicCompatible Transport = "anthropic-compatible"
 	TransportAnthropicCompat     Transport = TransportAnthropicCompatible
+	TransportAzureOpenAI         Transport = "azure-openai"
 )
 
 type APIFormat string
@@ -51,6 +52,7 @@ type Descriptor struct {
 	Local               bool
 	SupportedAPIFormats []APIFormat
 	Aliases             []string
+	RequiresEndpoint    bool
 
 	// Custom marks the "bring your own endpoint" catalog entries
 	// (custom-openai-compatible, custom-anthropic-compatible). Unlike every other
@@ -79,7 +81,7 @@ type Descriptor struct {
 
 func RuntimeSupported(descriptor Descriptor) bool {
 	switch descriptor.Transport {
-	case TransportOpenAI, TransportOpenAICompatible, TransportAnthropic, TransportAnthropicCompatible, TransportGoogle:
+	case TransportOpenAI, TransportOpenAICompatible, TransportAnthropic, TransportAnthropicCompatible, TransportGoogle, TransportAzureOpenAI:
 		return true
 	default:
 		return false
@@ -110,6 +112,7 @@ var descriptors = []Descriptor{
 	// headers attribute usage for the rebate.
 	recommended(aimlapi()),
 	openAI("openai", "OpenAI", "https://api.openai.com/v1", "gpt-4.1", []string{"OPENAI_API_KEY"}),
+	azureOpenAI(),
 	anthropic("anthropic", "Anthropic", "https://api.anthropic.com", "claude-sonnet-4.5", []string{"ANTHROPIC_API_KEY"}),
 	google("google", "Google", "https://generativelanguage.googleapis.com", "gemini-2.5-pro", []string{"GEMINI_API_KEY", "GOOGLE_API_KEY"}, "gemini"),
 	openAICompat("ollama-cloud", "Ollama Cloud", "https://ollama.com/v1", "qwen3-coder:480b", []string{"OLLAMA_API_KEY"}, "ollama.com", "ollama cloud"),
@@ -231,7 +234,7 @@ func ListByTransport(transport Transport) []Descriptor {
 
 func ValidTransport(transport Transport) bool {
 	switch Transport(NormalizeID(string(transport))) {
-	case TransportOpenAI, TransportAnthropic, TransportGoogle, TransportBedrock, TransportVertex, TransportOpenAICompatible, TransportAnthropicCompatible:
+	case TransportOpenAI, TransportAnthropic, TransportGoogle, TransportBedrock, TransportVertex, TransportOpenAICompatible, TransportAnthropicCompatible, TransportAzureOpenAI:
 		return true
 	default:
 		return false
@@ -276,6 +279,21 @@ func openAI(id string, name string, baseURL string, model string, env []string, 
 		RequiresAuth:        true,
 		SupportedAPIFormats: []APIFormat{APIFormatOpenAIResponses, APIFormatOpenAIChatCompletions},
 		Aliases:             aliases,
+	}
+}
+
+func azureOpenAI() Descriptor {
+	return Descriptor{
+		ID:                  "azure-openai",
+		Name:                "Azure OpenAI",
+		Transport:           TransportAzureOpenAI,
+		DefaultBaseURL:      "https://your-resource.openai.azure.com",
+		DefaultModel:        "gpt-4.1",
+		AuthEnvVars:         []string{"AZURE_OPENAI_API_KEY"},
+		RequiresAuth:        true,
+		SupportedAPIFormats: []APIFormat{APIFormatOpenAIChatCompletions},
+		Aliases:             []string{"azure", "azure openai", "microsoft azure openai"},
+		RequiresEndpoint:    true,
 	}
 }
 

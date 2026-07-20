@@ -52,6 +52,39 @@ func TestDiscoverOpenAICompatibleModelsFetchesModelsEndpoint(t *testing.T) {
 	}
 }
 
+func TestDiscoverAzureOpenAIModelsUsesAPIKeyHeader(t *testing.T) {
+	var gotPath string
+	var gotAuth string
+	var gotAPIKey string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotAuth = r.Header.Get("Authorization")
+		gotAPIKey = r.Header.Get("api-key")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"id":"kajicode-deployment"}]}`))
+	}))
+	defer server.Close()
+
+	models, err := Discover(context.Background(), config.ProviderProfile{
+		Name:         "azure",
+		ProviderKind: config.ProviderKindAzureOpenAI,
+		BaseURL:      server.URL,
+		APIKey:       "az-live-secret",
+	}, Options{HTTPClient: server.Client()})
+	if err != nil {
+		t.Fatalf("Discover returned error: %v", err)
+	}
+	if gotPath != "/openai/v1/models" {
+		t.Fatalf("requested path = %q, want /openai/v1/models", gotPath)
+	}
+	if gotAPIKey != "az-live-secret" || gotAuth != "" {
+		t.Fatalf("auth headers = api-key:%q authorization:%q, want Azure api-key only", gotAPIKey, gotAuth)
+	}
+	if got, want := modelIDs(models), []string{"kajicode-deployment"}; strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("models = %#v, want %#v", got, want)
+	}
+}
+
 func TestDiscoverAIMLAPIModelsSendsAuthAndCustomHeadersWithoutAttribution(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		for header, want := range map[string]string{

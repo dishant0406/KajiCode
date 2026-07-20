@@ -14,6 +14,7 @@ import (
 	"github.com/dishant0406/KajiCode/internal/config"
 	"github.com/dishant0406/KajiCode/internal/providercatalog"
 	"github.com/dishant0406/KajiCode/internal/providermodelcatalog"
+	"github.com/dishant0406/KajiCode/internal/providers/azureopenai"
 	"github.com/dishant0406/KajiCode/internal/providers/providerio"
 	"github.com/dishant0406/KajiCode/internal/redaction"
 )
@@ -78,6 +79,8 @@ func Discover(ctx context.Context, profile config.ProviderProfile, options Optio
 	switch discoveryProviderKind(profile) {
 	case config.ProviderKindOpenAI, config.ProviderKindOpenAICompatible:
 		return discoverOpenAIModels(ctx, profile, options)
+	case config.ProviderKindAzureOpenAI:
+		return discoverAzureOpenAIModels(ctx, profile, options)
 	case config.ProviderKindAnthropic, config.ProviderKindAnthropicCompat:
 		return discoverAnthropicModels(ctx, profile, options)
 	default:
@@ -199,6 +202,22 @@ func discoverOpenAIModels(ctx context.Context, profile config.ProviderProfile, o
 	}, nil)
 }
 
+func discoverAzureOpenAIModels(ctx context.Context, profile config.ProviderProfile, options Options) ([]Model, error) {
+	endpoint, err := azureopenai.ModelsEndpoint(profile.BaseURL)
+	if err != nil {
+		return nil, err
+	}
+	return fetchProviderModels(ctx, endpoint, profile, options, providerio.AuthHeaders{
+		APIKey:            profile.APIKey,
+		DefaultAuthHeader: "api-key",
+		DefaultAuthScheme: "raw",
+		AuthHeader:        profile.AuthHeader,
+		AuthScheme:        profile.AuthScheme,
+		AuthHeaderValue:   profile.AuthHeaderValue,
+		CustomHeaders:     providerio.CopyHeaders(profile.CustomHeaders),
+	}, nil)
+}
+
 func discoverAnthropicModels(ctx context.Context, profile config.ProviderProfile, options Options) ([]Model, error) {
 	endpoint, err := anthropicModelsEndpoint(profile.BaseURL)
 	if err != nil {
@@ -258,7 +277,7 @@ func fetchProviderModels(ctx context.Context, endpoint string, profile config.Pr
 
 func modelDiscoveryAllowed(profile config.ProviderProfile) bool {
 	switch discoveryProviderKind(profile) {
-	case config.ProviderKindOpenAI, config.ProviderKindOpenAICompatible, config.ProviderKindAnthropic, config.ProviderKindAnthropicCompat:
+	case config.ProviderKindOpenAI, config.ProviderKindOpenAICompatible, config.ProviderKindAzureOpenAI, config.ProviderKindAnthropic, config.ProviderKindAnthropicCompat:
 		return true
 	default:
 		return false

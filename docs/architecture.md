@@ -41,7 +41,7 @@ the next model turn.
 | Interactive UI | `internal/tui` | Bubble Tea model/update/view state, transcript rendering, composer, modals, slash commands, setup, and runtime callbacks. |
 | Agent loop | `internal/agent` | Prompt assembly, provider turns, tool execution, compaction, retries, completion policy, self-correction, and callback emission. |
 | Provider contract | `internal/kajicoderuntime` | Provider-neutral messages, tool calls, stream events, usage, images, and turn sessions. |
-| Provider adapters | `internal/providers`, `internal/aimlapi`, provider catalog packages | API-specific translation, OAuth/API key resolution, model discovery, provider health, and onboarding. |
+| Provider adapters | `internal/providers`, `internal/aimlapi`, provider catalog packages | API-specific translation for OpenAI, Azure OpenAI, Anthropic, Gemini, compatible gateways, OAuth/API key resolution, model discovery, provider health, and onboarding. |
 | Tools | `internal/tools` | Tool interface, registry, built-in tools, redaction, output budgets, display metadata, and mutation tracking. |
 | Sandbox/permissions | `internal/sandbox` | Path scope, network policy, command risk, grants, permission decisions, and platform isolation backends. |
 | Sessions | `internal/sessions` | Local metadata, append-only event logs, replay, checkpoint, rewind, fork, and lineage. |

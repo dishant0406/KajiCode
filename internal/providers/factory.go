@@ -13,6 +13,7 @@ import (
 	"github.com/dishant0406/KajiCode/internal/providercatalog"
 	"github.com/dishant0406/KajiCode/internal/providermodelcatalog"
 	"github.com/dishant0406/KajiCode/internal/providers/anthropic"
+	"github.com/dishant0406/KajiCode/internal/providers/azureopenai"
 	"github.com/dishant0406/KajiCode/internal/providers/gemini"
 	"github.com/dishant0406/KajiCode/internal/providers/openai"
 	"github.com/dishant0406/KajiCode/internal/providers/providerio"
@@ -88,6 +89,21 @@ func New(profile config.ProviderProfile, options Options) (kajicoderuntime.Provi
 			MaxTokens:       resolved.maxOutputTokens,
 			HTTPClient:      options.HTTPClient,
 			UserAgent:       options.UserAgent,
+		})
+	case config.ProviderKindAzureOpenAI:
+		return azureopenai.New(azureopenai.Options{
+			APIKey:          profile.APIKey,
+			BaseURL:         resolved.baseURL,
+			Model:           resolved.apiModel,
+			AuthHeader:      profile.AuthHeader,
+			AuthScheme:      profile.AuthScheme,
+			AuthHeaderValue: profile.AuthHeaderValue,
+			CustomHeaders:   providerio.CopyHeaders(profile.CustomHeaders),
+			OAuthResolver:   options.OAuthResolver,
+			MaxTokens:       resolved.maxOutputTokens,
+			HTTPClient:      options.HTTPClient,
+			UserAgent:       options.UserAgent,
+			ParseThinkTags:  parseThinkTagsForProfile(profile, resolved),
 		})
 	case config.ProviderKindGoogle:
 		return gemini.New(gemini.Options{
@@ -261,7 +277,7 @@ func resolveProfile(profile config.ProviderProfile, options Options) (resolvedPr
 			if !entry.AllowsProvider(modelregistry.ProviderAnthropic) {
 				return resolvedProfile{}, fmt.Errorf("kajicode model %s belongs to %s, not %s", entry.ID, entry.Provider, providerKind)
 			}
-		} else if providerKind != modelProvider {
+		} else if !providerKindMatchesModelProvider(providerKind, modelProvider) {
 			return resolvedProfile{}, fmt.Errorf("kajicode model %s belongs to %s, not %s", entry.ID, entry.Provider, providerKind)
 		}
 		if err := validateModelAllowedForProvider(profile, entry.ID); err != nil {
@@ -309,6 +325,13 @@ func validateModelAllowedForProvider(profile config.ProviderProfile, model strin
 		providerID = "provider"
 	}
 	return fmt.Errorf("provider %s does not allow model %s", providerID, strings.TrimSpace(model))
+}
+
+func providerKindMatchesModelProvider(providerKind config.ProviderKind, modelProvider config.ProviderKind) bool {
+	if providerKind == modelProvider {
+		return true
+	}
+	return providerKind == config.ProviderKindAzureOpenAI && modelProvider == config.ProviderKindOpenAI
 }
 
 func explicitProviderKind(profile config.ProviderProfile) (config.ProviderKind, bool) {

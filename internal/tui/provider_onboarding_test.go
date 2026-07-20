@@ -96,6 +96,28 @@ func TestProviderCommandShowsMissingCredentialActionForCompatibleProvider(t *tes
 	}
 }
 
+func TestProviderCommandShowsAzureMissingCredentialAction(t *testing.T) {
+	text := renderProviderCommand(t, Options{
+		ProviderName: "azure",
+		ModelName:    "kajicode-deployment",
+		ProviderProfile: config.ProviderProfile{
+			Name:         "azure",
+			ProviderKind: config.ProviderKindAzureOpenAI,
+			BaseURL:      "https://resource.openai.azure.com",
+			Model:        "kajicode-deployment",
+		},
+	})
+
+	for _, want := range []string{
+		"provider: azure",
+		"api key: not set",
+		"set AZURE_OPENAI_API_KEY in your environment",
+		"kajicode providers add azure-openai --base-url https://your-resource.openai.azure.com --model gpt-4.1 --api-key-env AZURE_OPENAI_API_KEY --set-active",
+	} {
+		assertContains(t, text, want)
+	}
+}
+
 func renderProviderCommand(t *testing.T, options Options) string {
 	t.Helper()
 

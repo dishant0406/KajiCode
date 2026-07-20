@@ -464,7 +464,7 @@ func providerNextActionLines(profile config.ProviderProfile, snapshot kajicodeco
 		if envName := providerCredentialEnvName(profile, snapshot.ProviderKind); envName != "" {
 			lines = append(lines,
 				"set "+envName+" in your environment",
-				"kajicode providers add "+setupID+" --api-key-env "+envName+" --set-active",
+				providerSetupCommand(setupID, envName),
 			)
 		} else {
 			lines = append(lines, "set provider credentials in your environment")
@@ -475,6 +475,13 @@ func providerNextActionLines(profile config.ProviderProfile, snapshot kajicodeco
 		"kajicode providers catalog",
 		"kajicode providers setup "+setupID+" --set-active",
 	)
+}
+
+func providerSetupCommand(setupID string, envName string) string {
+	if setupID == "azure-openai" {
+		return "kajicode providers add azure-openai --base-url https://your-resource.openai.azure.com --model gpt-4.1 --api-key-env " + envName + " --set-active"
+	}
+	return "kajicode providers add " + setupID + " --api-key-env " + envName + " --set-active"
 }
 
 func providerProfileHasCredential(profile config.ProviderProfile) bool {
@@ -494,7 +501,7 @@ func providerCredentialRequired(profile config.ProviderProfile, providerKind str
 		return descriptor.RequiresAuth
 	}
 	switch config.ProviderKind(strings.TrimSpace(providerKind)) {
-	case config.ProviderKindOpenAI, config.ProviderKindOpenAICompatible, config.ProviderKindAnthropic, config.ProviderKindAnthropicCompat, config.ProviderKindGoogle:
+	case config.ProviderKindOpenAI, config.ProviderKindOpenAICompatible, config.ProviderKindAzureOpenAI, config.ProviderKindAnthropic, config.ProviderKindAnthropicCompat, config.ProviderKindGoogle:
 		return true
 	default:
 		return false
@@ -511,6 +518,8 @@ func providerCredentialEnvName(profile config.ProviderProfile, providerKind stri
 	switch config.ProviderKind(strings.TrimSpace(providerKind)) {
 	case config.ProviderKindOpenAI, config.ProviderKindOpenAICompatible:
 		return "OPENAI_API_KEY"
+	case config.ProviderKindAzureOpenAI:
+		return "AZURE_OPENAI_API_KEY"
 	case config.ProviderKindAnthropic, config.ProviderKindAnthropicCompat:
 		return "ANTHROPIC_API_KEY"
 	case config.ProviderKindGoogle:
@@ -531,6 +540,8 @@ func providerSetupCatalogID(profile config.ProviderProfile, providerKind string)
 		return "anthropic"
 	case config.ProviderKindGoogle:
 		return "google"
+	case config.ProviderKindAzureOpenAI:
+		return "azure-openai"
 	case config.ProviderKindOpenAICompatible:
 		return "custom-openai-compatible"
 	case config.ProviderKindAnthropicCompat:

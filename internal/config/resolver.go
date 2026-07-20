@@ -368,6 +368,8 @@ func projectEndpointNeedsCredentialGuard(profile ProviderProfile) bool {
 	switch kind {
 	case ProviderKindOpenAICompatible, ProviderKindAnthropicCompat:
 		return strings.TrimSpace(profile.BaseURL) != "" || strings.TrimSpace(profile.CatalogID) != ""
+	case ProviderKindAzureOpenAI:
+		return strings.TrimSpace(profile.BaseURL) != "" || strings.TrimSpace(profile.CatalogID) != ""
 	case ProviderKindOpenAI:
 		return profile.BaseURL != "" && !isOfficialOpenAIBaseURL(profile.BaseURL)
 	case ProviderKindAnthropic:
@@ -447,6 +449,14 @@ func catalogDefaultModel(catalogID string) string {
 		return ""
 	}
 	return strings.TrimSpace(descriptor.DefaultModel)
+}
+
+func catalogDefaultBaseURL(catalogID string) string {
+	descriptor, ok := providercatalog.Get(catalogID)
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(descriptor.DefaultBaseURL)
 }
 
 func catalogDescriptorForProfile(profile ProviderProfile) (providercatalog.Descriptor, bool) {
@@ -588,6 +598,15 @@ func applyEnv(cfg *FileConfig, env map[string]string) {
 		BaseURL: firstNonEmpty(envValue(env, "GEMINI_BASE_URL"), envValue(env, "GOOGLE_BASE_URL")),
 		Model:   firstNonEmpty(envValue(env, "GEMINI_MODEL"), envValue(env, "GOOGLE_MODEL")),
 	})
+	azureBaseURL := firstNonEmpty(envValue(env, "AZURE_OPENAI_BASE_URL"), envValue(env, "AZURE_OPENAI_ENDPOINT"))
+	if strings.TrimSpace(azureBaseURL) != "" {
+		applyProviderEnv(cfg, ProviderKindAzureOpenAI, envProfile{
+			Name:    string(ProviderKindAzureOpenAI),
+			APIKey:  envValue(env, "AZURE_OPENAI_API_KEY"),
+			BaseURL: azureBaseURL,
+			Model:   firstNonEmpty(envValue(env, "AZURE_OPENAI_MODEL"), envValue(env, "AZURE_OPENAI_DEPLOYMENT")),
+		})
+	}
 }
 
 type envProfile struct {
@@ -1022,6 +1041,14 @@ func normalizeProvider(profile ProviderProfile, env map[string]string, options n
 			return profile, nil
 		}
 		return ProviderProfile{}, providerError(profile, "google provider %s requires official baseURL %s", profile.Name, GoogleBaseURL)
+	case ProviderKindAzureOpenAI:
+		if profile.BaseURL == "" || sameBaseURL(profile.BaseURL, catalogDefaultBaseURL("azure-openai")) {
+			return ProviderProfile{}, providerError(profile, "azure-openai provider %s requires your Azure OpenAI endpoint URL", profile.Name)
+		}
+		if options.defaultModels && profile.Model == "" {
+			profile.Model = catalogDefaultModel("azure-openai")
+		}
+		return profile, nil
 	default:
 		return ProviderProfile{}, providerError(profile, "unknown provider kind %q for provider %s", profile.ProviderKind, profile.Name)
 	}
@@ -1133,6 +1160,8 @@ func providerKindForCatalogTransport(transport providercatalog.Transport) Provid
 		return ProviderKindAnthropicCompat
 	case providercatalog.TransportGoogle:
 		return ProviderKindGoogle
+	case providercatalog.TransportAzureOpenAI:
+		return ProviderKindAzureOpenAI
 	case providercatalog.TransportOpenAICompatible:
 		return ProviderKindOpenAICompatible
 	default:

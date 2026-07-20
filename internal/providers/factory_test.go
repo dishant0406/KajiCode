@@ -56,6 +56,36 @@ func TestNewCreatesOpenAIProviderWithFactoryOptions(t *testing.T) {
 	}
 }
 
+func TestNewCreatesAzureOpenAIProvider(t *testing.T) {
+	transport := &captureTransport{responseBody: "data: [DONE]\n\n"}
+	client := &http.Client{Transport: transport}
+
+	provider, err := New(config.ProviderProfile{
+		Name:         "azure",
+		ProviderKind: config.ProviderKindAzureOpenAI,
+		BaseURL:      "https://resource.openai.azure.com",
+		APIKey:       "az-factory",
+		Model:        "gpt-4.1",
+	}, Options{HTTPClient: client})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	stream, err := provider.StreamCompletion(context.Background(), kajicoderuntime.CompletionRequest{
+		Messages: []kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleUser, Content: "hello"}},
+	})
+	if err != nil {
+		t.Fatalf("StreamCompletion() error = %v", err)
+	}
+	for range stream {
+	}
+	if transport.request.URL.String() != "https://resource.openai.azure.com/openai/v1/chat/completions" {
+		t.Fatalf("request URL = %q, want Azure v1 endpoint", transport.request.URL.String())
+	}
+	if transport.request.Header.Get("api-key") != "az-factory" || transport.request.Header.Get("Authorization") != "" {
+		t.Fatalf("auth headers = api-key:%q authorization:%q, want Azure api-key only", transport.request.Header.Get("api-key"), transport.request.Header.Get("Authorization"))
+	}
+}
+
 func TestNewUsesMiniMaxCompatibleEndpoints(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -301,6 +331,7 @@ func TestPromptCacheKeyOnlyOnOfficialOpenAI(t *testing.T) {
 	}{
 		{name: "openai", kind: config.ProviderKindOpenAI, wantCacheKey: true},
 		{name: "openai-compatible", kind: config.ProviderKindOpenAICompatible, wantCacheKey: false},
+		{name: "azure-openai", kind: config.ProviderKindAzureOpenAI, wantCacheKey: false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			transport := &captureTransport{responseBody: "data: [DONE]\n\n"}

@@ -812,6 +812,70 @@ func TestResolveUsesOpenAIEnvFallback(t *testing.T) {
 	}
 }
 
+func TestResolveUsesAzureOpenAIEnvWhenEndpointIsSet(t *testing.T) {
+	resolved, err := Resolve(ResolveOptions{
+		Env: map[string]string{
+			"KAJICODE_PROVIDER":         "azure-openai",
+			"AZURE_OPENAI_API_KEY":      "az-env",
+			"AZURE_OPENAI_ENDPOINT":     "https://resource.openai.azure.com",
+			"AZURE_OPENAI_DEPLOYMENT":   "kajicode-deployment",
+			"AZURE_OPENAI_UNUSED_VALUE": "ignored",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if resolved.ActiveProvider != "azure-openai" {
+		t.Fatalf("ActiveProvider = %q, want azure-openai", resolved.ActiveProvider)
+	}
+	if resolved.Provider.ProviderKind != ProviderKindAzureOpenAI {
+		t.Fatalf("ProviderKind = %q, want azure-openai", resolved.Provider.ProviderKind)
+	}
+	if resolved.Provider.APIKey != "az-env" || resolved.Provider.Model != "kajicode-deployment" {
+		t.Fatalf("Provider = %#v, want Azure env credentials/model", resolved.Provider)
+	}
+	if resolved.Provider.BaseURL != "https://resource.openai.azure.com" {
+		t.Fatalf("BaseURL = %q, want Azure endpoint", resolved.Provider.BaseURL)
+	}
+}
+
+func TestResolveIgnoresAzureOpenAIEnvWithoutEndpoint(t *testing.T) {
+	resolved, err := Resolve(ResolveOptions{
+		Env: map[string]string{
+			"OPENAI_API_KEY":          "sk-env",
+			"AZURE_OPENAI_API_KEY":    "az-env",
+			"AZURE_OPENAI_DEPLOYMENT": "kajicode-deployment",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	for _, profile := range resolved.Providers {
+		if profile.ProviderKind == ProviderKindAzureOpenAI {
+			t.Fatalf("Resolve() created incomplete Azure profile: %#v", profile)
+		}
+	}
+}
+
+func TestResolveRejectsAzureOpenAIPlaceholderEndpoint(t *testing.T) {
+	path := writeConfig(t, `{
+		"activeProvider": "azure",
+		"providers": [{
+			"name": "azure",
+			"catalogID": "azure-openai",
+			"model": "kajicode-deployment",
+			"apiKey": "az-test"
+		}]
+	}`)
+	_, err := Resolve(ResolveOptions{UserConfigPath: path, Env: map[string]string{}})
+	if err == nil {
+		t.Fatal("Resolve() error = nil, want Azure endpoint error")
+	}
+	if !strings.Contains(err.Error(), "requires your Azure OpenAI endpoint URL") {
+		t.Fatalf("Resolve() error = %q, want endpoint guidance", err.Error())
+	}
+}
+
 func TestResolveUsesAnthropicEnvBaseURLAsCompatible(t *testing.T) {
 	// ANTHROPIC_BASE_URL pointing at a proxy/gateway must resolve to an
 	// anthropic-compatible provider (mirroring OPENAI_BASE_URL), not the "requires

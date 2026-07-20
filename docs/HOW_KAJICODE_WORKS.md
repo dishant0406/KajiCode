@@ -586,6 +586,7 @@ stream events, reasoning blocks, images, and token usage. Provider adapters in
 `internal/providers/*` translate those neutral types to provider-specific APIs:
 
 - OpenAI and OpenAI-compatible APIs;
+- Azure OpenAI;
 - Anthropic and Anthropic-compatible APIs;
 - Gemini;
 - Codex / ChatGPT OAuth-backed runtime.

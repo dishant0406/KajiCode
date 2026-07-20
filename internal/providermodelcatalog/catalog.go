@@ -281,6 +281,8 @@ func modelMatchesProvider(model modelregistry.ModelEntry, provider providercatal
 	switch provider.Transport {
 	case providercatalog.TransportOpenAI:
 		return model.Provider == modelregistry.ProviderOpenAI
+	case providercatalog.TransportAzureOpenAI:
+		return model.Provider == modelregistry.ProviderOpenAI
 	case providercatalog.TransportAnthropic, providercatalog.TransportAnthropicCompatible:
 		return model.Provider == modelregistry.ProviderAnthropic
 	case providercatalog.TransportGoogle:

@@ -215,6 +215,8 @@ func (profile ProviderProfile) MissingCredentialEnv() (string, bool) {
 	switch profile.normalizedProviderKind() {
 	case ProviderKindOpenAI, ProviderKindOpenAICompatible:
 		return firstNonEmptyTrimmed(profile.APIKeyEnv, "OPENAI_API_KEY"), true
+	case ProviderKindAzureOpenAI:
+		return firstNonEmptyTrimmed(profile.APIKeyEnv, "AZURE_OPENAI_API_KEY"), true
 	case ProviderKindAnthropic, ProviderKindAnthropicCompat:
 		return firstNonEmptyTrimmed(profile.APIKeyEnv, "ANTHROPIC_API_KEY"), true
 	case ProviderKindGoogle:

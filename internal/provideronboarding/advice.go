@@ -29,6 +29,10 @@ func SetupCommand(descriptor providercatalog.Descriptor, name string, setActive 
 	if name = strings.TrimSpace(name); name != "" {
 		parts = append(parts, "--name", name)
 	}
+	if descriptor.RequiresEndpoint {
+		parts = append(parts, "--base-url", firstNonEmpty(descriptor.DefaultBaseURL, "https://your-resource.openai.azure.com"))
+		parts = append(parts, "--model", firstNonEmpty(descriptor.DefaultModel, "deployment-name"))
+	}
 	if descriptor.RequiresAuth && len(descriptor.AuthEnvVars) > 0 {
 		if env := strings.TrimSpace(descriptor.AuthEnvVars[0]); env != "" {
 			parts = append(parts, "--api-key-env", env)
@@ -120,6 +124,8 @@ func credentialAdviceForProfile(profile config.ProviderProfile) credentialAdvice
 	switch effectiveProviderKind(profile) {
 	case config.ProviderKindOpenAI:
 		return credentialAdvice{requiresAuth: true, envVar: firstNonEmpty(profileEnv, "OPENAI_API_KEY")}
+	case config.ProviderKindAzureOpenAI:
+		return credentialAdvice{requiresAuth: true, envVar: firstNonEmpty(profileEnv, "AZURE_OPENAI_API_KEY")}
 	case config.ProviderKindAnthropic:
 		return credentialAdvice{requiresAuth: true, envVar: firstNonEmpty(profileEnv, "ANTHROPIC_API_KEY")}
 	case config.ProviderKindGoogle:

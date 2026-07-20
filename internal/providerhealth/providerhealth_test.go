@@ -67,6 +67,46 @@ func TestProbeConnectivityOpenAIModelsEndpointPasses(t *testing.T) {
 	}
 }
 
+func TestProbeConnectivityAzureOpenAIUsesAPIKeyHeader(t *testing.T) {
+	var gotPath string
+	var gotAuth string
+	var gotAPIKey string
+	client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		gotPath = r.URL.Path
+		gotAuth = r.Header.Get("Authorization")
+		gotAPIKey = r.Header.Get("api-key")
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Status:     "200 OK",
+			Body:       io.NopCloser(strings.NewReader(`{"data":[{"id":"kajicode-deployment"}]}`)),
+			Header:     make(http.Header),
+		}, nil
+	})}
+
+	result := Probe(context.Background(), Options{
+		Profile: config.ProviderProfile{
+			Name:         "azure",
+			ProviderKind: config.ProviderKindAzureOpenAI,
+			BaseURL:      "https://resource.openai.azure.com",
+			APIKey:       "az-test-secret",
+			Model:        "kajicode-deployment",
+		},
+		Connectivity: true,
+		HTTPClient:   client,
+		Resolver:     staticResolver{addr: netip.MustParseAddr("93.184.216.34")},
+	})
+
+	if result.Status != StatusPass {
+		t.Fatalf("Status = %q, want pass: %#v", result.Status, result.Checks)
+	}
+	if gotPath != "/openai/v1/models" {
+		t.Fatalf("probe path = %q, want Azure v1 models path", gotPath)
+	}
+	if gotAPIKey != "az-test-secret" || gotAuth != "" {
+		t.Fatalf("auth headers = api-key:%q authorization:%q, want raw Azure api-key only", gotAPIKey, gotAuth)
+	}
+}
+
 func TestProbeConnectivityClassifiesAndRedactsAuthError(t *testing.T) {
 	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 		return &http.Response{
