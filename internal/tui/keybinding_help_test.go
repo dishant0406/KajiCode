@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 func TestQuestionMarkOpensHelpOnEmptyComposer(t *testing.T) {
@@ -68,6 +69,26 @@ func TestHelpOverlaySwallowsOtherKeys(t *testing.T) {
 	}
 }
 
+func TestHelpOverlayScrollKeysMoveOverlayWithoutTyping(t *testing.T) {
+	m := newModel(context.Background(), Options{ModelName: "gpt-4o"})
+	m.width = 100
+	m.height = 18
+	m.altScreen = true
+	m.helpOverlay = true
+
+	updated, _ := m.Update(testKey(tea.KeyDown))
+	next := updated.(model)
+	if !next.helpOverlay {
+		t.Fatal("scrolling should not close the help overlay")
+	}
+	if next.helpOverlayScroll != 1 {
+		t.Fatalf("KeyDown should scroll help overlay by one row, got %d", next.helpOverlayScroll)
+	}
+	if next.composerValue() != "" {
+		t.Fatalf("scroll key must not type into composer, got %q", next.composerValue())
+	}
+}
+
 func TestHelpOverlayViewRendersGroupsAndKeys(t *testing.T) {
 	m := newModel(context.Background(), Options{ModelName: "gpt-4o"})
 	m.width = 90
@@ -84,6 +105,61 @@ func TestHelpOverlayViewRendersGroupsAndKeys(t *testing.T) {
 	} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("help overlay view missing %q, got:\n%s", want, view)
+		}
+	}
+}
+
+func TestHelpOverlayKeepsLongShortcutDescriptionsReadable(t *testing.T) {
+	m := newModel(context.Background(), Options{ModelName: "gpt-4o"})
+	m.width = 132
+	m.height = 42
+	m.altScreen = true
+	m.helpOverlay = true
+
+	view := plainRender(t, m.View())
+	for _, want := range []string{"p=/provider", "r=/resume", "medium → high"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("help overlay should not truncate %q, got:\n%s", want, view)
+		}
+	}
+}
+
+func TestHelpOverlayWrapsDescriptionsWithinOverlayWidth(t *testing.T) {
+	m := newModel(context.Background(), Options{ModelName: "gpt-4o"})
+	rendered := plainRender(t, m.renderKeybindingHelpOverlay(72, 0, 0))
+	for _, want := range []string{"p=/provider", "r=/resume"} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("wrapped overlay should keep %q readable, got:\n%s", want, rendered)
+		}
+	}
+	for index, line := range strings.Split(rendered, "\n") {
+		if width := lipgloss.Width(line); width > 72 {
+			t.Fatalf("line %d exceeds terminal width: width=%d line=%q", index, width, line)
+		}
+	}
+}
+
+func TestHelpOverlayScrollsWhenViewportIsShort(t *testing.T) {
+	m := newModel(context.Background(), Options{ModelName: "gpt-4o"})
+	m.width = 100
+	m.height = 18
+	m.altScreen = true
+	m.helpOverlay = true
+
+	initial := plainRender(t, m.View())
+	if !strings.Contains(initial, "Keyboard Shortcuts") || !strings.Contains(initial, "Chat") {
+		t.Fatalf("initial help overlay should start at the top, got:\n%s", initial)
+	}
+
+	for i := 0; i < 4; i++ {
+		updated, _ := m.Update(testKey(tea.KeyPgDown))
+		m = updated.(model)
+	}
+
+	view := plainRender(t, m.View())
+	for _, want := range []string{"Specialists & pickers", "describe a task", "scroll"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("short help overlay should scroll to %q while preserving chrome, got:\n%s", want, view)
 		}
 	}
 }

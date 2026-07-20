@@ -11,7 +11,12 @@
 // who remaps them in config.json sees the actual chords, not the defaults.
 package tui
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+
+	"charm.land/lipgloss/v2"
+)
 
 // keybinding is one row in the help overlay: the key chord and what it does.
 type keybinding struct {
@@ -98,7 +103,7 @@ func (m model) renderKeybindingHelpLines(innerWidth int) []string {
 		}
 		lines = append(lines, kajicodeTheme.accent.Render(group.title))
 		for _, binding := range group.bindings {
-			lines = append(lines, formatKeybindingLine(binding, keyColumn, innerWidth))
+			lines = append(lines, formatKeybindingLines(binding, keyColumn, innerWidth)...)
 		}
 	}
 	lines = append(lines, "")
@@ -112,7 +117,7 @@ func keybindingKeyColumnWidth(groups []keybindingGroup) int {
 	widest := 0
 	for _, group := range groups {
 		for _, binding := range group.bindings {
-			if n := len([]rune(binding.keys)); n > widest {
+			if n := lipgloss.Width(binding.keys); n > widest {
 				widest = n
 			}
 		}
@@ -120,44 +125,84 @@ func keybindingKeyColumnWidth(groups []keybindingGroup) int {
 	return widest
 }
 
-// formatKeybindingLine renders one "  <keys>   <desc>" row: the key chord in
-// the accent color, padded to keyColumn, then the muted description truncated
-// to fit innerWidth.
-func formatKeybindingLine(binding keybinding, keyColumn int, innerWidth int) string {
+func formatKeybindingLines(binding keybinding, keyColumn int, innerWidth int) []string {
 	keys := binding.keys
-	pad := keyColumn - len([]rune(keys))
+	pad := keyColumn - lipgloss.Width(keys)
 	if pad < 0 {
 		pad = 0
 	}
 	keyCell := kajicodeTheme.ink.Render(keys) + strings.Repeat(" ", pad)
-	// Indent(2) + keyCell + gap(2) consumed before the description.
 	descBudget := innerWidth - 2 - keyColumn - 2
-	if descBudget < 4 {
-		descBudget = 4
+	if descBudget < 1 {
+		descBudget = 1
 	}
-	desc := kajicodeTheme.muted.Render(truncateRunes(binding.desc, descBudget))
-	return "  " + keyCell + "  " + desc
+	segments := wrapPlainText(binding.desc, descBudget)
+	if len(segments) == 0 {
+		segments = []string{""}
+	}
+	lines := make([]string, 0, len(segments))
+	for index, segment := range segments {
+		prefix := "  " + strings.Repeat(" ", keyColumn) + "  "
+		if index == 0 {
+			prefix = "  " + keyCell + "  "
+		}
+		lines = append(lines, prefix+kajicodeTheme.muted.Render(segment))
+	}
+	return lines
 }
 
 // the given terminal width. Vertical centering is handled by the caller's
 // overlay compositing pipeline (overlayViewportLines in transcriptView).
-func (m model) renderKeybindingHelpOverlay(width int) string {
+func (m model) renderKeybindingHelpOverlay(width int, maxHeight int, scroll int) string {
 	overlayWidth := keybindingHelpOverlayWidth(width)
 	lines := m.renderKeybindingHelpLines(overlayWidth - 4)
-	block := styledBlockFillTitle(overlayWidth, "Keyboard Shortcuts", lines, kajicodeTheme.line, kajicodeTheme.panel)
+	block := renderHelpOverlayBlock(overlayWidth, maxHeight, scroll, "Keyboard Shortcuts", lines)
 	return centerRenderedBlock(block, width)
+}
+
+func renderHelpOverlayBlock(width int, maxHeight int, scroll int, title string, lines []string) string {
+	bodyLines := helpOverlayVisibleLines(lines, maxHeight, scroll)
+	return styledBlockFillTitle(width, title, bodyLines, kajicodeTheme.line, kajicodeTheme.panel)
+}
+
+func helpOverlayVisibleLines(lines []string, maxHeight int, scroll int) []string {
+	if maxHeight <= 0 || len(lines)+2 <= maxHeight {
+		return lines
+	}
+	bodyHeight := maxInt(1, maxHeight-2)
+	visibleHeight := maxInt(1, bodyHeight-1)
+	if len(lines) <= visibleHeight {
+		return lines
+	}
+	maxScroll := maxInt(0, len(lines)-visibleHeight)
+	scroll = clampInt(scroll, 0, maxScroll)
+	end := minInt(len(lines), scroll+visibleHeight)
+	visible := append([]string(nil), lines[scroll:end]...)
+	visible = append(visible, renderHelpOverlayScrollHint(scroll, maxScroll))
+	return visible
+}
+
+func renderHelpOverlayScrollHint(scroll int, maxScroll int) string {
+	position := fmt.Sprintf("%d/%d", scroll+1, maxScroll+1)
+	return kajicodeTheme.faint.Render("↑/↓ PgUp/PgDn scroll " + position + " · ?/Esc close")
 }
 
 // keybindingHelpOverlayWidth picks the overlay width: wide enough that the
 // descriptions don't truncate next to the key column, capped, and never wider
 // than the terminal.
 func keybindingHelpOverlayWidth(terminalWidth int) int {
-	width := 76
-	if terminalWidth-4 < width {
+	width := terminalWidth - 16
+	if width > 112 {
+		width = 112
+	}
+	if terminalWidth < 84 {
 		width = terminalWidth - 4
 	}
 	if width < 24 {
 		width = 24
+	}
+	if width > terminalWidth {
+		width = terminalWidth
 	}
 	return width
 }

@@ -173,8 +173,10 @@ type model struct {
 	transcript         []transcriptRow
 	transcriptDetailed bool
 	helpOverlay        bool // the `?` keyboard-shortcut overlay is open
+	helpOverlayScroll  int
 	// leaderHelpOverlay is the Ctrl+X ? modal listing every leader slash chord.
-	leaderHelpOverlay bool
+	leaderHelpOverlay       bool
+	leaderHelpOverlayScroll int
 	// leaderPending is true after Ctrl+X until a second key, Esc, or timeout
 	// resolves the chord (see leader.go). leaderSeq invalidates a stale tick.
 	leaderPending         bool
@@ -1305,6 +1307,9 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.helpOverlay {
 			if keyText(msg) == "?" || keyText(msg) == "q" || keyIs(msg, tea.KeyEsc) || keyIs(msg, tea.KeyEnter) || keyCtrl(msg, 'c') {
 				m.helpOverlay = false
+				m.helpOverlayScroll = 0
+			} else {
+				m.helpOverlayScroll = m.scrollHelpOverlayOffset(m.helpOverlayScroll, msg, m.keybindingHelpOverlayMaxScroll())
 			}
 			m.burstCount = 0
 			return m, nil
@@ -1313,6 +1318,9 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.leaderHelpOverlay {
 			if keyText(msg) == "?" || keyText(msg) == "q" || keyIs(msg, tea.KeyEsc) || keyIs(msg, tea.KeyEnter) || keyCtrl(msg, 'c') {
 				m.leaderHelpOverlay = false
+				m.leaderHelpOverlayScroll = 0
+			} else {
+				m.leaderHelpOverlayScroll = m.scrollHelpOverlayOffset(m.leaderHelpOverlayScroll, msg, m.leaderHelpOverlayMaxScroll())
 			}
 			m.burstCount = 0
 			return m, nil
@@ -1647,6 +1655,7 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// when the composer is non-empty or a popup is active.
 			if m.composerValue() == "" && m.noBlockingModal() && !m.transcriptDetailed && !m.subchat.active && !m.suggestionsActive() {
 				m.helpOverlay = true
+				m.helpOverlayScroll = 0
 				return m, nil
 			}
 		case keyBackspace(msg):
@@ -2649,13 +2658,14 @@ func (m model) transcriptView() string {
 		return body + footer
 	}
 
+	overlayMaxHeight := m.helpOverlayMaxHeightForWidth(width)
 	helpOverlayContent := ""
 	if m.helpOverlay {
-		helpOverlayContent = m.renderKeybindingHelpOverlay(width)
+		helpOverlayContent = m.renderKeybindingHelpOverlay(width, overlayMaxHeight, m.helpOverlayScroll)
 	}
 	leaderHelpOverlayContent := ""
 	if m.leaderHelpOverlay {
-		leaderHelpOverlayContent = m.renderLeaderHelpOverlay(width)
+		leaderHelpOverlayContent = m.renderLeaderHelpOverlay(width, overlayMaxHeight, m.leaderHelpOverlayScroll)
 	}
 
 	suggestionOverlay := m.suggestionOverlay(width)
@@ -2949,6 +2959,72 @@ func (m model) scrollableTranscriptFrame(header string, footer string) transcrip
 		frame.statusRect = frame.footerLineRect(len(fullFooterLines) - 1)
 	}
 	return frame
+}
+
+func (m model) helpOverlayMaxHeight() int {
+	return m.helpOverlayMaxHeightForWidth(chatWidth(m.width))
+}
+
+func (m model) helpOverlayMaxHeightForWidth(width int) int {
+	if !m.altScreen || m.height <= 0 {
+		return 0
+	}
+	return m.scrollableTranscriptFrame(m.pinnedTitleBar(width), m.footerView(width)).bodyHeight
+}
+
+func (m model) helpOverlayPageLines() int {
+	maxHeight := m.helpOverlayMaxHeight()
+	if maxHeight <= 0 {
+		return 8
+	}
+	return maxInt(1, maxHeight-4)
+}
+
+func (m model) scrollHelpOverlayOffset(current int, msg tea.KeyMsg, maxScroll int) int {
+	delta, ok := m.helpOverlayScrollDelta(msg)
+	if !ok {
+		return clampInt(current, 0, maxScroll)
+	}
+	return clampInt(current+delta, 0, maxScroll)
+}
+
+func (m model) helpOverlayScrollDelta(msg tea.KeyMsg) (int, bool) {
+	page := m.helpOverlayPageLines()
+	switch {
+	case keyIs(msg, tea.KeyDown) || keyCtrl(msg, 'n'):
+		return 1, true
+	case keyIs(msg, tea.KeyUp) || keyCtrl(msg, 'p'):
+		return -1, true
+	case keyIs(msg, tea.KeyPgDown) || keyCtrl(msg, 'd'):
+		return page, true
+	case keyIs(msg, tea.KeyPgUp) || keyCtrl(msg, 'u'):
+		return -page, true
+	default:
+		return 0, false
+	}
+}
+
+func (m model) keybindingHelpOverlayMaxScroll() int {
+	width := chatWidth(m.width)
+	overlayWidth := keybindingHelpOverlayWidth(width)
+	lines := m.renderKeybindingHelpLines(overlayWidth - 4)
+	return helpOverlayMaxScroll(len(lines), m.helpOverlayMaxHeight())
+}
+
+func (m model) leaderHelpOverlayMaxScroll() int {
+	width := chatWidth(m.width)
+	overlayWidth := keybindingHelpOverlayWidth(width)
+	lines := renderLeaderHelpLines(overlayWidth - 4)
+	return helpOverlayMaxScroll(len(lines), m.helpOverlayMaxHeight())
+}
+
+func helpOverlayMaxScroll(totalLines int, maxHeight int) int {
+	if maxHeight <= 0 || totalLines+2 <= maxHeight {
+		return 0
+	}
+	bodyHeight := maxInt(1, maxHeight-2)
+	visibleHeight := maxInt(1, bodyHeight-1)
+	return maxInt(0, totalLines-visibleHeight)
 }
 
 func (f transcriptFrameLayout) footerSubrect(sequence []string) tuiRect {

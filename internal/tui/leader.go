@@ -74,6 +74,7 @@ func (m model) handleLeaderKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if keyText(msg) == "?" && !keyAlt(msg) && !keyHasMod(msg, tea.ModCtrl) {
 		m = m.clearLeader()
 		m.leaderHelpOverlay = true
+		m.leaderHelpOverlayScroll = 0
 		return m, nil
 	}
 	key, ok := leaderSecondKey(msg)
@@ -127,7 +128,7 @@ func renderLeaderHelpLines(innerWidth int) []string {
 		}
 		lines = append(lines, kajicodeTheme.accent.Render(group.title))
 		for _, binding := range group.bindings {
-			lines = append(lines, formatKeybindingLine(binding, keyColumn, innerWidth))
+			lines = append(lines, formatKeybindingLines(binding, keyColumn, innerWidth)...)
 		}
 	}
 	lines = append(lines, "")
@@ -138,10 +139,10 @@ func renderLeaderHelpLines(innerWidth int) []string {
 // renderLeaderHelpOverlay frames the Ctrl+X ? chord map exactly like the
 // general ? keyboard-shortcut overlay: same width helper, border style
 // (kajicodeTheme.line), panel fill, and centered block.
-func (m model) renderLeaderHelpOverlay(width int) string {
+func (m model) renderLeaderHelpOverlay(width int, maxHeight int, scroll int) string {
 	overlayWidth := keybindingHelpOverlayWidth(width)
 	lines := renderLeaderHelpLines(overlayWidth - 4)
-	block := styledBlockFillTitle(overlayWidth, "Ctrl+X Shortcuts", lines, kajicodeTheme.line, kajicodeTheme.panel)
+	block := renderHelpOverlayBlock(overlayWidth, maxHeight, scroll, "Ctrl+X Shortcuts", lines)
 	return centerRenderedBlock(block, width)
 }
 

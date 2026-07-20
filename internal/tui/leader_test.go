@@ -243,8 +243,8 @@ func TestLeaderHelpMatchesKeybindingHelpChrome(t *testing.T) {
 	// Both overlays must use the same frame builder (titled box + panel fill).
 	m := newModel(context.Background(), Options{ModelName: "gpt-4o"})
 	m.width = 100
-	help := m.renderKeybindingHelpOverlay(100)
-	leader := m.renderLeaderHelpOverlay(100)
+	help := m.renderKeybindingHelpOverlay(100, 0, 0)
+	leader := m.renderLeaderHelpOverlay(100, 0, 0)
 	for _, block := range []struct {
 		name string
 		s    string
