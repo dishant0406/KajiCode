@@ -281,14 +281,21 @@ jobs:
           set -euo pipefail
           version="${{ needs.bump.outputs.version }}"
           tag="${{ inputs.npm_tag }}"
-          (cd dist/npm/wrapper && npm publish --access public --tag "$tag" --provenance)
-          for attempt in 1 2 3 4 5; do
-            published="$(npm view @dishant0406/kajicode "dist-tags.${tag}" || true)"
+          if npm view "@dishant0406/kajicode@${version}" version >/dev/null 2>&1; then
+            echo "@dishant0406/kajicode@${version} is already published"
+          else
+            (cd dist/npm/wrapper && npm publish --access public --tag "$tag" --provenance)
+          fi
+          for attempt in $(seq 1 24); do
+            published="$(npm view @dishant0406/kajicode "dist-tags.${tag}" 2>/dev/null || true)"
             if [ "$published" = "$version" ]; then
               echo "dist-tag ${tag} is ${version}"
               exit 0
             fi
-            sleep 5
+            if npm view "@dishant0406/kajicode@${version}" version >/dev/null 2>&1; then
+              npm dist-tag add "@dishant0406/kajicode@${version}" "$tag"
+            fi
+            sleep 10
           done
           echo "::error::dist-tag ${tag} did not update to ${version}"
           exit 1
