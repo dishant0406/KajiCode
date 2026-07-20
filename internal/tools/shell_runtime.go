@@ -20,7 +20,7 @@ type shellIssue struct {
 
 const windowsMsysSandboxKind = "windows_msys_sandbox"
 
-const windowsMsysSandboxSuggestion = "MSYS/Cygwin coreutils and shells (bash, sh) from Git for Windows cannot run under Zero's write-restricted Windows sandbox, and the WSL bash launcher cannot reach the WSL service from it either. This also hits native commands that spawn Git Bash internally: git hooks and git/gh credential helpers can fail this way even though git and gh themselves run fine. Prefer Zero native tools (grep, read_file with offset/limit, list_directory, glob), cmd.exe findstr, or PowerShell Select-Object -First/-Last. If host-level execution is truly required, rerun with sandbox_permissions: \"require_escalated\" and a narrow justification."
+const windowsMsysSandboxSuggestion = "MSYS/Cygwin coreutils and shells (bash, sh) from Git for Windows cannot run under KajiCode's write-restricted Windows sandbox, and the WSL bash launcher cannot reach the WSL service from it either. This also hits native commands that spawn Git Bash internally: git hooks and git/gh credential helpers can fail this way even though git and gh themselves run fine. Prefer KajiCode native tools (grep, read_file with offset/limit, list_directory, glob), cmd.exe findstr, or PowerShell Select-Object -First/-Last. If host-level execution is truly required, rerun with sandbox_permissions: \"require_escalated\" and a narrow justification."
 
 // windowsMsysProneNames is the single source of truth for POSIX coreutil and
 // shell names that commonly resolve to a Git-for-Windows MSYS/Cygwin binary
@@ -63,7 +63,7 @@ func detectShellRuntime(goos string) shellRuntime {
 func shellGuidanceForGOOS(goos string) string {
 	runtime := detectShellRuntime(goos)
 	if goos == "windows" {
-		return "Uses " + runtime.Syntax + " syntax on Windows; prefer cwd over cd when changing directories. To include | & > < or other metacharacters in an argument value, wrap the value in double quotes (e.g. --jq \".a | b\"); single quotes do not protect metacharacters in cmd.exe. MSYS/Cygwin coreutils on PATH (Git for Windows usr\\bin) are not sandbox-compatible; prefer native Zero file tools."
+		return "Uses " + runtime.Syntax + " syntax on Windows; prefer cwd over cd when changing directories. To include | & > < or other metacharacters in an argument value, wrap the value in double quotes (e.g. --jq \".a | b\"); single quotes do not protect metacharacters in cmd.exe. MSYS/Cygwin coreutils on PATH (Git for Windows usr\\bin) are not sandbox-compatible; prefer native KajiCode file tools."
 	}
 	guidance := "Uses " + runtime.Syntax + " syntax."
 	if goos == "darwin" {
@@ -187,7 +187,7 @@ func detectShellCommandIssue(command string, goos string) *shellIssue {
 	if windowsBashStyleCDPattern.MatchString(unquoted) {
 		return &shellIssue{
 			Kind:       "windows_shell_syntax",
-			Message:    "Command looks like POSIX/Bash syntax, but Zero runs bash tool commands through Windows cmd.exe on this host.",
+			Message:    "Command looks like POSIX/Bash syntax, but KajiCode runs bash tool commands through Windows cmd.exe on this host.",
 			Suggestion: "Use the cwd argument instead of cd, use Windows cmd.exe syntax, or use native tools such as list_directory, read_file, grep, and glob.",
 		}
 	}
@@ -201,7 +201,7 @@ func detectShellCommandIssue(command string, goos string) *shellIssue {
 	for _, segment := range windowsCommandSegments(trimmed) {
 		word := firstCommandWord(segment)
 		if windowsMsysBinaryPathPattern.MatchString(word) {
-			return windowsMsysSandboxIssue("Command invokes an MSYS/Cygwin binary path that cannot run under Zero's Windows sandbox.")
+			return windowsMsysSandboxIssue("Command invokes an MSYS/Cygwin binary path that cannot run under KajiCode's Windows sandbox.")
 		}
 		if msysProneCommandWord(word) {
 			return windowsMsysSandboxIssue("Command uses a POSIX coreutil (head/tail/grep/cat/...) that commonly resolves to Git-for-Windows MSYS binaries incompatible with the Windows sandbox.")
@@ -261,10 +261,10 @@ func detectShellOutputIssue(output string, goos string) *shellIssue {
 	}
 	lower := strings.ToLower(output)
 	if msysRuntimeFailedInOutput(lower) {
-		return windowsMsysSandboxIssue("An MSYS/Cygwin runtime failed under Zero's Windows sandbox (ACCESS_DENIED during MSYS startup).")
+		return windowsMsysSandboxIssue("An MSYS/Cygwin runtime failed under KajiCode's Windows sandbox (ACCESS_DENIED during MSYS startup).")
 	}
 	if wslServiceDeniedInOutput(lower) {
-		return windowsMsysSandboxIssue("WSL bash could not connect to the WSL service under Zero's Windows sandbox (Bash/Service/CreateInstance/E_ACCESSDENIED).")
+		return windowsMsysSandboxIssue("WSL bash could not connect to the WSL service under KajiCode's Windows sandbox (Bash/Service/CreateInstance/E_ACCESSDENIED).")
 	}
 	if strings.Contains(lower, "the syntax of the command is incorrect") ||
 		strings.Contains(lower, "is not recognized as an internal or external command") {
@@ -314,7 +314,7 @@ func wslServiceDeniedInOutput(lower string) bool {
 
 func appendShellIssueHint(output string, issue shellIssue) string {
 	output = strings.TrimRight(output, "\r\n")
-	hint := "[zero] shell issue: " + issue.Message
+	hint := "[kajicode] shell issue: " + issue.Message
 	if strings.TrimSpace(issue.Suggestion) != "" {
 		hint += "\nSuggestion: " + issue.Suggestion
 	}

@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/agent"
-	"github.com/Gitlawb/zero/internal/tools"
+	"github.com/dishant0406/KajiCode/internal/agent"
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
 // escalate_model is a control-only tool (SideEffectNone). The stream-json tool

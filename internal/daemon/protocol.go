@@ -1,11 +1,11 @@
-// Package daemon implements zero's long-running daemon/server mode: a local
-// control server that supervises a pool of headless `zero exec` worker processes
+// Package daemon implements KajiCode's long-running daemon/server mode: a local
+// control server that supervises a pool of headless `kajicode exec` worker processes
 // and routes multiple agent sessions to them over an owner-only local socket.
 //
-// It reuses zero's existing building blocks rather than inventing new ones:
+// It reuses KajiCode's existing building blocks rather than inventing new ones:
 //   - internal/background : child-process group setup + cross-platform terminate.
 //   - internal/streamjson : the line-based agent event protocol on worker stdio.
-//   - internal/cli (exec) : a worker is a `zero exec -i/-o stream-json` process.
+//   - internal/cli (exec) : a worker is a `kajicode exec -i/-o stream-json` process.
 //
 // The control plane (this file) is a small framed codec mirrored from the
 // reference daemon's protocol.js: a 4-byte big-endian length prefix, a 1-byte

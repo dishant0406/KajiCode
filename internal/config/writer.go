@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Gitlawb/zero/internal/providercatalog"
+	"github.com/dishant0406/KajiCode/internal/providercatalog"
 )
 
 func UpsertProvider(path string, profile ProviderProfile, setActive bool) (FileConfig, error) {
@@ -67,7 +67,7 @@ type EnsuredProvider struct {
 // EnsureCatalogProvider guarantees a provider profile exists in the config at
 // path for the given catalog entry. OAuth login flows call this right after
 // storing a token: a login is only reachable from the provider list and
-// `zero providers use` when a profile exists, but a login must never replace or
+// `kajicode providers use` when a profile exists, but a login must never replace or
 // deactivate the user's current active provider — so an existing profile whose
 // Name or CatalogID already matches is left completely untouched (its name,
 // credentials, and model are the user's), and a created profile is NOT marked
@@ -114,7 +114,7 @@ func EnsureCatalogProvider(path string, catalogID string) (EnsuredProvider, erro
 // MarkProviderAPIKeyStored records that provider's API key now lives in the
 // credential store. It also clears inline/env key fields so the stored key is the
 // runtime credential; an old apiKeyEnv value must not keep overriding a freshly
-// captured key from `zero auth openrouter` or provider setup.
+// captured key from `kajicode auth openrouter` or provider setup.
 func MarkProviderAPIKeyStored(path string, provider string) error {
 	path = strings.TrimSpace(path)
 	if path == "" {
@@ -755,7 +755,7 @@ func writeConfigFile(path string, cfg FileConfig) error {
 	data = append(data, '\n')
 	// Write-to-temp + rename: an in-place write interrupted mid-way (crash,
 	// disk full) would leave the user's only config truncated or corrupt.
-	tmp, err := os.CreateTemp(dir, ".zero-config-*.tmp")
+	tmp, err := os.CreateTemp(dir, ".kajicode-config-*.tmp")
 	if err != nil {
 		return fmt.Errorf("write config %s: %w", path, err)
 	}

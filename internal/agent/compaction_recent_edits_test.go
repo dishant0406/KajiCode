@@ -5,21 +5,21 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
 )
 
 // recentEdits extracts each mutated file's path and a one-line note from the
 // matching tool result, latest note per path in last-seen order.
 func TestRecentEditsExtractsPathsAndNotes(t *testing.T) {
-	messages := []zeroruntime.Message{
-		{Role: zeroruntime.MessageRoleAssistant, ToolCalls: []zeroruntime.ToolCall{
+	messages := []kajicoderuntime.Message{
+		{Role: kajicoderuntime.MessageRoleAssistant, ToolCalls: []kajicoderuntime.ToolCall{
 			{ID: "e1", Name: "write_file", Arguments: `{"path":"internal/foo.go","content":"package foo"}`},
 		}},
-		{Role: zeroruntime.MessageRoleTool, ToolCallID: "e1", Content: "Wrote internal/foo.go (12 lines)"},
-		{Role: zeroruntime.MessageRoleAssistant, ToolCalls: []zeroruntime.ToolCall{
+		{Role: kajicoderuntime.MessageRoleTool, ToolCallID: "e1", Content: "Wrote internal/foo.go (12 lines)"},
+		{Role: kajicoderuntime.MessageRoleAssistant, ToolCalls: []kajicoderuntime.ToolCall{
 			{ID: "e2", Name: "edit_file", Arguments: `{"path":"internal/bar.go","old_string":"a","new_string":"b"}`},
 		}},
-		{Role: zeroruntime.MessageRoleTool, ToolCallID: "e2", Content: "Applied edit to internal/bar.go"},
+		{Role: kajicoderuntime.MessageRoleTool, ToolCallID: "e2", Content: "Applied edit to internal/bar.go"},
 	}
 
 	edits := recentEdits(messages)
@@ -37,16 +37,16 @@ func TestRecentEditsExtractsPathsAndNotes(t *testing.T) {
 // After compaction elides the editing turns, the preserved-state block still
 // names the edited files and what changed, so the model needn't re-read them.
 func TestCompactionPreservesRecentEdits(t *testing.T) {
-	messages := []zeroruntime.Message{
-		{Role: zeroruntime.MessageRoleSystem, Content: "system"},
-		{Role: zeroruntime.MessageRoleUser, Content: "add a flag"},
-		{Role: zeroruntime.MessageRoleAssistant, Content: "editing", ToolCalls: []zeroruntime.ToolCall{
+	messages := []kajicoderuntime.Message{
+		{Role: kajicoderuntime.MessageRoleSystem, Content: "system"},
+		{Role: kajicoderuntime.MessageRoleUser, Content: "add a flag"},
+		{Role: kajicoderuntime.MessageRoleAssistant, Content: "editing", ToolCalls: []kajicoderuntime.ToolCall{
 			{ID: "e1", Name: "write_file", Arguments: `{"path":"cmd/main.go","content":"..."}`},
 		}},
-		{Role: zeroruntime.MessageRoleTool, ToolCallID: "e1", Content: "Wrote cmd/main.go (adds --version flag)"},
-		{Role: zeroruntime.MessageRoleAssistant, Content: "done"},
-		{Role: zeroruntime.MessageRoleUser, Content: "continue"},
-		{Role: zeroruntime.MessageRoleAssistant, Content: "continuing"},
+		{Role: kajicoderuntime.MessageRoleTool, ToolCallID: "e1", Content: "Wrote cmd/main.go (adds --version flag)"},
+		{Role: kajicoderuntime.MessageRoleAssistant, Content: "done"},
+		{Role: kajicoderuntime.MessageRoleUser, Content: "continue"},
+		{Role: kajicoderuntime.MessageRoleAssistant, Content: "continuing"},
 	}
 	summary := compactStateConversation(t, messages)
 

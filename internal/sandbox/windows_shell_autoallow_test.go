@@ -18,7 +18,7 @@ func TestEngineWindowsShellAutoAllowTracksSetup(t *testing.T) {
 		WorkspaceRoot: `C:\ws`,
 		Policy:        DefaultPolicy(),
 		Backend: Backend{
-			Name: BackendWindowsRestrictedToken, Available: true, Executable: "zero.exe",
+			Name: BackendWindowsRestrictedToken, Available: true, Executable: "kajicode.exe",
 			Platform: "windows", CommandWrapping: true, NativeIsolation: true,
 		},
 	})

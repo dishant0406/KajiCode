@@ -10,7 +10,7 @@ import (
 	"syscall"
 	"time"
 
-	zeroSandbox "github.com/Gitlawb/zero/internal/sandbox"
+	zeroSandbox "github.com/dishant0406/KajiCode/internal/sandbox"
 )
 
 // bashWaitDelay bounds how long Wait blocks for the I/O pipes to drain after the
@@ -22,7 +22,7 @@ var bashWaitDelay = 2 * time.Second
 // hardenProcessLifetime makes a Windows shell command killable as a process
 // tree. cmd.exe starts helper commands as child processes, so killing only the
 // shell can leave a long-running child alive and holding cwd/temp handles after
-// Zero exits.
+// KajiCode exits.
 func hardenProcessLifetime(command *exec.Cmd) {
 	command.WaitDelay = bashWaitDelay
 	command.Cancel = func() error {
@@ -50,7 +50,7 @@ func taskkillPath() string {
 // commandText reaches cmd.exe unescaped instead of auto-quoted the way
 // exec.Cmd would normally encode a single Args element. Skipped when wrapped
 // is true: the sandbox engine then routes execution through a separate
-// zero-windows-command-runner process, which builds its own child command
+// kajicode-windows-command-runner process, which builds its own child command
 // line from scratch (internal/sandbox/windows_process_windows.go) rather than
 // inheriting whatever this outer exec.Cmd is configured with.
 func applyWindowsShellCommandLine(command *exec.Cmd, commandText string, wrapped bool) {

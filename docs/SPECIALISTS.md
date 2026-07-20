@@ -1,6 +1,6 @@
-# Zero Specialists
+# KajiCode Specialists
 
-Specialists are named sub-agents that Zero can delegate focused work to through
+Specialists are named sub-agents that KajiCode can delegate focused work to through
 the `Task` tool. A specialist is a markdown manifest with YAML-style
 frontmatter plus a system prompt body.
 
@@ -8,9 +8,9 @@ Specialists can be built in, user-scoped, or project-scoped:
 
 | Scope | Path | Notes |
 | --- | --- | --- |
-| Built-in | compiled into Zero | `worker`, `explorer`, and `code-review` ship with the binary. |
-| User | `~/.config/zero/specialists/*.md` | Available across local workspaces. |
-| Project | `.zero/specialists/*.md` | Shared with the current repository when committed. |
+| Built-in | compiled into KajiCode | `worker`, `explorer`, and `code-review` ship with the binary. |
+| User | `~/.config/kajicode/specialists/*.md` | Available across local workspaces. |
+| Project | `.kajicode/specialists/*.md` | Shared with the current repository when committed. |
 
 Project specialists override user and built-in specialists with the same name.
 User specialists override built-ins.
@@ -18,18 +18,18 @@ User specialists override built-ins.
 ## CLI Management
 
 ```bash
-zero specialist list
-zero specialist show worker
-zero specialist path
+kajicode specialist list
+kajicode specialist show worker
+kajicode specialist path
 
-zero specialist create api-review \
+kajicode specialist create api-review \
   --project \
   --description "Reviews API changes" \
   --tools read-only,plan \
   --prompt "Review API changes for compatibility and missing tests."
 
-zero specialist edit api-review --project
-zero specialist delete api-review --project
+kajicode specialist edit api-review --project
+kajicode specialist delete api-review --project
 ```
 
 Use `--json` with `list`, `show`, `path`, `create`, or `delete` when scripting.
@@ -62,8 +62,8 @@ Supported frontmatter keys:
 | `reasoningEffort` | Optional reasoning effort override. |
 | `tools` | Array of tool categories or tool ids. |
 
-If the body is empty and `description` is set, Zero uses the description as the
-system prompt and reports a warning in `zero specialist show`.
+If the body is empty and `description` is set, KajiCode uses the description as the
+system prompt and reports a warning in `kajicode specialist show`.
 
 ## Tool Selection
 
@@ -82,7 +82,7 @@ author new ones.
 
 ## Agent Tools
 
-Zero registers these tools for top-level agent runs:
+KajiCode registers these tools for top-level agent runs:
 
 | Tool | Purpose |
 | --- | --- |
@@ -92,7 +92,7 @@ Zero registers these tools for top-level agent runs:
 | `GenerateSpecialist` | Create a project-local specialist manifest from a description. |
 
 `GenerateSpecialist` is project-scoped only. It writes to
-`.zero/specialists`, not the user specialist directory.
+`.kajicode/specialists`, not the user specialist directory.
 
 Example LLM-facing `Task` payload:
 
@@ -123,7 +123,7 @@ The returned `task_id` is also the child session id. Use it with
 Background specialist output is stored under:
 
 ```text
-${XDG_DATA_HOME:-~/.local/share}/zero/background/
+${XDG_DATA_HOME:-~/.local/share}/kajicode/background/
 ```
 
 Each task has:
@@ -135,6 +135,6 @@ Each task has:
 Persisted metadata lets a new background manager instance read completed task
 output or stop a still-running task by id.
 
-If Zero is restarted while a background task is still marked `running`, the new
+If KajiCode is restarted while a background task is still marked `running`, the new
 manager marks that task `error` and clears its PID. This avoids sending
 `TaskStop` to a stale PID that may now belong to an unrelated process.

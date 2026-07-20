@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/config"
-	"github.com/Gitlawb/zero/internal/tools"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
 func TestRegisterToolsAddsPromptGatedMCPTools(t *testing.T) {
@@ -49,12 +49,12 @@ func TestRegisterToolsAddsPromptGatedMCPTools(t *testing.T) {
 		t.Fatalf("Safety.SideEffect = %q, want network", tool.Safety().SideEffect)
 	}
 
-	denied := registry.Run(context.Background(), "mcp_docs_lookup", map[string]any{"query": "zero"})
+	denied := registry.Run(context.Background(), "mcp_docs_lookup", map[string]any{"query": "kajicode"})
 	if denied.Status != tools.StatusError {
 		t.Fatalf("Run without approval = %#v, want permission error", denied)
 	}
-	approved := registry.RunWithOptions(context.Background(), "mcp_docs_lookup", map[string]any{"query": "zero"}, tools.RunOptions{PermissionGranted: true})
-	if approved.Status != tools.StatusOK || approved.Output != "lookup: zero" {
+	approved := registry.RunWithOptions(context.Background(), "mcp_docs_lookup", map[string]any{"query": "kajicode"}, tools.RunOptions{PermissionGranted: true})
+	if approved.Status != tools.StatusOK || approved.Output != "lookup: kajicode" {
 		t.Fatalf("approved run = %#v, want lookup output", approved)
 	}
 	if approved.Meta["mcp.server"] != "docs" || approved.Meta["mcp.tool"] != "lookup" {

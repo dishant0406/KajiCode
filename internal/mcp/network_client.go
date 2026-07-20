@@ -93,7 +93,7 @@ func (client *networkClient) initialize(ctx context.Context) error {
 		"protocolVersion": "2024-11-05",
 		"capabilities":    map[string]any{},
 		"clientInfo": map[string]any{
-			"name":    "zero",
+			"name":    "kajicode",
 			"version": "dev",
 		},
 	}, &result); err != nil {
@@ -110,7 +110,7 @@ func (client *remoteSSEClient) initialize(ctx context.Context) error {
 		"protocolVersion": "2024-11-05",
 		"capabilities":    map[string]any{},
 		"clientInfo": map[string]any{
-			"name":    "zero",
+			"name":    "kajicode",
 			"version": "dev",
 		},
 	}, &result); err != nil {
@@ -793,7 +793,7 @@ func (transport *oauthRoundTripper) RoundTrip(request *http.Request) (*http.Resp
 
 	refreshed, refreshErr := transport.source.Refresh(request.Context())
 	if refreshErr != nil {
-		return nil, fmt.Errorf("MCP OAuth token refresh failed for %s: re-run `zero mcp oauth login %s`: %w", transport.serverName, transport.serverName, refreshErr)
+		return nil, fmt.Errorf("MCP OAuth token refresh failed for %s: re-run `kajicode mcp oauth login %s`: %w", transport.serverName, transport.serverName, refreshErr)
 	}
 
 	retry, _, err := cloneRequestWithBearer(request, refreshed)
@@ -852,7 +852,7 @@ func (source *storeTokenSource) AccessToken(ctx context.Context) (string, error)
 		return "", err
 	}
 	if !ok || strings.TrimSpace(token.AccessToken) == "" {
-		return "", fmt.Errorf("no stored OAuth token for MCP server %s: run `zero mcp oauth login %s`", source.server.Name, source.server.Name)
+		return "", fmt.Errorf("no stored OAuth token for MCP server %s: run `kajicode mcp oauth login %s`", source.server.Name, source.server.Name)
 	}
 	return token.AccessToken, nil
 }

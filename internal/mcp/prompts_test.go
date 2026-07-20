@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/tools"
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
 func TestServePromptsListReturnsCuratedSet(t *testing.T) {
@@ -54,7 +54,7 @@ func TestServePromptsGetSubstitutesArguments(t *testing.T) {
 		Method: "prompts/get",
 		Params: mustRaw(map[string]any{
 			"name":      "code_review",
-			"arguments": map[string]any{argName: "ZERO-SENTINEL-VALUE"},
+			"arguments": map[string]any{argName: "KAJICODE-SENTINEL-VALUE"},
 		}),
 	})
 
@@ -85,7 +85,7 @@ func TestServePromptsGetSubstitutesArguments(t *testing.T) {
 		}
 		rendered.WriteString(message.Content.Text)
 	}
-	if !strings.Contains(rendered.String(), "ZERO-SENTINEL-VALUE") {
+	if !strings.Contains(rendered.String(), "KAJICODE-SENTINEL-VALUE") {
 		t.Fatalf("rendered prompt did not substitute argument: %q", rendered.String())
 	}
 	if strings.Contains(rendered.String(), "{{"+argName+"}}") {

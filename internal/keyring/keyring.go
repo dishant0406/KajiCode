@@ -90,7 +90,7 @@ func (k *Keyring) Set(service, account, secret string) error {
 		return wrap("set", err)
 	case "linux":
 		// secret-tool reads the secret from stdin, keeping it out of the argv.
-		_, err := k.exec([]byte(secret), "secret-tool", "store", "--label", "zero", "service", service, "account", account)
+		_, err := k.exec([]byte(secret), "secret-tool", "store", "--label", "kajicode", "service", service, "account", account)
 		return wrap("set", err)
 	default:
 		return ErrUnsupported

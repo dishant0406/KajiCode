@@ -120,7 +120,7 @@ func TestShellIssueBlockResultMsysCommand(t *testing.T) {
 	if result.Status != StatusError {
 		t.Fatalf("status = %q, want error", result.Status)
 	}
-	for _, want := range []string{"[zero] shell issue:", "MSYS/Cygwin", "grep", "read_file", "require_escalated"} {
+	for _, want := range []string{"[kajicode] shell issue:", "MSYS/Cygwin", "grep", "read_file", "require_escalated"} {
 		if !strings.Contains(result.Output, want) {
 			t.Fatalf("expected %q in blocked output, got %q", want, result.Output)
 		}

@@ -20,7 +20,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # `zero-release package` builds + smoke-tests natively (host==target), so each
+        # `kajicode-release package` builds + smoke-tests natively (host==target), so each
         # target platform needs its own native runner. These five cover the platforms
         # install.sh / install.ps1 / the npm wrapper resolve.
         os:
@@ -50,7 +50,7 @@ jobs:
       - name: Test
         run: go test ./...
 
-      # zero-release names assets zero-v<package.json version>-… while the release
+      # kajicode-release names assets kajicode-v<package.json version>-… while the release
       # is published under the pushed git tag. If they disagree, install.sh/install.ps1
       # and the npm postinstall all build a download URL that 404s. Fail fast so a
       # forgotten version bump can never publish mis-versioned, un-installable assets.
@@ -68,15 +68,15 @@ jobs:
           echo "tag $GITHUB_REF_NAME matches package.json version v$pkg_version."
 
       - name: Package release artifact
-        run: go run ./cmd/zero-release package
+        run: go run ./cmd/kajicode-release package
 
       - name: Verify release checksums
-        run: go run ./cmd/zero-release verify
+        run: go run ./cmd/kajicode-release verify
 
       - name: Upload package
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: zero-${{ runner.os }}-${{ runner.arch }}
+          name: kajicode-${{ runner.os }}-${{ runner.arch }}
           path: dist/release/*
           if-no-files-found: error
 
@@ -97,7 +97,7 @@ jobs:
           gh release create "$tag" --repo "$GITHUB_REPOSITORY" --title "$tag" --generate-notes 2>/dev/null || true
           gh release upload "$tag" dist/release/* --repo "$GITHUB_REPOSITORY" --clobber
 
-  # Publishes @gitlawb/zero to npm: first the five platform payloads (versions
+  # Publishes @dishant0406/kajicode to npm: first the five platform payloads (versions
   # of the SAME package at suffixed versions like X.Y.Z-linux-x64, carrying the
   # native binary + vendored helpers), then the wrapper at X.Y.Z whose
   # optionalDependencies alias those platform versions. Platform versions MUST
@@ -109,7 +109,7 @@ jobs:
   # npmjs.com settings must list this repo + workflow file as a trusted
   # publisher, and provenance is then generated automatically. Note npm only
   # allows configuring a trusted publisher on an EXISTING package, so the very
-  # first @gitlawb/zero publish is a one-time manual `npm publish` bootstrap.
+  # first @dishant0406/kajicode publish is a one-time manual `npm publish` bootstrap.
   # Because the platform payloads are versions of the same package, they reuse
   # that single trusted-publisher configuration.
   publish-npm:
@@ -122,7 +122,7 @@ jobs:
     # maintainer approves it in the Actions UI before anything reaches npm.
     environment:
       name: npm-publish
-      url: https://www.npmjs.com/package/@gitlawb/zero
+      url: https://www.npmjs.com/package/@dishant0406/kajicode
     permissions:
       contents: read
       id-token: write # OIDC token exchange for npm trusted publishing + provenance
@@ -163,7 +163,7 @@ jobs:
 
       # Probe the exact URLs the wrapper's first-run downloader builds
       # (internal/release/release.go asset-name scheme) as an anonymous client
-      # — install.sh/install.ps1 and `zero update` read them too. This also
+      # — install.sh/install.ps1 and `kajicode update` read them too. This also
       # blocks publishing while the repo is still private: private release
       # assets 404 without auth, exactly as they would for an installing user.
       - name: Verify release assets are downloadable
@@ -172,11 +172,11 @@ jobs:
           version="$(node -p "require('./package.json').version")"
           base="https://github.com/${GITHUB_REPOSITORY}/releases/download/v${version}"
           for asset in \
-            "zero-v${version}-linux-x64.tar.gz" \
-            "zero-v${version}-linux-arm64.tar.gz" \
-            "zero-v${version}-macos-x64.tar.gz" \
-            "zero-v${version}-macos-arm64.tar.gz" \
-            "zero-v${version}-windows-x64.zip"; do
+            "kajicode-v${version}-linux-x64.tar.gz" \
+            "kajicode-v${version}-linux-arm64.tar.gz" \
+            "kajicode-v${version}-macos-x64.tar.gz" \
+            "kajicode-v${version}-macos-arm64.tar.gz" \
+            "kajicode-v${version}-windows-x64.zip"; do
             for url in "${base}/${asset}" "${base}/${asset}.sha256"; do
               if ! curl -fsSLI -o /dev/null "$url"; then
                 echo "::error::${url} is not publicly downloadable — the wrapper's fallback downloader and install.sh would fail. Is the repo public and are all assets uploaded?" >&2
@@ -189,7 +189,7 @@ jobs:
       - name: Download release artifacts
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          pattern: zero-*
+          pattern: kajicode-*
           path: dist/artifacts
           merge-multiple: true
 
@@ -198,7 +198,7 @@ jobs:
 
       # Platform versions are semver PRERELEASES of the wrapper version
       # (X.Y.Z-linux-x64), so they must never publish under the default
-      # `latest` dist-tag — that would make `npm install @gitlawb/zero`
+      # `latest` dist-tag — that would make `npm install @dishant0406/kajicode`
       # deliver a platform payload as the CLI. Publish them under a dedicated
       # tag and assert `latest` survived before the wrapper goes out.
       - name: Publish platform packages to npm
@@ -214,7 +214,7 @@ jobs:
           # AFTER the platform payloads went out, leaving no wrapper and a
           # re-run that fails on republishing existing versions. An empty
           # value falls through the guard below.
-          latest="$(npm view @gitlawb/zero dist-tags.latest || true)"
+          latest="$(npm view @dishant0406/kajicode dist-tags.latest || true)"
           case "$latest" in
             "${version}-"*)
               echo "::error::dist-tag latest points at platform version ${latest} — a platform publish clobbered it. Fix the dist-tag before the wrapper publish." >&2
@@ -231,7 +231,7 @@ jobs:
           # Confirm the wrapper owns `latest` (retry: registry metadata can lag
           # a publish by a few seconds).
           for attempt in 1 2 3 4 5; do
-            latest="$(npm view @gitlawb/zero dist-tags.latest || true)"
+            latest="$(npm view @dishant0406/kajicode dist-tags.latest || true)"
             if [ "$latest" = "$version" ]; then
               echo "dist-tag latest is ${version}."
               exit 0

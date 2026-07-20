@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/Gitlawb/zero/internal/doctor"
-	"github.com/Gitlawb/zero/internal/zerocommands"
+	"github.com/dishant0406/KajiCode/internal/doctor"
+	"github.com/dishant0406/KajiCode/internal/kajicodecommands"
 )
 
-func doctorCommandOutput(report doctor.Report, backend *zerocommands.BackendLifecycleSnapshot) commandOutput {
+func doctorCommandOutput(report doctor.Report, backend *kajicodecommands.BackendLifecycleSnapshot) commandOutput {
 	sections := []commandSection{{
 		Title: "Summary",
 		Lines: doctorSummaryLines(report.Checks),
@@ -144,7 +144,7 @@ func appendNonEmptyDoctorSection(sections []commandSection, title string, rows [
 	})
 }
 
-func doctorBackendSection(backend zerocommands.BackendLifecycleSnapshot) commandSection {
+func doctorBackendSection(backend kajicodecommands.BackendLifecycleSnapshot) commandSection {
 	return commandSection{
 		Title: "Backend",
 		Fields: []commandField{
@@ -155,7 +155,7 @@ func doctorBackendSection(backend zerocommands.BackendLifecycleSnapshot) command
 	}
 }
 
-func doctorActions(checks []doctor.Check, backend *zerocommands.BackendLifecycleSnapshot) []string {
+func doctorActions(checks []doctor.Check, backend *kajicodecommands.BackendLifecycleSnapshot) []string {
 	seen := map[string]bool{}
 	actions := []string{}
 	add := func(action string) {
@@ -182,7 +182,7 @@ func doctorActions(checks []doctor.Check, backend *zerocommands.BackendLifecycle
 			if remedy := doctorCheckDetailString(check, "remedy"); remedy != "" {
 				add(remedy)
 			} else if strings.Contains(message, "unavailable") {
-				add("zero sandbox policy --effective - inspect sandbox backend and enforcement status")
+				add("kajicode sandbox policy --effective - inspect sandbox backend and enforcement status")
 			}
 		case "lsp.servers":
 			if strings.Contains(message, "missing") {

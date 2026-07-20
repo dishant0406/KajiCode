@@ -8,7 +8,7 @@ import (
 	"sync"
 	"unicode/utf8"
 
-	"github.com/Gitlawb/zero/internal/agent"
+	"github.com/dishant0406/KajiCode/internal/agent"
 )
 
 const (

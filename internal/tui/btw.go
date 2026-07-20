@@ -6,8 +6,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/Gitlawb/zero/internal/sessions"
-	"github.com/Gitlawb/zero/internal/usage"
+	"github.com/dishant0406/KajiCode/internal/sessions"
+	"github.com/dishant0406/KajiCode/internal/usage"
 )
 
 const (
@@ -45,7 +45,7 @@ func (m model) handleBTWCommand(question string) (model, tea.Cmd) {
 		return m.appendSystemNotice("Compaction is running. Wait for it to finish before opening a BTW conversation."), nil
 	}
 	if m.exiting {
-		return m.appendSystemNotice("Zero is waiting for the current run to finish saving before exit. A BTW conversation cannot start now."), nil
+		return m.appendSystemNotice("KajiCode is waiting for the current run to finish saving before exit. A BTW conversation cannot start now."), nil
 	}
 	if m.activeSession.SessionID == "" {
 		return m.appendSystemNotice("Start the main session with a prompt before opening a BTW conversation."), nil

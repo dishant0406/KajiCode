@@ -5,12 +5,12 @@ import (
 	"io"
 	"strings"
 
-	"github.com/Gitlawb/zero/internal/hooks"
-	"github.com/Gitlawb/zero/internal/redaction"
+	"github.com/dishant0406/KajiCode/internal/hooks"
+	"github.com/dishant0406/KajiCode/internal/redaction"
 )
 
 // hookConfigStore resolves the writable hook config store for the chosen scope.
-// Project scope (the default) targets <cwd>/.zero/hooks.json; --user targets the
+// Project scope (the default) targets <cwd>/.kajicode/hooks.json; --user targets the
 // user-level config. The store handles its own locking and atomic writes.
 func hookConfigStore(deps appDeps, user bool) (*hooks.ConfigStore, string, error) {
 	cwd, err := deps.getwd()
@@ -90,7 +90,7 @@ func runHooksRemove(args []string, stdout io.Writer, stderr io.Writer, deps appD
 		return exitSuccess
 	}
 	if len(positional) != 1 {
-		return writeExecUsageError(stderr, "usage: zero hooks remove <id> [--user] [--json]")
+		return writeExecUsageError(stderr, "usage: kajicode hooks remove <id> [--user] [--json]")
 	}
 	hookID := positional[0]
 	store, path, err := hookConfigStore(deps, options.user)
@@ -138,7 +138,7 @@ func runHooksToggle(args []string, stdout io.Writer, stderr io.Writer, deps appD
 		return exitSuccess
 	}
 	if len(positional) != 1 {
-		return writeExecUsageError(stderr, fmt.Sprintf("usage: zero hooks %s <id> [--user] [--json]", commandName))
+		return writeExecUsageError(stderr, fmt.Sprintf("usage: kajicode hooks %s <id> [--user] [--json]", commandName))
 	}
 	hookID := positional[0]
 	store, path, err := hookConfigStore(deps, options.user)
@@ -284,22 +284,22 @@ func parseHooksAddArgs(args []string) (hookAddOptions, bool, error) {
 		case options.def.ID == "":
 			options.def.ID = arg
 		default:
-			return options, false, execUsageError{"usage: zero hooks add <id> --event <event> --command <cmd> [flags]"}
+			return options, false, execUsageError{"usage: kajicode hooks add <id> --event <event> --command <cmd> [flags]"}
 		}
 	}
 
 	options.def.ID = strings.TrimSpace(options.def.ID)
 	if options.def.ID == "" {
-		return options, false, execUsageError{"usage: zero hooks add <id> --event <event> --command <cmd> [flags]"}
+		return options, false, execUsageError{"usage: kajicode hooks add <id> --event <event> --command <cmd> [flags]"}
 	}
 	if strings.TrimSpace(string(options.def.Event)) == "" {
-		return options, false, execUsageError{"zero hooks add requires --event"}
+		return options, false, execUsageError{"kajicode hooks add requires --event"}
 	}
 	if !hooks.IsValidEvent(options.def.Event) {
 		return options, false, execUsageError{fmt.Sprintf("invalid --event %q; expected one of: beforeTool, afterTool, sessionStart, sessionEnd, specialistStart, specialistStop", options.def.Event)}
 	}
 	if strings.TrimSpace(options.def.Command) == "" {
-		return options, false, execUsageError{"zero hooks add requires --command"}
+		return options, false, execUsageError{"kajicode hooks add requires --command"}
 	}
 	if options.def.Args == nil {
 		options.def.Args = []string{}
@@ -309,7 +309,7 @@ func parseHooksAddArgs(args []string) (hookAddOptions, bool, error) {
 
 func writeHooksAddHelp(w io.Writer) error {
 	_, err := fmt.Fprint(w, `Usage:
-  zero hooks add <id> --event <event> --command <cmd> [flags]
+  kajicode hooks add <id> --event <event> --command <cmd> [flags]
 
 Events:
   beforeTool, afterTool, sessionStart, sessionEnd, specialistStart, specialistStop
@@ -325,14 +325,14 @@ Flags:
       --json                 Print command result as JSON
   -h, --help                 Show this help
 
-New hooks are enabled; use "zero hooks disable <id>" to turn one off.
+New hooks are enabled; use "kajicode hooks disable <id>" to turn one off.
 `)
 	return err
 }
 
 func writeHooksTargetHelp(w io.Writer, command string) error {
 	_, err := fmt.Fprintf(w, `Usage:
-  zero hooks %s <id> [flags]
+  kajicode hooks %s <id> [flags]
 
 Flags:
       --user    Target user config instead of the project

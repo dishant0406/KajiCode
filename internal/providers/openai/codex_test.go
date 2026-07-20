@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
 )
 
 // codexRequest captures the headers + body of one outgoing Codex request so a
@@ -72,10 +72,10 @@ func newCodexResponsesServer(t *testing.T, rec *codexRequest, payloads ...string
 	return httptest.NewServer(mux)
 }
 
-func drainCodexEvents(t *testing.T, stream <-chan zeroruntime.StreamEvent) {
+func drainCodexEvents(t *testing.T, stream <-chan kajicoderuntime.StreamEvent) {
 	t.Helper()
 	for ev := range stream {
-		if ev.Type == zeroruntime.StreamEventError {
+		if ev.Type == kajicoderuntime.StreamEventError {
 			t.Fatalf("unexpected error event: %q", ev.Error)
 		}
 	}
@@ -98,8 +98,8 @@ func TestCodexProviderSetsExpectedHeaders(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewCodexProvider: %v", err)
 	}
-	stream, err := provider.StreamCompletion(context.Background(), zeroruntime.CompletionRequest{
-		Messages: []zeroruntime.Message{{Role: zeroruntime.MessageRoleUser, Content: "hi"}},
+	stream, err := provider.StreamCompletion(context.Background(), kajicoderuntime.CompletionRequest{
+		Messages: []kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleUser, Content: "hi"}},
 	})
 	if err != nil {
 		t.Fatalf("StreamCompletion: %v", err)
@@ -159,8 +159,8 @@ func TestCodexProviderUsesConfiguredBaseURL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewCodexProvider: %v", err)
 	}
-	stream, err := provider.StreamCompletion(context.Background(), zeroruntime.CompletionRequest{
-		Messages: []zeroruntime.Message{{Role: zeroruntime.MessageRoleUser, Content: "hi"}},
+	stream, err := provider.StreamCompletion(context.Background(), kajicoderuntime.CompletionRequest{
+		Messages: []kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleUser, Content: "hi"}},
 	})
 	if err != nil {
 		t.Fatalf("StreamCompletion: %v", err)
@@ -191,8 +191,8 @@ func TestCodexProviderDefaultsOriginator(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewCodexProvider: %v", err)
 	}
-	stream, err := provider.StreamCompletion(context.Background(), zeroruntime.CompletionRequest{
-		Messages: []zeroruntime.Message{{Role: zeroruntime.MessageRoleUser, Content: "hi"}},
+	stream, err := provider.StreamCompletion(context.Background(), kajicoderuntime.CompletionRequest{
+		Messages: []kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleUser, Content: "hi"}},
 	})
 	if err != nil {
 		t.Fatalf("StreamCompletion: %v", err)
@@ -214,7 +214,7 @@ func TestCodexProviderBrandsUserAgent(t *testing.T) {
 			BaseURL: srv.URL,
 			Model:   "gpt-5",
 			// openai Options.UserAgent overridden by CodexOptions.UserAgent below.
-			UserAgent: "zero/dev",
+			UserAgent: "kajicode/dev",
 		},
 		// CodexOptions.UserAgent wins over openai Options.UserAgent.
 		UserAgent: "codex_cli_rs/0.1",
@@ -223,8 +223,8 @@ func TestCodexProviderBrandsUserAgent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewCodexProvider: %v", err)
 	}
-	stream, err := provider.StreamCompletion(context.Background(), zeroruntime.CompletionRequest{
-		Messages: []zeroruntime.Message{{Role: zeroruntime.MessageRoleUser, Content: "hi"}},
+	stream, err := provider.StreamCompletion(context.Background(), kajicoderuntime.CompletionRequest{
+		Messages: []kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleUser, Content: "hi"}},
 	})
 	if err != nil {
 		t.Fatalf("StreamCompletion: %v", err)
@@ -256,8 +256,8 @@ func TestCodexProviderAccountResolverIsUsedWhenAccountIDEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewCodexProvider: %v", err)
 	}
-	stream, err := provider.StreamCompletion(context.Background(), zeroruntime.CompletionRequest{
-		Messages: []zeroruntime.Message{{Role: zeroruntime.MessageRoleUser, Content: "hi"}},
+	stream, err := provider.StreamCompletion(context.Background(), kajicoderuntime.CompletionRequest{
+		Messages: []kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleUser, Content: "hi"}},
 	})
 	if err != nil {
 		t.Fatalf("StreamCompletion: %v", err)
@@ -331,8 +331,8 @@ func TestCodexProviderResolverIsConsultedOnEveryRequest(t *testing.T) {
 		t.Fatalf("NewCodexProvider: %v", err)
 	}
 
-	stream, err := provider.StreamCompletion(context.Background(), zeroruntime.CompletionRequest{
-		Messages: []zeroruntime.Message{{Role: zeroruntime.MessageRoleUser, Content: "hi"}},
+	stream, err := provider.StreamCompletion(context.Background(), kajicoderuntime.CompletionRequest{
+		Messages: []kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleUser, Content: "hi"}},
 	})
 	if err != nil {
 		t.Fatalf("StreamCompletion: %v", err)
@@ -371,8 +371,8 @@ func TestCodexProviderOmitsAccountIDWhenResolverSaysNo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewCodexProvider: %v", err)
 	}
-	stream, err := provider.StreamCompletion(context.Background(), zeroruntime.CompletionRequest{
-		Messages: []zeroruntime.Message{{Role: zeroruntime.MessageRoleUser, Content: "hi"}},
+	stream, err := provider.StreamCompletion(context.Background(), kajicoderuntime.CompletionRequest{
+		Messages: []kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleUser, Content: "hi"}},
 	})
 	if err != nil {
 		t.Fatalf("StreamCompletion: %v", err)
@@ -404,12 +404,12 @@ func TestCodexProviderSendsResponsesRequestShape(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewCodexProvider: %v", err)
 	}
-	stream, err := provider.StreamCompletion(context.Background(), zeroruntime.CompletionRequest{
-		Messages: []zeroruntime.Message{
-			{Role: zeroruntime.MessageRoleSystem, Content: "sys"},
-			{Role: zeroruntime.MessageRoleUser, Content: "hi"},
+	stream, err := provider.StreamCompletion(context.Background(), kajicoderuntime.CompletionRequest{
+		Messages: []kajicoderuntime.Message{
+			{Role: kajicoderuntime.MessageRoleSystem, Content: "sys"},
+			{Role: kajicoderuntime.MessageRoleUser, Content: "hi"},
 		},
-		Tools: []zeroruntime.ToolDefinition{
+		Tools: []kajicoderuntime.ToolDefinition{
 			{Name: "get_weather", Description: "get the weather", Parameters: map[string]any{"type": "object"}},
 		},
 	})
@@ -469,8 +469,8 @@ func TestCodexProviderForwardsReasoningEffort(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewCodexProvider: %v", err)
 	}
-	stream, err := provider.StreamCompletion(context.Background(), zeroruntime.CompletionRequest{
-		Messages:        []zeroruntime.Message{{Role: zeroruntime.MessageRoleUser, Content: "hi"}},
+	stream, err := provider.StreamCompletion(context.Background(), kajicoderuntime.CompletionRequest{
+		Messages:        []kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleUser, Content: "hi"}},
 		ReasoningEffort: "high",
 	})
 	if err != nil {
@@ -513,8 +513,8 @@ func TestCodexProviderStreamsReasoningSummaryDeltas(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewCodexProvider: %v", err)
 	}
-	stream, err := provider.StreamCompletion(context.Background(), zeroruntime.CompletionRequest{
-		Messages:        []zeroruntime.Message{{Role: zeroruntime.MessageRoleUser, Content: "solve it"}},
+	stream, err := provider.StreamCompletion(context.Background(), kajicoderuntime.CompletionRequest{
+		Messages:        []kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleUser, Content: "solve it"}},
 		ReasoningEffort: "high",
 	})
 	if err != nil {
@@ -523,11 +523,11 @@ func TestCodexProviderStreamsReasoningSummaryDeltas(t *testing.T) {
 	var reasoning, text []string
 	for ev := range stream {
 		switch ev.Type {
-		case zeroruntime.StreamEventReasoning:
+		case kajicoderuntime.StreamEventReasoning:
 			reasoning = append(reasoning, ev.Content)
-		case zeroruntime.StreamEventText:
+		case kajicoderuntime.StreamEventText:
 			text = append(text, ev.Content)
-		case zeroruntime.StreamEventError:
+		case kajicoderuntime.StreamEventError:
 			t.Fatalf("unexpected error event: %q", ev.Error)
 		}
 	}
@@ -553,8 +553,8 @@ func TestCodexProviderOmitsReasoningWhenUnset(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewCodexProvider: %v", err)
 	}
-	stream, err := provider.StreamCompletion(context.Background(), zeroruntime.CompletionRequest{
-		Messages:        []zeroruntime.Message{{Role: zeroruntime.MessageRoleUser, Content: "hi"}},
+	stream, err := provider.StreamCompletion(context.Background(), kajicoderuntime.CompletionRequest{
+		Messages:        []kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleUser, Content: "hi"}},
 		ReasoningEffort: "", // auto
 	})
 	if err != nil {
@@ -618,8 +618,8 @@ func TestCodexProviderRetriesHeadersAfter401(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewCodexProvider: %v", err)
 	}
-	stream, err := provider.StreamCompletion(context.Background(), zeroruntime.CompletionRequest{
-		Messages: []zeroruntime.Message{{Role: zeroruntime.MessageRoleUser, Content: "hi"}},
+	stream, err := provider.StreamCompletion(context.Background(), kajicoderuntime.CompletionRequest{
+		Messages: []kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleUser, Content: "hi"}},
 	})
 	if err != nil {
 		t.Fatalf("StreamCompletion: %v", err)
@@ -707,8 +707,8 @@ func TestCodexProviderStreamIdleTimeoutPropagates(t *testing.T) {
 	}
 	// A simple stream that returns response.completed immediately does not
 	// hit the timeout — the test just confirms the option is accepted.
-	stream, err := provider.StreamCompletion(context.Background(), zeroruntime.CompletionRequest{
-		Messages: []zeroruntime.Message{{Role: zeroruntime.MessageRoleUser, Content: "hi"}},
+	stream, err := provider.StreamCompletion(context.Background(), kajicoderuntime.CompletionRequest{
+		Messages: []kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleUser, Content: "hi"}},
 	})
 	if err != nil {
 		t.Fatalf("StreamCompletion: %v", err)
@@ -739,24 +739,24 @@ func TestCodexProviderParsesResponsesTextDeltas(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewCodexProvider: %v", err)
 	}
-	stream, err := provider.StreamCompletion(context.Background(), zeroruntime.CompletionRequest{
-		Messages: []zeroruntime.Message{{Role: zeroruntime.MessageRoleUser, Content: "say hi"}},
+	stream, err := provider.StreamCompletion(context.Background(), kajicoderuntime.CompletionRequest{
+		Messages: []kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleUser, Content: "say hi"}},
 	})
 	if err != nil {
 		t.Fatalf("StreamCompletion: %v", err)
 	}
 	var texts []string
-	var usage *zeroruntime.Usage
+	var usage *kajicoderuntime.Usage
 	gotDone := false
 	for ev := range stream {
 		switch ev.Type {
-		case zeroruntime.StreamEventText:
+		case kajicoderuntime.StreamEventText:
 			texts = append(texts, ev.Content)
-		case zeroruntime.StreamEventUsage:
+		case kajicoderuntime.StreamEventUsage:
 			usage = &ev.Usage
-		case zeroruntime.StreamEventDone:
+		case kajicoderuntime.StreamEventDone:
 			gotDone = true
-		case zeroruntime.StreamEventError:
+		case kajicoderuntime.StreamEventError:
 			t.Fatalf("unexpected error event: %q", ev.Error)
 		}
 	}
@@ -801,9 +801,9 @@ func TestCodexProviderParsesResponsesToolCalls(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewCodexProvider: %v", err)
 	}
-	stream, err := provider.StreamCompletion(context.Background(), zeroruntime.CompletionRequest{
-		Messages: []zeroruntime.Message{{Role: zeroruntime.MessageRoleUser, Content: "weather in SF?"}},
-		Tools: []zeroruntime.ToolDefinition{
+	stream, err := provider.StreamCompletion(context.Background(), kajicoderuntime.CompletionRequest{
+		Messages: []kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleUser, Content: "weather in SF?"}},
+		Tools: []kajicoderuntime.ToolDefinition{
 			{Name: "get_weather", Parameters: map[string]any{"type": "object"}},
 		},
 	})
@@ -815,16 +815,16 @@ func TestCodexProviderParsesResponsesToolCalls(t *testing.T) {
 	var fragments []string
 	for ev := range stream {
 		switch ev.Type {
-		case zeroruntime.StreamEventToolCallStart:
+		case kajicoderuntime.StreamEventToolCallStart:
 			starts++
 			startName = ev.ToolName
-		case zeroruntime.StreamEventToolCallDelta:
+		case kajicoderuntime.StreamEventToolCallDelta:
 			deltas++
 			fragments = append(fragments, ev.ArgumentsFragment)
-		case zeroruntime.StreamEventToolCallEnd:
+		case kajicoderuntime.StreamEventToolCallEnd:
 			ends++
 			endName = ev.ToolName
-		case zeroruntime.StreamEventError:
+		case kajicoderuntime.StreamEventError:
 			t.Fatalf("unexpected error event: %q", ev.Error)
 		}
 	}
@@ -859,18 +859,18 @@ func TestCodexProviderSendsAssistantToolCallsAsInputItems(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewCodexProvider: %v", err)
 	}
-	stream, err := provider.StreamCompletion(context.Background(), zeroruntime.CompletionRequest{
-		Messages: []zeroruntime.Message{
-			{Role: zeroruntime.MessageRoleUser, Content: "weather in SF?"},
+	stream, err := provider.StreamCompletion(context.Background(), kajicoderuntime.CompletionRequest{
+		Messages: []kajicoderuntime.Message{
+			{Role: kajicoderuntime.MessageRoleUser, Content: "weather in SF?"},
 			{
-				Role:    zeroruntime.MessageRoleAssistant,
+				Role:    kajicoderuntime.MessageRoleAssistant,
 				Content: "let me check",
-				ToolCalls: []zeroruntime.ToolCall{
+				ToolCalls: []kajicoderuntime.ToolCall{
 					{ID: "call-1", Name: "get_weather", Arguments: `{"location":"SF"}`},
 				},
 			},
-			{Role: zeroruntime.MessageRoleTool, ToolCallID: "call-1", Content: "72F and sunny"},
-			{Role: zeroruntime.MessageRoleUser, Content: "thanks"},
+			{Role: kajicoderuntime.MessageRoleTool, ToolCallID: "call-1", Content: "72F and sunny"},
+			{Role: kajicoderuntime.MessageRoleUser, Content: "thanks"},
 		},
 	})
 	if err != nil {
@@ -931,15 +931,15 @@ func TestCodexProviderEmitsErrorOnResponseErrorEvent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewCodexProvider: %v", err)
 	}
-	stream, err := provider.StreamCompletion(context.Background(), zeroruntime.CompletionRequest{
-		Messages: []zeroruntime.Message{{Role: zeroruntime.MessageRoleUser, Content: "hi"}},
+	stream, err := provider.StreamCompletion(context.Background(), kajicoderuntime.CompletionRequest{
+		Messages: []kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleUser, Content: "hi"}},
 	})
 	if err != nil {
 		t.Fatalf("StreamCompletion: %v", err)
 	}
 	var gotError string
 	for ev := range stream {
-		if ev.Type == zeroruntime.StreamEventError {
+		if ev.Type == kajicoderuntime.StreamEventError {
 			gotError = ev.Error
 		}
 	}
@@ -970,15 +970,15 @@ func TestCodexProviderEmitsErrorOnMalformedStream(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewCodexProvider: %v", err)
 	}
-	stream, err := provider.StreamCompletion(context.Background(), zeroruntime.CompletionRequest{
-		Messages: []zeroruntime.Message{{Role: zeroruntime.MessageRoleUser, Content: "hi"}},
+	stream, err := provider.StreamCompletion(context.Background(), kajicoderuntime.CompletionRequest{
+		Messages: []kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleUser, Content: "hi"}},
 	})
 	if err != nil {
 		t.Fatalf("StreamCompletion: %v", err)
 	}
 	var gotError string
 	for ev := range stream {
-		if ev.Type == zeroruntime.StreamEventError {
+		if ev.Type == kajicoderuntime.StreamEventError {
 			gotError = ev.Error
 		}
 	}
@@ -1005,8 +1005,8 @@ func TestCodexProviderEmitsLengthFinishWhenStreamEndsWithoutCompletion(t *testin
 	if err != nil {
 		t.Fatalf("NewCodexProvider: %v", err)
 	}
-	stream, err := provider.StreamCompletion(context.Background(), zeroruntime.CompletionRequest{
-		Messages: []zeroruntime.Message{{Role: zeroruntime.MessageRoleUser, Content: "hi"}},
+	stream, err := provider.StreamCompletion(context.Background(), kajicoderuntime.CompletionRequest{
+		Messages: []kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleUser, Content: "hi"}},
 	})
 	if err != nil {
 		t.Fatalf("StreamCompletion: %v", err)
@@ -1014,7 +1014,7 @@ func TestCodexProviderEmitsLengthFinishWhenStreamEndsWithoutCompletion(t *testin
 	var finishReason string
 	var gotDone bool
 	for ev := range stream {
-		if ev.Type == zeroruntime.StreamEventDone {
+		if ev.Type == kajicoderuntime.StreamEventDone {
 			gotDone = true
 			finishReason = ev.FinishReason
 		}
@@ -1022,7 +1022,7 @@ func TestCodexProviderEmitsLengthFinishWhenStreamEndsWithoutCompletion(t *testin
 	if !gotDone {
 		t.Fatal("expected a StreamEventDone, got none")
 	}
-	if finishReason != zeroruntime.FinishReasonLength {
-		t.Fatalf("finish reason = %q, want %q", finishReason, zeroruntime.FinishReasonLength)
+	if finishReason != kajicoderuntime.FinishReasonLength {
+		t.Fatalf("finish reason = %q, want %q", finishReason, kajicoderuntime.FinishReasonLength)
 	}
 }

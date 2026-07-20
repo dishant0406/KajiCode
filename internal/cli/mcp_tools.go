@@ -7,9 +7,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Gitlawb/zero/internal/config"
-	"github.com/Gitlawb/zero/internal/mcp"
-	"github.com/Gitlawb/zero/internal/tools"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/mcp"
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
 type mcpToolListItem struct {
@@ -24,7 +24,7 @@ type mcpToolListItem struct {
 // workspace-trust check: trustRoot is the ORIGINAL launch directory (resolved before
 // any --worktree reassignment) so a worktree of a trusted repo inherits that trust.
 // resolveTrust fails closed, so an empty trustRoot or a store-read error excludes the
-// project layer and a cloned repo cannot spawn its ./.zero/config.json MCP servers.
+// project layer and a cloned repo cannot spawn its ./.kajicode/config.json MCP servers.
 //
 // It returns a trustSkip alongside the runtime so the caller can fold the MCP gate
 // into the one-line trust notice (mirroring the hooks and plugins chokepoints);

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
 )
 
 // TestComputePrefixFingerprintStableAcrossCalls asserts the headline property
@@ -14,7 +14,7 @@ import (
 // the prompt prefix."
 func TestComputePrefixFingerprintStableAcrossCalls(t *testing.T) {
 	opts := Options{Cwd: t.TempDir(), SystemPrompt: "core"}
-	exposed := []zeroruntime.ToolDefinition{
+	exposed := []kajicoderuntime.ToolDefinition{
 		{Name: "read_file", Parameters: map[string]any{"type": "object"}},
 		{Name: "grep", Parameters: map[string]any{"type": "object"}},
 	}
@@ -32,11 +32,11 @@ func TestComputePrefixFingerprintStableAcrossCalls(t *testing.T) {
 // cacheable prefix identity.
 func TestComputePrefixFingerprintToolsHashMatchesEmittedOrderAndDescriptions(t *testing.T) {
 	opts := Options{Cwd: t.TempDir(), SystemPrompt: "core"}
-	a := []zeroruntime.ToolDefinition{
+	a := []kajicoderuntime.ToolDefinition{
 		{Name: "read_file", Description: "read", Parameters: map[string]any{"schema": "schema-read"}},
 		{Name: "grep", Description: "search", Parameters: map[string]any{"schema": "schema-grep"}},
 	}
-	b := []zeroruntime.ToolDefinition{
+	b := []kajicoderuntime.ToolDefinition{
 		{Name: "grep", Description: "search", Parameters: map[string]any{"schema": "schema-grep"}},
 		{Name: "read_file", Description: "read", Parameters: map[string]any{"schema": "schema-read"}},
 	}
@@ -45,7 +45,7 @@ func TestComputePrefixFingerprintToolsHashMatchesEmittedOrderAndDescriptions(t *
 	if fpA.ToolsHash == fpB.ToolsHash {
 		t.Fatalf("ToolsHash must change when emitted order changes: a=%s b=%s", fpA.ToolsHash, fpB.ToolsHash)
 	}
-	c := append([]zeroruntime.ToolDefinition(nil), a...)
+	c := append([]kajicoderuntime.ToolDefinition(nil), a...)
 	c[0].Description = "read a file"
 	fpC := ComputePrefixFingerprint(opts, c)
 	if fpA.ToolsHash == fpC.ToolsHash {
@@ -60,10 +60,10 @@ func TestComputePrefixFingerprintToolsHashMatchesEmittedOrderAndDescriptions(t *
 // invalidates the cache also moves the hash, which is the right behavior.
 func TestComputePrefixFingerprintSchemaChangeChangesSchemaHash(t *testing.T) {
 	opts := Options{Cwd: t.TempDir(), SystemPrompt: "core"}
-	a := []zeroruntime.ToolDefinition{
+	a := []kajicoderuntime.ToolDefinition{
 		{Name: "read_file", Parameters: map[string]any{"version": "v1"}},
 	}
-	b := []zeroruntime.ToolDefinition{
+	b := []kajicoderuntime.ToolDefinition{
 		{Name: "read_file", Parameters: map[string]any{"version": "v2"}},
 	}
 	fpA := ComputePrefixFingerprint(opts, a)
@@ -80,7 +80,7 @@ func TestComputePrefixFingerprintSchemaChangeChangesSchemaHash(t *testing.T) {
 func TestComputePrefixFingerprintSystemPromptChangeChangesBaseHash(t *testing.T) {
 	optsA := Options{Cwd: t.TempDir(), SystemPrompt: "core v1"}
 	optsB := Options{Cwd: t.TempDir(), SystemPrompt: "core v2"}
-	exposed := []zeroruntime.ToolDefinition{{Name: "noop", Parameters: map[string]any{}}}
+	exposed := []kajicoderuntime.ToolDefinition{{Name: "noop", Parameters: map[string]any{}}}
 	fpA := ComputePrefixFingerprint(optsA, exposed)
 	fpB := ComputePrefixFingerprint(optsB, exposed)
 	if fpA.BaseInstructionsHash == fpB.BaseInstructionsHash {
@@ -95,7 +95,7 @@ func TestComputePrefixFingerprintSystemPromptChangeChangesBaseHash(t *testing.T)
 // tool definitions. Narrower system-section hashes remain diagnostic only.
 func TestComputePrefixFingerprintCompleteIsAggregateOfSubHashes(t *testing.T) {
 	opts := Options{Cwd: t.TempDir(), SystemPrompt: "core"}
-	exposed := []zeroruntime.ToolDefinition{{Name: "read_file", Parameters: map[string]any{"k": "v"}}}
+	exposed := []kajicoderuntime.ToolDefinition{{Name: "read_file", Parameters: map[string]any{"k": "v"}}}
 	fp := ComputePrefixFingerprint(opts, exposed)
 	// Manually compute what the canonical join should be.
 	expected := sha256hex(strings.Join([]string{

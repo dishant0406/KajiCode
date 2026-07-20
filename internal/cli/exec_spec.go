@@ -7,17 +7,17 @@ import (
 	"io"
 	"strings"
 
-	"github.com/Gitlawb/zero/internal/agent"
-	"github.com/Gitlawb/zero/internal/config"
-	"github.com/Gitlawb/zero/internal/modelregistry"
-	"github.com/Gitlawb/zero/internal/notify"
-	"github.com/Gitlawb/zero/internal/sandbox"
-	"github.com/Gitlawb/zero/internal/sessions"
-	"github.com/Gitlawb/zero/internal/specmode"
-	"github.com/Gitlawb/zero/internal/streamjson"
-	"github.com/Gitlawb/zero/internal/tools"
-	"github.com/Gitlawb/zero/internal/usage"
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/agent"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
+	"github.com/dishant0406/KajiCode/internal/modelregistry"
+	"github.com/dishant0406/KajiCode/internal/notify"
+	"github.com/dishant0406/KajiCode/internal/sandbox"
+	"github.com/dishant0406/KajiCode/internal/sessions"
+	"github.com/dishant0406/KajiCode/internal/specmode"
+	"github.com/dishant0406/KajiCode/internal/streamjson"
+	"github.com/dishant0406/KajiCode/internal/tools"
+	"github.com/dishant0406/KajiCode/internal/usage"
 )
 
 type execSpecDraftRun struct {
@@ -38,11 +38,11 @@ type execSpecDraftRun struct {
 	modelRegistry      modelregistry.Registry
 	resolved           config.ResolvedConfig
 	runMetadata        execRunMetadata
-	provider           zeroruntime.Provider
+	provider           kajicoderuntime.Provider
 	sandboxEngine      *sandbox.Engine
 	prompt             string
 	sessionTitle       string
-	images             []zeroruntime.ImageBlock
+	images             []kajicoderuntime.ImageBlock
 	reasoningEffort    string
 	specPermissionMode agent.PermissionMode
 	notifier           *notify.Notifier
@@ -312,7 +312,7 @@ func formatExecSpecDraftSummary(info execSpecDraftInfo) string {
 		"  spec: " + redact(info.SpecID),
 		"  path: " + redact(path),
 		"  draft session: " + redact(info.DraftSessionID),
-		"Next: zero spec show " + redact(info.SpecID) + "; zero spec approve " + redact(info.SpecID),
+		"Next: kajicode spec show " + redact(info.SpecID) + "; kajicode spec approve " + redact(info.SpecID),
 	}
 	return strings.Join(lines, "\n")
 }

@@ -37,7 +37,7 @@ func TestMaybeAddWebhookSinkAttachesAndDelivers(t *testing.T) {
 		t.Fatalf("expected 1 sink attached, got %d", got)
 	}
 
-	n.Notify(Completion, "Zero: ready")
+	n.Notify(Completion, "KajiCode: ready")
 	if got := atomic.LoadInt32(&hits); got != 1 {
 		t.Fatalf("webhook hit %d times, want 1", got)
 	}

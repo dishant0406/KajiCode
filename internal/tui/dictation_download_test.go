@@ -4,8 +4,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/config"
-	"github.com/Gitlawb/zero/internal/dictation"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/dictation"
 )
 
 // buildFails returns a controller whose build always fails with a setup error,
@@ -25,7 +25,7 @@ func TestF9PointsToSTTModelWhenLocalMissing(t *testing.T) {
 	if !dictation.AutoDownloadSupported() {
 		t.Skip("no prebuilt engine for this platform")
 	}
-	m := model{dictation: setupErrController("/tmp/zero-stt")}
+	m := model{dictation: setupErrController("/tmp/kajicode-stt")}
 	next, _ := m.toggleDictation()
 	if !transcriptHasText(next, "/stt-model") {
 		t.Error("F9 with a missing local engine should point at /stt-model to download")

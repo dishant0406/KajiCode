@@ -18,7 +18,7 @@ func TestResolveWindowsSandboxHelperTiers(t *testing.T) {
 		dir := t.TempDir()
 		adjacent := filepath.Join(dir, WindowsSandboxCommandRunnerName)
 		writeFile(t, adjacent)
-		osExecutable = func() (string, error) { return filepath.Join(dir, "zero.exe"), nil }
+		osExecutable = func() (string, error) { return filepath.Join(dir, "kajicode.exe"), nil }
 		got := ResolveWindowsSandboxCommandRunner(func(string) (string, error) {
 			return `C:\on-path\runner.exe`, nil // must NOT be chosen — adjacent wins
 		})
@@ -29,7 +29,7 @@ func TestResolveWindowsSandboxHelperTiers(t *testing.T) {
 
 	t.Run("tier2 PATH when no adjacent", func(t *testing.T) {
 		dir := t.TempDir()
-		osExecutable = func() (string, error) { return filepath.Join(dir, "zero.exe"), nil }
+		osExecutable = func() (string, error) { return filepath.Join(dir, "kajicode.exe"), nil }
 		got := ResolveWindowsSandboxCommandRunner(func(name string) (string, error) {
 			if name == WindowsSandboxCommandRunnerName {
 				return `C:\on-path\runner.exe`, nil
@@ -43,7 +43,7 @@ func TestResolveWindowsSandboxHelperTiers(t *testing.T) {
 
 	t.Run("tier3 self-dispatch when nothing found", func(t *testing.T) {
 		dir := t.TempDir()
-		self := filepath.Join(dir, "zero.exe")
+		self := filepath.Join(dir, "kajicode.exe")
 		osExecutable = func() (string, error) { return self, nil }
 		got := ResolveWindowsSandboxCommandRunner(func(string) (string, error) {
 			return "", errors.New("missing")
@@ -61,7 +61,7 @@ func TestResolveWindowsSandboxHelperTiers(t *testing.T) {
 
 	t.Run("setup helper uses its own subcommand", func(t *testing.T) {
 		dir := t.TempDir()
-		osExecutable = func() (string, error) { return filepath.Join(dir, "zero.exe"), nil }
+		osExecutable = func() (string, error) { return filepath.Join(dir, "kajicode.exe"), nil }
 		got := ResolveWindowsSandboxSetupHelper(func(string) (string, error) {
 			return "", errors.New("missing")
 		})

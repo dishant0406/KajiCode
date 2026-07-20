@@ -19,7 +19,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/Gitlawb/zero/internal/tools"
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
 // sidebar geometry. The sidebar takes ~30% of the width, clamped so it never
@@ -215,7 +215,7 @@ func (m model) sidebarAgentHeader(width int) string {
 	if n == 0 {
 		return sidebarHeader("AGENTS", width)
 	}
-	return sidebarHeaderWithCount("AGENTS", fmt.Sprintf("%d", n), zeroTheme.muted, width)
+	return sidebarHeaderWithCount("AGENTS", fmt.Sprintf("%d", n), kajicodeTheme.muted, width)
 }
 
 // swarmSpawnRe extracts a member id from a swarm_spawn tool result, whose text
@@ -406,17 +406,17 @@ func (m model) sidebarAgentRows(width int) ([]string, []sidebarAgentHit) {
 			// A working specialist spins (same glyph its transcript card uses) so
 			// the sidebar reads "this one is busy" at a glance; the tick is kept
 			// alive by sidebarHasAgents. Static "•" stays for idle/parked members.
-			icon = zeroTheme.accent.Render(m.spinnerGlyph())
+			icon = kajicodeTheme.accent.Render(m.spinnerGlyph())
 		case specialistError:
-			icon = zeroTheme.red.Render("✗")
+			icon = kajicodeTheme.red.Render("✗")
 		default: // completed
-			icon = zeroTheme.green.Render("✓")
+			icon = kajicodeTheme.green.Render("✓")
 		}
 		name := strings.TrimSpace(a.name)
 		if name == "" {
 			name = "agent"
 		}
-		nameStyle := zeroTheme.ink
+		nameStyle := kajicodeTheme.ink
 		// As a finished specialist nears the end of its linger, dim the whole row
 		// toward faint so its removal reads as a fade-out rather than a pop.
 		if a.status != specialistRunning && m.agentExitFading(a.completedAt) {
@@ -424,8 +424,8 @@ func (m model) sidebarAgentRows(width int) ([]string, []sidebarAgentHit) {
 			if a.status == specialistError {
 				glyph = "✗"
 			}
-			icon = zeroTheme.faint.Render(glyph)
-			nameStyle = zeroTheme.faint
+			icon = kajicodeTheme.faint.Render(glyph)
+			nameStyle = kajicodeTheme.faint
 		}
 		lines = append(lines, " "+icon+" "+nameStyle.Render(truncateStep(name, room)))
 		if a.status != specialistRunning {
@@ -445,7 +445,7 @@ func (m model) sidebarAgentRows(width int) ([]string, []sidebarAgentHit) {
 			detail = fmt.Sprintf("%d tools", a.toolCount)
 		}
 		if detail != "" {
-			lines = append(lines, "   "+zeroTheme.faint.Render("↳ "+truncateStep(detail, maxInt(2, room-2))))
+			lines = append(lines, "   "+kajicodeTheme.faint.Render("↳ "+truncateStep(detail, maxInt(2, room-2))))
 		}
 	}
 	// Swarm/team members: a live member's whole task-name carries a mild, slow cool
@@ -459,11 +459,11 @@ func (m model) sidebarAgentRows(width int) ([]string, []sidebarAgentHit) {
 			hits = append(hits, sidebarAgentHit{lineOffset: len(lines), sessionID: a.sessionID, title: a.name})
 		}
 		if a.finishing {
-			icon := zeroTheme.green.Render("✓")
-			nameStyle := zeroTheme.muted
+			icon := kajicodeTheme.green.Render("✓")
+			nameStyle := kajicodeTheme.muted
 			if m.agentExitFading(a.finishedAt) {
-				icon = zeroTheme.faint.Render("✓")
-				nameStyle = zeroTheme.faint
+				icon = kajicodeTheme.faint.Render("✓")
+				nameStyle = kajicodeTheme.faint
 			}
 			lines = append(lines, " "+icon+" "+nameStyle.Render(truncateStep(a.name, room)))
 			continue
@@ -474,10 +474,10 @@ func (m model) sidebarAgentRows(width int) ([]string, []sidebarAgentHit) {
 		nameRoom := room
 		suffix := ""
 		if st := strings.TrimSpace(a.state); st != "" && st != "running" {
-			suffix = " " + zeroTheme.faint.Render(st)
+			suffix = " " + kajicodeTheme.faint.Render(st)
 			nameRoom = maxInt(4, room-len(st)-1)
 		}
-		lines = append(lines, " "+zeroTheme.accent.Render("•")+" "+style.Render(truncateStep(a.name, nameRoom))+suffix)
+		lines = append(lines, " "+kajicodeTheme.accent.Render("•")+" "+style.Render(truncateStep(a.name, nameRoom))+suffix)
 	}
 	return lines, hits
 }
@@ -508,11 +508,11 @@ func (m model) agentExitFading(finishedAt time.Time) bool {
 // motion (or when the animation clock isn't advancing).
 func (m model) swarmNameStyle() lipgloss.Style {
 	if m.reducedMotion {
-		return zeroTheme.blue
+		return kajicodeTheme.blue
 	}
 	styles := swarmPulseStyles()
 	if len(styles) == 0 {
-		return zeroTheme.blue
+		return kajicodeTheme.blue
 	}
 	// Slow ping-pong through the subtle ramp for a smooth, slight breathe: the
 	// index eases up then back down so the colour never jumps (no flicker).
@@ -534,8 +534,8 @@ func (m model) swarmNameStyle() lipgloss.Style {
 // stays bluish (a slight shift, not a blue→grey swing). Smooth gradient = no
 // flicker. Returns nil when the theme has no parseable colours (static fallback).
 func swarmPulseStyles() []lipgloss.Style {
-	fg := zeroTheme.blue.GetForeground()
-	dim := zeroTheme.muted.GetForeground()
+	fg := kajicodeTheme.blue.GetForeground()
+	dim := kajicodeTheme.muted.GetForeground()
 	if fg == nil || dim == nil {
 		return nil
 	}
@@ -660,7 +660,7 @@ func (m model) renderContextSidebar(width, height int) []string {
 	// mouse motion) simply doesn't highlight, rather than a coincidentally-matching
 	// unrelated row lighting up.
 	if lineOffset, ok := m.hoveredSidebarLineOffset(width); ok && lineOffset >= 0 && lineOffset < len(lines) {
-		lines[lineOffset] = zeroTheme.hover.Render(ansi.Strip(lines[lineOffset]))
+		lines[lineOffset] = kajicodeTheme.hover.Render(ansi.Strip(lines[lineOffset]))
 	}
 
 	// Normalize every row to exactly width cells.
@@ -712,14 +712,14 @@ func (m model) hoveredSidebarLineOffset(width int) (int, bool) {
 // section heading rather than more filler. The width arg is unused — kept so it
 // shares a signature with sidebarHeaderWithCount.
 func sidebarHeader(label string, _ int) string {
-	return zeroTheme.muted.Bold(true).Render(strings.ToUpper(label))
+	return kajicodeTheme.muted.Bold(true).Render(strings.ToUpper(label))
 }
 
 // sidebarHeaderWithCount renders a bold-muted section label with a right-aligned
 // count (e.g. "PLAN   2/5") rendered in countStyle, so a section can colour its
 // count by state — accent while in-flight, green when complete.
 func sidebarHeaderWithCount(label, count string, countStyle lipgloss.Style, width int) string {
-	left := zeroTheme.muted.Bold(true).Render(strings.ToUpper(label))
+	left := kajicodeTheme.muted.Bold(true).Render(strings.ToUpper(label))
 	right := countStyle.Render(count)
 	gap := width - lipgloss.Width(left) - lipgloss.Width(right)
 	if gap < 1 {
@@ -730,7 +730,7 @@ func sidebarHeaderWithCount(label, count string, countStyle lipgloss.Style, widt
 
 // sidebarPlaceholder renders a quiet placeholder line for an empty section.
 func sidebarPlaceholder(text string, width int) string {
-	return " " + zeroTheme.faint.Render(truncateRunes(text, maxInt(1, width-1)))
+	return " " + kajicodeTheme.faint.Render(truncateRunes(text, maxInt(1, width-1)))
 }
 
 // sidebarPlanHeader renders the PLAN section header with the done/total count.
@@ -747,9 +747,9 @@ func (m model) sidebarPlanHeader(width int) string {
 		}
 	}
 	// Stateful count: green once every step is done, accent while in-flight.
-	countStyle := zeroTheme.accent
+	countStyle := kajicodeTheme.accent
 	if done == total {
-		countStyle = zeroTheme.green
+		countStyle = kajicodeTheme.green
 	}
 	return sidebarHeaderWithCount("PLAN", fmt.Sprintf("%d/%d", done, total), countStyle, width)
 }
@@ -769,17 +769,17 @@ func (m model) sidebarPlanLines(width int) []string {
 		var icon, body string
 		switch step.status {
 		case "completed":
-			icon = zeroTheme.green.Render("✓")
-			body = zeroTheme.muted.Render(truncateStep(step.content, room))
+			icon = kajicodeTheme.green.Render("✓")
+			body = kajicodeTheme.muted.Render(truncateStep(step.content, room))
 		case "in_progress":
-			icon = zeroTheme.accent.Render("•")
-			body = zeroTheme.ink.Render(truncateStep(step.content, room))
+			icon = kajicodeTheme.accent.Render("•")
+			body = kajicodeTheme.ink.Render(truncateStep(step.content, room))
 		case "failed":
-			icon = zeroTheme.red.Render("✗")
-			body = zeroTheme.muted.Render(truncateStep(step.content, room))
+			icon = kajicodeTheme.red.Render("✗")
+			body = kajicodeTheme.muted.Render(truncateStep(step.content, room))
 		default: // pending
-			icon = zeroTheme.faint.Render("○")
-			body = zeroTheme.faint.Render(truncateStep(step.content, room))
+			icon = kajicodeTheme.faint.Render("○")
+			body = kajicodeTheme.faint.Render(truncateStep(step.content, room))
 		}
 		lines = append(lines, " "+icon+" "+body)
 	}
@@ -816,16 +816,16 @@ func (m model) sidebarActivityLines(width, budget int) []string {
 		if row.kind != rowToolResult || !isPlanWorkTool(row.tool) {
 			continue
 		}
-		glyph := zeroTheme.green.Render("✓")
+		glyph := kajicodeTheme.green.Render("✓")
 		if row.status == tools.StatusError {
-			glyph = zeroTheme.red.Render("✗")
+			glyph = kajicodeTheme.red.Render("✗")
 		}
-		work = append(work, " "+glyph+" "+zeroTheme.muted.Render(truncateStep(m.activitySummary(row), room)))
+		work = append(work, " "+glyph+" "+kajicodeTheme.muted.Render(truncateStep(m.activitySummary(row), room)))
 	}
 	live := ""
 	if m.activeRunID != 0 {
 		if hint := m.quietGenerationHint(); hint != "" {
-			live = " " + zeroTheme.accent.Render("•") + " " + zeroTheme.faint.Render(truncateStep(hint, room))
+			live = " " + kajicodeTheme.accent.Render("•") + " " + kajicodeTheme.faint.Render(truncateStep(hint, room))
 		}
 	}
 	lines := make([]string, 0, len(work)+1)
@@ -891,10 +891,10 @@ func (m model) sidebarTokenLine(width int) string {
 	// truncates around it rather than overflowing.
 	chip := ""
 	if pct, _, _, style, ok := m.contextFillPercent(); ok {
-		chip = zeroTheme.faint.Render(" · ") + style.Render(fmt.Sprintf("%d%%", pct))
+		chip = kajicodeTheme.faint.Render(" · ") + style.Render(fmt.Sprintf("%d%%", pct))
 	}
 	budget := maxInt(1, width-1-lipgloss.Width(chip))
-	return " " + zeroTheme.faint.Render(truncateRunes(label, budget)) + chip
+	return " " + kajicodeTheme.faint.Render(truncateRunes(label, budget)) + chip
 }
 
 // sidebarTokenText computes the token figure shown at the sidebar floor from
@@ -927,7 +927,7 @@ func joinColumns(chat []string, sidebar []string, chatW, sidebarW int) []string 
 	// flush against it. The chat side gets its gutter from the leading space; the
 	// sidebar side from the trailing space (plus items' own leading inset, which
 	// nests them under the flush section headers). Budgeted by chatColumnWidth(-3).
-	divider := " " + zeroTheme.line.Render("│") + " "
+	divider := " " + kajicodeTheme.line.Render("│") + " "
 	out := make([]string, rows)
 	for i := 0; i < rows; i++ {
 		left := ""

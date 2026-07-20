@@ -84,7 +84,7 @@ func Prepare(ctx context.Context, options Options) (Result, error) {
 		return Result{}, fmt.Errorf("resolve worktree dir: %w", err)
 	}
 
-	repoDir := filepath.Join(baseDir, "zero-worktree-"+repoKey(repoRoot))
+	repoDir := filepath.Join(baseDir, "kajicode-worktree-"+repoKey(repoRoot))
 	target := filepath.Join(repoDir, name)
 	result := Result{
 		Name:         name,
@@ -128,15 +128,15 @@ func Prepare(ctx context.Context, options Options) (Result, error) {
 func DefaultBaseDir(env map[string]string) (string, error) {
 	if runtime.GOOS == "windows" {
 		if localAppData := strings.TrimSpace(envValue(env, "LOCALAPPDATA")); localAppData != "" {
-			return filepath.Join(localAppData, "zero", "worktrees"), nil
+			return filepath.Join(localAppData, "kajicode", "worktrees"), nil
 		}
 		if profile := strings.TrimSpace(envValue(env, "USERPROFILE")); profile != "" {
-			return filepath.Join(profile, "AppData", "Local", "zero", "worktrees"), nil
+			return filepath.Join(profile, "AppData", "Local", "kajicode", "worktrees"), nil
 		}
 	}
 
 	if stateHome := strings.TrimSpace(envValue(env, "XDG_STATE_HOME")); stateHome != "" {
-		return filepath.Join(stateHome, "zero", "worktrees"), nil
+		return filepath.Join(stateHome, "kajicode", "worktrees"), nil
 	}
 	home := strings.TrimSpace(firstNonEmpty(envValue(env, "HOME"), envValue(env, "USERPROFILE")))
 	if home == "" {
@@ -146,7 +146,7 @@ func DefaultBaseDir(env map[string]string) (string, error) {
 			return "", fmt.Errorf("resolve user home: %w", err)
 		}
 	}
-	return filepath.Join(home, ".local", "state", "zero", "worktrees"), nil
+	return filepath.Join(home, ".local", "state", "kajicode", "worktrees"), nil
 }
 
 func resolveCwd(cwd string) (string, error) {

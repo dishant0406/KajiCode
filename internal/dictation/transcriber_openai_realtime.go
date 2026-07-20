@@ -33,7 +33,7 @@ func NewOpenAIRealtimeTranscriber(cfg OpenAIRealtimeConfig) (Transcriber, error)
 	if strings.TrimSpace(cfg.APIKey) == "" {
 		return nil, &SetupError{
 			Tool: "OpenAI API key",
-			Hint: "set an OpenAI API key (OPENAI_API_KEY, or `zero auth`) to use OpenAI Realtime streaming dictation",
+			Hint: "set an OpenAI API key (OPENAI_API_KEY, or `kajicode auth`) to use OpenAI Realtime streaming dictation",
 		}
 	}
 	if cfg.Model == "" {

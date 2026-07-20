@@ -72,7 +72,7 @@ func TestTranscriptFrameLayoutHandlesDegenerateDimensions(t *testing.T) {
 		width  int
 		height int
 	}{
-		{name: "zero", width: 0, height: 0},
+		{name: "kajicode", width: 0, height: 0},
 		{name: "negative", width: -10, height: -4},
 	} {
 		t.Run(size.name, func(t *testing.T) {

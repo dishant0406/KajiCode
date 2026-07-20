@@ -151,9 +151,9 @@ func TestGroundTruthGemini(t *testing.T) {
 	}
 }
 
-// TestCoversZeroShippedReasoningModels pins that every reasoning model Zero
+// TestCoversZeroShippedReasoningModels pins that every reasoning model KajiCode
 // currently ships resolves in the catalog (by its api model id), so the
-// models.dev fallback actually covers Zero's catalog rather than just well-known
+// models.dev fallback actually covers KajiCode's catalog rather than just well-known
 // ids. The api ids mirror internal/modelregistry's curated entries.
 func TestCoversZeroShippedReasoningModels(t *testing.T) {
 	c := Embedded()

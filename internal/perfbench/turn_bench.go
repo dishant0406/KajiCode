@@ -15,8 +15,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/execprofile"
-	"github.com/Gitlawb/zero/internal/trace"
+	"github.com/dishant0406/KajiCode/internal/execprofile"
+	"github.com/dishant0406/KajiCode/internal/trace"
 )
 
 // TurnSchemaVersion is the schema version of a published turn-benchmark result.
@@ -87,12 +87,12 @@ type TurnBenchConfig struct {
 	Mode        string
 	SelfCorrect bool
 	// ExecProfile, when non-empty, runs every task under the named execution
-	// profile (zero exec --exec-profile) and stamps it into the result so the
+	// profile (kajicode exec --exec-profile) and stamps it into the result so the
 	// report is self-describing for profile A/B comparisons.
 	ExecProfile string
 	Version     string
 	Commit      string
-	// Iterations is how many times each task is run. The per-process `zero exec`
+	// Iterations is how many times each task is run. The per-process `kajicode exec`
 	// runner is inherently cold-start, so this is the sample count for per-span
 	// median/P95 — a genuine warm path needs an in-process runner (future work).
 	Iterations int
@@ -492,7 +492,7 @@ func aggregateTotals(totals *TurnBenchTotals, tr *trace.TurnTrace) {
 // until" criterion.
 func FormatTurnBenchSummary(result TurnBenchResult) string {
 	lines := []string{
-		"Zero turn benchmark: " + displayOrUnknown(result.Suite),
+		"KajiCode turn benchmark: " + displayOrUnknown(result.Suite),
 		"model: " + displayOrUnknown(result.Model),
 		// The headline separates the three oracle tiers so an exit-0 read-only
 		// task can never inflate a "pass rate" that reads as correctness:
@@ -579,9 +579,9 @@ func WriteTurnBenchJSON(w io.Writer, result TurnBenchResult) error {
 }
 
 // NewTurnExecRunner builds the production turn-benchmark runner: it invokes
-// headless `zero exec` with stream-json output AND `--trace <tmpfile>`, then
+// headless `kajicode exec` with stream-json output AND `--trace <tmpfile>`, then
 // parses the emitted NDJSON trace into a *trace.TurnTrace. binary is the path to
-// the `zero` binary; extraArgs are appended to every invocation. Pass/fail is
+// the `kajicode` binary; extraArgs are appended to every invocation. Pass/fail is
 // decided from the stream-json run_end exit code (and the task's
 // VerificationCommand when present), exactly like NewExecRunner.
 func NewTurnExecRunner(binary string, extraArgs ...string) TurnRunner {
@@ -601,7 +601,7 @@ func NewTurnExecRunner(binary string, extraArgs ...string) TurnRunner {
 			task.WorkspaceFixture = copyDir
 		}
 
-		traceFile, err := os.CreateTemp("", "zero-turn-trace-*.ndjson")
+		traceFile, err := os.CreateTemp("", "kajicode-turn-trace-*.ndjson")
 		if err != nil {
 			return TurnTaskOutcome{Err: fmt.Errorf("create trace file: %w", err)}
 		}
@@ -637,7 +637,7 @@ func NewTurnExecRunner(binary string, extraArgs ...string) TurnRunner {
 			if detail == "" {
 				detail = "missing terminal run_end event"
 			}
-			outcome.Err = fmt.Errorf("zero exec failed: %s", detail)
+			outcome.Err = fmt.Errorf("kajicode exec failed: %s", detail)
 			return outcome
 		}
 
@@ -656,7 +656,7 @@ func NewTurnExecRunner(binary string, extraArgs ...string) TurnRunner {
 			}
 		}
 
-		// A nonzero agent exit already decided failure; don't run verification or
+		// A nonkajicode agent exit already decided failure; don't run verification or
 		// mark the task passed.
 		if outcome.VerifyErr != "" {
 			return outcome
@@ -719,11 +719,11 @@ func copyFixture(src string) (dst, parent string, err error) {
 	// Unique, 0700-per-invocation parent directly under the temp root. The
 	// fixture copy is created BENEATH it, so the copy is a grandchild of the
 	// temp root and its go.mod is respected (see the doc comment above).
-	parent, err = os.MkdirTemp(os.TempDir(), "zero-turn-bench-*")
+	parent, err = os.MkdirTemp(os.TempDir(), "kajicode-turn-bench-*")
 	if err != nil {
 		return "", "", err
 	}
-	dst, err = os.MkdirTemp(parent, "zero-turn-fixture-*")
+	dst, err = os.MkdirTemp(parent, "kajicode-turn-fixture-*")
 	if err != nil {
 		os.RemoveAll(parent)
 		return "", "", err
@@ -763,7 +763,7 @@ func copyFixture(src string) (dst, parent string, err error) {
 // absent file.
 //
 // A task that needs an oracle — a stamped oracle_test.go OR a verification
-// command that reads .zero-answer.txt — but has no workspace fixture is
+// command that reads .kajicode-answer.txt — but has no workspace fixture is
 // rejected: there is nowhere safe to stamp, so runVerification would otherwise
 // run in the caller's cwd with the oracle never compiled (or the answer never
 // captured), which can read as a false pass. A fixtureless task with no oracle
@@ -783,8 +783,8 @@ func stampOracleAndAnswer(task BenchTask, outBuf []byte) error {
 		}
 	}
 	answer := streamJSONFinalText(outBuf)
-	if err := os.WriteFile(filepath.Join(dir, ".zero-answer.txt"), []byte(answer), 0o644); err != nil {
-		return fmt.Errorf("write .zero-answer.txt: %w", err)
+	if err := os.WriteFile(filepath.Join(dir, ".kajicode-answer.txt"), []byte(answer), 0o644); err != nil {
+		return fmt.Errorf("write .kajicode-answer.txt: %w", err)
 	}
 	return nil
 }
@@ -808,8 +808,8 @@ func buildTurnExecArgs(task BenchTask, rc RunContext, tracePath string, extraArg
 	return args
 }
 
-// ResolveBinary locates the zero binary for a benchmark run: an explicit path
-// when provided, else a `zero` (or zero.exe) on PATH, else a binary built into
+// ResolveBinary locates the kajicode binary for a benchmark run: an explicit path
+// when provided, else a `kajicode` (or kajicode.exe) on PATH, else a binary built into
 // the repo root. Returns an error when none is found.
 func ResolveBinary(explicit string) (string, error) {
 	if v := strings.TrimSpace(explicit); v != "" {
@@ -818,7 +818,7 @@ func ResolveBinary(explicit string) (string, error) {
 		}
 		// Pin the explicit path to an absolute one: the turn runner sets each
 		// child's cmd.Dir to a per-task fixture copy, so a relative path
-		// (./zero, the Makefile default) that stats fine here would fail to
+		// (./kajicode, the Makefile default) that stats fine here would fail to
 		// spawn from inside every fixture dir, silently erroring all tasks.
 		absolute, err := filepath.Abs(v)
 		if err != nil {
@@ -826,20 +826,20 @@ func ResolveBinary(explicit string) (string, error) {
 		}
 		return absolute, nil
 	}
-	if path, err := exec.LookPath("zero"); err == nil {
+	if path, err := exec.LookPath("kajicode"); err == nil {
 		return path, nil
 	}
-	if path, err := exec.LookPath("zero.exe"); err == nil {
+	if path, err := exec.LookPath("kajicode.exe"); err == nil {
 		return path, nil
 	}
 	cwd, err := os.Getwd()
 	if err == nil {
-		for _, name := range []string{"zero", "zero.exe"} {
+		for _, name := range []string{"kajicode", "kajicode.exe"} {
 			candidate := filepath.Join(cwd, name)
 			if _, err := os.Stat(candidate); err == nil {
 				return candidate, nil
 			}
 		}
 	}
-	return "", errors.New("zero binary not found; build it first or pass an explicit path")
+	return "", errors.New("kajicode binary not found; build it first or pass an explicit path")
 }

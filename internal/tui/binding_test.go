@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/Gitlawb/zero/internal/config"
+	"github.com/dishant0406/KajiCode/internal/config"
 )
 
 func TestParseBindingLabel(t *testing.T) {

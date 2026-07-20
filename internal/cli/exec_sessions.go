@@ -6,9 +6,9 @@ import (
 	"io"
 	"strings"
 
-	"github.com/Gitlawb/zero/internal/agent"
-	"github.com/Gitlawb/zero/internal/sessions"
-	"github.com/Gitlawb/zero/internal/tools"
+	"github.com/dishant0406/KajiCode/internal/agent"
+	"github.com/dishant0406/KajiCode/internal/sessions"
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
 type execSessionRecorder struct {
@@ -62,7 +62,7 @@ func preflightExecSession(options execOptions) error {
 			return err
 		}
 		if session == nil {
-			return execUsageError{"Zero session not found: " + options.fork}
+			return execUsageError{"KajiCode session not found: " + options.fork}
 		}
 	case options.resume != "":
 		session, err := store.Get(options.resume)
@@ -70,10 +70,10 @@ func preflightExecSession(options execOptions) error {
 			return err
 		}
 		if session == nil {
-			return execUsageError{"Zero session not found: " + options.resume}
+			return execUsageError{"KajiCode session not found: " + options.resume}
 		}
 		if !sessions.IsResumableKind(session.SessionKind) {
-			return execUsageError{"Zero session is not resumable: " + options.resume}
+			return execUsageError{"KajiCode session is not resumable: " + options.resume}
 		}
 	case options.resumeLatest:
 		latest, err := store.LatestResumable()
@@ -81,7 +81,7 @@ func preflightExecSession(options execOptions) error {
 			return err
 		}
 		if latest == nil {
-			return execUsageError{"No Zero sessions available to resume."}
+			return execUsageError{"No KajiCode sessions available to resume."}
 		}
 	}
 	return nil
@@ -95,7 +95,7 @@ func createSessionTitle(prompt string) string {
 		title = cutRuneBoundary(title, 80)
 	}
 	if title == "" {
-		return "Zero exec session"
+		return "KajiCode exec session"
 	}
 	return title
 }
@@ -134,6 +134,6 @@ func (recorder *execSessionRecorder) append(eventType sessions.EventType, payloa
 // is reported once at run end. No-op when recording succeeded.
 func (recorder *execSessionRecorder) warnIfRecordingFailed(stderr io.Writer) {
 	if recorder.err != nil {
-		fmt.Fprintf(stderr, "[zero] WARNING: session not fully recorded: %v\n", recorder.err)
+		fmt.Fprintf(stderr, "[kajicode] WARNING: session not fully recorded: %v\n", recorder.err)
 	}
 }

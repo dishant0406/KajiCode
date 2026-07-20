@@ -4,7 +4,7 @@
 // toggle thinking on/off — so a single flat effort string cannot describe them.
 //
 // Capability is the typed, per-model description of that control, sourced from a
-// community capability catalog (models.dev). It is the data the rest of Zero
+// community capability catalog (models.dev). It is the data the rest of KajiCode
 // consults to decide which reasoning tiers a model actually supports, replacing
 // model-name guessing. This package depends only on the standard library, so the
 // model registry and provider adapters can import it without a cycle.

@@ -17,7 +17,7 @@ func TestMCPViewRendersEmptyState(t *testing.T) {
 		"User MCPs",
 		"No MCP servers configured.",
 		"Add MCP server",
-		"zero mcp add <name> --url <url>",
+		"kajicode mcp add <name> --url <url>",
 		"Actions",
 		"add remote",
 		"check health",
@@ -40,7 +40,7 @@ func TestMCPViewRendersEmptyStateWhenOnlyPermissionModeExists(t *testing.T) {
 		"Manage MCP servers",
 		"0 servers",
 		"No MCP servers configured.",
-		"zero mcp add",
+		"kajicode mcp add",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("empty MCP view with permission mode = %q, missing %q", got, want)
@@ -65,11 +65,11 @@ func TestMCPViewRendersServerRows(t *testing.T) {
 		"User MCPs",
 		"filesystem · connected · 3 tools · stdio",
 		"linear · disabled · oauth · http",
-		"zero mcp disable filesystem",
-		"zero mcp enable linear",
+		"kajicode mcp disable filesystem",
+		"kajicode mcp enable linear",
 		"https://mcp.linear.app",
-		"disconnect: zero mcp disable <name>",
-		"remove: zero mcp remove <name>",
+		"disconnect: kajicode mcp disable <name>",
+		"remove: kajicode mcp remove <name>",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("MCP server view = %q, missing %q", got, want)

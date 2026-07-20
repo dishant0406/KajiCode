@@ -44,7 +44,7 @@ func TestPlainTranscriptTextSkipsNoise(t *testing.T) {
 		{kind: rowError, text: "provider error: boom"},
 	}}
 	out := m.plainTranscriptText()
-	if !strings.Contains(out, "you: add a flag") || !strings.Contains(out, "zero: Done — added --version.") {
+	if !strings.Contains(out, "you: add a flag") || !strings.Contains(out, "kajicode: Done — added --version.") {
 		t.Fatalf("export missing conversation text:\n%s", out)
 	}
 	if !strings.Contains(out, "error: provider error: boom") {
@@ -76,7 +76,7 @@ func TestHandleExportCommandWritesFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reading exported file: %v", err)
 	}
-	if !strings.Contains(string(data), "you: hello") || !strings.Contains(string(data), "zero: hi there") {
+	if !strings.Contains(string(data), "you: hello") || !strings.Contains(string(data), "kajicode: hi there") {
 		t.Fatalf("exported content = %q", string(data))
 	}
 	// The transcript may contain secrets echoed in tool output; it must not be
@@ -91,7 +91,7 @@ func TestHandleExportCommandWritesFile(t *testing.T) {
 	}
 
 	// No-arg export derives a timestamped filename in cwd.
-	if msg := m.handleExportCommand(""); !strings.Contains(msg, "zero-transcript-20260704-093000.txt") {
+	if msg := m.handleExportCommand(""); !strings.Contains(msg, "kajicode-transcript-20260704-093000.txt") {
 		t.Fatalf("default export status = %q", msg)
 	}
 

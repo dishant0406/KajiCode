@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/modelregistry"
-	"github.com/Gitlawb/zero/internal/sessions"
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
+	"github.com/dishant0406/KajiCode/internal/modelregistry"
+	"github.com/dishant0406/KajiCode/internal/sessions"
 )
 
 func usageEvent(t *testing.T, sessionID string, sequence int, createdAt string, prompt int, completion int) sessions.Event {
@@ -96,7 +96,7 @@ func TestBuildReportReconstructsCostFromMetadataModel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Require: %v", err)
 	}
-	want, err := modelregistry.CalculateCost(model, zeroruntime.Usage{InputTokens: 1000, OutputTokens: 200})
+	want, err := modelregistry.CalculateCost(model, kajicoderuntime.Usage{InputTokens: 1000, OutputTokens: 200})
 	if err != nil {
 		t.Fatalf("CalculateCost: %v", err)
 	}
@@ -139,7 +139,7 @@ func TestBuildReportPricesFromEventModelWhenPresent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Require: %v", err)
 	}
-	want, err := modelregistry.CalculateCost(model, zeroruntime.Usage{InputTokens: 1000, OutputTokens: 200})
+	want, err := modelregistry.CalculateCost(model, kajicoderuntime.Usage{InputTokens: 1000, OutputTokens: 200})
 	if err != nil {
 		t.Fatalf("CalculateCost: %v", err)
 	}

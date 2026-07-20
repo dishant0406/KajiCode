@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/usage"
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
+	"github.com/dishant0406/KajiCode/internal/usage"
 )
 
 // The context-fill gauge is empty before any request, then shows
@@ -18,7 +18,7 @@ func TestContextWindowSegment(t *testing.T) {
 	// 161k latest-step tokens against the 200k window = 81%.
 	if _, err := m.usageTracker.Record(usage.RecordInput{
 		ModelID: "claude-sonnet-4.5",
-		Usage:   zeroruntime.Usage{InputTokens: 160_000, OutputTokens: 1000},
+		Usage:   kajicoderuntime.Usage{InputTokens: 160_000, OutputTokens: 1000},
 	}); err != nil {
 		t.Fatalf("Record: %v", err)
 	}
@@ -37,7 +37,7 @@ func TestStatusLineDoesNotDuplicateTokenFigureNextToGauge(t *testing.T) {
 	m := newModel(t.Context(), Options{ModelName: "claude-sonnet-4.5"})
 	if _, err := m.usageTracker.Record(usage.RecordInput{
 		ModelID: "claude-sonnet-4.5",
-		Usage:   zeroruntime.Usage{InputTokens: 160_000, OutputTokens: 1000},
+		Usage:   kajicoderuntime.Usage{InputTokens: 160_000, OutputTokens: 1000},
 	}); err != nil {
 		t.Fatalf("Record: %v", err)
 	}

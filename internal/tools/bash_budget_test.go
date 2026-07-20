@@ -102,7 +102,7 @@ func TestBudgetBashOutputTruncatesHeadAndTail(t *testing.T) {
 }
 
 // boundedBuffer must keep memory bounded to head+tail while counting every byte,
-// so a runaway command can't OOM Zero before truncation runs. It keeps the very
+// so a runaway command can't OOM KajiCode before truncation runs. It keeps the very
 // first bytes (head) and the very last bytes (tail), discarding the middle.
 func TestBoundedBufferKeepsHeadAndTailBounded(t *testing.T) {
 	b := newBoundedBuffer(8, 8)

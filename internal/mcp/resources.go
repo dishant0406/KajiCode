@@ -15,7 +15,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/Gitlawb/zero/internal/workspaceindex"
+	"github.com/dishant0406/KajiCode/internal/workspaceindex"
 )
 
 // jsonRPCResourceNotFound is the MCP convention for a resource the server knows
@@ -29,7 +29,7 @@ const jsonRPCResourceNotFound = -32002
 const maxResourceBytes = maxMessageBytes
 
 // Resource describes a workspace file advertised through resources/list. Only
-// the fields ZERO populates are emitted; pagination cursors and icons are not
+// the fields KAJICODE populates are emitted; pagination cursors and icons are not
 // used.
 type Resource struct {
 	URI         string `json:"uri"`
@@ -76,7 +76,7 @@ func (server toolServer) resourceRoots() []string {
 // listResources enumerates every in-scope, non-binary-by-extension file across
 // the allowed roots and renders them as MCP resources. It reuses the shared
 // workspace scanner so gitignore-style exclusions (.git, node_modules, vendor,
-// binary extensions, ...) match the rest of ZERO instead of re-walking.
+// binary extensions, ...) match the rest of KAJICODE instead of re-walking.
 func (server toolServer) listResources() []Resource {
 	roots := server.resourceRoots()
 	resources := make([]Resource, 0)

@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/Gitlawb/zero/internal/modelregistry"
+	"github.com/dishant0406/KajiCode/internal/modelregistry"
 )
 
 // escalateToModelMetaKey is the result-metadata key the agent loop reads to

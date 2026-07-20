@@ -15,7 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/fsutil"
+	"github.com/dishant0406/KajiCode/internal/fsutil"
 )
 
 const (
@@ -233,7 +233,7 @@ func DefaultRoot(env map[string]string) string {
 	if base == "" {
 		base = filepath.Join(home, ".local", "share")
 	}
-	return filepath.Join(base, "zero", "sessions")
+	return filepath.Join(base, "kajicode", "sessions")
 }
 
 func ValidSessionID(sessionID string) bool {
@@ -246,10 +246,10 @@ func (store *Store) Create(input CreateInput) (Metadata, error) {
 		sessionID = store.createID()
 	}
 	if !ValidSessionID(sessionID) {
-		return Metadata{}, fmt.Errorf("invalid zero session id %q", input.SessionID)
+		return Metadata{}, fmt.Errorf("invalid kajicode session id %q", input.SessionID)
 	}
 	if input.Depth < 0 {
-		return Metadata{}, fmt.Errorf("invalid zero session depth %d", input.Depth)
+		return Metadata{}, fmt.Errorf("invalid kajicode session depth %d", input.Depth)
 	}
 
 	timestamp := store.timestamp()
@@ -285,30 +285,30 @@ func (store *Store) Create(input CreateInput) (Metadata, error) {
 	}
 
 	if err := os.MkdirAll(store.RootDir, 0o700); err != nil {
-		return Metadata{}, fmt.Errorf("create zero session root: %w", err)
+		return Metadata{}, fmt.Errorf("create kajicode session root: %w", err)
 	}
 	if err := os.Mkdir(store.sessionPath(sessionID), 0o700); err != nil {
 		if errors.Is(err, os.ErrExist) {
-			return Metadata{}, fmt.Errorf("zero session already exists: %s", sessionID)
+			return Metadata{}, fmt.Errorf("kajicode session already exists: %s", sessionID)
 		}
-		return Metadata{}, fmt.Errorf("create zero session directory: %w", err)
+		return Metadata{}, fmt.Errorf("create kajicode session directory: %w", err)
 	}
 	if err := store.writeMetadata(session); err != nil {
 		return Metadata{}, err
 	}
 	file, err := os.OpenFile(store.eventsPath(sessionID), os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
-		return Metadata{}, fmt.Errorf("create zero session events file: %w", err)
+		return Metadata{}, fmt.Errorf("create kajicode session events file: %w", err)
 	}
 	if err := file.Close(); err != nil {
-		return Metadata{}, fmt.Errorf("close zero session events file: %w", err)
+		return Metadata{}, fmt.Errorf("close kajicode session events file: %w", err)
 	}
 	return session, nil
 }
 
 func (store *Store) Get(sessionID string) (*Metadata, error) {
 	if !ValidSessionID(sessionID) {
-		return nil, fmt.Errorf("invalid zero session id %q", sessionID)
+		return nil, fmt.Errorf("invalid kajicode session id %q", sessionID)
 	}
 	session, err := store.readMetadata(sessionID)
 	if err != nil {
@@ -322,11 +322,11 @@ func (store *Store) Get(sessionID string) (*Metadata, error) {
 
 func (store *Store) List() ([]Metadata, error) {
 	if err := os.MkdirAll(store.RootDir, 0o700); err != nil {
-		return nil, fmt.Errorf("create zero session root: %w", err)
+		return nil, fmt.Errorf("create kajicode session root: %w", err)
 	}
 	entries, err := os.ReadDir(store.RootDir)
 	if err != nil {
-		return nil, fmt.Errorf("read zero session root: %w", err)
+		return nil, fmt.Errorf("read kajicode session root: %w", err)
 	}
 	sessions := []Metadata{}
 	for _, entry := range entries {
@@ -398,14 +398,14 @@ func (store *Store) LatestResumable() (*Metadata, error) {
 
 func (store *Store) Fork(parentSessionID string, input ForkInput) (Metadata, error) {
 	if !ValidSessionID(parentSessionID) {
-		return Metadata{}, fmt.Errorf("invalid zero session id %q", parentSessionID)
+		return Metadata{}, fmt.Errorf("invalid kajicode session id %q", parentSessionID)
 	}
 	parent, err := store.Get(parentSessionID)
 	if err != nil {
 		return Metadata{}, err
 	}
 	if parent == nil {
-		return Metadata{}, fmt.Errorf("zero session not found: %s", parentSessionID)
+		return Metadata{}, fmt.Errorf("kajicode session not found: %s", parentSessionID)
 	}
 	events, err := store.ReadEvents(parentSessionID)
 	if err != nil {
@@ -425,7 +425,7 @@ func (store *Store) Fork(parentSessionID string, input ForkInput) (Metadata, err
 		kind = SessionKindFork
 	}
 	if kind != SessionKindFork && kind != SessionKindSide {
-		return Metadata{}, fmt.Errorf("invalid zero fork session kind %q", kind)
+		return Metadata{}, fmt.Errorf("invalid kajicode fork session kind %q", kind)
 	}
 	fork, err := store.Create(CreateInput{
 		SessionID:          input.SessionID,
@@ -486,11 +486,11 @@ func (store *Store) Fork(parentSessionID string, input ForkInput) (Metadata, err
 
 func (store *Store) RecordSpec(sessionID string, input RecordSpecInput) (Metadata, Event, error) {
 	if !ValidSessionID(sessionID) {
-		return Metadata{}, Event{}, fmt.Errorf("invalid zero session id %q", sessionID)
+		return Metadata{}, Event{}, fmt.Errorf("invalid kajicode session id %q", sessionID)
 	}
 	status := normalizeSpecStatus(input.SpecStatus)
 	if status == "" {
-		return Metadata{}, Event{}, fmt.Errorf("zero spec status is required")
+		return Metadata{}, Event{}, fmt.Errorf("kajicode spec status is required")
 	}
 	unlock, err := store.lockSession(sessionID)
 	if err != nil {
@@ -543,7 +543,7 @@ func (store *Store) AppendEvent(sessionID string, input AppendEventInput) (Event
 // An empty batch is a no-op and does not rewrite metadata.
 func (store *Store) AppendEvents(sessionID string, inputs []AppendEventInput) ([]Event, error) {
 	if !ValidSessionID(sessionID) {
-		return nil, fmt.Errorf("invalid zero session id %q", sessionID)
+		return nil, fmt.Errorf("invalid kajicode session id %q", sessionID)
 	}
 	prepared, err := prepareAppendEventInputs(inputs)
 	if err != nil {
@@ -570,10 +570,10 @@ func (store *Store) AppendEvents(sessionID string, inputs []AppendEventInput) ([
 // predicate already matched. A nil predicate always appends.
 func (store *Store) AppendEventUnlessExists(sessionID string, input AppendEventInput, exists func([]Event) bool) (Event, bool, error) {
 	if !ValidSessionID(sessionID) {
-		return Event{}, false, fmt.Errorf("invalid zero session id %q", sessionID)
+		return Event{}, false, fmt.Errorf("invalid kajicode session id %q", sessionID)
 	}
 	if strings.TrimSpace(string(input.Type)) == "" {
-		return Event{}, false, fmt.Errorf("zero session event type is required")
+		return Event{}, false, fmt.Errorf("kajicode session event type is required")
 	}
 	unlock, err := store.lockSession(sessionID)
 	if err != nil {
@@ -650,7 +650,7 @@ func (store *Store) appendPreparedEventsLocked(sessionID string, inputs []prepar
 		}
 		data, err := json.Marshal(event)
 		if err != nil {
-			return nil, fmt.Errorf("encode zero session event: %w", err)
+			return nil, fmt.Errorf("encode kajicode session event: %w", err)
 		}
 		batch.Write(data)
 		batch.WriteByte('\n')
@@ -658,11 +658,11 @@ func (store *Store) appendPreparedEventsLocked(sessionID string, inputs []prepar
 	}
 	file, err := os.OpenFile(store.eventsPath(sessionID), os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o600)
 	if err != nil {
-		return nil, fmt.Errorf("append zero session event: %w", err)
+		return nil, fmt.Errorf("append kajicode session event: %w", err)
 	}
 	if _, err := file.Write(batch.Bytes()); err != nil {
 		_ = file.Close()
-		return nil, fmt.Errorf("append zero session event: %w", err)
+		return nil, fmt.Errorf("append kajicode session event: %w", err)
 	}
 	// fsync the events before reporting success: the derived metadata.json IS
 	// fsync'd (writeMetadata), so without this a crash after the metadata flush
@@ -671,10 +671,10 @@ func (store *Store) appendPreparedEventsLocked(sessionID string, inputs []prepar
 	// that /rewind targets). Make the log at least as durable as its metadata. (AUDIT-M12)
 	if err := file.Sync(); err != nil {
 		_ = file.Close()
-		return nil, fmt.Errorf("sync zero session event: %w", err)
+		return nil, fmt.Errorf("sync kajicode session event: %w", err)
 	}
 	if err := file.Close(); err != nil {
-		return nil, fmt.Errorf("close zero session event file: %w", err)
+		return nil, fmt.Errorf("close kajicode session event file: %w", err)
 	}
 	last := events[len(events)-1]
 	session.UpdatedAt = last.CreatedAt
@@ -696,11 +696,11 @@ func (store *Store) appendPreparedEventsLocked(sessionID string, inputs []prepar
 // first-message title, and an unchanged title is a no-op (no rewrite/fsync).
 func (store *Store) UpdateTitle(sessionID string, title string) (Metadata, error) {
 	if !ValidSessionID(sessionID) {
-		return Metadata{}, fmt.Errorf("invalid zero session id %q", sessionID)
+		return Metadata{}, fmt.Errorf("invalid kajicode session id %q", sessionID)
 	}
 	trimmed := strings.TrimSpace(title)
 	if trimmed == "" {
-		return Metadata{}, fmt.Errorf("zero session title is required")
+		return Metadata{}, fmt.Errorf("kajicode session title is required")
 	}
 	unlock, err := store.lockSession(sessionID)
 	if err != nil {
@@ -724,14 +724,14 @@ func (store *Store) UpdateTitle(sessionID string, title string) (Metadata, error
 
 func (store *Store) ReadEvents(sessionID string) ([]Event, error) {
 	if !ValidSessionID(sessionID) {
-		return nil, fmt.Errorf("invalid zero session id %q", sessionID)
+		return nil, fmt.Errorf("invalid kajicode session id %q", sessionID)
 	}
 	data, err := os.ReadFile(store.eventsPath(sessionID))
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return []Event{}, nil
 		}
-		return nil, fmt.Errorf("read zero session events: %w", err)
+		return nil, fmt.Errorf("read kajicode session events: %w", err)
 	}
 	// A genuine torn tail is an INCOMPLETE final write — a crash mid-append leaves
 	// the last line without its terminating newline. If the file ends with a
@@ -761,7 +761,7 @@ func (store *Store) ReadEvents(sessionID string) ([]Event, error) {
 			if index == lastNonEmpty && tornTailPossible {
 				break
 			}
-			return nil, fmt.Errorf("invalid json in zero session %s %s at line %d: %w", sessionID, EventsFile, index+1, err)
+			return nil, fmt.Errorf("invalid json in kajicode session %s %s at line %d: %w", sessionID, EventsFile, index+1, err)
 		}
 		events = append(events, event)
 	}
@@ -834,7 +834,7 @@ func (store *Store) readMetadata(sessionID string) (Metadata, error) {
 	}
 	var session Metadata
 	if err := json.Unmarshal(data, &session); err != nil {
-		return Metadata{}, fmt.Errorf("invalid zero session metadata %s: %w", sessionID, err)
+		return Metadata{}, fmt.Errorf("invalid kajicode session metadata %s: %w", sessionID, err)
 	}
 	return session, nil
 }
@@ -842,7 +842,7 @@ func (store *Store) readMetadata(sessionID string) (Metadata, error) {
 func (store *Store) writeMetadata(session Metadata) error {
 	data, err := json.MarshalIndent(session, "", "  ")
 	if err != nil {
-		return fmt.Errorf("encode zero session metadata: %w", err)
+		return fmt.Errorf("encode kajicode session metadata: %w", err)
 	}
 	path := store.metadataPath(session.SessionID)
 	tmp := fmt.Sprintf("%s.tmp-%d", path, store.idCounter.Add(1))
@@ -851,17 +851,17 @@ func (store *Store) writeMetadata(session Metadata) error {
 	// contents were never flushed — a torn or empty file that corrupts the whole
 	// session. Syncing the data before the atomic rename closes that window.
 	if err := writeFileSync(tmp, append(data, '\n'), 0o600); err != nil {
-		return fmt.Errorf("write zero session metadata: %w", err)
+		return fmt.Errorf("write kajicode session metadata: %w", err)
 	}
 	if err := fsutil.RenameWithRetry(tmp, path, nil); err != nil {
 		_ = os.Remove(tmp)
-		return fmt.Errorf("replace zero session metadata: %w", err)
+		return fmt.Errorf("replace kajicode session metadata: %w", err)
 	}
 	// fsync the parent directory so the rename itself is durable: the temp file's
 	// contents were synced above, but without syncing the directory a crash can
 	// still lose the rename (the new directory entry), leaving the old/no file.
 	if err := syncDir(filepath.Dir(path)); err != nil {
-		return fmt.Errorf("sync zero session dir: %w", err)
+		return fmt.Errorf("sync kajicode session dir: %w", err)
 	}
 	return nil
 }
@@ -1013,7 +1013,7 @@ func rawPayload(payload any) (json.RawMessage, error) {
 	}
 	data, err := json.Marshal(payload)
 	if err != nil {
-		return nil, fmt.Errorf("encode zero session payload: %w", err)
+		return nil, fmt.Errorf("encode kajicode session payload: %w", err)
 	}
 	return data, nil
 }
@@ -1022,7 +1022,7 @@ func prepareAppendEventInputs(inputs []AppendEventInput) ([]preparedAppendEvent,
 	prepared := make([]preparedAppendEvent, 0, len(inputs))
 	for _, input := range inputs {
 		if strings.TrimSpace(string(input.Type)) == "" {
-			return nil, fmt.Errorf("zero session event type is required")
+			return nil, fmt.Errorf("kajicode session event type is required")
 		}
 		payload, err := rawPayload(input.Payload)
 		if err != nil {

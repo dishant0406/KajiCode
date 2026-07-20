@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/config"
+	"github.com/dishant0406/KajiCode/internal/config"
 )
 
 func TestProviderSensitiveEnvKeys(t *testing.T) {

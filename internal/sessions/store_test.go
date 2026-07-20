@@ -320,7 +320,7 @@ func TestStoreRejectsNegativeSessionDepth(t *testing.T) {
 
 	_, err := store.Create(CreateInput{SessionID: "bad_depth", Depth: -1})
 
-	if err == nil || !strings.Contains(err.Error(), "invalid zero session depth") {
+	if err == nil || !strings.Contains(err.Error(), "invalid kajicode session depth") {
 		t.Fatalf("expected invalid depth error, got %v", err)
 	}
 }
@@ -437,10 +437,10 @@ func TestListAndLatestResumableExcludeSubRuns(t *testing.T) {
 
 func TestDefaultRootHonorsXDGDataHome(t *testing.T) {
 	got := DefaultRoot(map[string]string{
-		"XDG_DATA_HOME": "/tmp/zero-data",
+		"XDG_DATA_HOME": "/tmp/kajicode-data",
 		"HOME":          "/tmp/home",
 	})
-	want := filepath.Join("/tmp/zero-data", "zero", "sessions")
+	want := filepath.Join("/tmp/kajicode-data", "kajicode", "sessions")
 	if got != want {
 		t.Fatalf("DefaultRoot = %q, want %q", got, want)
 	}
@@ -576,7 +576,7 @@ func TestPrepareExecSessionResolvesResumeAndFork(t *testing.T) {
 	if got := FormatExecPrompt("continue", prepared); got == "continue" || !strings.Contains(got, "previous answer") {
 		t.Fatalf("expected session context in prompt, got %q", got)
 	}
-	if _, err := PrepareExec(PrepareExecOptions{Store: store, Resume: "newer-side"}); err == nil || !strings.Contains(err.Error(), "Zero session is not resumable: newer-side") {
+	if _, err := PrepareExec(PrepareExecOptions{Store: store, Resume: "newer-side"}); err == nil || !strings.Contains(err.Error(), "KajiCode session is not resumable: newer-side") {
 		t.Fatalf("explicit side-session resume error = %v, want non-resumable rejection", err)
 	}
 
@@ -749,7 +749,7 @@ func TestRecordSpecUpdatesMetadataAndAppendsEvents(t *testing.T) {
 
 	updated, event, err := store.RecordSpec(session.SessionID, RecordSpecInput{
 		SpecID:       "2026-06-08-spec-mode",
-		SpecFilePath: "/repo/.zero/specs/2026-06-08-spec-mode.md",
+		SpecFilePath: "/repo/.kajicode/specs/2026-06-08-spec-mode.md",
 		SpecStatus:   SpecStatusDraft,
 	})
 
@@ -812,7 +812,7 @@ func TestEnsureSpecImplementationReusesExistingPromptSession(t *testing.T) {
 		ModelID:             draft.ModelID,
 		Provider:            draft.Provider,
 		SpecID:              draft.SpecID,
-		SpecFilePath:        "/repo/.zero/specs/2026-06-08-spec.md",
+		SpecFilePath:        "/repo/.kajicode/specs/2026-06-08-spec.md",
 		SpecDraftModelID:    "gpt-5",
 		SpecDraftReasoning:  "high",
 		SpecUserComment:     "ship it",

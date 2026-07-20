@@ -9,7 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
-	"github.com/Gitlawb/zero/internal/tools"
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
 func TestTranscriptCommandTogglesDetailedView(t *testing.T) {
@@ -114,7 +114,7 @@ func TestDetailedTranscriptSwallowsNormalChatSubmit(t *testing.T) {
 
 func transcriptViewTestModel() model {
 	m := newModel(context.Background(), Options{
-		Cwd:          "/work/zero",
+		Cwd:          "/work/kajicode",
 		ProviderName: "openai",
 		ModelName:    "gpt-test",
 	})

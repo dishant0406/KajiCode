@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/redaction"
+	"github.com/dishant0406/KajiCode/internal/redaction"
 )
 
 const grantSchemaVersion = 2
@@ -64,7 +64,7 @@ type GrantStore struct {
 var toolGrantNamePattern = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 
 func ResolveGrantPath(env map[string]string) (string, error) {
-	override := strings.TrimSpace(envValue(env, "ZERO_SANDBOX_GRANTS_PATH"))
+	override := strings.TrimSpace(envValue(env, "KAJICODE_SANDBOX_GRANTS_PATH"))
 	if override != "" {
 		if filepath.IsAbs(override) {
 			return filepath.Clean(override), nil
@@ -89,7 +89,7 @@ func ResolveGrantPath(env map[string]string) (string, error) {
 		}
 		configHome = resolved
 	}
-	return filepath.Join(configHome, "zero", "sandbox-grants.json"), nil
+	return filepath.Join(configHome, "kajicode", "sandbox-grants.json"), nil
 }
 
 func NewGrantStore(options StoreOptions) (*GrantStore, error) {

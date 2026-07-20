@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/modelregistry"
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
+	"github.com/dishant0406/KajiCode/internal/modelregistry"
 )
 
 type Normalized struct {
@@ -19,7 +19,7 @@ type Normalized struct {
 
 type RecordInput struct {
 	ModelID string
-	Usage   zeroruntime.Usage
+	Usage   kajicoderuntime.Usage
 	Source  string
 }
 
@@ -165,32 +165,32 @@ func (tracker *Tracker) Reset() {
 	tracker.nextSeq = 1
 }
 
-func Normalize(usage zeroruntime.Usage) (Normalized, zeroruntime.Usage, error) {
+func Normalize(usage kajicoderuntime.Usage) (Normalized, kajicoderuntime.Usage, error) {
 	inputTokens, err := nonNegative(firstNonZero(usage.InputTokens, usage.PromptTokens), "inputTokens")
 	if err != nil {
-		return Normalized{}, zeroruntime.Usage{}, err
+		return Normalized{}, kajicoderuntime.Usage{}, err
 	}
 	outputTokens, err := nonNegative(firstNonZero(usage.OutputTokens, usage.CompletionTokens), "outputTokens")
 	if err != nil {
-		return Normalized{}, zeroruntime.Usage{}, err
+		return Normalized{}, kajicoderuntime.Usage{}, err
 	}
 	cachedInputTokens, err := nonNegative(usage.CachedInputTokens, "cachedInputTokens")
 	if err != nil {
-		return Normalized{}, zeroruntime.Usage{}, err
+		return Normalized{}, kajicoderuntime.Usage{}, err
 	}
 	if cachedInputTokens > inputTokens {
 		cachedInputTokens = inputTokens
 	}
 	cacheWriteTokens, err := nonNegative(usage.CacheWriteTokens, "cacheWriteTokens")
 	if err != nil {
-		return Normalized{}, zeroruntime.Usage{}, err
+		return Normalized{}, kajicoderuntime.Usage{}, err
 	}
 	if cacheWriteTokens > inputTokens-cachedInputTokens {
 		cacheWriteTokens = inputTokens - cachedInputTokens
 	}
 	reasoningTokens, err := nonNegative(usage.ReasoningTokens, "reasoningTokens")
 	if err != nil {
-		return Normalized{}, zeroruntime.Usage{}, err
+		return Normalized{}, kajicoderuntime.Usage{}, err
 	}
 	normalized := Normalized{
 		InputTokens:       inputTokens,
@@ -200,7 +200,7 @@ func Normalize(usage zeroruntime.Usage) (Normalized, zeroruntime.Usage, error) {
 		ReasoningTokens:   reasoningTokens,
 		TotalTokens:       inputTokens + outputTokens,
 	}
-	return normalized, zeroruntime.Usage{
+	return normalized, kajicoderuntime.Usage{
 		InputTokens:       inputTokens,
 		PromptTokens:      inputTokens,
 		CachedInputTokens: cachedInputTokens,

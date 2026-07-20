@@ -5,17 +5,17 @@ import (
 	"strings"
 )
 
-// DefaultMCPServers returns the MCP servers Zero ships ENABLED by default so web
+// DefaultMCPServers returns the MCP servers KajiCode ships ENABLED by default so web
 // search and scraping work out of the box with no setup and no API key. They are
 // seeded before user/project config is merged (see ResolveMCP), so a user can
 // override any field — for example point firecrawl at a self-hosted instance, or
 // add an API-key header to lift the free-tier limit — or disable it entirely with
-// `zero mcp disable <name>` (which writes `"disabled": true`).
+// `kajicode mcp disable <name>` (which writes `"disabled": true`).
 //
 // Keyless Firecrawl routes requests through firecrawl.dev (1,000 free credits per
 // month, no account). Self-host Firecrawl (AGPL-3.0) for unlimited and private
-// use. Zero only calls it over the network, so Firecrawl's license never reaches
-// into Zero's own code.
+// use. KajiCode only calls it over the network, so Firecrawl's license never reaches
+// into KajiCode's own code.
 func DefaultMCPServers() map[string]MCPServerConfig {
 	return map[string]MCPServerConfig{
 		"firecrawl": {
@@ -25,7 +25,7 @@ func DefaultMCPServers() map[string]MCPServerConfig {
 	}
 }
 
-// IsDefaultMCPServer reports whether name is one of Zero's built-in default MCP
+// IsDefaultMCPServer reports whether name is one of KajiCode's built-in default MCP
 // servers. The config commands use it so a default can be disabled/enabled even
 // though it is not written to the user's config file until overridden.
 func IsDefaultMCPServer(name string) bool {
@@ -33,15 +33,15 @@ func IsDefaultMCPServer(name string) bool {
 	return ok
 }
 
-// IsUnconfiguredDefault reports whether server is one of Zero's built-in
+// IsUnconfiguredDefault reports whether server is one of KajiCode's built-in
 // defaults that the user never wrote an entry for in their config — i.e. it is
-// running with whatever Zero ships (e.g. keyless Firecrawl, no credentials).
+// running with whatever KajiCode ships (e.g. keyless Firecrawl, no credentials).
 //
 // Both conditions below must hold:
 //   - !server.configured: the user's JSON never declared an object for this
 //     server key at all (set by MCPServerConfig.UnmarshalJSON only when it
 //     actually ran for this key). Any explicit action — including a
-//     disable/enable toggle like `zero mcp enable firecrawl` that leaves the
+//     disable/enable toggle like `kajicode mcp enable firecrawl` that leaves the
 //     resolved value unchanged — sets configured, so it always counts as
 //     user-configured, even though the value comparison below could not tell
 //     the difference on its own.

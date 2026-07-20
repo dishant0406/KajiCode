@@ -70,7 +70,7 @@ func TestCheckReportsAvailableUpdate(t *testing.T) {
 	if !result.UpdateAvailable || result.LatestVersion != "0.2.0" {
 		t.Fatalf("unexpected update result: %#v", result)
 	}
-	if !result.ReleaseAsset.Verified || result.ReleaseAsset.ArchiveName != "zero-v0.2.0-linux-x64.tar.gz" || result.ReleaseAsset.ChecksumName != "zero-v0.2.0-linux-x64.tar.gz.sha256" {
+	if !result.ReleaseAsset.Verified || result.ReleaseAsset.ArchiveName != "kajicode-v0.2.0-linux-x64.tar.gz" || result.ReleaseAsset.ChecksumName != "kajicode-v0.2.0-linux-x64.tar.gz.sha256" {
 		t.Fatalf("unexpected release asset check: %#v", result.ReleaseAsset)
 	}
 }
@@ -186,7 +186,7 @@ func TestCheckRejectsInvalidLatestVersion(t *testing.T) {
 func TestCheckFallsBackReleaseURL(t *testing.T) {
 	result, err := Check(context.Background(), Options{
 		CurrentVersion: "0.1.0",
-		Repository:     "Gitlawb/zero",
+		Repository:     "dishant0406/KajiCode",
 		GOOS:           "linux",
 		GOARCH:         "amd64",
 		Fetch: func(context.Context, string) (Release, error) {
@@ -199,14 +199,14 @@ func TestCheckFallsBackReleaseURL(t *testing.T) {
 		t.Fatalf("Check returned error: %v", err)
 	}
 
-	wantURL := "https://github.com/Gitlawb/zero/releases/tag/v0.2.0"
+	wantURL := "https://github.com/dishant0406/KajiCode/releases/tag/v0.2.0"
 	if result.ReleaseURL != wantURL {
 		t.Fatalf("ReleaseURL = %q, want %q", result.ReleaseURL, wantURL)
 	}
 }
 
 func TestCheckFetchesDataEndpoint(t *testing.T) {
-	payload := url.QueryEscape(`{"tag_name":"v0.2.0","html_url":"https://example.test/release","assets":[{"name":"zero-v0.2.0-linux-x64.tar.gz","browser_download_url":"https://example.test/zero-v0.2.0-linux-x64.tar.gz"},{"name":"zero-v0.2.0-linux-x64.tar.gz.sha256","browser_download_url":"https://example.test/zero-v0.2.0-linux-x64.tar.gz.sha256"}]}`)
+	payload := url.QueryEscape(`{"tag_name":"v0.2.0","html_url":"https://example.test/release","assets":[{"name":"kajicode-v0.2.0-linux-x64.tar.gz","browser_download_url":"https://example.test/kajicode-v0.2.0-linux-x64.tar.gz"},{"name":"kajicode-v0.2.0-linux-x64.tar.gz.sha256","browser_download_url":"https://example.test/kajicode-v0.2.0-linux-x64.tar.gz.sha256"}]}`)
 
 	result, err := Check(context.Background(), Options{
 		CurrentVersion: "0.1.0",
@@ -232,20 +232,20 @@ func TestCheckResolvesEndpointPrecedence(t *testing.T) {
 	}{
 		{
 			name:    "endpoint option wins",
-			options: Options{Endpoint: "Gitlawb/option-zero", Repository: "Gitlawb/repo-zero"},
-			env:     "Gitlawb/env-zero",
-			want:    Endpoint("Gitlawb/option-zero"),
+			options: Options{Endpoint: "dishant0406/option-kajicode", Repository: "dishant0406/repo-kajicode"},
+			env:     "dishant0406/env-kajicode",
+			want:    Endpoint("dishant0406/option-kajicode"),
 		},
 		{
 			name:    "environment wins over repository",
-			options: Options{Repository: "Gitlawb/repo-zero"},
-			env:     "Gitlawb/env-zero",
-			want:    Endpoint("Gitlawb/env-zero"),
+			options: Options{Repository: "dishant0406/repo-kajicode"},
+			env:     "dishant0406/env-kajicode",
+			want:    Endpoint("dishant0406/env-kajicode"),
 		},
 		{
 			name:     "repository wins over default",
-			options:  Options{Repository: "Gitlawb/repo-zero"},
-			want:     Endpoint("Gitlawb/repo-zero"),
+			options:  Options{Repository: "dishant0406/repo-kajicode"},
+			want:     Endpoint("dishant0406/repo-kajicode"),
 			clearEnv: true,
 		},
 		{
@@ -258,9 +258,9 @@ func TestCheckResolvesEndpointPrecedence(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.clearEnv {
-				t.Setenv("ZERO_UPDATE_RELEASE_URL", "")
+				t.Setenv("KAJICODE_UPDATE_RELEASE_URL", "")
 			} else {
-				t.Setenv("ZERO_UPDATE_RELEASE_URL", tt.env)
+				t.Setenv("KAJICODE_UPDATE_RELEASE_URL", tt.env)
 			}
 			options := tt.options
 			options.CurrentVersion = "0.1.0"
@@ -289,7 +289,7 @@ func TestCheckRejectsMissingReleaseAssets(t *testing.T) {
 			return Release{
 				TagName: "v0.2.0",
 				Assets: []Asset{
-					{Name: "zero-v0.2.0-linux-arm64.tar.gz"},
+					{Name: "kajicode-v0.2.0-linux-arm64.tar.gz"},
 				},
 			}, nil
 		},
@@ -298,7 +298,7 @@ func TestCheckRejectsMissingReleaseAssets(t *testing.T) {
 	if err == nil {
 		t.Fatal("Check should reject release metadata without expected assets")
 	}
-	if !strings.Contains(err.Error(), "zero-v0.2.0-linux-x64.tar.gz") || !strings.Contains(err.Error(), "zero-v0.2.0-linux-x64.tar.gz.sha256") {
+	if !strings.Contains(err.Error(), "kajicode-v0.2.0-linux-x64.tar.gz") || !strings.Contains(err.Error(), "kajicode-v0.2.0-linux-x64.tar.gz.sha256") {
 		t.Fatalf("Check error = %v, want missing archive and checksum names", err)
 	}
 }
@@ -318,7 +318,7 @@ func TestExpectedAssetCheckUsesInstallerArchiveNames(t *testing.T) {
 			version:     "0.2.0",
 			goos:        "linux",
 			goarch:      "amd64",
-			archiveName: "zero-v0.2.0-linux-x64.tar.gz",
+			archiveName: "kajicode-v0.2.0-linux-x64.tar.gz",
 			platform:    "linux",
 			arch:        "x64",
 		},
@@ -327,7 +327,7 @@ func TestExpectedAssetCheckUsesInstallerArchiveNames(t *testing.T) {
 			version:     "0.2.0",
 			goos:        "darwin",
 			goarch:      "arm64",
-			archiveName: "zero-v0.2.0-macos-arm64.tar.gz",
+			archiveName: "kajicode-v0.2.0-macos-arm64.tar.gz",
 			platform:    "macos",
 			arch:        "arm64",
 		},
@@ -336,7 +336,7 @@ func TestExpectedAssetCheckUsesInstallerArchiveNames(t *testing.T) {
 			version:     "0.2.0",
 			goos:        "windows",
 			goarch:      "amd64",
-			archiveName: "zero-v0.2.0-windows-x64.zip",
+			archiveName: "kajicode-v0.2.0-windows-x64.zip",
 			platform:    "windows",
 			arch:        "x64",
 		},
@@ -388,11 +388,11 @@ func TestCheckReportsInvalidHTTPJSON(t *testing.T) {
 }
 
 func TestResolveEndpointAcceptsURLAndRepositorySlug(t *testing.T) {
-	got, err := ResolveEndpoint("Gitlawb/alt-zero", DefaultRepository)
+	got, err := ResolveEndpoint("dishant0406/alt-kajicode", DefaultRepository)
 	if err != nil {
 		t.Fatalf("ResolveEndpoint returned error: %v", err)
 	}
-	if got != Endpoint("Gitlawb/alt-zero") {
+	if got != Endpoint("dishant0406/alt-kajicode") {
 		t.Fatalf("slug endpoint = %q", got)
 	}
 
@@ -404,11 +404,11 @@ func TestResolveEndpointAcceptsURLAndRepositorySlug(t *testing.T) {
 		t.Fatalf("URL endpoint = %q", got)
 	}
 
-	got, err = ResolveEndpoint("", "Gitlawb/fallback")
+	got, err = ResolveEndpoint("", "dishant0406/fallback")
 	if err != nil {
 		t.Fatalf("ResolveEndpoint returned error: %v", err)
 	}
-	if got != Endpoint("Gitlawb/fallback") {
+	if got != Endpoint("dishant0406/fallback") {
 		t.Fatalf("fallback endpoint = %q", got)
 	}
 }
@@ -425,7 +425,7 @@ func TestFormatResult(t *testing.T) {
 	output := Format(Result{
 		CurrentVersion:  "0.1.0",
 		LatestVersion:   "0.2.0",
-		ReleaseURL:      "https://github.com/Gitlawb/zero/releases/tag/v0.2.0",
+		ReleaseURL:      "https://github.com/dishant0406/KajiCode/releases/tag/v0.2.0",
 		TagName:         "v0.2.0",
 		ReleaseAsset:    assetCheckForTest(t, "v0.2.0", "linux", "amd64"),
 		UpdateAvailable: true,
@@ -433,7 +433,7 @@ func TestFormatResult(t *testing.T) {
 	if !strings.Contains(output, "Update available: 0.1.0 -> 0.2.0") {
 		t.Fatalf("unexpected update output: %q", output)
 	}
-	if !strings.Contains(output, "Release asset: zero-v0.2.0-linux-x64.tar.gz") || !strings.Contains(output, "Checksum asset: zero-v0.2.0-linux-x64.tar.gz.sha256") {
+	if !strings.Contains(output, "Release asset: kajicode-v0.2.0-linux-x64.tar.gz") || !strings.Contains(output, "Checksum asset: kajicode-v0.2.0-linux-x64.tar.gz.sha256") {
 		t.Fatalf("update output did not include release assets: %q", output)
 	}
 	if !strings.Contains(output, "Release target: linux-x64") || !strings.Contains(output, "Download the verified linux-x64 release asset") {
@@ -446,7 +446,7 @@ func TestFormatResult(t *testing.T) {
 	output = Format(Result{
 		CurrentVersion:  "0.2.0",
 		LatestVersion:   "0.2.0",
-		ReleaseURL:      "https://github.com/Gitlawb/zero/releases/tag/v0.2.0",
+		ReleaseURL:      "https://github.com/dishant0406/KajiCode/releases/tag/v0.2.0",
 		TagName:         "v0.2.0",
 		ReleaseAsset:    assetCheckForTest(t, "v0.2.0", "linux", "amd64"),
 		UpdateAvailable: false,
@@ -464,7 +464,7 @@ func releaseForTarget(t *testing.T, tag string, goos string, goarch string) Rele
 	check := assetCheckForTest(t, tag, goos, goarch)
 	return Release{
 		TagName: tag,
-		HTMLURL: "https://github.com/Gitlawb/zero/releases/tag/" + tag,
+		HTMLURL: "https://github.com/dishant0406/KajiCode/releases/tag/" + tag,
 		Assets: []Asset{
 			{Name: check.ArchiveName, BrowserDownloadURL: "https://example.test/" + check.ArchiveName},
 			{Name: check.ChecksumName, BrowserDownloadURL: "https://example.test/" + check.ChecksumName},

@@ -9,16 +9,16 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/Gitlawb/zero/internal/agent"
-	"github.com/Gitlawb/zero/internal/sessions"
-	"github.com/Gitlawb/zero/internal/specmode"
-	"github.com/Gitlawb/zero/internal/tools"
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/agent"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
+	"github.com/dishant0406/KajiCode/internal/sessions"
+	"github.com/dishant0406/KajiCode/internal/specmode"
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
 func TestSpecCommandCreatesDraftReview(t *testing.T) {
 	store := testSessionStore(t)
-	provider := &scriptedProvider{scripts: [][]zeroruntime.StreamEvent{
+	provider := &scriptedProvider{scripts: [][]kajicoderuntime.StreamEvent{
 		submitSpecScript("call-1", "Review Flow", "# Goal\n\nAdd review flow."),
 	}}
 	m := newSpecModeTestModel(t.TempDir(), provider, store)
@@ -39,7 +39,7 @@ func TestSpecCommandCreatesDraftReview(t *testing.T) {
 	if next.activeSession.SessionKind != sessions.SessionKindSpecDraft || next.activeSession.SpecStatus != sessions.SpecStatusDraft {
 		t.Fatalf("unexpected active spec session: %#v", next.activeSession)
 	}
-	if !strings.Contains(next.pendingSpecReview.RelativePath, ".zero/specs/") {
+	if !strings.Contains(next.pendingSpecReview.RelativePath, ".kajicode/specs/") {
 		t.Fatalf("spec path not recorded: %#v", next.pendingSpecReview)
 	}
 	if !providerRequestIncludesTool(provider.requests[0], specmode.SubmitToolName) {
@@ -52,7 +52,7 @@ func TestSpecCommandCreatesDraftReview(t *testing.T) {
 
 func TestSpecApproveStartsImplementationSession(t *testing.T) {
 	store := testSessionStore(t)
-	provider := &scriptedProvider{scripts: [][]zeroruntime.StreamEvent{
+	provider := &scriptedProvider{scripts: [][]kajicoderuntime.StreamEvent{
 		submitSpecScript("call-1", "Review Flow", "# Goal\n\nAdd review flow."),
 		textScript("implemented from approved spec"),
 	}}
@@ -103,7 +103,7 @@ func TestSpecApproveStartsImplementationSession(t *testing.T) {
 
 func TestSpecReviewBlocksShiftTabModeCycle(t *testing.T) {
 	m := newModel(context.Background(), Options{PermissionMode: agent.PermissionModeAuto})
-	m.pendingSpecReview = &pendingSpecReviewPrompt{SpecID: "spec", SpecFilePath: ".zero/specs/spec.md"}
+	m.pendingSpecReview = &pendingSpecReviewPrompt{SpecID: "spec", SpecFilePath: ".kajicode/specs/spec.md"}
 
 	updated, _ := m.Update(testKeyShift(tea.KeyTab))
 	next := updated.(model)
@@ -117,11 +117,11 @@ func TestSpecReviewBlocksShiftTabModeCycle(t *testing.T) {
 }
 
 func TestSpecReviewCancelLaunchesQueuedPrompt(t *testing.T) {
-	provider := &scriptedProvider{scripts: [][]zeroruntime.StreamEvent{{
-		{Type: zeroruntime.StreamEventDone},
+	provider := &scriptedProvider{scripts: [][]kajicoderuntime.StreamEvent{{
+		{Type: kajicoderuntime.StreamEventDone},
 	}}}
 	m := newSpecModeTestModel(t.TempDir(), provider, testSessionStore(t))
-	m.pendingSpecReview = &pendingSpecReviewPrompt{SpecID: "spec", SpecFilePath: ".zero/specs/spec.md"}
+	m.pendingSpecReview = &pendingSpecReviewPrompt{SpecID: "spec", SpecFilePath: ".kajicode/specs/spec.md"}
 	m.queuedMessage = "continue after cancel"
 
 	updated, cmd := m.Update(testKey(tea.KeyEsc))
@@ -151,7 +151,7 @@ func TestSpecReviewCancelLaunchesQueuedPrompt(t *testing.T) {
 
 func TestSpecReviewRejectLaunchesQueuedPrompt(t *testing.T) {
 	store := testSessionStore(t)
-	provider := &scriptedProvider{scripts: [][]zeroruntime.StreamEvent{
+	provider := &scriptedProvider{scripts: [][]kajicoderuntime.StreamEvent{
 		submitSpecScript("call-1", "Review Flow", "# Goal\n\nAdd review flow."),
 		textScript("queued after reject"),
 	}}
@@ -192,7 +192,7 @@ func TestSpecReviewRejectLaunchesQueuedPrompt(t *testing.T) {
 	}
 }
 
-func newSpecModeTestModel(root string, provider zeroruntime.Provider, store *sessions.Store) model {
+func newSpecModeTestModel(root string, provider kajicoderuntime.Provider, store *sessions.Store) model {
 	registry := tools.NewRegistry()
 	for _, tool := range tools.CoreTools(root) {
 		registry.Register(tool)
@@ -208,20 +208,20 @@ func newSpecModeTestModel(root string, provider zeroruntime.Provider, store *ses
 	})
 }
 
-func submitSpecScript(callID string, title string, plan string) []zeroruntime.StreamEvent {
+func submitSpecScript(callID string, title string, plan string) []kajicoderuntime.StreamEvent {
 	args, _ := json.Marshal(map[string]string{
 		"title": title,
 		"plan":  plan,
 	})
-	return []zeroruntime.StreamEvent{
-		{Type: zeroruntime.StreamEventToolCallStart, ToolCallID: callID, ToolName: specmode.SubmitToolName},
-		{Type: zeroruntime.StreamEventToolCallDelta, ToolCallID: callID, ArgumentsFragment: string(args)},
-		{Type: zeroruntime.StreamEventToolCallEnd, ToolCallID: callID},
-		{Type: zeroruntime.StreamEventDone},
+	return []kajicoderuntime.StreamEvent{
+		{Type: kajicoderuntime.StreamEventToolCallStart, ToolCallID: callID, ToolName: specmode.SubmitToolName},
+		{Type: kajicoderuntime.StreamEventToolCallDelta, ToolCallID: callID, ArgumentsFragment: string(args)},
+		{Type: kajicoderuntime.StreamEventToolCallEnd, ToolCallID: callID},
+		{Type: kajicoderuntime.StreamEventDone},
 	}
 }
 
-func providerRequestIncludesTool(request zeroruntime.CompletionRequest, name string) bool {
+func providerRequestIncludesTool(request kajicoderuntime.CompletionRequest, name string) bool {
 	for _, tool := range request.Tools {
 		if tool.Name == name {
 			return true
@@ -230,7 +230,7 @@ func providerRequestIncludesTool(request zeroruntime.CompletionRequest, name str
 	return false
 }
 
-func providerRequestsContain(requests []zeroruntime.CompletionRequest, text string) bool {
+func providerRequestsContain(requests []kajicoderuntime.CompletionRequest, text string) bool {
 	for _, request := range requests {
 		for _, message := range request.Messages {
 			if strings.Contains(message.Content, text) {
@@ -246,7 +246,7 @@ func providerRequestsContain(requests []zeroruntime.CompletionRequest, text stri
 // the normal prompt path set it. Both draft and impl now route through beginRun.
 func TestSpecLaunchesSeedElapsedClock(t *testing.T) {
 	store := testSessionStore(t)
-	provider := &scriptedProvider{scripts: [][]zeroruntime.StreamEvent{
+	provider := &scriptedProvider{scripts: [][]kajicoderuntime.StreamEvent{
 		submitSpecScript("call-1", "Review Flow", "# Goal\n\nAdd review flow."),
 		textScript("implemented from approved spec"),
 	}}

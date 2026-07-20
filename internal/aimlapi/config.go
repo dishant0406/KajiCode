@@ -25,7 +25,7 @@ const (
 	// DefaultReturnURL is the https fallback the browser is sent to after the
 	// checkout / OAuth consent finishes when no frontend base is known. It must be
 	// a real web page the browser can open — NOT a custom scheme like
-	// zero://aimlapi/complete, which fails with "the scheme does not have a
+	// kajicode://aimlapi/complete, which fails with "the scheme does not have a
 	// registered handler" because the CLI registers no OS protocol handler. The
 	// CLI learns of success by polling; this URL is purely the browser's landing.
 	DefaultReturnURL = "https://aimlapi.com/app"
@@ -92,7 +92,7 @@ func BuildPartnerCheckoutReturnURLs(appBaseURL string, sessionToken string) (suc
 // opened the flow from. frontendBaseURL is normally endpoints.VerificationBaseURL
 // (the front that hosts the login/consent page), so the return follows the same
 // environment. AIMLAPI_RETURN_URL overrides it outright; an empty base falls back
-// to DefaultReturnURL. It is deliberately NOT a custom scheme (zero://…): no
+// to DefaultReturnURL. It is deliberately NOT a custom scheme (kajicode://…): no
 // browser can hand a custom scheme off without an OS-registered handler, which a
 // CLI does not install.
 func BuildPartnerReturnURL(frontendBaseURL string) string {

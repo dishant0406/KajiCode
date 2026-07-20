@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
 )
 
 // Codex-specific headers, lifted from the openai/codex CLI's behavior. The
@@ -46,7 +46,7 @@ type CodexOptions struct {
 	Originator string
 	// UserAgent overrides the openai Options.UserAgent when non-empty. The
 	// Codex backend logs the User-Agent for diagnostics, so a "codex_cli_rs"
-	// / "zero" branded value is recommended.
+	// / "kajicode" branded value is recommended.
 	UserAgent string
 	// AccountID is a static `chatgpt-account-id` that bypasses the resolver.
 	// Leave empty in production wiring so the AccountResolver is consulted on
@@ -101,7 +101,7 @@ func NewCodexProvider(options CodexOptions) (*CodexProvider, error) {
 	}
 	userAgent := strings.TrimSpace(options.UserAgent)
 	if userAgent == "" {
-		// Default to the openai Options.UserAgent (typically "zero/<ver>")
+		// Default to the openai Options.UserAgent (typically "kajicode/<ver>")
 		// and fall back to a Codex-branded value when the caller didn't set
 		// either — the Codex backend logs the User-Agent and a clearly
 		// branded string makes operational issues easier to triage.
@@ -147,7 +147,7 @@ func NewCodexProvider(options CodexOptions) (*CodexProvider, error) {
 // the response is parsed from the typed SSE event stream the Codex
 // backend emits (response.output_text.delta, response.function_call_
 // arguments.delta, response.completed, ...).
-func (p *CodexProvider) StreamCompletion(ctx context.Context, request zeroruntime.CompletionRequest) (<-chan zeroruntime.StreamEvent, error) {
+func (p *CodexProvider) StreamCompletion(ctx context.Context, request kajicoderuntime.CompletionRequest) (<-chan kajicoderuntime.StreamEvent, error) {
 	responsesReq, err := p.buildResponsesRequest(request)
 	if err != nil {
 		return nil, fmt.Errorf("encode codex request: %w", err)
@@ -156,7 +156,7 @@ func (p *CodexProvider) StreamCompletion(ctx context.Context, request zeroruntim
 	if err != nil {
 		return nil, fmt.Errorf("encode codex request: %w", err)
 	}
-	events := make(chan zeroruntime.StreamEvent, 16)
+	events := make(chan kajicoderuntime.StreamEvent, 16)
 	go func() {
 		defer close(events)
 		p.streamResponses(ctx, body, events)

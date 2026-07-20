@@ -50,7 +50,7 @@ func sandboxSetupUsageText(status commandStatus, message string) string {
 			Title: "Command",
 			Lines: []string{message},
 		}},
-		Hints: []string{"run zero sandbox setup from the shell for the same setup path"},
+		Hints: []string{"run kajicode sandbox setup from the shell for the same setup path"},
 	})
 }
 

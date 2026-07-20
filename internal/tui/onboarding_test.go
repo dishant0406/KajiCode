@@ -11,9 +11,9 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
-	"github.com/Gitlawb/zero/internal/aimlapi"
-	"github.com/Gitlawb/zero/internal/config"
-	"github.com/Gitlawb/zero/internal/providermodeldiscovery"
+	"github.com/dishant0406/KajiCode/internal/aimlapi"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/providermodeldiscovery"
 )
 
 func TestSetupMethodOptionsDropsOAuthWithoutOAuthProviders(t *testing.T) {
@@ -496,15 +496,15 @@ func TestAimlapiAutoTopUpRendersOnOff(t *testing.T) {
 	view := plainRender(t, idle)
 	assertContains(t, view, "on/off")
 	assertNotContains(t, view, "yes/no")
-	if !strings.Contains(idle, zeroTheme.ink.Render("on")) ||
-		!strings.Contains(idle, zeroTheme.faint.Render("off")) {
+	if !strings.Contains(idle, kajicodeTheme.ink.Render("on")) ||
+		!strings.Contains(idle, kajicodeTheme.faint.Render("off")) {
 		t.Fatalf("idle toggle should render selected on white and unselected off faint: %q", idle)
 	}
 
 	focused := aimlapiToggleLine("auto top up > ", false, true)
-	if !strings.Contains(focused, zeroTheme.accent.Render("auto top up > ")) ||
-		!strings.Contains(focused, zeroTheme.faint.Render("on")) ||
-		!strings.Contains(focused, zeroTheme.ink.Render("off")) {
+	if !strings.Contains(focused, kajicodeTheme.accent.Render("auto top up > ")) ||
+		!strings.Contains(focused, kajicodeTheme.faint.Render("on")) ||
+		!strings.Contains(focused, kajicodeTheme.ink.Render("off")) {
 		t.Fatalf("focused toggle should highlight its prompt, selected off, and dim unselected on: %q", focused)
 	}
 }
@@ -574,12 +574,12 @@ func TestAimlapiWizardDoesNotFilterDiscoveredModelsByDefault(t *testing.T) {
 
 func TestAimlapiAmountDollarUsesInkStyle(t *testing.T) {
 	line := aimlapiAmountInputLine("", "25", 40, true)
-	if !strings.Contains(line, zeroTheme.ink.Render("$")) {
+	if !strings.Contains(line, kajicodeTheme.ink.Render("$")) {
 		t.Fatalf("amount dollar is not rendered with ink style: %q", line)
 	}
 	idle := aimlapiAmountInputLine("25", "25", 40, false)
-	if !strings.Contains(idle, zeroTheme.ink.Render("amount > ")) ||
-		strings.Contains(idle, zeroTheme.accent.Render("amount > ")) {
+	if !strings.Contains(idle, kajicodeTheme.ink.Render("amount > ")) ||
+		strings.Contains(idle, kajicodeTheme.accent.Render("amount > ")) {
 		t.Fatalf("unfocused amount prompt should be white: %q", idle)
 	}
 }
@@ -679,7 +679,7 @@ func TestSetupTakeoverRendersAndCompletes(t *testing.T) {
 		Setup: SetupOptions{
 			Visible:    true,
 			Required:   true,
-			ConfigPath: "/tmp/zero/config.json",
+			ConfigPath: "/tmp/kajicode/config.json",
 			Providers: []SetupProviderOption{
 				{ID: "openai", Name: "OpenAI", DefaultModel: "gpt-4.1", EnvVar: "OPENAI_API_KEY", RequiresAuth: true},
 				{ID: "ollama", Name: "Ollama Local", DefaultModel: "llama3.1", Local: true},
@@ -687,7 +687,7 @@ func TestSetupTakeoverRendersAndCompletes(t *testing.T) {
 			Save: func(selection SetupSelection) (SetupResult, error) {
 				saved = selection
 				return SetupResult{
-					ConfigPath: "/tmp/zero/config.json",
+					ConfigPath: "/tmp/kajicode/config.json",
 					Provider: config.ProviderProfile{
 						Name:      selection.CatalogID,
 						CatalogID: selection.CatalogID,
@@ -700,7 +700,7 @@ func TestSetupTakeoverRendersAndCompletes(t *testing.T) {
 	m.width = 100
 	m.height = 30
 
-	if view := plainRender(t, m.View()); !strings.Contains(view, "Welcome to Zero") || !strings.Contains(view, "Space to set up Zero") || !strings.Contains(view, "terminal agent for changing real code") {
+	if view := plainRender(t, m.View()); !strings.Contains(view, "Welcome to KajiCode") || !strings.Contains(view, "Space to set up KajiCode") || !strings.Contains(view, "terminal agent for changing real code") {
 		t.Fatalf("setup welcome view missing expected text:\n%s", view)
 	}
 
@@ -759,7 +759,7 @@ func TestSetupTakeoverCustomCompatibleCollectsEndpointNameAndModel(t *testing.T)
 			Save: func(selection SetupSelection) (SetupResult, error) {
 				saved = selection
 				return SetupResult{
-					ConfigPath: "/tmp/zero/config.json",
+					ConfigPath: "/tmp/kajicode/config.json",
 					Provider: config.ProviderProfile{
 						Name:      selection.Name,
 						CatalogID: selection.CatalogID,
@@ -899,7 +899,7 @@ func TestSetupCompletionResetsChatSurfaceInsideAltScreen(t *testing.T) {
 			},
 			Save: func(selection SetupSelection) (SetupResult, error) {
 				return SetupResult{
-					ConfigPath: "/tmp/zero/config.json",
+					ConfigPath: "/tmp/kajicode/config.json",
 					Provider: config.ProviderProfile{
 						Name:      selection.CatalogID,
 						CatalogID: selection.CatalogID,
@@ -1223,7 +1223,7 @@ func TestSetupCredentialsAcceptsPastedAPIKeyWithoutRenderingSecret(t *testing.T)
 			Save: func(selection SetupSelection) (SetupResult, error) {
 				saved = selection
 				return SetupResult{
-					ConfigPath: "/tmp/zero/config.json",
+					ConfigPath: "/tmp/kajicode/config.json",
 					Provider: config.ProviderProfile{
 						Name:      selection.CatalogID,
 						CatalogID: selection.CatalogID,
@@ -2144,7 +2144,7 @@ func absInt(value int) int {
 	return value
 }
 
-// Completing setup switches the live provider, so it must export ZERO_PROVIDER
+// Completing setup switches the live provider, so it must export KAJICODE_PROVIDER
 // exactly like the /model, /provider, and wizard switch paths — a stale value
 // from an earlier switch would otherwise win over config in every spawned
 // child (applyEnv) and pin specialists/swarm members to the OLD provider's

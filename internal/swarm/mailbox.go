@@ -11,8 +11,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/fsutil"
-	"github.com/Gitlawb/zero/internal/lockutil"
+	"github.com/dishant0406/KajiCode/internal/fsutil"
+	"github.com/dishant0406/KajiCode/internal/lockutil"
 )
 
 // Mailbox is a per-agent, per-team message inbox persisted as a JSON array on

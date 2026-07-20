@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/config"
-	"github.com/Gitlawb/zero/internal/providercatalog"
-	"github.com/Gitlawb/zero/internal/providerhealth"
-	"github.com/Gitlawb/zero/internal/tui"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/providercatalog"
+	"github.com/dishant0406/KajiCode/internal/providerhealth"
+	"github.com/dishant0406/KajiCode/internal/tui"
 )
 
 func TestSetupMissingCredentialEnv(t *testing.T) {
@@ -153,8 +153,8 @@ func TestSetupProviderOptionsUseRuntimeSupportedCatalog(t *testing.T) {
 func TestSaveSetupProviderStoresPastedAPIKey(t *testing.T) {
 	// Use the encrypted-file backend in the temp config dir so the test never
 	// touches the real OS keychain.
-	t.Setenv("ZERO_CRED_STORAGE", "encrypted-file")
-	configPath := filepath.Join(t.TempDir(), "zero", "config.json")
+	t.Setenv("KAJICODE_CRED_STORAGE", "encrypted-file")
+	configPath := filepath.Join(t.TempDir(), "kajicode", "config.json")
 
 	result, err := saveSetupProvider(appDeps{
 		userConfigPath: func() (string, error) {
@@ -201,7 +201,7 @@ func TestSaveSetupProviderStoresPastedAPIKey(t *testing.T) {
 }
 
 func TestSaveSetupProviderAimlapiEnvReferenceAndOverrideHeaders(t *testing.T) {
-	configPath := filepath.Join(t.TempDir(), "zero", "config.json")
+	configPath := filepath.Join(t.TempDir(), "kajicode", "config.json")
 	result, err := saveSetupProvider(appDeps{
 		userConfigPath: func() (string, error) { return configPath, nil },
 	}, tui.SetupSelection{
@@ -229,7 +229,7 @@ func TestSaveSetupProviderAimlapiEnvReferenceAndOverrideHeaders(t *testing.T) {
 
 func TestSaveSetupProviderAimlapiUsesResolvedPartnerOverride(t *testing.T) {
 	t.Setenv("AIMLAPI_PARTNER_ID", "part_override")
-	configPath := filepath.Join(t.TempDir(), "zero", "config.json")
+	configPath := filepath.Join(t.TempDir(), "kajicode", "config.json")
 	result, err := saveSetupProvider(appDeps{
 		userConfigPath: func() (string, error) { return configPath, nil },
 	}, tui.SetupSelection{
@@ -249,7 +249,7 @@ func TestSaveSetupProviderAimlapiUsesResolvedPartnerOverride(t *testing.T) {
 }
 
 func TestSaveSetupProviderStoresCustomEndpointSelection(t *testing.T) {
-	configPath := filepath.Join(t.TempDir(), "zero", "config.json")
+	configPath := filepath.Join(t.TempDir(), "kajicode", "config.json")
 
 	result, err := saveSetupProvider(appDeps{
 		userConfigPath: func() (string, error) {
@@ -292,7 +292,7 @@ func TestSaveSetupProviderStoresCustomEndpointSelection(t *testing.T) {
 }
 
 func TestSaveSetupProviderCLIOptionsOverrideCustomEndpointSelection(t *testing.T) {
-	configPath := filepath.Join(t.TempDir(), "zero", "config.json")
+	configPath := filepath.Join(t.TempDir(), "kajicode", "config.json")
 
 	result, err := saveSetupProvider(appDeps{
 		userConfigPath: func() (string, error) {

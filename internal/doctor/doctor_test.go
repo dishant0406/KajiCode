@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/config"
+	"github.com/dishant0406/KajiCode/internal/config"
 )
 
 func TestRunReportRedactsProviderSecretsAndWarnsWithoutConnectivity(t *testing.T) {
@@ -55,13 +55,13 @@ func TestRunReportFailsInvalidModelAndMissingProvider(t *testing.T) {
 			Name:         "openai",
 			ProviderKind: config.ProviderKindOpenAI,
 			BaseURL:      config.OpenAIBaseURL,
-			Model:        "not-a-zero-model",
+			Model:        "not-a-kajicode-model",
 		},
 	})
 	if invalid.OK {
 		t.Fatalf("invalid model should fail: %#v", invalid)
 	}
-	if check := invalid.Check("provider.model"); check == nil || check.Status != StatusFail || !strings.Contains(check.Message, "unknown Zero model") {
+	if check := invalid.Check("provider.model"); check == nil || check.Status != StatusFail || !strings.Contains(check.Message, "unknown KajiCode model") {
 		t.Fatalf("expected model failure: %#v", invalid.Checks)
 	}
 }
@@ -151,7 +151,7 @@ func TestProviderModelBuiltInUnknownModelFails(t *testing.T) {
 		t.Fatalf("built-in provider unknown model should fail: %#v", report)
 	}
 	check := report.Check("provider.model")
-	if check == nil || check.Status != StatusFail || !strings.Contains(check.Message, "unknown Zero model") {
+	if check == nil || check.Status != StatusFail || !strings.Contains(check.Message, "unknown KajiCode model") {
 		t.Fatalf("expected built-in unknown model failure: %#v", report.Checks)
 	}
 }

@@ -5,8 +5,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/tools"
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
 // countingSchemaTool records how many times its Parameters() schema is read, so a
@@ -42,7 +42,7 @@ func TestPartitionToolsCacheRendersOnceAndMatchesUncached(t *testing.T) {
 	uncached, _ := partitionTools(registry, PermissionModeAuto, Options{}, map[string]bool{})
 
 	base := calls
-	cache := map[string]zeroruntime.ToolDefinition{}
+	cache := map[string]kajicoderuntime.ToolDefinition{}
 	first, _ := partitionToolsCached(registry, PermissionModeAuto, Options{}, map[string]bool{}, cache)
 	rendersAfterFirst := calls - base
 	second, _ := partitionToolsCached(registry, PermissionModeAuto, Options{}, map[string]bool{}, cache)

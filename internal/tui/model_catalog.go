@@ -5,8 +5,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Gitlawb/zero/internal/modelregistry"
-	"github.com/Gitlawb/zero/internal/providermodeldiscovery"
+	"github.com/dishant0406/KajiCode/internal/modelregistry"
+	"github.com/dishant0406/KajiCode/internal/providermodeldiscovery"
 )
 
 func (m model) modelListText() string {

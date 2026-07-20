@@ -5,7 +5,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
 )
 
 // Compaction preservation.
@@ -61,7 +61,7 @@ const maxPreservedSkillBytes = 2 << 10 // 2 KiB
 // extractLatestPlan returns a formatted view of the most recent update_plan tool
 // call in messages, so an in-progress plan survives when its turns are elided by
 // compaction. Returns "" when no plan was issued.
-func extractLatestPlan(messages []zeroruntime.Message) string {
+func extractLatestPlan(messages []kajicoderuntime.Message) string {
 	for i := len(messages) - 1; i >= 0; i-- {
 		calls := messages[i].ToolCalls
 		for j := len(calls) - 1; j >= 0; j-- {
@@ -111,7 +111,7 @@ type skillEntry struct {
 // Ordering is by LAST edit, not first: re-editing a file moves it to the newest
 // position so the tail cap below keeps the file the model most recently touched
 // rather than an earlier, now-stale entry.
-func recentEdits(messages []zeroruntime.Message) []skillEntry {
+func recentEdits(messages []kajicoderuntime.Message) []skillEntry {
 	pathByID := map[string]string{}
 	sequence := make([]string, 0)
 	for _, message := range messages {
@@ -136,7 +136,7 @@ func recentEdits(messages []zeroruntime.Message) []skillEntry {
 
 	noteByPath := map[string]string{}
 	for _, message := range messages {
-		if message.Role != zeroruntime.MessageRoleTool || message.ToolCallID == "" {
+		if message.Role != kajicoderuntime.MessageRoleTool || message.ToolCallID == "" {
 			continue
 		}
 		if path, ok := pathByID[message.ToolCallID]; ok {
@@ -216,7 +216,7 @@ func editNote(content string) string {
 // loadedSkills returns the skills loaded via the skill tool in messages — the
 // latest body per name, in first-seen order — matching each skill tool call to
 // its tool result by id.
-func loadedSkills(messages []zeroruntime.Message) []skillEntry {
+func loadedSkills(messages []kajicoderuntime.Message) []skillEntry {
 	nameByID := map[string]string{}
 	for _, message := range messages {
 		for _, call := range message.ToolCalls {
@@ -232,7 +232,7 @@ func loadedSkills(messages []zeroruntime.Message) []skillEntry {
 	bodyByName := map[string]string{}
 	nameOrder := make([]string, 0, len(nameByID))
 	for _, message := range messages {
-		if message.Role != zeroruntime.MessageRoleTool || message.ToolCallID == "" {
+		if message.Role != kajicoderuntime.MessageRoleTool || message.ToolCallID == "" {
 			continue
 		}
 		name, ok := nameByID[message.ToolCallID]
@@ -260,9 +260,9 @@ func loadedSkills(messages []zeroruntime.Message) []skillEntry {
 }
 
 // loadedToolSchemas returns tool_search-loaded schemas from their normal tool
-// result text. ToolResult.Meta is not part of zeroruntime.Message history, so the
+// result text. ToolResult.Meta is not part of kajicoderuntime.Message history, so the
 // rendered "Loaded N tools" output is the durable transcript format.
-func loadedToolSchemas(messages []zeroruntime.Message) []skillEntry {
+func loadedToolSchemas(messages []kajicoderuntime.Message) []skillEntry {
 	toolSearchIDs := map[string]bool{}
 	for _, message := range messages {
 		for _, call := range message.ToolCalls {
@@ -278,7 +278,7 @@ func loadedToolSchemas(messages []zeroruntime.Message) []skillEntry {
 	bodyByName := map[string]string{}
 	nameOrder := make([]string, 0)
 	for _, message := range messages {
-		if message.Role != zeroruntime.MessageRoleTool || !toolSearchIDs[message.ToolCallID] {
+		if message.Role != kajicoderuntime.MessageRoleTool || !toolSearchIDs[message.ToolCallID] {
 			continue
 		}
 		for _, entry := range loadedToolEntriesFromOutput(message.Content) {
@@ -326,11 +326,11 @@ func loadedToolEntriesFromOutput(output string) []skillEntry {
 	return entries
 }
 
-func projectInstructionEntries(messages []zeroruntime.Message) []skillEntry {
+func projectInstructionEntries(messages []kajicoderuntime.Message) []skillEntry {
 	bodyBySource := map[string]string{}
 	sourceOrder := make([]string, 0)
 	for _, message := range messages {
-		if message.Role != zeroruntime.MessageRoleUser {
+		if message.Role != kajicoderuntime.MessageRoleUser {
 			continue
 		}
 		source, body := projectInstructionBlock(message.Content)
@@ -463,7 +463,7 @@ type preservedInstruction struct {
 // may live only inside the injected summary message, which on a later compaction
 // lands in middle with no real tool calls left to extract. Fresh tool calls and
 // instruction blocks override the carried-forward copy by name/source.
-func appendPreservedState(summary string, middle []zeroruntime.Message, taskSnapshot *taskStateSnapshot) string {
+func appendPreservedState(summary string, middle []kajicoderuntime.Message, taskSnapshot *taskStateSnapshot) string {
 	priorState := parsePreservedStateBlock(latestSummaryContent(middle))
 	task := priorState.Task
 	if taskSnapshot != nil {
@@ -675,10 +675,10 @@ func preservedInstructionsToEntries(instructions []preservedInstruction) []skill
 
 // latestSummaryContent returns the content of the most recent injected summary
 // message in messages (a user message beginning with summaryLabel), or "".
-func latestSummaryContent(messages []zeroruntime.Message) string {
+func latestSummaryContent(messages []kajicoderuntime.Message) string {
 	for i := len(messages) - 1; i >= 0; i-- {
 		m := messages[i]
-		if m.Role == zeroruntime.MessageRoleUser && strings.HasPrefix(strings.TrimSpace(m.Content), summaryLabel) {
+		if m.Role == kajicoderuntime.MessageRoleUser && strings.HasPrefix(strings.TrimSpace(m.Content), summaryLabel) {
 			return m.Content
 		}
 	}

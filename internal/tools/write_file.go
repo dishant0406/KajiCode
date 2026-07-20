@@ -75,7 +75,7 @@ func (tool writeFileTool) RunWithOptions(ctx context.Context, args map[string]an
 	}
 
 	// On overwrite, refuse to clobber a tracked file that changed on disk outside
-	// Zero since it was last read — the new content was likely composed against a
+	// KajiCode since it was last read — the new content was likely composed against a
 	// stale view. Only read current bytes when there is a baseline to compare,
 	// so a first-touch create/overwrite stays a single write with no extra read.
 	if existed {
@@ -111,7 +111,7 @@ func (tool writeFileTool) RunWithOptions(ctx context.Context, args map[string]an
 	if err := os.WriteFile(absolutePath, []byte(content), 0o644); err != nil {
 		return errorResult("Error writing file " + relativePath + ": " + err.Error())
 	}
-	// Optional format-on-write (ZERO_FORMAT_ON_WRITE). Must run BEFORE the
+	// Optional format-on-write (KAJICODE_FORMAT_ON_WRITE). Must run BEFORE the
 	// FileTracker baseline: recording pre-format content would make the very
 	// next edit look like an external modification and trip the conflict guard.
 	content = maybeFormatWrittenFile(ctx, absolutePath, content)
@@ -139,7 +139,7 @@ func (tool writeFileTool) RunWithOptions(ctx context.Context, args map[string]an
 	result.ChangedFiles = []string{relativePath}
 	// Card-only preview: a real unified diff (all-green for a create, red/green for
 	// an overwrite) on Display.Preview. Output stays the summary, so the model never
-	// re-reads the file — the rich preview costs zero model tokens.
+	// re-reads the file — the rich preview costs kajicode model tokens.
 	result.Display = Display{Summary: summary, Kind: "file", Preview: boundedUnifiedDiff(relativePath, priorContent, content)}
 	return result
 }

@@ -3,10 +3,10 @@ package agent
 import (
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/tools"
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
-// These ceilings are a deliberate ratchet on Zero's fixed per-turn overhead — the
+// These ceilings are a deliberate ratchet on KajiCode's fixed per-turn overhead — the
 // system prompt and the eager tool schemas that ride on EVERY request. They are
 // set ~10% above the current measured cost, using ApproxTextTokens (the same
 // estimate the compaction loop and /context use, ~non-whitespace-bytes/4). A change

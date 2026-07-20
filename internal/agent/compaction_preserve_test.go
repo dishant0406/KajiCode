@@ -6,40 +6,40 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
 )
 
 // stateConversation is a long enough conversation that Compact elides a middle
 // containing an update_plan call and a loaded skill (call + result).
-func stateConversation() []zeroruntime.Message {
-	return []zeroruntime.Message{
-		{Role: zeroruntime.MessageRoleSystem, Content: "system"},
-		{Role: zeroruntime.MessageRoleUser, Content: "build the thing"},
-		{Role: zeroruntime.MessageRoleAssistant, Content: "planning", ToolCalls: []zeroruntime.ToolCall{
+func stateConversation() []kajicoderuntime.Message {
+	return []kajicoderuntime.Message{
+		{Role: kajicoderuntime.MessageRoleSystem, Content: "system"},
+		{Role: kajicoderuntime.MessageRoleUser, Content: "build the thing"},
+		{Role: kajicoderuntime.MessageRoleAssistant, Content: "planning", ToolCalls: []kajicoderuntime.ToolCall{
 			{ID: "p1", Name: "update_plan", Arguments: `{"plan":[{"content":"write code","status":"in_progress"},{"content":"add tests","status":"pending"}]}`},
 		}},
-		{Role: zeroruntime.MessageRoleTool, Content: "plan updated", ToolCallID: "p1"},
-		{Role: zeroruntime.MessageRoleAssistant, Content: "loading skill", ToolCalls: []zeroruntime.ToolCall{
+		{Role: kajicoderuntime.MessageRoleTool, Content: "plan updated", ToolCallID: "p1"},
+		{Role: kajicoderuntime.MessageRoleAssistant, Content: "loading skill", ToolCalls: []kajicoderuntime.ToolCall{
 			{ID: "s1", Name: "skill", Arguments: `{"name":"deploy"}`},
 		}},
-		{Role: zeroruntime.MessageRoleTool, Content: "Deploy skill: run `make deploy` then tag the release.", ToolCallID: "s1"},
-		{Role: zeroruntime.MessageRoleAssistant, Content: "done step 1"},
-		{Role: zeroruntime.MessageRoleUser, Content: "continue"},
-		{Role: zeroruntime.MessageRoleAssistant, Content: "continuing"},
+		{Role: kajicoderuntime.MessageRoleTool, Content: "Deploy skill: run `make deploy` then tag the release.", ToolCallID: "s1"},
+		{Role: kajicoderuntime.MessageRoleAssistant, Content: "done step 1"},
+		{Role: kajicoderuntime.MessageRoleUser, Content: "continue"},
+		{Role: kajicoderuntime.MessageRoleAssistant, Content: "continuing"},
 	}
 }
 
-func compactStateConversation(t *testing.T, messages []zeroruntime.Message) string {
+func compactStateConversation(t *testing.T, messages []kajicoderuntime.Message) string {
 	t.Helper()
 	compacted, err := Compact(messages, CompactionOptions{
 		PreserveLast: 2,
-		Summarize:    func([]zeroruntime.Message) (string, error) { return "SUMMARY", nil },
+		Summarize:    func([]kajicoderuntime.Message) (string, error) { return "SUMMARY", nil },
 	})
 	if err != nil {
 		t.Fatalf("Compact returned error: %v", err)
 	}
 	// [system, summaryUserMsg, ...suffix] — the summary is the message after system.
-	if len(compacted) < 2 || compacted[1].Role != zeroruntime.MessageRoleUser {
+	if len(compacted) < 2 || compacted[1].Role != kajicoderuntime.MessageRoleUser {
 		t.Fatalf("unexpected compacted shape: %#v", compacted)
 	}
 	if !strings.Contains(compacted[1].Content, summaryLabel) {
@@ -67,7 +67,7 @@ func TestCompactPreservesBoundedTaskContext(t *testing.T) {
 	messages := stateConversation()
 	compacted, err := Compact(messages, CompactionOptions{
 		PreserveLast: 2,
-		Summarize:    func([]zeroruntime.Message) (string, error) { return "SUMMARY", nil },
+		Summarize:    func([]kajicoderuntime.Message) (string, error) { return "SUMMARY", nil },
 		taskState:    task.snapshotForCompaction(messages),
 	})
 	if err != nil {
@@ -88,18 +88,18 @@ func TestCompactPreservesObjectiveAfterPlanParityMismatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	messages := []zeroruntime.Message{
-		{Role: zeroruntime.MessageRoleSystem, Content: "system"},
-		{Role: zeroruntime.MessageRoleUser, Content: summaryLabel + "\nold\n\n" + preservedStateLabel + "\n" + string(encoded)},
-		{Role: zeroruntime.MessageRoleAssistant, Content: "continuing"},
-		{Role: zeroruntime.MessageRoleUser, Content: "more"},
-		{Role: zeroruntime.MessageRoleAssistant, Content: "working"},
-		{Role: zeroruntime.MessageRoleUser, Content: "again"},
-		{Role: zeroruntime.MessageRoleAssistant, Content: "done"},
+	messages := []kajicoderuntime.Message{
+		{Role: kajicoderuntime.MessageRoleSystem, Content: "system"},
+		{Role: kajicoderuntime.MessageRoleUser, Content: summaryLabel + "\nold\n\n" + preservedStateLabel + "\n" + string(encoded)},
+		{Role: kajicoderuntime.MessageRoleAssistant, Content: "continuing"},
+		{Role: kajicoderuntime.MessageRoleUser, Content: "more"},
+		{Role: kajicoderuntime.MessageRoleAssistant, Content: "working"},
+		{Role: kajicoderuntime.MessageRoleUser, Content: "again"},
+		{Role: kajicoderuntime.MessageRoleAssistant, Content: "done"},
 	}
 	compacted, err := Compact(messages, CompactionOptions{
 		PreserveLast: 2,
-		Summarize:    func([]zeroruntime.Message) (string, error) { return "SUMMARY", nil },
+		Summarize:    func([]kajicoderuntime.Message) (string, error) { return "SUMMARY", nil },
 		taskState: &taskStateSnapshot{
 			Objective:  "current objective",
 			PlanParity: taskPlanParityMismatch,
@@ -124,17 +124,17 @@ func TestTaskObjectiveSurvivesRepeatedCompactionWithoutPlanRefresh(t *testing.T)
 
 	first, err := Compact(messages, CompactionOptions{
 		PreserveLast: 2,
-		Summarize:    func([]zeroruntime.Message) (string, error) { return "FIRST", nil },
+		Summarize:    func([]kajicoderuntime.Message) (string, error) { return "FIRST", nil },
 		taskState:    task.snapshotForCompaction(messages),
 	})
 	if err != nil {
 		t.Fatalf("first Compact: %v", err)
 	}
-	secondInput := append(append([]zeroruntime.Message{}, first...),
-		zeroruntime.Message{Role: zeroruntime.MessageRoleUser, Content: "more"},
-		zeroruntime.Message{Role: zeroruntime.MessageRoleAssistant, Content: "working"},
-		zeroruntime.Message{Role: zeroruntime.MessageRoleUser, Content: "again"},
-		zeroruntime.Message{Role: zeroruntime.MessageRoleAssistant, Content: "done"},
+	secondInput := append(append([]kajicoderuntime.Message{}, first...),
+		kajicoderuntime.Message{Role: kajicoderuntime.MessageRoleUser, Content: "more"},
+		kajicoderuntime.Message{Role: kajicoderuntime.MessageRoleAssistant, Content: "working"},
+		kajicoderuntime.Message{Role: kajicoderuntime.MessageRoleUser, Content: "again"},
+		kajicoderuntime.Message{Role: kajicoderuntime.MessageRoleAssistant, Content: "done"},
 	)
 	snapshot := task.snapshotForCompaction(secondInput)
 	if snapshot.PlanParity != taskPlanParityMismatch {
@@ -142,7 +142,7 @@ func TestTaskObjectiveSurvivesRepeatedCompactionWithoutPlanRefresh(t *testing.T)
 	}
 	second, err := Compact(secondInput, CompactionOptions{
 		PreserveLast: 2,
-		Summarize:    func([]zeroruntime.Message) (string, error) { return "SECOND", nil },
+		Summarize:    func([]kajicoderuntime.Message) (string, error) { return "SECOND", nil },
 		taskState:    snapshot,
 	})
 	if err != nil {
@@ -168,16 +168,16 @@ func TestCompactPreservesLoadedSkills(t *testing.T) {
 }
 
 func TestCompactPreservesLoadedToolSearchSchemas(t *testing.T) {
-	messages := []zeroruntime.Message{
-		{Role: zeroruntime.MessageRoleSystem, Content: "system"},
-		{Role: zeroruntime.MessageRoleUser, Content: "load weather tool"},
-		{Role: zeroruntime.MessageRoleAssistant, Content: "loading", ToolCalls: []zeroruntime.ToolCall{
+	messages := []kajicoderuntime.Message{
+		{Role: kajicoderuntime.MessageRoleSystem, Content: "system"},
+		{Role: kajicoderuntime.MessageRoleUser, Content: "load weather tool"},
+		{Role: kajicoderuntime.MessageRoleAssistant, Content: "loading", ToolCalls: []kajicoderuntime.ToolCall{
 			{ID: "t1", Name: "tool_search", Arguments: `{"query":"select:weather_lookup"}`},
 		}},
-		{Role: zeroruntime.MessageRoleTool, ToolCallID: "t1", Content: "Loaded 1 tool. Full schemas follow; call them on the next turn.\n\n## weather_lookup\nLook up weather.\ninput schema:\n{\n  \"type\": \"object\"\n}"},
-		{Role: zeroruntime.MessageRoleAssistant, Content: "ready"},
-		{Role: zeroruntime.MessageRoleUser, Content: "continue"},
-		{Role: zeroruntime.MessageRoleAssistant, Content: "continuing"},
+		{Role: kajicoderuntime.MessageRoleTool, ToolCallID: "t1", Content: "Loaded 1 tool. Full schemas follow; call them on the next turn.\n\n## weather_lookup\nLook up weather.\ninput schema:\n{\n  \"type\": \"object\"\n}"},
+		{Role: kajicoderuntime.MessageRoleAssistant, Content: "ready"},
+		{Role: kajicoderuntime.MessageRoleUser, Content: "continue"},
+		{Role: kajicoderuntime.MessageRoleAssistant, Content: "continuing"},
 	}
 	summary := compactStateConversation(t, messages)
 	if !strings.Contains(summary, `"name":"weather_lookup"`) || !strings.Contains(summary, "input schema") {
@@ -187,14 +187,14 @@ func TestCompactPreservesLoadedToolSearchSchemas(t *testing.T) {
 
 func TestCompactPreservesProjectInstructions(t *testing.T) {
 	projectInstructions := "# AGENTS.md instructions for D:\\repo\n\n<INSTRUCTIONS>\nUse `go test ./internal/agent` for agent changes.\nDo not touch TUI code.\n</INSTRUCTIONS>\n\n<environment_context>\nignored runtime context\n</environment_context>"
-	messages := []zeroruntime.Message{
-		{Role: zeroruntime.MessageRoleSystem, Content: "system"},
-		{Role: zeroruntime.MessageRoleUser, Content: projectInstructions},
-		{Role: zeroruntime.MessageRoleAssistant, Content: "ack"},
-		{Role: zeroruntime.MessageRoleUser, Content: "work on compaction"},
-		{Role: zeroruntime.MessageRoleAssistant, Content: "working"},
-		{Role: zeroruntime.MessageRoleUser, Content: "continue"},
-		{Role: zeroruntime.MessageRoleAssistant, Content: "continuing"},
+	messages := []kajicoderuntime.Message{
+		{Role: kajicoderuntime.MessageRoleSystem, Content: "system"},
+		{Role: kajicoderuntime.MessageRoleUser, Content: projectInstructions},
+		{Role: kajicoderuntime.MessageRoleAssistant, Content: "ack"},
+		{Role: kajicoderuntime.MessageRoleUser, Content: "work on compaction"},
+		{Role: kajicoderuntime.MessageRoleAssistant, Content: "working"},
+		{Role: kajicoderuntime.MessageRoleUser, Content: "continue"},
+		{Role: kajicoderuntime.MessageRoleAssistant, Content: "continuing"},
 	}
 	summary := compactStateConversation(t, messages)
 	state := parsePreservedStateBlock(summary)
@@ -211,21 +211,21 @@ func TestCompactPreservesProjectInstructions(t *testing.T) {
 }
 
 func TestProjectInstructionBlockAcceptsProjectGuidelineFilename(t *testing.T) {
-	source, body := projectInstructionBlock("# ZERO.md instructions for /repo\n\n<INSTRUCTIONS>\nPrefer Go commands.\n</INSTRUCTIONS>")
-	if source != "ZERO.md instructions for /repo" || !strings.Contains(body, "Prefer Go commands.") {
-		t.Fatalf("expected ZERO.md instruction block to parse, got source=%q body=%q", source, body)
+	source, body := projectInstructionBlock("# KAJICODE.md instructions for /repo\n\n<INSTRUCTIONS>\nPrefer Go commands.\n</INSTRUCTIONS>")
+	if source != "KAJICODE.md instructions for /repo" || !strings.Contains(body, "Prefer Go commands.") {
+		t.Fatalf("expected KAJICODE.md instruction block to parse, got source=%q body=%q", source, body)
 	}
 }
 
 func TestCompactWithoutStateHasNoPreserveSections(t *testing.T) {
-	messages := []zeroruntime.Message{
-		{Role: zeroruntime.MessageRoleSystem, Content: "system"},
-		{Role: zeroruntime.MessageRoleUser, Content: "hello"},
-		{Role: zeroruntime.MessageRoleAssistant, Content: "hi there"},
-		{Role: zeroruntime.MessageRoleUser, Content: "tell me more"},
-		{Role: zeroruntime.MessageRoleAssistant, Content: "sure"},
-		{Role: zeroruntime.MessageRoleUser, Content: "and more"},
-		{Role: zeroruntime.MessageRoleAssistant, Content: "ok"},
+	messages := []kajicoderuntime.Message{
+		{Role: kajicoderuntime.MessageRoleSystem, Content: "system"},
+		{Role: kajicoderuntime.MessageRoleUser, Content: "hello"},
+		{Role: kajicoderuntime.MessageRoleAssistant, Content: "hi there"},
+		{Role: kajicoderuntime.MessageRoleUser, Content: "tell me more"},
+		{Role: kajicoderuntime.MessageRoleAssistant, Content: "sure"},
+		{Role: kajicoderuntime.MessageRoleUser, Content: "and more"},
+		{Role: kajicoderuntime.MessageRoleAssistant, Content: "ok"},
 	}
 	summary := compactStateConversation(t, messages)
 	if strings.Contains(summary, preservedStateLabel) {
@@ -237,7 +237,7 @@ func TestCompactCarriesPreservedStateAcrossRepeatedCompaction(t *testing.T) {
 	// First compaction: real update_plan + skill load in the elided middle.
 	first, err := Compact(stateConversation(), CompactionOptions{
 		PreserveLast: 2,
-		Summarize:    func([]zeroruntime.Message) (string, error) { return "FIRST SUMMARY", nil },
+		Summarize:    func([]kajicoderuntime.Message) (string, error) { return "FIRST SUMMARY", nil },
 	})
 	if err != nil {
 		t.Fatalf("first Compact: %v", err)
@@ -245,23 +245,25 @@ func TestCompactCarriesPreservedStateAcrossRepeatedCompaction(t *testing.T) {
 
 	// Grow the history so the first summary (which holds the preserved sections,
 	// but no real tool calls) falls into the SECOND compaction's middle.
-	second := append([]zeroruntime.Message{}, first...)
+	second := append([]kajicoderuntime.Message{}, first...)
 	second = append(second,
-		zeroruntime.Message{Role: zeroruntime.MessageRoleUser, Content: "what next"},
-		zeroruntime.Message{Role: zeroruntime.MessageRoleAssistant, Content: "continuing"},
-		zeroruntime.Message{Role: zeroruntime.MessageRoleUser, Content: "keep going"},
-		zeroruntime.Message{Role: zeroruntime.MessageRoleAssistant, Content: "done"},
+		kajicoderuntime.Message{Role: kajicoderuntime.MessageRoleUser, Content: "what next"},
+		kajicoderuntime.Message{Role: kajicoderuntime.MessageRoleAssistant, Content: "continuing"},
+		kajicoderuntime.Message{Role: kajicoderuntime.MessageRoleUser, Content: "keep going"},
+		kajicoderuntime.Message{Role: kajicoderuntime.MessageRoleAssistant, Content: "done"},
 	)
 
 	// The second summarizer deliberately DROPS the preserved sections.
 	out, err := Compact(second, CompactionOptions{
 		PreserveLast: 2,
-		Summarize:    func([]zeroruntime.Message) (string, error) { return "SECOND SUMMARY with no preserved sections", nil },
+		Summarize: func([]kajicoderuntime.Message) (string, error) {
+			return "SECOND SUMMARY with no preserved sections", nil
+		},
 	})
 	if err != nil {
 		t.Fatalf("second Compact: %v", err)
 	}
-	if len(out) < 2 || out[1].Role != zeroruntime.MessageRoleUser {
+	if len(out) < 2 || out[1].Role != kajicoderuntime.MessageRoleUser {
 		t.Fatalf("unexpected compacted shape: %#v", out)
 	}
 	newSummary := out[1].Content
@@ -275,35 +277,35 @@ func TestCompactCarriesPreservedStateAcrossRepeatedCompaction(t *testing.T) {
 }
 
 func TestCompactCarriesLoadedToolsAndProjectInstructionsAcrossRepeatedCompaction(t *testing.T) {
-	messages := []zeroruntime.Message{
-		{Role: zeroruntime.MessageRoleSystem, Content: "system"},
-		{Role: zeroruntime.MessageRoleUser, Content: "# AGENTS.md instructions for /repo\n\n<INSTRUCTIONS>\nStay in internal/agent.\n</INSTRUCTIONS>"},
-		{Role: zeroruntime.MessageRoleAssistant, Content: "loading", ToolCalls: []zeroruntime.ToolCall{
+	messages := []kajicoderuntime.Message{
+		{Role: kajicoderuntime.MessageRoleSystem, Content: "system"},
+		{Role: kajicoderuntime.MessageRoleUser, Content: "# AGENTS.md instructions for /repo\n\n<INSTRUCTIONS>\nStay in internal/agent.\n</INSTRUCTIONS>"},
+		{Role: kajicoderuntime.MessageRoleAssistant, Content: "loading", ToolCalls: []kajicoderuntime.ToolCall{
 			{ID: "t1", Name: "tool_search", Arguments: `{"query":"select:weather_lookup"}`},
 		}},
-		{Role: zeroruntime.MessageRoleTool, ToolCallID: "t1", Content: "Loaded 1 tool. Full schemas follow; call them on the next turn.\n\n## weather_lookup\nLook up weather.\ninput schema:\n{\n  \"type\": \"object\"\n}"},
-		{Role: zeroruntime.MessageRoleAssistant, Content: "ready"},
-		{Role: zeroruntime.MessageRoleUser, Content: "continue"},
-		{Role: zeroruntime.MessageRoleAssistant, Content: "continuing"},
+		{Role: kajicoderuntime.MessageRoleTool, ToolCallID: "t1", Content: "Loaded 1 tool. Full schemas follow; call them on the next turn.\n\n## weather_lookup\nLook up weather.\ninput schema:\n{\n  \"type\": \"object\"\n}"},
+		{Role: kajicoderuntime.MessageRoleAssistant, Content: "ready"},
+		{Role: kajicoderuntime.MessageRoleUser, Content: "continue"},
+		{Role: kajicoderuntime.MessageRoleAssistant, Content: "continuing"},
 	}
 
 	first, err := Compact(messages, CompactionOptions{
 		PreserveLast: 2,
-		Summarize:    func([]zeroruntime.Message) (string, error) { return "FIRST SUMMARY", nil },
+		Summarize:    func([]kajicoderuntime.Message) (string, error) { return "FIRST SUMMARY", nil },
 	})
 	if err != nil {
 		t.Fatalf("first Compact: %v", err)
 	}
-	second := append(append([]zeroruntime.Message{}, first...),
-		zeroruntime.Message{Role: zeroruntime.MessageRoleUser, Content: "more"},
-		zeroruntime.Message{Role: zeroruntime.MessageRoleAssistant, Content: "ok"},
-		zeroruntime.Message{Role: zeroruntime.MessageRoleUser, Content: "again"},
-		zeroruntime.Message{Role: zeroruntime.MessageRoleAssistant, Content: "fine"},
+	second := append(append([]kajicoderuntime.Message{}, first...),
+		kajicoderuntime.Message{Role: kajicoderuntime.MessageRoleUser, Content: "more"},
+		kajicoderuntime.Message{Role: kajicoderuntime.MessageRoleAssistant, Content: "ok"},
+		kajicoderuntime.Message{Role: kajicoderuntime.MessageRoleUser, Content: "again"},
+		kajicoderuntime.Message{Role: kajicoderuntime.MessageRoleAssistant, Content: "fine"},
 	)
 
 	out, err := Compact(second, CompactionOptions{
 		PreserveLast: 2,
-		Summarize:    func([]zeroruntime.Message) (string, error) { return "SECOND SUMMARY", nil },
+		Summarize:    func([]kajicoderuntime.Message) (string, error) { return "SECOND SUMMARY", nil },
 	})
 	if err != nil {
 		t.Fatalf("second Compact: %v", err)
@@ -325,27 +327,27 @@ func TestCompactCarriesLoadedToolsAndProjectInstructionsAcrossRepeatedCompaction
 // which the old markdown-delimited format could not guarantee.
 func TestCompactPreservesSkillBodyWithMarkdownHeadings(t *testing.T) {
 	body := "## Usage\nrun it\n### Examples\n```\nzero do\n```\n## Notes\ndone"
-	conv := []zeroruntime.Message{
-		{Role: zeroruntime.MessageRoleSystem, Content: "system"},
-		{Role: zeroruntime.MessageRoleUser, Content: "load a skill"},
-		{Role: zeroruntime.MessageRoleAssistant, Content: "loading", ToolCalls: []zeroruntime.ToolCall{
+	conv := []kajicoderuntime.Message{
+		{Role: kajicoderuntime.MessageRoleSystem, Content: "system"},
+		{Role: kajicoderuntime.MessageRoleUser, Content: "load a skill"},
+		{Role: kajicoderuntime.MessageRoleAssistant, Content: "loading", ToolCalls: []kajicoderuntime.ToolCall{
 			{ID: "s1", Name: "skill", Arguments: `{"name":"guide"}`},
 		}},
-		{Role: zeroruntime.MessageRoleTool, Content: body, ToolCallID: "s1"},
-		{Role: zeroruntime.MessageRoleAssistant, Content: "done step 1"},
-		{Role: zeroruntime.MessageRoleUser, Content: "continue"},
-		{Role: zeroruntime.MessageRoleAssistant, Content: "continuing"},
+		{Role: kajicoderuntime.MessageRoleTool, Content: body, ToolCallID: "s1"},
+		{Role: kajicoderuntime.MessageRoleAssistant, Content: "done step 1"},
+		{Role: kajicoderuntime.MessageRoleUser, Content: "continue"},
+		{Role: kajicoderuntime.MessageRoleAssistant, Content: "continuing"},
 	}
 
-	mustContainBody := func(label string, messages []zeroruntime.Message) []zeroruntime.Message {
+	mustContainBody := func(label string, messages []kajicoderuntime.Message) []kajicoderuntime.Message {
 		out, err := Compact(messages, CompactionOptions{
 			PreserveLast: 2,
-			Summarize:    func([]zeroruntime.Message) (string, error) { return "SUMMARY", nil },
+			Summarize:    func([]kajicoderuntime.Message) (string, error) { return "SUMMARY", nil },
 		})
 		if err != nil {
 			t.Fatalf("%s Compact: %v", label, err)
 		}
-		if len(out) < 2 || out[1].Role != zeroruntime.MessageRoleUser {
+		if len(out) < 2 || out[1].Role != kajicoderuntime.MessageRoleUser {
 			t.Fatalf("%s: unexpected compacted shape: %#v", label, out)
 		}
 		_, skills := parsePreservedState(out[1].Content)
@@ -357,21 +359,21 @@ func TestCompactPreservesSkillBodyWithMarkdownHeadings(t *testing.T) {
 
 	first := mustContainBody("first", conv)
 	// Second compaction with NO fresh tool calls and a summarizer that drops it.
-	second := append(append([]zeroruntime.Message{}, first...),
-		zeroruntime.Message{Role: zeroruntime.MessageRoleUser, Content: "more"},
-		zeroruntime.Message{Role: zeroruntime.MessageRoleAssistant, Content: "ok"},
-		zeroruntime.Message{Role: zeroruntime.MessageRoleUser, Content: "again"},
-		zeroruntime.Message{Role: zeroruntime.MessageRoleAssistant, Content: "fine"},
+	second := append(append([]kajicoderuntime.Message{}, first...),
+		kajicoderuntime.Message{Role: kajicoderuntime.MessageRoleUser, Content: "more"},
+		kajicoderuntime.Message{Role: kajicoderuntime.MessageRoleAssistant, Content: "ok"},
+		kajicoderuntime.Message{Role: kajicoderuntime.MessageRoleUser, Content: "again"},
+		kajicoderuntime.Message{Role: kajicoderuntime.MessageRoleAssistant, Content: "fine"},
 	)
 	mustContainBody("second", second)
 }
 
 func TestExtractLatestPlanReturnsMostRecent(t *testing.T) {
-	messages := []zeroruntime.Message{
-		{Role: zeroruntime.MessageRoleAssistant, ToolCalls: []zeroruntime.ToolCall{
+	messages := []kajicoderuntime.Message{
+		{Role: kajicoderuntime.MessageRoleAssistant, ToolCalls: []kajicoderuntime.ToolCall{
 			{ID: "a", Name: "update_plan", Arguments: `{"plan":[{"content":"old step","status":"completed"}]}`},
 		}},
-		{Role: zeroruntime.MessageRoleAssistant, ToolCalls: []zeroruntime.ToolCall{
+		{Role: kajicoderuntime.MessageRoleAssistant, ToolCalls: []kajicoderuntime.ToolCall{
 			{ID: "b", Name: "update_plan", Arguments: `{"plan":[{"content":"new step","status":"in_progress"}]}`},
 		}},
 	}
@@ -437,8 +439,8 @@ func TestCapBodyNoteOnlyWhenTruncated(t *testing.T) {
 }
 
 func TestLoadedSkillsSkipsCallsWithoutResult(t *testing.T) {
-	messages := []zeroruntime.Message{
-		{Role: zeroruntime.MessageRoleAssistant, ToolCalls: []zeroruntime.ToolCall{
+	messages := []kajicoderuntime.Message{
+		{Role: kajicoderuntime.MessageRoleAssistant, ToolCalls: []kajicoderuntime.ToolCall{
 			{ID: "s1", Name: "skill", Arguments: `{"name":"ghost"}`}, // no matching tool result
 		}},
 	}
@@ -448,11 +450,11 @@ func TestLoadedSkillsSkipsCallsWithoutResult(t *testing.T) {
 }
 
 func TestLoadedSkillsAcceptsSkillArgumentAlias(t *testing.T) {
-	messages := []zeroruntime.Message{
-		{Role: zeroruntime.MessageRoleAssistant, ToolCalls: []zeroruntime.ToolCall{
+	messages := []kajicoderuntime.Message{
+		{Role: kajicoderuntime.MessageRoleAssistant, ToolCalls: []kajicoderuntime.ToolCall{
 			{ID: "s1", Name: "skill", Arguments: `{"skill":"deploy"}`},
 		}},
-		{Role: zeroruntime.MessageRoleTool, ToolCallID: "s1", Content: "deploy instructions"},
+		{Role: kajicoderuntime.MessageRoleTool, ToolCallID: "s1", Content: "deploy instructions"},
 	}
 	got := loadedSkills(messages)
 	if len(got) != 1 || got[0].name != "deploy" || got[0].body != "deploy instructions" {

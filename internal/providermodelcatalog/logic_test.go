@@ -6,8 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/modelregistry"
-	"github.com/Gitlawb/zero/internal/providercatalog"
+	"github.com/dishant0406/KajiCode/internal/modelregistry"
+	"github.com/dishant0406/KajiCode/internal/providercatalog"
 )
 
 func TestLooksLikeCodingModelID(t *testing.T) {
@@ -51,10 +51,10 @@ func TestDefaultedOpenGatewayURL(t *testing.T) {
 	if got := defaultedOpenGatewayURL(providercatalog.Descriptor{}, " https://x/models.json "); got != "https://x/models.json" {
 		t.Fatalf("explicit override = %q, want trimmed override", got)
 	}
-	if got := defaultedOpenGatewayURL(providercatalog.Descriptor{DefaultBaseURL: "https://gw.example.com/v1"}, ""); got != "https://gw.example.com/zero/models.json" {
+	if got := defaultedOpenGatewayURL(providercatalog.Descriptor{DefaultBaseURL: "https://gw.example.com/v1"}, ""); got != "https://gw.example.com/kajicode/models.json" {
 		t.Fatalf("derived = %q", got)
 	}
-	if got := defaultedOpenGatewayURL(providercatalog.Descriptor{DefaultBaseURL: "::not a url"}, ""); got != "https://opengateway.gitlawb.com/zero/models.json" {
+	if got := defaultedOpenGatewayURL(providercatalog.Descriptor{DefaultBaseURL: "::not a url"}, ""); got != "https://opengateway.gitlawb.com/kajicode/models.json" {
 		t.Fatalf("fallback = %q", got)
 	}
 }

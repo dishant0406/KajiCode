@@ -5,8 +5,8 @@ import (
 	"io"
 	"strings"
 
-	"github.com/Gitlawb/zero/internal/config"
-	"github.com/Gitlawb/zero/internal/provideronboarding"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/provideronboarding"
 )
 
 type providerDetectOptions struct {
@@ -151,7 +151,7 @@ func formatProviderDetectReport(report providerDetectReport) string {
 
 	lines = append(lines, "", "Configured providers:")
 	if len(report.Providers) == 0 {
-		lines = append(lines, "  (none configured — run `zero setup`)")
+		lines = append(lines, "  (none configured — run `kajicode setup`)")
 	}
 	for _, provider := range report.Providers {
 		name := strings.TrimSpace(provider.Name)

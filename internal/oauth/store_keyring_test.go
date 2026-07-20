@@ -72,9 +72,9 @@ func TestNewStoreStorageSelection(t *testing.T) {
 	if _, err := NewStore(StoreOptions{Storage: "bogus"}); err == nil {
 		t.Fatal("unknown storage should error")
 	}
-	// ZERO_OAUTH_STORAGE selects the keyring (with an injected client).
+	// KAJICODE_OAUTH_STORAGE selects the keyring (with an injected client).
 	s, err := NewStore(StoreOptions{
-		Env:     map[string]string{"ZERO_OAUTH_STORAGE": "keyring"},
+		Env:     map[string]string{"KAJICODE_OAUTH_STORAGE": "keyring"},
 		Keyring: newFakeKR(),
 	})
 	if err != nil {

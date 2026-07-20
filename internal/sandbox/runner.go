@@ -11,7 +11,7 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/Gitlawb/zero/internal/providercatalog"
+	"github.com/dishant0406/KajiCode/internal/providercatalog"
 )
 
 var errNativeSandboxUnavailable = errors.New("native sandbox backend is unavailable")
@@ -133,7 +133,7 @@ func (engine *Engine) BuildCommandPlan(spec CommandSpec) (CommandPlan, error) {
 	}
 	preference := SandboxPreferenceAuto
 	// Re-entrancy guard: a command spawned by a process we already wrapped (both
-	// ZERO_SANDBOXED=1 and ZERO_SANDBOX_BACKEND set in its env — see
+	// KAJICODE_SANDBOXED=1 and KAJICODE_SANDBOX_BACKEND set in its env — see
 	// IsAlreadySandboxed) must not be wrapped again — nested platform wrappers
 	// fail and a second sandbox wrapper would be redundant. Return a pass-through
 	// plan.
@@ -421,7 +421,7 @@ func sandboxEnvironmentForCommandWithSensitiveEnv(specEnv []string, policy Polic
 		"PATH=" + pathValue,
 		"TERM=" + envListValue(env, "TERM", "dumb"),
 		EnvSandboxBackend + "=" + string(backend),
-		"ZERO_SANDBOX_NETWORK=" + string(policy.Network),
+		"KAJICODE_SANDBOX_NETWORK=" + string(policy.Network),
 		EnvSandboxed + "=1",
 	}
 	if workspaceRoot != "" {
@@ -503,7 +503,7 @@ func ensureMacToolPaths(path string) string {
 // the equivalent operations fail with "Operation not permitted".
 var sandboxWritableDevices = []string{
 	"/dev/null",
-	"/dev/zero",
+	"/dev/kajicode",
 	"/dev/random",
 	"/dev/urandom",
 	"/dev/stdin",
@@ -560,7 +560,7 @@ var sandboxMachServices = []string{
 // log when Policy.MonitorDenials is set; nextSandboxDenialTag derives a unique
 // per-plan tag from it so the runtime monitor can find this run's denials via
 // `log stream`.
-const sandboxDenialLogTag = "zero-sandbox-denied-v1"
+const sandboxDenialLogTag = "kajicode-sandbox-denied-v1"
 
 // sandboxDenialTagSeq makes each monitored plan's denial tag unique.
 var sandboxDenialTagSeq atomic.Uint64
@@ -941,7 +941,7 @@ func seatbeltPlatformRuntimeRules() string {
 		`  (literal "/private/etc/services"))`,
 		`(allow file-read* file-test-existence file-write-data`,
 		`  (literal "/dev/null")`,
-		`  (literal "/dev/zero"))`,
+		`  (literal "/dev/kajicode"))`,
 		`(allow file-read-data file-test-existence file-write-data (subpath "/dev/fd"))`,
 		`(allow file-read* file-test-existence file-write-data file-ioctl (literal "/dev/dtracehelper"))`,
 		`(allow file-read* file-test-existence file-write* (subpath "/tmp"))`,
@@ -994,7 +994,7 @@ func regexpQuoteMeta(value string) string {
 
 func scrubSensitiveEnv(env []string, additionalKeys ...string) []string {
 	// Secrets not covered by the provider catalog: cloud/VCS credentials and
-	// providers Zero talks to through generic OpenAI-compatible endpoints.
+	// providers KajiCode talks to through generic OpenAI-compatible endpoints.
 	sensitiveKeys := []string{
 		"COHERE_API_KEY",
 		"PERPLEXITY_API_KEY",
@@ -1004,8 +1004,8 @@ func scrubSensitiveEnv(env []string, additionalKeys ...string) []string {
 		"AWS_SESSION_TOKEN",
 		"GITLAB_TOKEN",
 		"GH_TOKEN",
-		"ZERO_WEBSEARCH_API_KEY",
-		"ZERO_DAEMON_REMOTE_TOKEN",
+		"KAJICODE_WEBSEARCH_API_KEY",
+		"KAJICODE_DAEMON_REMOTE_TOKEN",
 	}
 	for _, descriptor := range providercatalog.All() {
 		for _, key := range descriptor.AuthEnvVars {
@@ -1070,7 +1070,7 @@ func normalizeSensitiveEnvKeys(keys []string) []string {
 
 func isDynamicSensitiveEnvKey(key string) bool {
 	const (
-		prefix = "ZERO_OAUTH_"
+		prefix = "KAJICODE_OAUTH_"
 		suffix = "_CLIENT_SECRET"
 	)
 	key = strings.ToUpper(strings.TrimSpace(key))

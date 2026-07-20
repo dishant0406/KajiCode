@@ -7,9 +7,9 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/Gitlawb/zero/internal/imageinput"
-	"github.com/Gitlawb/zero/internal/modelregistry"
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/imageinput"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
+	"github.com/dishant0406/KajiCode/internal/modelregistry"
 )
 
 // droppableImageExts are the image extensions a dragged-and-dropped file may
@@ -136,7 +136,7 @@ func (m model) attachClipboardImage(data []byte, mediaType string) model {
 	if len(data) > imageinput.MaxImageBytes {
 		return m.appendImageNotice("Clipboard image is larger than the 10 MiB limit.")
 	}
-	m.pendingImages = append(m.pendingImages, zeroruntime.ImageBlock{
+	m.pendingImages = append(m.pendingImages, kajicoderuntime.ImageBlock{
 		MediaType: mediaType,
 		Data:      data,
 	})

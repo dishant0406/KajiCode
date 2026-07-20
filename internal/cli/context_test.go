@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/config"
+	"github.com/dishant0406/KajiCode/internal/config"
 )
 
 func TestRunContextHelp(t *testing.T) {
@@ -18,7 +18,7 @@ func TestRunContextHelp(t *testing.T) {
 	if exitCode != exitSuccess {
 		t.Fatalf("expected exit code %d, got %d: %s", exitSuccess, exitCode, stderr.String())
 	}
-	for _, want := range []string{"Usage:", "zero context [flags]", "--json", "-h, --help"} {
+	for _, want := range []string{"Usage:", "kajicode context [flags]", "--json", "-h, --help"} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("expected context help to contain %q, got %q", want, stdout.String())
 		}
@@ -54,7 +54,7 @@ func TestRunContextTextReport(t *testing.T) {
 	if exitCode != exitSuccess {
 		t.Fatalf("expected exit code %d, got %d: %s", exitSuccess, exitCode, stderr.String())
 	}
-	for _, want := range []string{"Zero context report", "root: " + cwd, "model: gpt-4.1"} {
+	for _, want := range []string{"KajiCode context report", "root: " + cwd, "model: gpt-4.1"} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("expected context output to contain %q, got %q", want, stdout.String())
 		}

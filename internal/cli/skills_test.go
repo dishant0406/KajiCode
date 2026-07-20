@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/tui"
+	"github.com/dishant0406/KajiCode/internal/tui"
 )
 
 func writeSkillFixture(t *testing.T, dir string, name string, content string) {

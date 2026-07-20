@@ -11,10 +11,10 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/Gitlawb/zero/internal/config"
-	"github.com/Gitlawb/zero/internal/dictation"
-	"github.com/Gitlawb/zero/internal/providercatalog"
-	"github.com/Gitlawb/zero/internal/providermodelcatalog"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/dictation"
+	"github.com/dishant0406/KajiCode/internal/providercatalog"
+	"github.com/dishant0406/KajiCode/internal/providermodelcatalog"
 )
 
 // sttModelValue encodes a picker selection as "provider:model" (model may be

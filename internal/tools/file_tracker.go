@@ -11,7 +11,7 @@ import (
 
 // ErrFileChangedOnDisk is returned by CheckConflict when a file's current
 // on-disk content no longer matches what a tool last read or wrote in this
-// session — i.e. it was modified outside Zero. The write tools surface it with
+// session — i.e. it was modified outside KajiCode. The write tools surface it with
 // guidance to re-read before retrying, so a stale overwrite cannot silently
 // clobber an external edit.
 var ErrFileChangedOnDisk = errors.New("the file changed on disk since you last read it")
@@ -26,7 +26,7 @@ type FileVersion struct {
 
 // FileTracker records, per absolute path, the version of each file a tool read
 // or wrote within a single session. A later write compares the current on-disk
-// content against this baseline to detect a modification made outside Zero.
+// content against this baseline to detect a modification made outside KajiCode.
 //
 // Construct with NewFileTracker. A nil *FileTracker is a valid no-op — every
 // method tolerates it — so a caller that has not wired the feature (tests, MCP)
@@ -151,5 +151,5 @@ func HashContent(content []byte) string {
 // changed on disk since it was last read, telling the model how to recover.
 func fileConflictMessage(relativePath string) string {
 	return "Error writing " + relativePath + ": " + ErrFileChangedOnDisk.Error() +
-		" (it may have been edited outside Zero). Re-read it with read_file, then re-apply your change so you do not overwrite the newer content."
+		" (it may have been edited outside KajiCode). Re-read it with read_file, then re-apply your change so you do not overwrite the newer content."
 }

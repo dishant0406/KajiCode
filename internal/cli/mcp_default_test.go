@@ -6,13 +6,13 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/config"
+	"github.com/dishant0406/KajiCode/internal/config"
 )
 
-// `zero mcp disable firecrawl` must work even though firecrawl is a built-in
+// `kajicode mcp disable firecrawl` must work even though firecrawl is a built-in
 // default that is not written to the user's config file until overridden.
 func TestRunMCPDisableSeededFirecrawlDefault(t *testing.T) {
-	configPath := filepath.Join(t.TempDir(), "zero", "config.json")
+	configPath := filepath.Join(t.TempDir(), "kajicode", "config.json")
 	// A config with no firecrawl entry — the default lives in code, not the file.
 	writeMCPCommandRawConfig(t, configPath, `{"activeProvider":"fast"}`)
 

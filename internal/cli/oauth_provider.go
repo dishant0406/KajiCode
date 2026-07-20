@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/config"
-	"github.com/Gitlawb/zero/internal/oauth"
-	"github.com/Gitlawb/zero/internal/providers/providerio"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/oauth"
+	"github.com/dishant0406/KajiCode/internal/providers/providerio"
 )
 
 // oauthLoginForProfile resolves the user's OAuth login for a provider ONCE and

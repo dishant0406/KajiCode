@@ -31,7 +31,7 @@ func TestLinuxSandboxInnerStageAppliesNetworkDenySeccomp(t *testing.T) {
 	code := runLinuxSandboxInnerStage(LinuxSandboxHelperConfig{
 		PermissionProfile: PermissionProfile{Network: NetworkPolicy{Mode: NetworkDeny}},
 		BlockUnixSockets:  true,
-		Command:           []string{"definitely-not-a-real-zero-test-command"},
+		Command:           []string{"definitely-not-a-real-kajicode-test-command"},
 	}, &stderr)
 
 	if code != 127 {
@@ -58,7 +58,7 @@ func TestLinuxSandboxInnerStageSkipsNetworkDenySeccompWhenAllowed(t *testing.T) 
 	var stderr bytes.Buffer
 	code := runLinuxSandboxInnerStage(LinuxSandboxHelperConfig{
 		PermissionProfile: PermissionProfile{Network: NetworkPolicy{Mode: NetworkAllow}},
-		Command:           []string{"definitely-not-a-real-zero-test-command"},
+		Command:           []string{"definitely-not-a-real-kajicode-test-command"},
 	}, &stderr)
 
 	if code != 127 {

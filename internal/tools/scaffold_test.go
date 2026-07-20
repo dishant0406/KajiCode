@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/plugins"
-	"github.com/Gitlawb/zero/internal/tools"
+	"github.com/dishant0406/KajiCode/internal/plugins"
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
 func TestScaffoldCreatesManifestAndStub(t *testing.T) {

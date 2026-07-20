@@ -13,7 +13,7 @@ type chatCompletionRequest struct {
 	// `prompt_cache_key` parameter). Omitted when the caller carries no session
 	// identity, when the provider was constructed with DisablePromptCacheKey
 	// (openai-compatible gateways that reject unknown fields), or when
-	// ZERO_DISABLE_PROMPT_CACHE_KEY is set.
+	// KAJICODE_DISABLE_PROMPT_CACHE_KEY is set.
 	PromptCacheKey string `json:"prompt_cache_key,omitempty"`
 }
 

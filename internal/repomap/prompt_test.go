@@ -7,7 +7,7 @@ import (
 )
 
 func TestRenderPromptIncludesRepoSummaryAndRelativePaths(t *testing.T) {
-	root, err := filepath.Abs(filepath.Join("testdata", "Zero"))
+	root, err := filepath.Abs(filepath.Join("testdata", "KajiCode"))
 	if err != nil {
 		t.Fatalf("Abs: %v", err)
 	}
@@ -18,20 +18,20 @@ func TestRenderPromptIncludesRepoSummaryAndRelativePaths(t *testing.T) {
 			{Path: filepath.Join(root, "internal", "repomap", "prompt.go")},
 			{Path: filepath.Join(root, "README.md")},
 			{Path: filepath.Join(root, "go.mod")},
-			{Path: filepath.Join(root, "cmd", "zero", "main.go")},
+			{Path: filepath.Join(root, "cmd", "kajicode", "main.go")},
 		},
 	}
 
 	got := RenderPrompt(repo, 2048)
 
 	for _, want := range []string{
-		"Repo: Zero",
+		"Repo: KajiCode",
 		"Counts: files=5 dirs=5",
 		"Important files: README.md, go.mod",
 		"Languages: Go=2, Markdown=1, TypeScript=1",
 		"Extensions: .go=2, .md=1, .mod=1, .ts=1",
 		"Files:",
-		"  cmd/zero/main.go",
+		"  cmd/kajicode/main.go",
 		"  internal/repomap/prompt.go",
 		"  web/app.ts",
 	} {
@@ -45,7 +45,7 @@ func TestRenderPromptIncludesRepoSummaryAndRelativePaths(t *testing.T) {
 }
 
 func TestRenderPromptIsDeterministicAndDeduplicatesPaths(t *testing.T) {
-	root, err := filepath.Abs(filepath.Join("testdata", "Zero"))
+	root, err := filepath.Abs(filepath.Join("testdata", "KajiCode"))
 	if err != nil {
 		t.Fatalf("Abs: %v", err)
 	}
@@ -81,9 +81,9 @@ func TestRenderPromptIsDeterministicAndDeduplicatesPaths(t *testing.T) {
 
 func TestRenderPromptHonorsBudget(t *testing.T) {
 	repo := RepoMap{
-		Root: "Zero",
+		Root: "KajiCode",
 		Files: []File{
-			{Path: "cmd/zero/main.go"},
+			{Path: "cmd/kajicode/main.go"},
 			{Path: "internal/agent/loop.go"},
 			{Path: "internal/agent/system_prompt.go"},
 			{Path: "internal/repomap/prompt.go"},
@@ -107,7 +107,7 @@ func TestRenderPromptHonorsBudget(t *testing.T) {
 }
 
 func TestRenderPromptReturnsEmptyForNonPositiveBudget(t *testing.T) {
-	got := RenderPrompt(RepoMap{Root: "Zero", Files: []File{{Path: "main.go"}}}, 0)
+	got := RenderPrompt(RepoMap{Root: "KajiCode", Files: []File{{Path: "main.go"}}}, 0)
 	if got != "" {
 		t.Fatalf("RenderPrompt() with zero budget=%q want empty", got)
 	}

@@ -10,13 +10,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/repoinfo"
+	"github.com/dishant0406/KajiCode/internal/repoinfo"
 )
 
-// BuildPrompt returns the bootstrap prompt for `zero init` / `/init`. It runs
+// BuildPrompt returns the bootstrap prompt for `kajicode init` / `/init`. It runs
 // repoinfo.Collect(cwd) and embeds the result as a fact block; collection
 // failures are non-fatal (the agent investigates from scratch). now is
-// injectable for tests; zero falls back to time.Now.
+// injectable for tests; KajiCode falls back to time.Now.
 func BuildPrompt(ctx context.Context, cwd string, now time.Time) string {
 	if now.IsZero() {
 		now = time.Now()

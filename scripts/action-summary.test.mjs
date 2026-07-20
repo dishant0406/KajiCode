@@ -99,9 +99,9 @@ test('long multiline final becomes one-line 280-char summary', () => {
 });
 
 test('cli reads output file and prints summary', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'zero-action-summary-'));
+  const dir = mkdtempSync(join(tmpdir(), 'kajicode-action-summary-'));
   try {
-    const outputFile = join(dir, 'zero-output.jsonl');
+    const outputFile = join(dir, 'kajicode-output.jsonl');
     writeFileSync(
       outputFile,
       jsonl([
@@ -123,9 +123,9 @@ test('cli reads output file and prints summary', () => {
 });
 
 test('cli runs when invoked with relative script path', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'zero-action-summary-'));
+  const dir = mkdtempSync(join(tmpdir(), 'kajicode-action-summary-'));
   try {
-    const outputFile = join(dir, 'zero-output.jsonl');
+    const outputFile = join(dir, 'kajicode-output.jsonl');
     writeFileSync(
       outputFile,
       jsonl([

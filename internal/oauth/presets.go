@@ -6,12 +6,12 @@ import (
 )
 
 // envWithPresetsAllowed returns an env map that opts into the baked-in presets
-// (as if ZERO_OAUTH_ALLOW_PRESETS=1 were exported) so an interactive wizard/CLI
+// (as if KAJICODE_OAUTH_ALLOW_PRESETS=1 were exported) so an interactive wizard/CLI
 // login for a well-known public client (e.g. xAI) can use the preset without the
 // operator setting the flag themselves. It copies base — or snapshots the process
 // environment when base is nil — because envValue treats a non-nil map as hermetic
 // (a missing key does NOT fall back to os.Getenv), so a partial map would silently
-// drop the operator's ZERO_OAUTH_<NAME>_* overrides. The flag is then forced on.
+// drop the operator's KAJICODE_OAUTH_<NAME>_* overrides. The flag is then forced on.
 func envWithPresetsAllowed(base map[string]string) map[string]string {
 	env := make(map[string]string, len(base)+1)
 	if base == nil {
@@ -25,12 +25,12 @@ func envWithPresetsAllowed(base map[string]string) map[string]string {
 			env[k] = v
 		}
 	}
-	env["ZERO_OAUTH_ALLOW_PRESETS"] = "1"
+	env["KAJICODE_OAUTH_ALLOW_PRESETS"] = "1"
 	return env
 }
 
 // providerPreset is a baked-in default OAuth configuration for a well-known
-// provider. Every field is overridable per provider via ZERO_OAUTH_<NAME>_*
+// provider. Every field is overridable per provider via KAJICODE_OAUTH_<NAME>_*
 // env vars (env wins). Only providers whose OAuth flow is verified to yield a
 // credential usable for model calls are listed here.
 type providerPreset struct {
@@ -47,17 +47,17 @@ type providerPreset struct {
 // builtinOAuthPresets maps a provider name to its default OAuth config.
 //
 // These presets are OFF by default and only consulted when the operator opts in
-// with ZERO_OAUTH_ALLOW_PRESETS (see presetsAllowed). A preset carries a
+// with KAJICODE_OAUTH_ALLOW_PRESETS (see presetsAllowed). A preset carries a
 // third-party OAuth client identity, and the engine keeps such identities out of
 // the default credential path (see the package doc) — opting in is an explicit
 // acknowledgement that the binary's preset client_id will be used when no
-// ZERO_OAUTH_<NAME>_* override is set.
+// KAJICODE_OAUTH_<NAME>_* override is set.
 //
 // xAI (Grok): the client_id is a PUBLIC client (no secret) used by several Grok
 // CLIs; its access token is accepted directly as a bearer on api.x.ai/v1 (an
 // OpenAI-compatible endpoint), so no header/identity spoofing is involved.
 // CAVEATS: it is NOT formally documented by xAI as a public developer API and may
-// change without notice (override via ZERO_OAUTH_XAI_*), and using it requires a
+// change without notice (override via KAJICODE_OAUTH_XAI_*), and using it requires a
 // SuperGrok / X Premium+ subscription. Pay-as-you-go users should use a console
 // API key instead.
 var builtinOAuthPresets = map[string]providerPreset{
@@ -74,7 +74,7 @@ var builtinOAuthPresets = map[string]providerPreset{
 	// HF lets you create a "public" OAuth app (no client secret) and gives a
 	// client_id per registration. Unlike xAI there is no globally-shipped
 	// client_id we can bake in, so the preset ships endpoints + scopes + issuer
-	// pre-filled; the operator supplies ZERO_OAUTH_HUGGINGFACE_CLIENT_ID from
+	// pre-filled; the operator supplies KAJICODE_OAUTH_HUGGINGFACE_CLIENT_ID from
 	// the app they create at https://huggingface.co/settings/applications/new.
 	// Device-code is the simpler headless path; the loopback flow also works.
 	"huggingface": {
@@ -108,11 +108,11 @@ func lookupOAuthPreset(name string) (providerPreset, bool) {
 }
 
 // presetsAllowed reports whether baked-in OAuth presets may supply defaults. They
-// are OFF unless the operator opts in with ZERO_OAUTH_ALLOW_PRESETS set to a
+// are OFF unless the operator opts in with KAJICODE_OAUTH_ALLOW_PRESETS set to a
 // truthy value, keeping any third-party OAuth client identity out of the default
 // credential path (a preset client_id is only ever used after explicit opt-in).
 func presetsAllowed(env map[string]string) bool {
-	switch strings.ToLower(strings.TrimSpace(envValue(env, "ZERO_OAUTH_ALLOW_PRESETS"))) {
+	switch strings.ToLower(strings.TrimSpace(envValue(env, "KAJICODE_OAUTH_ALLOW_PRESETS"))) {
 	case "1", "true", "yes", "on":
 		return true
 	}

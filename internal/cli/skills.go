@@ -5,8 +5,8 @@ import (
 	"io"
 	"strings"
 
-	"github.com/Gitlawb/zero/internal/redaction"
-	"github.com/Gitlawb/zero/internal/skills"
+	"github.com/dishant0406/KajiCode/internal/redaction"
+	"github.com/dishant0406/KajiCode/internal/skills"
 )
 
 type skillListOptions struct {
@@ -27,7 +27,7 @@ func runSkills(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) 
 			command, rest = args[0], args[1:]
 		default:
 			// Treat a leading flag (e.g. --json) as belonging to the implicit
-			// `list` command so `zero skills --json` works like `zero plugins`.
+			// `list` command so `kajicode skills --json` works like `kajicode plugins`.
 			if !strings.HasPrefix(args[0], "-") {
 				return writeExecUsageError(stderr, fmt.Sprintf("unknown skills subcommand %q", args[0]))
 			}
@@ -60,7 +60,7 @@ func runSkills(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) 
 
 func runSkillsList(dir string, options skillListOptions, stdout io.Writer, stderr io.Writer) int {
 	// Management CLI lists global roots only (primary + ~/.agents/skills); plugin
-	// skills stay out of `zero skills list` and surface via the agent skill tool.
+	// skills stay out of `kajicode skills list` and surface via the agent skill tool.
 	roots := skills.GlobalRoots(dir)
 	discovered, dups, err := skills.ListFromRoots(roots)
 	if err != nil {
@@ -95,7 +95,7 @@ func formatSkillList(discovered []skills.Skill) string {
 	if len(discovered) == 0 {
 		return "No skills found."
 	}
-	lines := []string{"Zero Skills:"}
+	lines := []string{"KajiCode Skills:"}
 	for _, skill := range discovered {
 		line := "  " + skill.Name
 		if skill.Description != "" {
@@ -124,23 +124,23 @@ func parseSkillListArgs(args []string) (skillListOptions, bool, error) {
 
 func writeSkillsHelp(w io.Writer) error {
 	_, err := fmt.Fprint(w, `Usage:
-  zero skills <command>
+  kajicode skills <command>
 
 Commands:
-  list                 List discovered skills (Zero dir + ~/.agents/skills)
-  add <git-url|path>   Install a skill into the Zero skills dir (checksum-pinned in skills.lock)
+  list                 List discovered skills (KajiCode dir + ~/.agents/skills)
+  add <git-url|path>   Install a skill into the KajiCode skills dir (checksum-pinned in skills.lock)
   info <name>          Show a skill's frontmatter, source, and pinned hash
-  remove <name>        Remove an installed skill and its lockfile entry from the Zero skills dir
+  remove <name>        Remove an installed skill and its lockfile entry from the KajiCode skills dir
 
 list and info also search ~/.agents/skills when present (read-only).
-add and remove always target the Zero-specific skills directory.
+add and remove always target the KajiCode-specific skills directory.
 `)
 	return err
 }
 
 func writeSkillsListHelp(w io.Writer) error {
 	_, err := fmt.Fprint(w, `Usage:
-  zero skills list [flags]
+  kajicode skills list [flags]
 
 Flags:
       --json    Print discovered skills as JSON

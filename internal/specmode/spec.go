@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	SpecDirName = ".zero/specs"
+	SpecDirName = ".kajicode/specs"
 )
 
 type SaveOptions struct {

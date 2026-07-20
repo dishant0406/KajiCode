@@ -14,7 +14,7 @@ func TestDetectFindsWorkspaceChecksInStableOrder(t *testing.T) {
 		"scripts": {
 			"test": "bun test ./tests",
 			"typecheck": "tsc --noEmit",
-			"build": "go run ./cmd/zero-release build",
+			"build": "go run ./cmd/kajicode-release build",
 			"lint": "eslint ."
 		}
 	}`)

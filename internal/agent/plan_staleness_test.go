@@ -4,11 +4,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
 )
 
-func planUpdateTurn(status string) zeroruntime.CollectedStream {
-	return zeroruntime.CollectedStream{ToolCalls: []zeroruntime.ToolCall{
+func planUpdateTurn(status string) kajicoderuntime.CollectedStream {
+	return kajicoderuntime.CollectedStream{ToolCalls: []kajicoderuntime.ToolCall{
 		{Name: "update_plan", Arguments: `{"plan":[{"content":"step one","status":"` + status + `"}]}`},
 	}}
 }
@@ -22,7 +22,7 @@ func TestPlanReminderFiresOnTurnStaleness(t *testing.T) {
 
 	// Text-only turns advance the turn counter without adding tool calls.
 	for range stalePlanTurnThreshold {
-		state.observeTurn(zeroruntime.CollectedStream{Text: "still working…"})
+		state.observeTurn(kajicoderuntime.CollectedStream{Text: "still working…"})
 	}
 
 	if state.toolCallsSincePlanUpdate >= staleToolCallThreshold {
@@ -40,7 +40,7 @@ func TestPlanReminderSkipsTurnStalenessWhenComplete(t *testing.T) {
 	state.observeTurn(planUpdateTurn("completed"))
 
 	for range stalePlanTurnThreshold + 3 {
-		state.observeTurn(zeroruntime.CollectedStream{Text: "wrapping up…"})
+		state.observeTurn(kajicoderuntime.CollectedStream{Text: "wrapping up…"})
 	}
 
 	if got := state.planReminder(stalePlanTurnThreshold + 5); got != "" {
@@ -54,7 +54,7 @@ func TestPlanUpdateResetsTurnStaleness(t *testing.T) {
 	state := newGuardState()
 	state.observeTurn(planUpdateTurn("in_progress"))
 	for range stalePlanTurnThreshold - 1 {
-		state.observeTurn(zeroruntime.CollectedStream{Text: "working…"})
+		state.observeTurn(kajicoderuntime.CollectedStream{Text: "working…"})
 	}
 	// Refresh the plan — resets the turn streak.
 	state.observeTurn(planUpdateTurn("in_progress"))

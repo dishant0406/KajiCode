@@ -1,11 +1,11 @@
-# Zero build/test/lint targets. AGENTS.md says "Build with `make`" and "Run `make
+# KajiCode build/test/lint targets. AGENTS.md says "Build with `make`" and "Run `make
 # lint` before opening a PR" — these targets back those instructions.
 .DEFAULT_GOAL := build
 .PHONY: build build-all test test-race vet fmt fmt-check lint tidy clean baseline help
 
-# Build the main CLI binary into ./zero.
+# Build the main CLI binary into ./kajicode.
 build:
-	go build -o zero ./cmd/zero
+	go build -o kajicode ./cmd/kajicode
 
 # Build every command in cmd/.
 build-all:
@@ -23,11 +23,15 @@ vet:
 	go vet ./...
 
 fmt:
-	gofmt -w $(shell git ls-files '*.go')
+	@git ls-files --cached --others --exclude-standard '*.go' | while IFS= read -r file; do \
+		[ ! -f "$$file" ] || gofmt -w "$$file"; \
+	done
 
-# Fail if any tracked Go file is not gofmt-clean.
+# Fail if any tracked or untracked Go file is not gofmt-clean.
 fmt-check:
-	@out="$$(gofmt -l $$(git ls-files '*.go'))"; \
+	@out="$$(git ls-files --cached --others --exclude-standard '*.go' | while IFS= read -r file; do \
+		[ ! -f "$$file" ] || gofmt -l "$$file"; \
+	done)"; \
 	if [ -n "$$out" ]; then echo "gofmt needed:"; echo "$$out"; exit 1; fi
 
 # Lint = formatting check + vet (no extra tooling required).
@@ -37,21 +41,21 @@ tidy:
 	go mod tidy
 
 clean:
-	rm -f zero
+	rm -f kajicode
 	go clean ./...
 
 # Run the per-turn benchmark harness over the checked-in baseline manifest and
 # write the JSON result to internal/perfbench/reports/baseline.json. Requires a
-# built `zero` binary and a model; set ZERO_BENCH_MODEL (required) and
-# ZERO_BENCH_BINARY (defaults to ./zero) to configure the run. The report is
+# built `kajicode` binary and a model; set KAJICODE_BENCH_MODEL (required) and
+# KAJICODE_BENCH_BINARY (defaults to ./kajicode) to configure the run. The report is
 # machine-specific and regenerated, not hand-edited.
 baseline: build
-	@if [ -z "$(ZERO_BENCH_MODEL)" ]; then echo "Set ZERO_BENCH_MODEL (and optionally ZERO_BENCH_BINARY) before running 'make baseline'"; exit 2; fi
-	@ZERO_BIN="$${ZERO_BENCH_BINARY:-./zero}"; \
-	go run ./cmd/zero-perf-bench turn \
+	@if [ -z "$(KAJICODE_BENCH_MODEL)" ]; then echo "Set KAJICODE_BENCH_MODEL (and optionally KAJICODE_BENCH_BINARY) before running 'make baseline'"; exit 2; fi
+	@KAJICODE_BIN="$${KAJICODE_BENCH_BINARY:-./kajicode}"; \
+	go run ./cmd/kajicode-perf-bench turn \
 		--suite internal/perfbench/manifests/baseline.json \
-		--model $(ZERO_BENCH_MODEL) \
-		--binary "$$ZERO_BIN" \
+		--model $(KAJICODE_BENCH_MODEL) \
+		--binary "$$KAJICODE_BIN" \
 		--output internal/perfbench/reports/baseline.json
 
 help:

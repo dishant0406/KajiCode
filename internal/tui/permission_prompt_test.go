@@ -7,9 +7,9 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/Gitlawb/zero/internal/agent"
-	"github.com/Gitlawb/zero/internal/sandbox"
-	"github.com/Gitlawb/zero/internal/tools"
+	"github.com/dishant0406/KajiCode/internal/agent"
+	"github.com/dishant0406/KajiCode/internal/sandbox"
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
 func pendingPermissionModel(t *testing.T, decide func(agent.PermissionDecision)) model {
@@ -74,7 +74,7 @@ func TestPermissionOptionsExposeApprovalCancelWhenSupplied(t *testing.T) {
 
 	card, _ := renderFocusedPermissionPrompt(request, 3, 80)
 	got := plainRender(t, card)
-	for _, want := range []string{"continue without running it", "[d]", "tell Zero what to do differently", "[n]"} {
+	for _, want := range []string{"continue without running it", "[d]", "tell KajiCode what to do differently", "[n]"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("permission card = %q, missing %q", got, want)
 		}
@@ -159,7 +159,7 @@ func TestPermissionOptionsCanExposePatchCancelWithoutRecoverableDeny(t *testing.
 	}
 	card, _ := renderFocusedPermissionPrompt(request, 2, 80)
 	got := plainRender(t, card)
-	if !strings.Contains(got, "tell Zero what to do differently") || !strings.Contains(got, "[n]") {
+	if !strings.Contains(got, "tell KajiCode what to do differently") || !strings.Contains(got, "[n]") {
 		t.Fatalf("permission card = %q, missing cancel option", got)
 	}
 	if strings.Contains(got, "continue without running it") || strings.Contains(got, "[d]") {

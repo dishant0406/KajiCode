@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
 )
 
 func TestStreamCompletionPostsMessagesRequest(t *testing.T) {
@@ -36,28 +36,28 @@ func TestStreamCompletionPostsMessagesRequest(t *testing.T) {
 		BaseURL:   server.URL + "/",
 		Model:     "claude-test",
 		MaxTokens: 64_000,
-		UserAgent: "zero-test",
+		UserAgent: "kajicode-test",
 	})
 	if err != nil {
 		t.Fatalf("New returned error: %v", err)
 	}
 
-	stream, err := provider.StreamCompletion(context.Background(), zeroruntime.CompletionRequest{
-		Messages: []zeroruntime.Message{
-			{Role: zeroruntime.MessageRoleSystem, Content: "You are Zero."},
-			{Role: zeroruntime.MessageRoleUser, Content: "Read the file."},
+	stream, err := provider.StreamCompletion(context.Background(), kajicoderuntime.CompletionRequest{
+		Messages: []kajicoderuntime.Message{
+			{Role: kajicoderuntime.MessageRoleSystem, Content: "You are KajiCode."},
+			{Role: kajicoderuntime.MessageRoleUser, Content: "Read the file."},
 			{
-				Role:    zeroruntime.MessageRoleAssistant,
+				Role:    kajicoderuntime.MessageRoleAssistant,
 				Content: "I will inspect it.",
-				ToolCalls: []zeroruntime.ToolCall{{
+				ToolCalls: []kajicoderuntime.ToolCall{{
 					ID:        "toolu_1",
 					Name:      "read_file",
 					Arguments: `{"path":"src/index.ts"}`,
 				}},
 			},
-			{Role: zeroruntime.MessageRoleTool, Content: "file contents", ToolCallID: "toolu_1"},
+			{Role: kajicoderuntime.MessageRoleTool, Content: "file contents", ToolCallID: "toolu_1"},
 		},
-		Tools: []zeroruntime.ToolDefinition{{
+		Tools: []kajicoderuntime.ToolDefinition{{
 			Name:        "read_file",
 			Description: "Read a file",
 			Parameters:  map[string]any{"type": "object", "properties": map[string]any{"path": map[string]any{"type": "string"}}},
@@ -77,8 +77,8 @@ func TestStreamCompletionPostsMessagesRequest(t *testing.T) {
 	if gotVersion != defaultVersion {
 		t.Fatalf("anthropic-version = %q, want %q", gotVersion, defaultVersion)
 	}
-	if gotUserAgent != "zero-test" {
-		t.Fatalf("User-Agent = %q, want zero-test", gotUserAgent)
+	if gotUserAgent != "kajicode-test" {
+		t.Fatalf("User-Agent = %q, want kajicode-test", gotUserAgent)
 	}
 	if gotBody["model"] != "claude-test" || gotBody["stream"] != true || gotBody["max_tokens"] != float64(64_000) {
 		t.Fatalf("unexpected model/stream/max_tokens: %#v", gotBody)
@@ -86,7 +86,7 @@ func TestStreamCompletionPostsMessagesRequest(t *testing.T) {
 	// Prompt caching: system is sent as a cacheable text block, not a bare string.
 	system := gotBody["system"].([]any)
 	sysBlock := system[0].(map[string]any)
-	if sysBlock["type"] != "text" || sysBlock["text"] != "You are Zero." {
+	if sysBlock["type"] != "text" || sysBlock["text"] != "You are KajiCode." {
 		t.Fatalf("unexpected system block: %#v", gotBody["system"])
 	}
 	if cc, _ := sysBlock["cache_control"].(map[string]any); cc["type"] != "ephemeral" {
@@ -140,13 +140,13 @@ func TestStreamCompletionAppliesCustomAuthAndHeaders(t *testing.T) {
 		Model:         "claude-test",
 		AuthHeader:    "Authorization",
 		AuthScheme:    "Bearer",
-		CustomHeaders: map[string]string{"X-Tenant": "zero"},
+		CustomHeaders: map[string]string{"X-Tenant": "kajicode"},
 	})
 	if err != nil {
 		t.Fatalf("New returned error: %v", err)
 	}
-	stream, err := provider.StreamCompletion(context.Background(), zeroruntime.CompletionRequest{
-		Messages: []zeroruntime.Message{{Role: zeroruntime.MessageRoleUser, Content: "hi"}},
+	stream, err := provider.StreamCompletion(context.Background(), kajicoderuntime.CompletionRequest{
+		Messages: []kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleUser, Content: "hi"}},
 	})
 	if err != nil {
 		t.Fatalf("StreamCompletion returned error: %v", err)
@@ -159,7 +159,7 @@ func TestStreamCompletionAppliesCustomAuthAndHeaders(t *testing.T) {
 	if gotCustomAuth != "Bearer sk-ant" {
 		t.Fatalf("Authorization = %q, want bearer token", gotCustomAuth)
 	}
-	if gotTenant != "zero" {
+	if gotTenant != "kajicode" {
 		t.Fatalf("X-Tenant = %q, want custom header", gotTenant)
 	}
 }
@@ -168,17 +168,17 @@ func TestStreamCompletionEmitsTextUsageAndDone(t *testing.T) {
 	provider := newTestProvider(t, func(w http.ResponseWriter, r *http.Request) {
 		writeSSEEvent(w, "message_start", `{"type":"message_start","message":{"usage":{"input_tokens":25}}}`)
 		writeSSEEvent(w, "content_block_delta", `{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}`)
-		writeSSEEvent(w, "content_block_delta", `{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" Zero"}}`)
+		writeSSEEvent(w, "content_block_delta", `{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" KajiCode"}}`)
 		writeSSEEvent(w, "message_delta", `{"type":"message_delta","usage":{"output_tokens":15}}`)
 		writeSSEEvent(w, "message_stop", `{"type":"message_stop"}`)
 	})
 
 	events := collectProviderEvents(t, provider)
-	want := []zeroruntime.StreamEvent{
-		{Type: zeroruntime.StreamEventText, Content: "Hello"},
-		{Type: zeroruntime.StreamEventText, Content: " Zero"},
-		{Type: zeroruntime.StreamEventUsage, Usage: zeroruntime.Usage{InputTokens: 25, OutputTokens: 15, PromptTokens: 25, CompletionTokens: 15}},
-		{Type: zeroruntime.StreamEventDone},
+	want := []kajicoderuntime.StreamEvent{
+		{Type: kajicoderuntime.StreamEventText, Content: "Hello"},
+		{Type: kajicoderuntime.StreamEventText, Content: " KajiCode"},
+		{Type: kajicoderuntime.StreamEventUsage, Usage: kajicoderuntime.Usage{InputTokens: 25, OutputTokens: 15, PromptTokens: 25, CompletionTokens: 15}},
+		{Type: kajicoderuntime.StreamEventDone},
 	}
 	if !reflect.DeepEqual(events, want) {
 		t.Fatalf("events = %#v, want %#v", events, want)
@@ -193,9 +193,9 @@ func TestStreamCompletionReportsCacheTokens(t *testing.T) {
 		writeSSEEvent(w, "message_stop", `{"type":"message_stop"}`)
 	})
 
-	var usage *zeroruntime.Usage
+	var usage *kajicoderuntime.Usage
 	for _, event := range collectProviderEvents(t, provider) {
-		if event.Type == zeroruntime.StreamEventUsage {
+		if event.Type == kajicoderuntime.StreamEventUsage {
 			u := event.Usage
 			usage = &u
 		}
@@ -230,8 +230,8 @@ func TestStreamCompletionEnablesThinkingWhenEffortRequested(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New returned error: %v", err)
 	}
-	stream, err := provider.StreamCompletion(context.Background(), zeroruntime.CompletionRequest{
-		Messages:        []zeroruntime.Message{{Role: zeroruntime.MessageRoleUser, Content: "hi"}},
+	stream, err := provider.StreamCompletion(context.Background(), kajicoderuntime.CompletionRequest{
+		Messages:        []kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleUser, Content: "hi"}},
 		ReasoningEffort: "high",
 	})
 	if err != nil {
@@ -270,8 +270,8 @@ func TestStreamCompletionOmitsThinkingWithoutEffort(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New returned error: %v", err)
 	}
-	stream, err := provider.StreamCompletion(context.Background(), zeroruntime.CompletionRequest{
-		Messages: []zeroruntime.Message{{Role: zeroruntime.MessageRoleUser, Content: "hi"}},
+	stream, err := provider.StreamCompletion(context.Background(), kajicoderuntime.CompletionRequest{
+		Messages: []kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleUser, Content: "hi"}},
 	})
 	if err != nil {
 		t.Fatalf("StreamCompletion returned error: %v", err)
@@ -298,7 +298,7 @@ func TestStreamCompletionCapturesThinkingBlocksForReplay(t *testing.T) {
 	})
 
 	events := collectProviderEvents(t, provider)
-	done := eventsOfType(events, zeroruntime.StreamEventDone)
+	done := eventsOfType(events, kajicoderuntime.StreamEventDone)
 	if len(done) != 1 {
 		t.Fatalf("want exactly one done event, got %#v", events)
 	}
@@ -325,7 +325,7 @@ func TestStreamCompletionPreservesUnclosedThinkingBlockAtStreamEnd(t *testing.T)
 	})
 
 	events := collectProviderEvents(t, provider)
-	done := eventsOfType(events, zeroruntime.StreamEventDone)
+	done := eventsOfType(events, kajicoderuntime.StreamEventDone)
 	if len(done) != 1 {
 		t.Fatalf("want exactly one done event, got %#v", events)
 	}
@@ -352,16 +352,16 @@ func TestAnthropicRequestReplaysThinkingBlocksFirst(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New returned error: %v", err)
 	}
-	stream, err := provider.StreamCompletion(context.Background(), zeroruntime.CompletionRequest{
-		Messages: []zeroruntime.Message{
-			{Role: zeroruntime.MessageRoleUser, Content: "go"},
+	stream, err := provider.StreamCompletion(context.Background(), kajicoderuntime.CompletionRequest{
+		Messages: []kajicoderuntime.Message{
+			{Role: kajicoderuntime.MessageRoleUser, Content: "go"},
 			{
-				Role:      zeroruntime.MessageRoleAssistant,
+				Role:      kajicoderuntime.MessageRoleAssistant,
 				Content:   "I will grep.",
-				ToolCalls: []zeroruntime.ToolCall{{ID: "toolu_1", Name: "grep", Arguments: `{"pattern":"x"}`}},
-				Reasoning: []zeroruntime.ReasoningBlock{{Provider: providerName, Type: "thinking", Text: "reasoning", Signature: "sig-abc"}},
+				ToolCalls: []kajicoderuntime.ToolCall{{ID: "toolu_1", Name: "grep", Arguments: `{"pattern":"x"}`}},
+				Reasoning: []kajicoderuntime.ReasoningBlock{{Provider: providerName, Type: "thinking", Text: "reasoning", Signature: "sig-abc"}},
 			},
-			{Role: zeroruntime.MessageRoleTool, Content: "result", ToolCallID: "toolu_1"},
+			{Role: kajicoderuntime.MessageRoleTool, Content: "result", ToolCallID: "toolu_1"},
 		},
 	})
 	if err != nil {
@@ -401,12 +401,12 @@ func TestStreamCompletionEmitsToolUseBlocks(t *testing.T) {
 	})
 
 	events := collectProviderEvents(t, provider)
-	want := []zeroruntime.StreamEvent{
-		{Type: zeroruntime.StreamEventToolCallStart, ToolCallID: "toolu_1", ToolName: "read_file"},
-		{Type: zeroruntime.StreamEventToolCallDelta, ToolCallID: "toolu_1", ArgumentsFragment: `{"path":`},
-		{Type: zeroruntime.StreamEventToolCallDelta, ToolCallID: "toolu_1", ArgumentsFragment: `"src/index.ts"}`},
-		{Type: zeroruntime.StreamEventToolCallEnd, ToolCallID: "toolu_1"},
-		{Type: zeroruntime.StreamEventDone},
+	want := []kajicoderuntime.StreamEvent{
+		{Type: kajicoderuntime.StreamEventToolCallStart, ToolCallID: "toolu_1", ToolName: "read_file"},
+		{Type: kajicoderuntime.StreamEventToolCallDelta, ToolCallID: "toolu_1", ArgumentsFragment: `{"path":`},
+		{Type: kajicoderuntime.StreamEventToolCallDelta, ToolCallID: "toolu_1", ArgumentsFragment: `"src/index.ts"}`},
+		{Type: kajicoderuntime.StreamEventToolCallEnd, ToolCallID: "toolu_1"},
+		{Type: kajicoderuntime.StreamEventDone},
 	}
 	if !reflect.DeepEqual(events, want) {
 		t.Fatalf("events = %#v, want %#v", events, want)
@@ -416,14 +416,14 @@ func TestStreamCompletionEmitsToolUseBlocks(t *testing.T) {
 func TestStreamCompletionClosesOpenToolCallOnEOF(t *testing.T) {
 	provider := newTestProvider(t, func(w http.ResponseWriter, r *http.Request) {
 		writeSSEEvent(w, "content_block_start", `{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_1","name":"grep","input":{}}}`)
-		writeSSEEvent(w, "content_block_delta", `{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"pattern\":\"Zero\"}"}}`)
+		writeSSEEvent(w, "content_block_delta", `{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"pattern\":\"KajiCode\"}"}}`)
 	})
 
 	events := collectProviderEvents(t, provider)
-	if len(eventsOfType(events, zeroruntime.StreamEventToolCallEnd)) != 1 {
+	if len(eventsOfType(events, kajicoderuntime.StreamEventToolCallEnd)) != 1 {
 		t.Fatalf("events = %#v, want one tool-call-end on EOF", events)
 	}
-	if len(eventsOfType(events, zeroruntime.StreamEventDone)) != 1 {
+	if len(eventsOfType(events, kajicoderuntime.StreamEventDone)) != 1 {
 		t.Fatalf("events = %#v, want done on EOF", events)
 	}
 }
@@ -450,7 +450,7 @@ func TestStreamCompletionClassifiesHTTPErrorsAndRedactsToken(t *testing.T) {
 				t.Fatalf("StreamCompletion returned setup error: %v", err)
 			}
 			events := readAll(stream)
-			if len(events) != 1 || events[0].Type != zeroruntime.StreamEventError {
+			if len(events) != 1 || events[0].Type != kajicoderuntime.StreamEventError {
 				t.Fatalf("events = %#v, want one error", events)
 			}
 			if !strings.HasPrefix(events[0].Error, tc.wantPrefix) {
@@ -469,7 +469,7 @@ func TestStreamCompletionEmitsStreamErrorObject(t *testing.T) {
 	})
 
 	events := collectProviderEvents(t, provider)
-	if len(events) != 1 || events[0].Type != zeroruntime.StreamEventError {
+	if len(events) != 1 || events[0].Type != kajicoderuntime.StreamEventError {
 		t.Fatalf("events = %#v, want one error", events)
 	}
 	if !strings.HasPrefix(events[0].Error, "provider error:") {
@@ -485,19 +485,19 @@ func TestStreamCompletionRejectsMalformedHistoryBeforeDispatch(t *testing.T) {
 		t.Fatal("provider should not dispatch malformed history")
 	})
 
-	_, err := provider.StreamCompletion(context.Background(), zeroruntime.CompletionRequest{
-		Messages: []zeroruntime.Message{{Role: zeroruntime.MessageRoleTool, Content: "missing id"}},
+	_, err := provider.StreamCompletion(context.Background(), kajicoderuntime.CompletionRequest{
+		Messages: []kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleTool, Content: "missing id"}},
 	})
 	if err == nil || !strings.Contains(err.Error(), "requires toolCallId") {
 		t.Fatalf("error = %v, want missing toolCallId", err)
 	}
 
-	_, err = provider.StreamCompletion(context.Background(), zeroruntime.CompletionRequest{
-		Messages: []zeroruntime.Message{
-			{Role: zeroruntime.MessageRoleUser, Content: "call tool"},
+	_, err = provider.StreamCompletion(context.Background(), kajicoderuntime.CompletionRequest{
+		Messages: []kajicoderuntime.Message{
+			{Role: kajicoderuntime.MessageRoleUser, Content: "call tool"},
 			{
-				Role:      zeroruntime.MessageRoleAssistant,
-				ToolCalls: []zeroruntime.ToolCall{{ID: "toolu_1", Name: "read_file", Arguments: `"src/index.ts"`}},
+				Role:      kajicoderuntime.MessageRoleAssistant,
+				ToolCalls: []kajicoderuntime.ToolCall{{ID: "toolu_1", Name: "read_file", Arguments: `"src/index.ts"`}},
 			},
 		},
 	})
@@ -535,7 +535,7 @@ func newTestProviderWithKey(t *testing.T, apiKey string, handler http.HandlerFun
 	return provider
 }
 
-func collectProviderEvents(t *testing.T, provider *Provider) []zeroruntime.StreamEvent {
+func collectProviderEvents(t *testing.T, provider *Provider) []kajicoderuntime.StreamEvent {
 	t.Helper()
 	stream, err := provider.StreamCompletion(context.Background(), validRequest())
 	if err != nil {
@@ -544,21 +544,21 @@ func collectProviderEvents(t *testing.T, provider *Provider) []zeroruntime.Strea
 	return readAll(stream)
 }
 
-func validRequest() zeroruntime.CompletionRequest {
-	return zeroruntime.CompletionRequest{
-		Messages: []zeroruntime.Message{{Role: zeroruntime.MessageRoleUser, Content: "hello"}},
+func validRequest() kajicoderuntime.CompletionRequest {
+	return kajicoderuntime.CompletionRequest{
+		Messages: []kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleUser, Content: "hello"}},
 	}
 }
 
-func readAll(stream <-chan zeroruntime.StreamEvent) []zeroruntime.StreamEvent {
-	events := []zeroruntime.StreamEvent{}
+func readAll(stream <-chan kajicoderuntime.StreamEvent) []kajicoderuntime.StreamEvent {
+	events := []kajicoderuntime.StreamEvent{}
 	for event := range stream {
 		events = append(events, event)
 	}
 	return events
 }
 
-func drain(stream <-chan zeroruntime.StreamEvent) {
+func drain(stream <-chan kajicoderuntime.StreamEvent) {
 	for range stream {
 	}
 }
@@ -574,8 +574,8 @@ func writeSSEEvent(w http.ResponseWriter, eventName string, payload string) {
 	}
 }
 
-func eventsOfType(events []zeroruntime.StreamEvent, eventType zeroruntime.StreamEventType) []zeroruntime.StreamEvent {
-	matching := []zeroruntime.StreamEvent{}
+func eventsOfType(events []kajicoderuntime.StreamEvent, eventType kajicoderuntime.StreamEventType) []kajicoderuntime.StreamEvent {
+	matching := []kajicoderuntime.StreamEvent{}
 	for _, event := range events {
 		if event.Type == eventType {
 			matching = append(matching, event)

@@ -4,7 +4,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
 )
 
 // A premium cache-write rate prices cache-creation tokens separately from the
@@ -15,7 +15,7 @@ func TestCalculateCostCacheWritePremium(t *testing.T) {
 		Cost: ModelCost{Currency: "USD", InputPerMillion: 10, OutputPerMillion: 30, CachedInputPerMillion: 1, CacheWritePerMillion: 12.5},
 	}
 	// 1M total input = 600k uncached + 300k cache-read + 100k cache-write.
-	usage := zeroruntime.Usage{InputTokens: 1_000_000, CachedInputTokens: 300_000, CacheWriteTokens: 100_000, OutputTokens: 200_000}
+	usage := kajicoderuntime.Usage{InputTokens: 1_000_000, CachedInputTokens: 300_000, CacheWriteTokens: 100_000, OutputTokens: 200_000}
 	cost, err := CalculateCost(model, usage)
 	if err != nil {
 		t.Fatal(err)
@@ -33,7 +33,7 @@ func TestCalculateCostCacheWritePremium(t *testing.T) {
 // input rate (the prior behavior) — no regression for models lacking the rate.
 func TestCalculateCostCacheWriteFallsBackToInputRate(t *testing.T) {
 	model := ModelEntry{ID: "test", Provider: ProviderOpenAI, Cost: ModelCost{Currency: "USD", InputPerMillion: 10, OutputPerMillion: 30}}
-	usage := zeroruntime.Usage{InputTokens: 1_000_000, CacheWriteTokens: 100_000, OutputTokens: 0}
+	usage := kajicoderuntime.Usage{InputTokens: 1_000_000, CacheWriteTokens: 100_000, OutputTokens: 0}
 	cost, err := CalculateCost(model, usage)
 	if err != nil {
 		t.Fatal(err)

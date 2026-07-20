@@ -9,7 +9,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/Gitlawb/zero/internal/sessions"
+	"github.com/dishant0406/KajiCode/internal/sessions"
 )
 
 func newBTWTestModel(t *testing.T) model {

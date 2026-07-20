@@ -1,4 +1,4 @@
-module github.com/Gitlawb/zero
+module github.com/dishant0406/KajiCode
 
 go 1.26.5
 

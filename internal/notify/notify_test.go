@@ -63,8 +63,8 @@ func TestSanitizeMessage(t *testing.T) {
 func TestNotifyWritesAndRespectsPolicy(t *testing.T) {
 	var buf bytes.Buffer
 	n := New(&buf, Config{Mode: ModeBoth, FocusMode: FocusAlways})
-	n.Notify(Completion, "Zero: ready")
-	if buf.String() != "\x07\x1b]9;Zero: ready\x07" {
+	n.Notify(Completion, "KajiCode: ready")
+	if buf.String() != "\x07\x1b]9;KajiCode: ready\x07" {
 		t.Fatalf("emitted=%q", buf.String())
 	}
 
@@ -110,10 +110,10 @@ func TestNotifyRaceSafe(t *testing.T) {
 }
 
 func TestDefaultMessage(t *testing.T) {
-	if DefaultMessage(Completion) != "Zero: ready" {
+	if DefaultMessage(Completion) != "KajiCode: ready" {
 		t.Fatal("completion message")
 	}
-	if DefaultMessage(AwaitingInput) != "Zero: needs input" {
+	if DefaultMessage(AwaitingInput) != "KajiCode: needs input" {
 		t.Fatal("awaiting message")
 	}
 }
@@ -154,7 +154,7 @@ func TestNotifierFanOutHitsTerminalAndSink(t *testing.T) {
 	n := New(&buf, Config{Mode: ModeBell, FocusMode: FocusAlways})
 	n.AddSink(sink)
 
-	n.Notify(Completion, "Zero: ready")
+	n.Notify(Completion, "KajiCode: ready")
 
 	if buf.String() != "\x07" {
 		t.Fatalf("terminal bell not emitted, got %q", buf.String())
@@ -162,7 +162,7 @@ func TestNotifierFanOutHitsTerminalAndSink(t *testing.T) {
 	if sink.count() != 1 {
 		t.Fatalf("sink received %d events, want 1", sink.count())
 	}
-	if sink.last != "Zero: ready" {
+	if sink.last != "KajiCode: ready" {
 		t.Fatalf("sink message = %q", sink.last)
 	}
 }

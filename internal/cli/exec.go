@@ -10,26 +10,26 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/agent"
-	"github.com/Gitlawb/zero/internal/config"
-	"github.com/Gitlawb/zero/internal/errhint"
-	"github.com/Gitlawb/zero/internal/execprofile"
-	"github.com/Gitlawb/zero/internal/imageinput"
-	"github.com/Gitlawb/zero/internal/lsp"
-	"github.com/Gitlawb/zero/internal/modelregistry"
-	"github.com/Gitlawb/zero/internal/notify"
-	"github.com/Gitlawb/zero/internal/providercatalog"
-	"github.com/Gitlawb/zero/internal/providermodeldiscovery"
-	"github.com/Gitlawb/zero/internal/providers"
-	"github.com/Gitlawb/zero/internal/sandbox"
-	"github.com/Gitlawb/zero/internal/sessions"
-	"github.com/Gitlawb/zero/internal/specmode"
-	"github.com/Gitlawb/zero/internal/streamjson"
-	"github.com/Gitlawb/zero/internal/tools"
-	"github.com/Gitlawb/zero/internal/trace"
-	"github.com/Gitlawb/zero/internal/usage"
-	"github.com/Gitlawb/zero/internal/worktrees"
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/agent"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/errhint"
+	"github.com/dishant0406/KajiCode/internal/execprofile"
+	"github.com/dishant0406/KajiCode/internal/imageinput"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
+	"github.com/dishant0406/KajiCode/internal/lsp"
+	"github.com/dishant0406/KajiCode/internal/modelregistry"
+	"github.com/dishant0406/KajiCode/internal/notify"
+	"github.com/dishant0406/KajiCode/internal/providercatalog"
+	"github.com/dishant0406/KajiCode/internal/providermodeldiscovery"
+	"github.com/dishant0406/KajiCode/internal/providers"
+	"github.com/dishant0406/KajiCode/internal/sandbox"
+	"github.com/dishant0406/KajiCode/internal/sessions"
+	"github.com/dishant0406/KajiCode/internal/specmode"
+	"github.com/dishant0406/KajiCode/internal/streamjson"
+	"github.com/dishant0406/KajiCode/internal/tools"
+	"github.com/dishant0406/KajiCode/internal/trace"
+	"github.com/dishant0406/KajiCode/internal/usage"
+	"github.com/dishant0406/KajiCode/internal/worktrees"
 )
 
 const (
@@ -109,7 +109,7 @@ type execOptions struct {
 	// switcher).
 	allowEscalation bool
 	// selfCorrect opts the run into the post-edit verify-and-correct loop: after a
-	// mutating tool call ZERO runs the workspace verification plan and feeds
+	// mutating tool call KAJICODE runs the workspace verification plan and feeds
 	// failures back to the model to fix, bounded by an attempt ceiling and the
 	// autonomy gate. Off by default — a run without the flag wires a nil
 	// SelfCorrector, leaving the agent loop byte-identical to before.
@@ -126,7 +126,7 @@ type execOptions struct {
 	// the turn back ("the sandbox blocks network egress, approve it and I'll
 	// continue") is a COMPLETE answer, not an unfinished task, so the gate's
 	// self-report admission check and INCOMPLETE downgrade (exit 4) would only
-	// mislabel honest blocker reports. Default off: plain `zero exec` keeps the
+	// mislabel honest blocker reports. Default off: plain `kajicode exec` keeps the
 	// gate, preserving CI/cron semantics.
 	noCompletionGate bool
 	// addDirs holds directories passed via --add-dir that should be allowed as
@@ -135,7 +135,7 @@ type execOptions struct {
 	addDirs []string
 	// tracePath, when set, writes a per-turn NDJSON trace (agenteval-compatible)
 	// to the given file path — or to stderr when the value is "-". Falls back to
-	// the ZERO_TRACE env var when the flag is absent. Off by default: a run
+	// the KAJICODE_TRACE env var when the flag is absent. Off by default: a run
 	// without it leaves agent.Options.Trace nil and is byte-identical to before.
 	// The trace is pure observation — enabling it does not change agent behavior.
 	tracePath string
@@ -320,7 +320,7 @@ func runExec(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) in
 	sessionTitle := execSessionTitle(options, prompt)
 
 	if !config.HasProviderProfile(resolved.Provider) {
-		return writeExecProviderError(stdout, stderr, options.outputFormat, "provider_error", "No provider configured. Run `zero setup` (guided), `zero auth` (OAuth providers), set a provider API key env var (e.g. OPENAI_API_KEY / ANTHROPIC_API_KEY / GEMINI_API_KEY), or add .zero/config.json.")
+		return writeExecProviderError(stdout, stderr, options.outputFormat, "provider_error", "No provider configured. Run `kajicode setup` (guided), `kajicode auth` (OAuth providers), set a provider API key env var (e.g. OPENAI_API_KEY / ANTHROPIC_API_KEY / GEMINI_API_KEY), or add .kajicode/config.json.")
 	}
 	// Activate deferred MCP-tool loading for this run only when the VISIBLE
 	// deferred-eligible count meets the resolved threshold; below threshold this
@@ -430,15 +430,15 @@ func runExec(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) in
 		}
 	}
 
-	// Optimized OpenAI turn sessions (ZERO_OPENAI_TURN_SESSION, default off).
+	// Optimized OpenAI turn sessions (KAJICODE_OPENAI_TURN_SESSION, default off).
 	// nil when gated off or the profile is ineligible: agent.Run then wraps the
 	// provider in its default adapter — the exact code path of today. The
 	// session switcher is installed only when the run START is optimized, so
 	// the legacy ModelSwitcher path above stays untouched otherwise.
 	turnSessions, _ := providers.OptimizedTurnSessions(resolved.Provider, provider, providers.Options{})
-	var modelSessionSwitcher func(context.Context, string) (zeroruntime.TurnSessionProvider, error)
+	var modelSessionSwitcher func(context.Context, string) (kajicoderuntime.TurnSessionProvider, error)
 	if options.allowEscalation && turnSessions != nil {
-		modelSessionSwitcher = func(_ context.Context, modelID string) (zeroruntime.TurnSessionProvider, error) {
+		modelSessionSwitcher = func(_ context.Context, modelID string) (kajicoderuntime.TurnSessionProvider, error) {
 			switchedProfile := resolved.Provider
 			switchedProfile.Model = modelID
 			switchedProvider, err := deps.newProvider(switchedProfile)
@@ -471,17 +471,17 @@ func runExec(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) in
 		Mode:      notify.Mode(strings.TrimSpace(execNotifyMode(options, resolved))),
 		FocusMode: notify.FocusAlways,
 	})
-	// Opt-in webhook fan-out (ZERO_NOTIFY_WEBHOOK_URL). Headless runs can safely
+	// Opt-in webhook fan-out (KAJICODE_NOTIFY_WEBHOOK_URL). Headless runs can safely
 	// log a failed delivery to stderr (never stdout). The sink redacts before
 	// logging, so a token in the URL or message is masked.
 	notify.MaybeAddWebhookSink(notifier, os.Getenv, func(format string, args ...any) {
 		fmt.Fprintf(stderr, "[notify] "+format+"\n", args...)
 	})
 	// Spec-draft runs synthesize a prompt offline and never drive a model turn, so
-	// there is no per-turn trace to emit. Reject --trace / ZERO_TRACE up front with
+	// there is no per-turn trace to emit. Reject --trace / KAJICODE_TRACE up front with
 	// a clear error rather than silently accepting and writing nothing.
 	if options.useSpec && resolveTracePath(options) != "" {
-		return writeExecFormatUsageError(stdout, stderr, options.outputFormat, "--trace / ZERO_TRACE are not supported for spec-draft runs")
+		return writeExecFormatUsageError(stdout, stderr, options.outputFormat, "--trace / KAJICODE_TRACE are not supported for spec-draft runs")
 	}
 	if options.useSpec {
 		return runExecSpecDraft(execSpecDraftRun{
@@ -542,7 +542,7 @@ func runExec(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) in
 	if err != nil {
 		return writeAppError(stderr, "failed to create run id: "+err.Error(), exitCrash)
 	}
-	// Per-turn tracing is opt-in (--trace <path> or ZERO_TRACE=<path>). The
+	// Per-turn tracing is opt-in (--trace <path> or KAJICODE_TRACE=<path>). The
 	// recorder is stamped throughout agent.Run and the providerio seam; the run
 	// itself is byte-identical to an untraced run. We finish the recorder at the
 	// agent.Run boundary (below) so the snapshot captures exactly one turn, then
@@ -556,7 +556,7 @@ func runExec(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) in
 		traceRecorder = trace.NewRecorder(preparedSession.Session.SessionID, runID, execProfile.Name)
 		defer func() {
 			if err := writeTraceSnapshot(traceSnapshot, tracePath, stderr); err != nil {
-				fmt.Fprintf(stderr, "[zero] failed to write trace: %s\n", err)
+				fmt.Fprintf(stderr, "[kajicode] failed to write trace: %s\n", err)
 			}
 		}()
 	}
@@ -891,7 +891,7 @@ func deferredEligibleCount(registry *tools.Registry, permissionMode agent.Permis
 // registerToolSearchIfEligible registers the tool_search tool only when deferral
 // is active for this run: the visible-deferred count (the same population the
 // agent loop's partition counts) meets the (positive) threshold. Below threshold
-// or with a zero/negative threshold, tool_search is never registered, so the
+// or with a kajicode/negative threshold, tool_search is never registered, so the
 // agent loop's partition stays inactive and tool advertising is byte-identical to
 // today. The permissionMode + enabled/disabled filters MUST match the values the
 // run passes to agent.Run so the registration gate and the activation gate count
@@ -983,7 +983,7 @@ func resolveWorkspaceRoot(cwd string, deps appDeps) (string, error) {
 // text input and for stream-json input that carries no images; it is merged with
 // any --image attachments by the caller before the shared vision gate, so both
 // sources flow through the same drop+warn and agent.Options.Images wiring.
-func resolveExecPrompt(options execOptions, workspaceRoot string, stdin io.Reader) (string, []zeroruntime.ImageBlock, error) {
+func resolveExecPrompt(options execOptions, workspaceRoot string, stdin io.Reader) (string, []kajicoderuntime.ImageBlock, error) {
 	if options.inputFormat == execInputStreamJSON {
 		input := ""
 		if options.file != "" {
@@ -1049,7 +1049,7 @@ func resolveExecPrompt(options execOptions, workspaceRoot string, stdin io.Reade
 
 	prompt := strings.TrimSpace(strings.Join(parts, "\n\n"))
 	if prompt == "" {
-		return "", nil, execUsageError{"Prompt required. Use `zero exec \"prompt\"` or `zero exec --file prompt.txt`."}
+		return "", nil, execUsageError{"Prompt required. Use `kajicode exec \"prompt\"` or `kajicode exec --file prompt.txt`."}
 	}
 	return prompt, nil, nil
 }
@@ -1062,11 +1062,11 @@ func resolveExecPrompt(options execOptions, workspaceRoot string, stdin io.Reade
 // oversized) is wrapped into an execUsageError so the run reports it as a usage
 // problem rather than reaching a provider with an invalid image. Returns nil for
 // an empty path list (text-only behavior unchanged).
-func resolveExecImages(paths []string, workspaceRoot string) ([]zeroruntime.ImageBlock, error) {
+func resolveExecImages(paths []string, workspaceRoot string) ([]kajicoderuntime.ImageBlock, error) {
 	if len(paths) == 0 {
 		return nil, nil
 	}
-	images := make([]zeroruntime.ImageBlock, 0, len(paths))
+	images := make([]kajicoderuntime.ImageBlock, 0, len(paths))
 	for _, path := range paths {
 		image, err := imageinput.LoadFile(path, workspaceRoot)
 		if err != nil {
@@ -1078,7 +1078,7 @@ func resolveExecImages(paths []string, workspaceRoot string) ([]zeroruntime.Imag
 }
 
 func writeExecUsageError(stderr io.Writer, message string) int {
-	if _, err := fmt.Fprintf(stderr, "[zero] %s\n", message); err != nil {
+	if _, err := fmt.Fprintf(stderr, "[kajicode] %s\n", message); err != nil {
 		return exitCrash
 	}
 	return exitUsage
@@ -1111,14 +1111,14 @@ func writeExecProviderError(stdout io.Writer, stderr io.Writer, format execOutpu
 		}
 		return exitProvider
 	}
-	if _, err := fmt.Fprintf(stderr, "[zero] %s\n", message); err != nil {
+	if _, err := fmt.Fprintf(stderr, "[kajicode] %s\n", message); err != nil {
 		return exitCrash
 	}
 	// Append a one-line next step for recognized provider failures (auth /
 	// rate-limit / connectivity / …). The classifier gates on a provider-origin
 	// marker, so non-provider codes (sandbox_error, mcp_error) never draw a hint.
 	if hint := errhint.CLIHint(errors.New(message)); hint != "" {
-		if _, err := fmt.Fprintf(stderr, "[zero] %s\n", hint); err != nil {
+		if _, err := fmt.Fprintf(stderr, "[kajicode] %s\n", hint); err != nil {
 			return exitCrash
 		}
 	}
@@ -1413,13 +1413,13 @@ func execNotifyMode(options execOptions, resolved config.ResolvedConfig) string 
 }
 
 // resolveTracePath returns the trace destination for this run: the --trace flag
-// value when set, else the ZERO_TRACE env var, else "" (tracing off). A value of
+// value when set, else the KAJICODE_TRACE env var, else "" (tracing off). A value of
 // "-" means "write to stderr".
 func resolveTracePath(options execOptions) string {
 	if v := strings.TrimSpace(options.tracePath); v != "" {
 		return v
 	}
-	if v := strings.TrimSpace(os.Getenv("ZERO_TRACE")); v != "" {
+	if v := strings.TrimSpace(os.Getenv("KAJICODE_TRACE")); v != "" {
 		return v
 	}
 	return ""

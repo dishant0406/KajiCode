@@ -9,8 +9,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
-	"github.com/Gitlawb/zero/internal/sessions"
-	"github.com/Gitlawb/zero/internal/tools"
+	"github.com/dishant0406/KajiCode/internal/sessions"
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
 // TestSidebarActivityLines: the ACTIVITY feed is a bounded, newest-first list of
@@ -38,7 +38,7 @@ func TestSidebarActivityLines(t *testing.T) {
 		t.Errorf("activity must strip the 'tool result:' prefix:\n%s", joined)
 	}
 	if got := m.sidebarActivityLines(40, 0); got != nil {
-		t.Errorf("zero budget: want nil, got %v", got)
+		t.Errorf("kajicode budget: want nil, got %v", got)
 	}
 
 	// Active + quiet run -> a live "generating…" pulse.

@@ -1,5 +1,5 @@
 // Package repoinfo characterizes a repository from local git commands only
-// (no network). It powers the `zero repo-info` command.
+// (no network). It powers the `kajicode repo-info` command.
 package repoinfo
 
 import (

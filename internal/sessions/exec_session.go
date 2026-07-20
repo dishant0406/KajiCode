@@ -67,7 +67,7 @@ func PrepareExec(options PrepareExecOptions) (PreparedExec, error) {
 			return PreparedExec{}, err
 		}
 		if parent == nil {
-			return PreparedExec{}, ExecError{"Zero session not found: " + forkID}
+			return PreparedExec{}, ExecError{"KajiCode session not found: " + forkID}
 		}
 		contextEvents, err := readExecContextEvents(store, parent.SessionID)
 		if err != nil {
@@ -94,7 +94,7 @@ func PrepareExec(options PrepareExecOptions) (PreparedExec, error) {
 				return PreparedExec{}, err
 			}
 			if latest == nil {
-				return PreparedExec{}, ExecError{"No Zero sessions available to resume."}
+				return PreparedExec{}, ExecError{"No KajiCode sessions available to resume."}
 			}
 			sessionID = latest.SessionID
 		}
@@ -103,10 +103,10 @@ func PrepareExec(options PrepareExecOptions) (PreparedExec, error) {
 			return PreparedExec{}, err
 		}
 		if session == nil {
-			return PreparedExec{}, ExecError{"Zero session not found: " + sessionID}
+			return PreparedExec{}, ExecError{"KajiCode session not found: " + sessionID}
 		}
 		if !IsResumableKind(session.SessionKind) {
-			return PreparedExec{}, ExecError{"Zero session is not resumable: " + sessionID}
+			return PreparedExec{}, ExecError{"KajiCode session is not resumable: " + sessionID}
 		}
 		contextEvents, err := readExecContextEvents(store, session.SessionID)
 		if err != nil {
@@ -131,7 +131,7 @@ func PrepareExec(options PrepareExecOptions) (PreparedExec, error) {
 			return PreparedExec{}, err
 		}
 		if parent == nil {
-			return PreparedExec{}, ExecError{"Zero parent session not found: " + parentSessionID}
+			return PreparedExec{}, ExecError{"KajiCode parent session not found: " + parentSessionID}
 		}
 		createInput.SessionKind = SessionKindChild
 		createInput.ParentSessionID = parent.SessionID
@@ -156,7 +156,7 @@ func readExecContextEvents(store *Store, sessionID string) ([]Event, error) {
 	if rawErr != nil {
 		return nil, err
 	}
-	log.Printf("zero sessions: failed to rehydrate compaction events for %s; falling back to raw events: %v", sessionID, err)
+	log.Printf("kajicode sessions: failed to rehydrate compaction events for %s; falling back to raw events: %v", sessionID, err)
 	return rawEvents, nil
 }
 
@@ -179,7 +179,7 @@ func FormatExecPrompt(prompt string, prepared PreparedExec) string {
 		}
 	}
 	return strings.Join([]string{
-		fmt.Sprintf("%s Zero session %s.", label, sessionID),
+		fmt.Sprintf("%s KajiCode session %s.", label, sessionID),
 		"Previous session context:",
 		strings.Join(lines, "\n"),
 		"",

@@ -8,10 +8,10 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/background"
-	"github.com/Gitlawb/zero/internal/sessions"
-	"github.com/Gitlawb/zero/internal/streamjson"
-	"github.com/Gitlawb/zero/internal/tools"
+	"github.com/dishant0406/KajiCode/internal/background"
+	"github.com/dishant0406/KajiCode/internal/sessions"
+	"github.com/dishant0406/KajiCode/internal/streamjson"
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
 func TestExecutorRecordsForegroundLifecycleAndUsageRollup(t *testing.T) {
@@ -22,7 +22,7 @@ func TestExecutorRecordsForegroundLifecycleAndUsageRollup(t *testing.T) {
 	}
 	zero := 0
 	executor := Executor{
-		BinaryPath:   "/usr/local/bin/zero",
+		BinaryPath:   "/usr/local/bin/kajicode",
 		SessionStore: store,
 		NewSessionID: func() (string, error) { return "child_task", nil },
 		Load: func(LoadOptions) (LoadResult, error) {
@@ -97,7 +97,7 @@ func TestExecutorRecordsStartedChildErrorExitCode(t *testing.T) {
 		t.Fatalf("Create parent returned error: %v", err)
 	}
 	executor := Executor{
-		BinaryPath:   "/usr/local/bin/zero",
+		BinaryPath:   "/usr/local/bin/kajicode",
 		SessionStore: store,
 		NewSessionID: func() (string, error) { return "child_task", nil },
 		Load: func(LoadOptions) (LoadResult, error) {

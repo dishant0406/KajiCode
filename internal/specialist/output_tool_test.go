@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/background"
-	"github.com/Gitlawb/zero/internal/tools"
+	"github.com/dishant0406/KajiCode/internal/background"
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
 func TestOutputToolReadsCompletedTaskSummary(t *testing.T) {

@@ -18,7 +18,7 @@ func TestUseAltScreenForInteractiveChat(t *testing.T) {
 
 // TestRunRejectsNonTTYStdin pins that the interactive shell fails fast with a
 // non-zero code when stdin is not a terminal, instead of blocking forever in the
-// Bubble Tea event loop (e.g. `echo "" | zero`). The guard runs before any model
+// Bubble Tea event loop (e.g. `echo "" | kajicode`). The guard runs before any model
 // construction, so empty Options are fine.
 func TestRunRejectsNonTTYStdin(t *testing.T) {
 	r, w, err := os.Pipe()

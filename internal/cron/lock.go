@@ -8,7 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/lockutil"
+	"github.com/dishant0406/KajiCode/internal/lockutil"
 )
 
 // Cross-process lock tuning. The lock is held only for a single metadata

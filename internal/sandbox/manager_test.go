@@ -41,7 +41,7 @@ func TestPermissionProfileFromPolicyBuildsWorkspaceWriteProfile(t *testing.T) {
 	if !stringSliceContains(profile.FileSystem.ReadRoots, profileRootPath()) {
 		t.Fatalf("read roots = %#v, want full read root %q", profile.FileSystem.ReadRoots, profileRootPath())
 	}
-	if !stringSliceContains(profile.FileSystem.WriteRoots[0].ProtectedMetadataNames, ".zero") || !stringSliceContains(profile.FileSystem.WriteRoots[0].ProtectedMetadataNames, ".agents") {
+	if !stringSliceContains(profile.FileSystem.WriteRoots[0].ProtectedMetadataNames, ".kajicode") || !stringSliceContains(profile.FileSystem.WriteRoots[0].ProtectedMetadataNames, ".agents") {
 		t.Fatalf("protected metadata names = %#v, want workspace metadata protected", profile.FileSystem.WriteRoots[0].ProtectedMetadataNames)
 	}
 	resolvedRoot := profile.FileSystem.WriteRoots[0].Root
@@ -132,7 +132,7 @@ func TestPermissionProfileFromDisabledPolicyDoesNotRequirePlatformSandbox(t *tes
 }
 
 func TestSandboxManagerBuildsExecutionRequestFromProfile(t *testing.T) {
-	backend := Backend{Name: BackendLinuxBwrap, Available: true, Executable: "/usr/bin/zero-linux-sandbox", Platform: "linux"}
+	backend := Backend{Name: BackendLinuxBwrap, Available: true, Executable: "/usr/bin/kajicode-linux-sandbox", Platform: "linux"}
 	policy := DefaultPolicy()
 	profile := PermissionProfileFromPolicy("/workspace", policy, nil)
 	request, err := NewSandboxManager(SandboxManagerOptions{GOOS: "linux", Backend: backend}).BuildExecutionRequest(SandboxManagerRequest{
@@ -155,7 +155,7 @@ func TestSandboxManagerBuildsExecutionRequestFromProfile(t *testing.T) {
 }
 
 func TestSandboxManagerBuildsCommandPlanThroughLinuxHelper(t *testing.T) {
-	backend := Backend{Name: BackendLinuxBwrap, Available: true, Executable: "/usr/bin/zero-linux-sandbox", Platform: "linux"}
+	backend := Backend{Name: BackendLinuxBwrap, Available: true, Executable: "/usr/bin/kajicode-linux-sandbox", Platform: "linux"}
 	policy := DefaultPolicy()
 	policy.BlockUnixSockets = true
 	manager := NewSandboxManager(SandboxManagerOptions{GOOS: "linux", Backend: backend})
@@ -170,7 +170,7 @@ func TestSandboxManagerBuildsCommandPlanThroughLinuxHelper(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildCommandPlan: %v", err)
 	}
-	if !plan.Wrapped || plan.Name != "/usr/bin/zero-linux-sandbox" || plan.TargetBackend != BackendLinuxBwrap {
+	if !plan.Wrapped || plan.Name != "/usr/bin/kajicode-linux-sandbox" || plan.TargetBackend != BackendLinuxBwrap {
 		t.Fatalf("command plan = %#v, want native linux helper wrapper", plan)
 	}
 	if plan.EnforcementLevel != EnforcementNative {
@@ -188,7 +188,7 @@ func TestSandboxManagerBuildsCommandPlanThroughWindowsRunner(t *testing.T) {
 	restore := windowsSandboxInitialized
 	t.Cleanup(func() { windowsSandboxInitialized = restore })
 	windowsSandboxInitialized = func() bool { return true }
-	backend := Backend{Name: BackendWindowsRestrictedToken, Available: true, Executable: `C:\zero\zero-windows-command-runner.exe`, Platform: "windows"}
+	backend := Backend{Name: BackendWindowsRestrictedToken, Available: true, Executable: `C:\kajicode\kajicode-windows-command-runner.exe`, Platform: "windows"}
 	policy := DefaultPolicy()
 	manager := NewSandboxManager(SandboxManagerOptions{GOOS: "windows", Backend: backend})
 	plan, err := manager.BuildCommandPlan(SandboxManagerRequest{
@@ -202,7 +202,7 @@ func TestSandboxManagerBuildsCommandPlanThroughWindowsRunner(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildCommandPlan: %v", err)
 	}
-	if !plan.Wrapped || plan.Name != `C:\zero\zero-windows-command-runner.exe` || plan.TargetBackend != BackendWindowsRestrictedToken {
+	if !plan.Wrapped || plan.Name != `C:\kajicode\kajicode-windows-command-runner.exe` || plan.TargetBackend != BackendWindowsRestrictedToken {
 		t.Fatalf("command plan = %#v, want native windows command runner wrapper", plan)
 	}
 	if plan.EnforcementLevel != EnforcementNative {
@@ -259,9 +259,9 @@ func TestSandboxManagerSelectsPlatformBackend(t *testing.T) {
 		want       BackendName
 		wantTarget BackendName
 	}{
-		{name: "linux", goos: "linux", lookupName: LinuxSandboxHelperName, lookupPath: "/usr/bin/zero-linux-sandbox", want: BackendLinuxBwrap, wantTarget: BackendLinuxBwrap},
+		{name: "linux", goos: "linux", lookupName: LinuxSandboxHelperName, lookupPath: "/usr/bin/kajicode-linux-sandbox", want: BackendLinuxBwrap, wantTarget: BackendLinuxBwrap},
 		{name: "macos", goos: "darwin", lookupName: "sandbox-exec", lookupPath: "/usr/bin/sandbox-exec", want: BackendMacOSSeatbelt, wantTarget: BackendMacOSSeatbelt},
-		{name: "windows", goos: "windows", lookupName: WindowsSandboxCommandRunnerName, lookupPath: `C:\zero\zero-windows-command-runner.exe`, setupPath: `C:\zero\zero-windows-sandbox-setup.exe`, want: BackendWindowsRestrictedToken, wantTarget: BackendWindowsRestrictedToken},
+		{name: "windows", goos: "windows", lookupName: WindowsSandboxCommandRunnerName, lookupPath: `C:\kajicode\kajicode-windows-command-runner.exe`, setupPath: `C:\kajicode\kajicode-windows-sandbox-setup.exe`, want: BackendWindowsRestrictedToken, wantTarget: BackendWindowsRestrictedToken},
 		{name: "unsupported", goos: "plan9", want: BackendUnavailable, wantTarget: BackendUnavailable},
 	}
 
@@ -321,7 +321,7 @@ func TestSelectBackendDelegatesToSandboxManagerSelection(t *testing.T) {
 		GOOS: "linux",
 		LookupExecutable: func(name string) (string, error) {
 			if name == LinuxSandboxHelperName {
-				return "/usr/bin/zero-linux-sandbox", nil
+				return "/usr/bin/kajicode-linux-sandbox", nil
 			}
 			if name == "bwrap" {
 				return "/usr/bin/bwrap", nil
@@ -333,7 +333,7 @@ func TestSelectBackendDelegatesToSandboxManagerSelection(t *testing.T) {
 		GOOS: "linux",
 		LookupExecutable: func(name string) (string, error) {
 			if name == LinuxSandboxHelperName {
-				return "/usr/bin/zero-linux-sandbox", nil
+				return "/usr/bin/kajicode-linux-sandbox", nil
 			}
 			if name == "bwrap" {
 				return "/usr/bin/bwrap", nil

@@ -1,5 +1,5 @@
 // Package notify emits dep-free terminal notifications (BEL and/or OSC-9
-// desktop notifications) when Zero finishes a turn or needs user input.
+// desktop notifications) when KajiCode finishes a turn or needs user input.
 package notify
 
 import (
@@ -135,9 +135,9 @@ func emitToSink(sink Sink, event Event, message string) {
 // DefaultMessage is the generic OSC-9 body for an event (no prompt content).
 func DefaultMessage(event Event) string {
 	if event == AwaitingInput {
-		return "Zero: needs input"
+		return "KajiCode: needs input"
 	}
-	return "Zero: ready"
+	return "KajiCode: ready"
 }
 
 func shouldEmit(cfg Config, _ Event, focused bool) bool {

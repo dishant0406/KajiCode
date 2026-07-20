@@ -39,7 +39,7 @@ func TestEvaluateWarningsClassifiesThresholds(t *testing.T) {
 }
 
 func TestRunMinimalBenchmarkEndToEnd(t *testing.T) {
-	t.Setenv("ZERO_PERF_HELPER", "1")
+	t.Setenv("KAJICODE_PERF_HELPER", "1")
 	command := []string{os.Args[0], "-test.run=TestPerfBenchHelperProcess"}
 
 	result, err := Run(context.Background(), Options{
@@ -84,8 +84,8 @@ func TestFormatSummaryIncludesWarnings(t *testing.T) {
 		SchemaVersion:       SchemaVersion,
 		Timestamp:           "2026-06-03T00:00:00Z",
 		Platform:            Platform{OS: "linux", Arch: "amd64", GoVersion: "go1.24.4", Harness: "go"},
-		ColdStartCommand:    []string{"/repo/zero", "--version"},
-		FirstOutputCommand:  []string{"/repo/zero", "--version"},
+		ColdStartCommand:    []string{"/repo/kajicode", "--version"},
+		FirstOutputCommand:  []string{"/repo/kajicode", "--version"},
 		Iterations:          2,
 		WarmupIterations:    1,
 		Thresholds:          DefaultThresholds,
@@ -97,7 +97,7 @@ func TestFormatSummaryIncludesWarnings(t *testing.T) {
 	summary := FormatSummary(result)
 
 	for _, want := range []string{
-		"Zero performance benchmark",
+		"KajiCode performance benchmark",
 		"cold start: median 105.00 ms",
 		"harness end RSS: max 310.00 MB",
 		"warnings:",
@@ -116,10 +116,10 @@ func TestEscapeActionCommand(t *testing.T) {
 }
 
 func TestPerfBenchHelperProcess(t *testing.T) {
-	if os.Getenv("ZERO_PERF_HELPER") != "1" {
+	if os.Getenv("KAJICODE_PERF_HELPER") != "1" {
 		return
 	}
-	fmt.Println("zero 0.1.0")
+	fmt.Println("kajicode 0.1.0")
 	os.Exit(0)
 }
 

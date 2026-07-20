@@ -20,7 +20,7 @@ func TestWriteExecProviderErrorAppendsHint(t *testing.T) {
 		if !strings.Contains(out, "auth error:") {
 			t.Fatalf("expected raw message, got %q", out)
 		}
-		if !strings.Contains(out, "zero setup") || !strings.Contains(out, "zero auth openrouter") {
+		if !strings.Contains(out, "kajicode setup") || !strings.Contains(out, "kajicode auth openrouter") {
 			t.Fatalf("expected an actionable setup/auth hint, got %q", out)
 		}
 	})
@@ -30,9 +30,9 @@ func TestWriteExecProviderErrorAppendsHint(t *testing.T) {
 		writeExecProviderError(&stdout, &stderr, execOutputText, "sandbox_error",
 			"sandbox setup failed: permission denied")
 		out := stderr.String()
-		// Exactly one "[zero]" line — no spurious hint attached to a local error.
-		if n := strings.Count(out, "[zero]"); n != 1 {
-			t.Fatalf("expected exactly one [zero] line for a non-provider error, got %d:\n%s", n, out)
+		// Exactly one "[kajicode]" line — no spurious hint attached to a local error.
+		if n := strings.Count(out, "[kajicode]"); n != 1 {
+			t.Fatalf("expected exactly one [kajicode] line for a non-provider error, got %d:\n%s", n, out)
 		}
 	})
 
@@ -43,7 +43,7 @@ func TestWriteExecProviderErrorAppendsHint(t *testing.T) {
 		if stderr.Len() != 0 {
 			t.Fatalf("json mode must not write to stderr, got %q", stderr.String())
 		}
-		if strings.Contains(stdout.String(), "zero setup") {
+		if strings.Contains(stdout.String(), "kajicode setup") {
 			t.Fatalf("json mode must not inject a hint into the structured payload, got %q", stdout.String())
 		}
 	})

@@ -8,14 +8,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/config"
-	"github.com/Gitlawb/zero/internal/redaction"
-	"github.com/Gitlawb/zero/internal/selfverify"
-	"github.com/Gitlawb/zero/internal/testrunner"
-	"github.com/Gitlawb/zero/internal/verify"
-	"github.com/Gitlawb/zero/internal/worktrees"
-	"github.com/Gitlawb/zero/internal/zerogit"
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/kajicodegit"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
+	"github.com/dishant0406/KajiCode/internal/redaction"
+	"github.com/dishant0406/KajiCode/internal/selfverify"
+	"github.com/dishant0406/KajiCode/internal/testrunner"
+	"github.com/dishant0406/KajiCode/internal/verify"
+	"github.com/dishant0406/KajiCode/internal/worktrees"
 )
 
 type worktreeCommandOptions struct {
@@ -190,7 +190,7 @@ func runChanges(args []string, stdout io.Writer, stderr io.Writer, deps appDeps)
 	}
 	switch command {
 	case "inspect", "status":
-		summary, err := deps.inspectChanges(context.Background(), zerogit.InspectOptions{
+		summary, err := deps.inspectChanges(context.Background(), kajicodegit.InspectOptions{
 			Cwd:          workspaceRoot,
 			BaseRef:      options.baseRef,
 			MaxDiffBytes: options.maxDiffBytes,
@@ -200,7 +200,7 @@ func runChanges(args []string, stdout io.Writer, stderr io.Writer, deps appDeps)
 		}
 		safeSummary := redactChangeSummary(summary)
 		if options.json {
-			if err := writePrettyJSON(stdout, zerogit.SnapshotFromSummary(safeSummary)); err != nil {
+			if err := writePrettyJSON(stdout, kajicodegit.SnapshotFromSummary(safeSummary)); err != nil {
 				return exitCrash
 			}
 			return exitSuccess
@@ -212,7 +212,7 @@ func runChanges(args []string, stdout io.Writer, stderr io.Writer, deps appDeps)
 	case "commit":
 		var message string
 		if options.auto {
-			summary, err := deps.inspectChanges(context.Background(), zerogit.InspectOptions{
+			summary, err := deps.inspectChanges(context.Background(), kajicodegit.InspectOptions{
 				Cwd:          workspaceRoot,
 				MaxDiffBytes: options.maxDiffBytes,
 			})
@@ -253,7 +253,7 @@ func runChanges(args []string, stdout io.Writer, stderr io.Writer, deps appDeps)
 			message = options.message
 		}
 
-		result, err := deps.commitChanges(context.Background(), zerogit.CommitOptions{
+		result, err := deps.commitChanges(context.Background(), kajicodegit.CommitOptions{
 			Cwd:          workspaceRoot,
 			Message:      message,
 			DryRun:       options.dryRun,
@@ -520,10 +520,10 @@ func parseChangesArgs(args []string, command string) (changesCommandOptions, boo
 		}
 	}
 	if command != "commit" && options.message != "" {
-		return options, false, execUsageError{"--message is only valid with `zero changes commit`"}
+		return options, false, execUsageError{"--message is only valid with `kajicode changes commit`"}
 	}
 	if command != "commit" && (options.hasMessage || options.dryRun || options.auto) {
-		return options, false, execUsageError{"--message, --dry-run, and --auto are only valid with `zero changes commit`"}
+		return options, false, execUsageError{"--message, --dry-run, and --auto are only valid with `kajicode changes commit`"}
 	}
 	if command == "commit" && options.hasMessage && options.auto {
 		return options, false, execUsageError{"cannot specify both --message and --auto"}
@@ -532,13 +532,13 @@ func parseChangesArgs(args []string, command string) (changesCommandOptions, boo
 		return options, false, execUsageError{"--dry-run is only valid with commit or push"}
 	}
 	if command != "inspect" && options.baseRef != "" {
-		return options, false, execUsageError{"--base is only valid with `zero changes inspect`"}
+		return options, false, execUsageError{"--base is only valid with `kajicode changes inspect`"}
 	}
 	if command != "push" && command != "pr" && (options.remote != "" || options.force) {
 		return options, false, execUsageError{"--remote and --force are only valid with push or pr"}
 	}
 	if command != "pr" && (options.title != "" || options.body != "" || options.fill || options.draft) {
-		return options, false, execUsageError{"--title, --body, --fill, and --draft are only valid with `zero changes pr`"}
+		return options, false, execUsageError{"--title, --body, --fill, and --draft are only valid with `kajicode changes pr`"}
 	}
 	if command != "push" && command != "pr" && options.yes {
 		return options, false, execUsageError{"--yes is only valid with push or pr"}
@@ -613,7 +613,7 @@ func redactVerifyLoopReport(report selfverify.Report) selfverify.Report {
 	return report
 }
 
-func redactChangeSummary(summary zerogit.ChangeSummary) zerogit.ChangeSummary {
+func redactChangeSummary(summary kajicodegit.ChangeSummary) kajicodegit.ChangeSummary {
 	summary.Root = redactCLIString(summary.Root)
 	summary.Base = redactCLIString(summary.Base)
 	summary.Branch = redactCLIString(summary.Branch)
@@ -627,7 +627,7 @@ func redactChangeSummary(summary zerogit.ChangeSummary) zerogit.ChangeSummary {
 	return summary
 }
 
-func redactCommitResult(result zerogit.CommitResult) zerogit.CommitResult {
+func redactCommitResult(result kajicodegit.CommitResult) kajicodegit.CommitResult {
 	result.Root = redactCLIString(result.Root)
 	result.Message = redactCLIString(result.Message)
 	result.CommitHash = redactCLIString(result.CommitHash)
@@ -643,7 +643,7 @@ func redactCLIString(value string) string {
 
 func formatWorktreeResult(result worktrees.Result) string {
 	lines := []string{
-		"Zero worktree ready",
+		"KajiCode worktree ready",
 		"name: " + result.Name,
 		"path: " + result.Path,
 		"repo: " + result.RepoRoot,
@@ -662,7 +662,7 @@ func formatWorktreeResult(result worktrees.Result) string {
 
 func formatVerifyReport(report verify.Report) string {
 	lines := []string{
-		"Zero verification",
+		"KajiCode verification",
 		"root: " + report.Root,
 		fmt.Sprintf("summary: %d total, %d passed, %d failed, %d errors", report.Summary.Total, report.Summary.Passed, report.Summary.Failed, report.Summary.Errors),
 	}
@@ -702,7 +702,7 @@ func formatVerifyTestSummary(summary *testrunner.Summary) string {
 
 func formatVerifyLoopReport(report selfverify.Report) string {
 	lines := []string{
-		"Zero self-verification",
+		"KajiCode self-verification",
 	}
 	if report.Root != "" {
 		lines = append(lines, "root: "+report.Root)
@@ -743,9 +743,9 @@ func formatRemediation(remediation selfverify.Remediation) string {
 	return strings.Join(details, " - ")
 }
 
-func formatChangeSummary(summary zerogit.ChangeSummary) string {
+func formatChangeSummary(summary kajicodegit.ChangeSummary) string {
 	lines := []string{
-		"Zero changes",
+		"KajiCode changes",
 		"root: " + summary.Root,
 		fmt.Sprintf("files: %d changed", len(summary.Files)),
 	}
@@ -768,9 +768,9 @@ func formatChangeSummary(summary zerogit.ChangeSummary) string {
 	return strings.Join(lines, "\n")
 }
 
-func formatCommitResult(result zerogit.CommitResult) string {
+func formatCommitResult(result kajicodegit.CommitResult) string {
 	lines := []string{
-		"Zero changes commit",
+		"KajiCode changes commit",
 		"root: " + result.Root,
 		"message: " + result.Message,
 		fmt.Sprintf("dry-run: %t", result.DryRun),
@@ -785,13 +785,13 @@ func formatCommitResult(result zerogit.CommitResult) string {
 
 func writeWorktreesHelp(w io.Writer) error {
 	_, err := fmt.Fprint(w, `Usage:
-  zero worktrees prepare [flags] [name]
+  kajicode worktrees prepare [flags] [name]
 
-Prepares an isolated git worktree for a Zero task.
+Prepares an isolated git worktree for a KajiCode task.
 
 Flags:
       --name <name>       Worktree name; defaults to a timestamped task name
-      --dir <path>        Base directory for Zero worktrees
+      --dir <path>        Base directory for KajiCode worktrees
   -C, --cwd <path>        Source repository directory
       --json              Print JSON output
   -h, --help              Show this help
@@ -801,7 +801,7 @@ Flags:
 
 func writeVerifyHelp(w io.Writer) error {
 	_, err := fmt.Fprint(w, `Usage:
-  zero verify [flags]
+  kajicode verify [flags]
 
 Detects and runs local verification checks for the workspace.
 
@@ -818,10 +818,10 @@ Flags:
 
 func writeChangesHelp(w io.Writer) error {
 	_, err := fmt.Fprint(w, `Usage:
-  zero changes inspect [flags]
-  zero changes commit [flags]
-  zero changes push [flags]
-  zero changes pr [flags]
+  kajicode changes inspect [flags]
+  kajicode changes commit [flags]
+  kajicode changes push [flags]
+  kajicode changes pr [flags]
 
 Inspects, commits, pushes, and creates pull requests for local git changes.
 
@@ -829,7 +829,7 @@ Flags:
   -C, --cwd <path>        Workspace directory
       --base <ref>        Diff against <ref>...HEAD instead of the working tree
       --diff-bytes <n>    Maximum diff bytes to include
-  -m, --message <text>    Commit message for `+"`zero changes commit`"+`
+  -m, --message <text>    Commit message for `+"`kajicode changes commit`"+`
       --dry-run           Preview commit metadata / push without mutating git state
       --remote <name>     Remote to push to (defaults to upstream tracked branch or origin)
       --force             Use force-with-lease when pushing
@@ -862,7 +862,7 @@ func runChangesPush(args []string, stdout io.Writer, stderr io.Writer, deps appD
 		return writeExecUsageError(stderr, err.Error())
 	}
 
-	result, err := deps.pushChanges(context.Background(), zerogit.PushOptions{
+	result, err := deps.pushChanges(context.Background(), kajicodegit.PushOptions{
 		Cwd:                    workspaceRoot,
 		Remote:                 options.remote,
 		Force:                  options.force,
@@ -919,7 +919,7 @@ func runChangesPR(args []string, stdout io.Writer, stderr io.Writer, deps appDep
 			return exitCrash
 		}
 	}
-	pushResult, err := deps.pushChanges(context.Background(), zerogit.PushOptions{
+	pushResult, err := deps.pushChanges(context.Background(), kajicodegit.PushOptions{
 		Cwd:                    workspaceRoot,
 		Remote:                 options.remote,
 		Force:                  options.force,
@@ -934,7 +934,7 @@ func runChangesPR(args []string, stdout io.Writer, stderr io.Writer, deps appDep
 		}
 	}
 
-	prResult, err := deps.createPR(context.Background(), zerogit.PROptions{
+	prResult, err := deps.createPR(context.Background(), kajicodegit.PROptions{
 		Cwd:   workspaceRoot,
 		Fill:  options.fill,
 		Draft: options.draft,
@@ -968,7 +968,7 @@ func runChangesPR(args []string, stdout io.Writer, stderr io.Writer, deps appDep
 	return exitSuccess
 }
 
-func generateAutoCommitMessage(ctx context.Context, provider zeroruntime.Provider, model string, summary zerogit.ChangeSummary) (string, error) {
+func generateAutoCommitMessage(ctx context.Context, provider kajicoderuntime.Provider, model string, summary kajicodegit.ChangeSummary) (string, error) {
 	var promptBuilder strings.Builder
 	promptBuilder.WriteString("Analyze the following git diff and generate a concise, conventional commit message.\n")
 	promptBuilder.WriteString("The commit message subject line must be 72 characters or fewer, starting with a conventional commit type (e.g., feat, fix, docs, style, refactor, test, chore) followed by a colon and space, and a lowercase description.\n")
@@ -977,16 +977,16 @@ func generateAutoCommitMessage(ctx context.Context, provider zeroruntime.Provide
 	promptBuilder.WriteString("Git Diff:\n")
 	promptBuilder.WriteString(summary.Diff)
 
-	request := zeroruntime.CompletionRequest{
-		Messages: []zeroruntime.Message{
-			{Role: zeroruntime.MessageRoleUser, Content: promptBuilder.String()},
+	request := kajicoderuntime.CompletionRequest{
+		Messages: []kajicoderuntime.Message{
+			{Role: kajicoderuntime.MessageRoleUser, Content: promptBuilder.String()},
 		},
 	}
 	stream, err := provider.StreamCompletion(ctx, request)
 	if err != nil {
 		return "", err
 	}
-	collected := zeroruntime.CollectStream(ctx, stream)
+	collected := kajicoderuntime.CollectStream(ctx, stream)
 	if collected.Error != "" {
 		return "", fmt.Errorf("%s", collected.Error)
 	}

@@ -7,8 +7,8 @@ import (
 	"io"
 	"strings"
 
-	"github.com/Gitlawb/zero/internal/streamjson"
-	"github.com/Gitlawb/zero/internal/tools"
+	"github.com/dishant0406/KajiCode/internal/streamjson"
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
 type StreamResult struct {

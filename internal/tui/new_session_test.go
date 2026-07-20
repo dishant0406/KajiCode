@@ -6,8 +6,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/Gitlawb/zero/internal/sessions"
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
+	"github.com/dishant0406/KajiCode/internal/sessions"
 )
 
 func TestStartNewSessionResetsState(t *testing.T) {
@@ -16,12 +16,12 @@ func TestStartNewSessionResetsState(t *testing.T) {
 	m.sessionEvents = []sessions.Event{{Type: sessions.EventMessage}}
 	m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendUser, text: "hello"})
 	// Stage attachments + a queued message that /new must not leak into the new session.
-	m.pendingImages = make([]zeroruntime.ImageBlock, 1)
+	m.pendingImages = make([]kajicoderuntime.ImageBlock, 1)
 	m.pendingImageLabels = []string{"pic.png"}
 	m.pendingDocuments = []pendingDocument{{label: "doc.pdf"}}
 	m.queuedMessage = "queued"
 	// The /retry attachment snapshot is prior-session state too and must not survive.
-	m.lastImages = make([]zeroruntime.ImageBlock, 1)
+	m.lastImages = make([]kajicoderuntime.ImageBlock, 1)
 	m.lastImageLabels = []string{"pic.png"}
 	m.lastDocuments = []pendingDocument{{label: "doc.pdf"}}
 

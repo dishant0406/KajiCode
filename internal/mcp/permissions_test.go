@@ -250,7 +250,7 @@ func TestPermissionStoreRejectsInvalidPersistedKeys(t *testing.T) {
 
 func TestResolvePermissionPathHonorsOverrideAndConfigHome(t *testing.T) {
 	dir := t.TempDir()
-	override, err := ResolvePermissionPath(map[string]string{"ZERO_MCP_PERMISSIONS_PATH": filepath.Join(dir, "custom.json")})
+	override, err := ResolvePermissionPath(map[string]string{"KAJICODE_MCP_PERMISSIONS_PATH": filepath.Join(dir, "custom.json")})
 	if err != nil {
 		t.Fatalf("ResolvePermissionPath override returned error: %v", err)
 	}
@@ -261,7 +261,7 @@ func TestResolvePermissionPathHonorsOverrideAndConfigHome(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResolvePermissionPath xdg returned error: %v", err)
 	}
-	if resolved != filepath.Join(dir, "xdg", "zero", "mcp-permissions.json") {
+	if resolved != filepath.Join(dir, "xdg", "kajicode", "mcp-permissions.json") {
 		t.Fatalf("xdg path = %q", resolved)
 	}
 }

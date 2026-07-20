@@ -141,8 +141,8 @@ func TestDefaultRegistryReasoningAndProviderAssertions(t *testing.T) {
 	}
 	if _, err := registry.Require("unknown-model"); err == nil {
 		t.Fatal("Require should reject unknown models")
-	} else if !strings.Contains(err.Error(), "unknown Zero model") {
-		t.Fatalf("unknown model error = %q, want unknown Zero model", err.Error())
+	} else if !strings.Contains(err.Error(), "unknown KajiCode model") {
+		t.Fatalf("unknown model error = %q, want unknown KajiCode model", err.Error())
 	}
 }
 

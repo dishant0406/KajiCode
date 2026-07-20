@@ -115,7 +115,7 @@ func Build(ctx context.Context, options BuildOptions) (BuildResult, error) {
 	if output == "" {
 		output = DefaultBuildOutput(rootDir, goos)
 	}
-	if err := buildZero(ctx, rootDir, output, version, goos, goarch); err != nil {
+	if err := buildKajicode(ctx, rootDir, output, version, goos, goarch); err != nil {
 		return BuildResult{}, err
 	}
 	return BuildResult{
@@ -229,7 +229,7 @@ func Package(ctx context.Context, options PackageOptions) (PackageResult, error)
 		return PackageResult{}, fmt.Errorf("create release dir: %w", err)
 	}
 
-	if err := buildZero(ctx, rootDir, artifactPath, version, goos, goarch); err != nil {
+	if err := buildKajicode(ctx, rootDir, artifactPath, version, goos, goarch); err != nil {
 		return PackageResult{}, err
 	}
 	for name, path := range helperArtifacts {
@@ -266,37 +266,37 @@ func Package(ctx context.Context, options PackageOptions) (PackageResult, error)
 
 func ZeroArtifactName(goos string) string {
 	if goos == "windows" {
-		return "zero.exe"
+		return "kajicode.exe"
 	}
-	return "zero"
+	return "kajicode"
 }
 
 func LinuxSandboxHelperArtifactName(goos string) string {
 	if goos == "windows" {
-		return "zero-linux-sandbox.exe"
+		return "kajicode-linux-sandbox.exe"
 	}
-	return "zero-linux-sandbox"
+	return "kajicode-linux-sandbox"
 }
 
 func LinuxSeccompHelperArtifactName(goos string) string {
 	if goos == "windows" {
-		return "zero-seccomp.exe"
+		return "kajicode-seccomp.exe"
 	}
-	return "zero-seccomp"
+	return "kajicode-seccomp"
 }
 
 func WindowsSandboxCommandRunnerArtifactName(goos string) string {
 	if goos == "windows" {
-		return "zero-windows-command-runner.exe"
+		return "kajicode-windows-command-runner.exe"
 	}
-	return "zero-windows-command-runner"
+	return "kajicode-windows-command-runner"
 }
 
 func WindowsSandboxSetupArtifactName(goos string) string {
 	if goos == "windows" {
-		return "zero-windows-sandbox-setup.exe"
+		return "kajicode-windows-sandbox-setup.exe"
 	}
-	return "zero-windows-sandbox-setup"
+	return "kajicode-windows-sandbox-setup"
 }
 
 func DefaultBuildOutput(rootDir string, goos string) string {
@@ -304,7 +304,7 @@ func DefaultBuildOutput(rootDir string, goos string) string {
 }
 
 func BuildLdflags(version string) string {
-	return "-s -w -X github.com/Gitlawb/zero/internal/cli.version=" + version
+	return "-s -w -X github.com/dishant0406/KajiCode/internal/cli.version=" + version
 }
 
 func ReleasePlatform(goos string) (string, error) {
@@ -347,7 +347,7 @@ func ReleasePackageName(version string, goos string, goarch string) (string, err
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("zero-v%s-%s-%s", version, platform, arch), nil
+	return fmt.Sprintf("kajicode-v%s-%s-%s", version, platform, arch), nil
 }
 
 func ReleaseArchiveName(version string, goos string, goarch string) (string, error) {
@@ -598,36 +598,36 @@ func PackageVersion(rootDir string) (string, error) {
 	return strings.TrimSpace(payload.Version), nil
 }
 
-func buildZero(ctx context.Context, rootDir string, output string, version string, goos string, goarch string) error {
-	return buildGoPackage(ctx, rootDir, output, version, goos, goarch, "./cmd/zero")
+func buildKajicode(ctx context.Context, rootDir string, output string, version string, goos string, goarch string) error {
+	return buildGoPackage(ctx, rootDir, output, version, goos, goarch, "./cmd/kajicode")
 }
 
 func buildLinuxSandboxHelper(ctx context.Context, rootDir string, output string, goos string, goarch string) error {
 	if goos != "linux" {
 		return nil
 	}
-	return buildGoPackage(ctx, rootDir, output, "", goos, goarch, "./cmd/zero-linux-sandbox")
+	return buildGoPackage(ctx, rootDir, output, "", goos, goarch, "./cmd/kajicode-linux-sandbox")
 }
 
 func buildLinuxSeccompHelper(ctx context.Context, rootDir string, output string, goos string, goarch string) error {
 	if goos != "linux" {
 		return nil
 	}
-	return buildGoPackage(ctx, rootDir, output, "", goos, goarch, "./cmd/zero-seccomp")
+	return buildGoPackage(ctx, rootDir, output, "", goos, goarch, "./cmd/kajicode-seccomp")
 }
 
 func buildWindowsSandboxCommandRunner(ctx context.Context, rootDir string, output string, goos string, goarch string) error {
 	if goos != "windows" {
 		return nil
 	}
-	return buildGoPackage(ctx, rootDir, output, "", goos, goarch, "./cmd/zero-windows-command-runner")
+	return buildGoPackage(ctx, rootDir, output, "", goos, goarch, "./cmd/kajicode-windows-command-runner")
 }
 
 func buildWindowsSandboxSetup(ctx context.Context, rootDir string, output string, goos string, goarch string) error {
 	if goos != "windows" {
 		return nil
 	}
-	return buildGoPackage(ctx, rootDir, output, "", goos, goarch, "./cmd/zero-windows-sandbox-setup")
+	return buildGoPackage(ctx, rootDir, output, "", goos, goarch, "./cmd/kajicode-windows-sandbox-setup")
 }
 
 func buildReleaseHelper(ctx context.Context, rootDir string, output string, goos string, goarch string, name string) error {
@@ -675,7 +675,7 @@ func smokeVersion(ctx context.Context, binaryPath string, version string) error 
 		}
 		return fmt.Errorf("smoke release binary: %s", output)
 	}
-	expected := "zero " + version
+	expected := "kajicode " + version
 	if output != expected {
 		return fmt.Errorf("expected %s --version to print %s, got %s", filepath.Base(binaryPath), expected, output)
 	}
@@ -696,7 +696,7 @@ func copyPackageFiles(rootDir string, stagingDir string, artifactPath string, st
 			return err
 		}
 	}
-	if err := copyFile(filepath.Join(rootDir, "bin", "zero.js"), filepath.Join(stagingDir, "bin", "zero.js"), 0o755); err != nil {
+	if err := copyFile(filepath.Join(rootDir, "bin", "kajicode.js"), filepath.Join(stagingDir, "bin", "kajicode.js"), 0o755); err != nil {
 		return err
 	}
 	for name, source := range helperArtifacts {

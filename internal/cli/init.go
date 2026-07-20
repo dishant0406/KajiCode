@@ -6,10 +6,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/agentinit"
+	"github.com/dishant0406/KajiCode/internal/agentinit"
 )
 
-// runInit implements `zero init`: investigate the repo and generate an
+// runInit implements `kajicode init`: investigate the repo and generate an
 // AGENTS.md. It builds a bootstrap prompt seeded with repo facts and forwards
 // it to the normal `exec` machinery (provider, tools, sandbox, AGENTS.md write
 // path are all the standard ones). Any flags the user passes (--model, -w,
@@ -61,14 +61,14 @@ func wantsHelp(args []string) bool {
 	return false
 }
 
-const initHelp = `zero init — investigate the repository and generate an AGENTS.md.
+const initHelp = `kajicode init — investigate the repository and generate an AGENTS.md.
 
 Runs an agent turn seeded with a local repo scan (languages, build/test tools,
 CI, workspace layout), investigates the gaps, and writes a concise AGENTS.md at
 the repo root so future runs start with project context.
 
 Usage:
-  zero init [exec flags]
+  kajicode init [exec flags]
 
-Accepts the same flags as 'zero exec' (e.g. --model, -w/--worktree, --add-dir).
+Accepts the same flags as 'kajicode exec' (e.g. --model, -w/--worktree, --add-dir).
 `

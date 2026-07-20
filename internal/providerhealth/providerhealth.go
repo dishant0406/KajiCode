@@ -15,11 +15,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/config"
-	"github.com/Gitlawb/zero/internal/providercatalog"
-	"github.com/Gitlawb/zero/internal/providers"
-	"github.com/Gitlawb/zero/internal/providers/providerio"
-	"github.com/Gitlawb/zero/internal/redaction"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/providercatalog"
+	"github.com/dishant0406/KajiCode/internal/providers"
+	"github.com/dishant0406/KajiCode/internal/providers/providerio"
+	"github.com/dishant0406/KajiCode/internal/redaction"
 )
 
 type Status string

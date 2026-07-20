@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/config"
-	"github.com/Gitlawb/zero/internal/tools"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
 // defaultConnectTimeout bounds how long startup waits for ONE MCP server to
@@ -23,7 +23,7 @@ type RegisterOptions struct {
 	PermissionStore *PermissionStore
 	Autonomy        PermissionAutonomy
 	ClientFactory   func(context.Context, Server) (ToolClient, error)
-	// ConnectTimeout bounds the per-server connect+list at startup. Zero uses
+	// ConnectTimeout bounds the per-server connect+list at startup. KajiCode uses
 	// defaultConnectTimeout.
 	ConnectTimeout time.Duration
 }

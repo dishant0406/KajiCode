@@ -7,12 +7,12 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/Gitlawb/zero/internal/agent"
-	"github.com/Gitlawb/zero/internal/config"
-	"github.com/Gitlawb/zero/internal/modelregistry"
-	"github.com/Gitlawb/zero/internal/sessions"
-	"github.com/Gitlawb/zero/internal/tools"
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/agent"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
+	"github.com/dishant0406/KajiCode/internal/modelregistry"
+	"github.com/dishant0406/KajiCode/internal/sessions"
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
 func TestEffortCommandListsAndSetsSupportedEffort(t *testing.T) {
@@ -467,9 +467,9 @@ func TestCompactCommandRecordsSessionCompactionAndShrinksReplayContext(t *testin
 
 func TestCompactCommandUsesProviderSummaryWhenAvailable(t *testing.T) {
 	store := sessions.NewStore(sessions.StoreOptions{RootDir: t.TempDir()})
-	provider := &fakeProvider{events: []zeroruntime.StreamEvent{
-		{Type: zeroruntime.StreamEventText, Content: "Provider summary keeps the actual old decisions."},
-		{Type: zeroruntime.StreamEventDone},
+	provider := &fakeProvider{events: []kajicoderuntime.StreamEvent{
+		{Type: kajicoderuntime.StreamEventText, Content: "Provider summary keeps the actual old decisions."},
+		{Type: kajicoderuntime.StreamEventDone},
 	}}
 	m := newModel(context.Background(), Options{
 		ModelName:    "gpt-4.1",
@@ -586,10 +586,10 @@ func compactStatusText(rows []transcriptRow) string {
 }
 
 func TestUsageEventsUpdateFooterAndContext(t *testing.T) {
-	provider := &fakeProvider{events: []zeroruntime.StreamEvent{
-		{Type: zeroruntime.StreamEventText, Content: "done"},
-		{Type: zeroruntime.StreamEventUsage, Usage: zeroruntime.Usage{InputTokens: 100, CachedInputTokens: 25, OutputTokens: 20}},
-		{Type: zeroruntime.StreamEventDone},
+	provider := &fakeProvider{events: []kajicoderuntime.StreamEvent{
+		{Type: kajicoderuntime.StreamEventText, Content: "done"},
+		{Type: kajicoderuntime.StreamEventUsage, Usage: kajicoderuntime.Usage{InputTokens: 100, CachedInputTokens: 25, OutputTokens: 20}},
+		{Type: kajicoderuntime.StreamEventDone},
 	}}
 	m := newModel(context.Background(), Options{
 		ModelName:    "gpt-4.1",
@@ -629,10 +629,10 @@ func TestUsageEventsUpdateFooterAndContext(t *testing.T) {
 }
 
 func TestUsageRuntimeMessageUpdatesFooterBeforeFinalResponse(t *testing.T) {
-	provider := &fakeProvider{events: []zeroruntime.StreamEvent{
-		{Type: zeroruntime.StreamEventUsage, Usage: zeroruntime.Usage{InputTokens: 10, OutputTokens: 5}},
-		{Type: zeroruntime.StreamEventText, Content: "done"},
-		{Type: zeroruntime.StreamEventDone},
+	provider := &fakeProvider{events: []kajicoderuntime.StreamEvent{
+		{Type: kajicoderuntime.StreamEventUsage, Usage: kajicoderuntime.Usage{InputTokens: 10, OutputTokens: 5}},
+		{Type: kajicoderuntime.StreamEventText, Content: "done"},
+		{Type: kajicoderuntime.StreamEventDone},
 	}}
 	runtimeMessages := []tea.Msg{}
 	m := newModel(context.Background(), Options{
@@ -678,12 +678,12 @@ func TestUsageRuntimeMessageUpdatesFooterBeforeFinalResponse(t *testing.T) {
 }
 
 func TestUsageEventsForwardExistingAgentCallback(t *testing.T) {
-	provider := &fakeProvider{events: []zeroruntime.StreamEvent{
-		{Type: zeroruntime.StreamEventUsage, Usage: zeroruntime.Usage{InputTokens: 10, OutputTokens: 5}},
-		{Type: zeroruntime.StreamEventText, Content: "done"},
-		{Type: zeroruntime.StreamEventDone},
+	provider := &fakeProvider{events: []kajicoderuntime.StreamEvent{
+		{Type: kajicoderuntime.StreamEventUsage, Usage: kajicoderuntime.Usage{InputTokens: 10, OutputTokens: 5}},
+		{Type: kajicoderuntime.StreamEventText, Content: "done"},
+		{Type: kajicoderuntime.StreamEventDone},
 	}}
-	seen := []zeroruntime.Usage{}
+	seen := []kajicoderuntime.Usage{}
 	m := newModel(context.Background(), Options{
 		ModelName:    "gpt-4.1",
 		Provider:     provider,
@@ -715,10 +715,10 @@ func TestUsageEventsForwardExistingAgentCallback(t *testing.T) {
 }
 
 func TestUsageEventsForCustomModelUseTokenOnlyFallback(t *testing.T) {
-	provider := &fakeProvider{events: []zeroruntime.StreamEvent{
-		{Type: zeroruntime.StreamEventText, Content: "done"},
-		{Type: zeroruntime.StreamEventUsage, Usage: zeroruntime.Usage{InputTokens: 100, OutputTokens: 20}},
-		{Type: zeroruntime.StreamEventDone},
+	provider := &fakeProvider{events: []kajicoderuntime.StreamEvent{
+		{Type: kajicoderuntime.StreamEventText, Content: "done"},
+		{Type: kajicoderuntime.StreamEventUsage, Usage: kajicoderuntime.Usage{InputTokens: 100, OutputTokens: 20}},
+		{Type: kajicoderuntime.StreamEventDone},
 	}}
 	m := newModel(context.Background(), Options{
 		ModelName:    "custom-coder",
@@ -751,11 +751,11 @@ func TestUnpricedUsageStatusUsesLatestEventNotCumulative(t *testing.T) {
 	m := newModel(context.Background(), Options{ModelName: "custom-coder"})
 
 	var rows []transcriptRow
-	m, rows = m.recordUsageEvent("custom-coder", zeroruntime.Usage{InputTokens: 100, OutputTokens: 20})
+	m, rows = m.recordUsageEvent("custom-coder", kajicoderuntime.Usage{InputTokens: 100, OutputTokens: 20})
 	if len(rows) != 0 {
 		t.Fatalf("unpriced usage should not append transcript rows, got %#v", rows)
 	}
-	m, rows = m.recordUsageEvent("custom-coder", zeroruntime.Usage{InputTokens: 10, OutputTokens: 5})
+	m, rows = m.recordUsageEvent("custom-coder", kajicoderuntime.Usage{InputTokens: 10, OutputTokens: 5})
 	if len(rows) != 0 {
 		t.Fatalf("unpriced usage should not append transcript rows, got %#v", rows)
 	}
@@ -773,7 +773,7 @@ func TestUnpricedUsageStatusUsesLatestEventNotCumulative(t *testing.T) {
 
 func TestStatusLineDropsTokenFigureWhenSidebarShowsIt(t *testing.T) {
 	m := sidebarTestModel()
-	m, _ = m.recordUsageEvent("test-model", zeroruntime.Usage{InputTokens: 100, OutputTokens: 20})
+	m, _ = m.recordUsageEvent("test-model", kajicoderuntime.Usage{InputTokens: 100, OutputTokens: 20})
 	if !m.sidebarActive() {
 		t.Fatal("expected the sidebar to be active for this model")
 	}
@@ -800,10 +800,10 @@ func TestStatusLineDropsTokenFigureWhenSidebarShowsIt(t *testing.T) {
 }
 
 func TestInvalidUsageEventsAppendTranscriptError(t *testing.T) {
-	provider := &fakeProvider{events: []zeroruntime.StreamEvent{
-		{Type: zeroruntime.StreamEventText, Content: "done"},
-		{Type: zeroruntime.StreamEventUsage, Usage: zeroruntime.Usage{InputTokens: -1, OutputTokens: 20}},
-		{Type: zeroruntime.StreamEventDone},
+	provider := &fakeProvider{events: []kajicoderuntime.StreamEvent{
+		{Type: kajicoderuntime.StreamEventText, Content: "done"},
+		{Type: kajicoderuntime.StreamEventUsage, Usage: kajicoderuntime.Usage{InputTokens: -1, OutputTokens: 20}},
+		{Type: kajicoderuntime.StreamEventDone},
 	}}
 	m := newModel(context.Background(), Options{
 		ModelName:    "gpt-4.1",
@@ -835,7 +835,7 @@ func TestStaleAgentUsageResponseIsIgnored(t *testing.T) {
 	updated, _ := m.Update(agentResponseMsg{
 		runID:        42,
 		usageModelID: "gpt-4.1",
-		usageEvents:  []zeroruntime.Usage{{InputTokens: 100, OutputTokens: 20}},
+		usageEvents:  []kajicoderuntime.Usage{{InputTokens: 100, OutputTokens: 20}},
 	})
 	next := updated.(model)
 
@@ -852,7 +852,7 @@ func TestModelSwitchClearsUnsupportedEffortPreference(t *testing.T) {
 		ReasoningEffort: modelregistry.ReasoningEffortHigh,
 		Provider:        &fakeProvider{},
 		ProviderProfile: openAITestProfile("gpt-4.1-mini"),
-		NewProvider: func(profile config.ProviderProfile) (zeroruntime.Provider, error) {
+		NewProvider: func(profile config.ProviderProfile) (kajicoderuntime.Provider, error) {
 			if profile.Model != "gpt-4.1" {
 				t.Fatalf("expected provider rebuild for gpt-4.1, got %#v", profile)
 			}
@@ -882,7 +882,7 @@ func TestModelSwitchRedirectsDeprecatedModelWithNotice(t *testing.T) {
 		ModelName:       "gpt-4.1",
 		Provider:        &fakeProvider{},
 		ProviderProfile: openAITestProfile("gpt-4.1"),
-		NewProvider: func(profile config.ProviderProfile) (zeroruntime.Provider, error) {
+		NewProvider: func(profile config.ProviderProfile) (kajicoderuntime.Provider, error) {
 			if profile.Model != "gpt-4.1" {
 				t.Fatalf("expected deprecated model to redirect to gpt-4.1, got %#v", profile)
 			}
@@ -914,7 +914,7 @@ func TestModelSwitchUnknownModelReportsError(t *testing.T) {
 		ModelName:       "gpt-4.1",
 		Provider:        &fakeProvider{},
 		ProviderProfile: openAITestProfile("gpt-4.1"),
-		NewProvider: func(profile config.ProviderProfile) (zeroruntime.Provider, error) {
+		NewProvider: func(profile config.ProviderProfile) (kajicoderuntime.Provider, error) {
 			t.Fatal("provider should not be rebuilt for an unknown model")
 			return nil, nil
 		},
@@ -927,7 +927,7 @@ func TestModelSwitchUnknownModelReportsError(t *testing.T) {
 	if next.modelName != "gpt-4.1" {
 		t.Fatalf("expected active model to stay gpt-4.1, got %q", next.modelName)
 	}
-	if !transcriptContains(next.transcript, "unknown Zero model") {
+	if !transcriptContains(next.transcript, "unknown KajiCode model") {
 		t.Fatalf("expected unknown model error, got %#v", next.transcript)
 	}
 }

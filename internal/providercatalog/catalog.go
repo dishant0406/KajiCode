@@ -161,7 +161,7 @@ var descriptors = []Descriptor{
 	openAICompat("atomic-chat", "Atomic Chat", "https://api.atomic.chat/v1", "gpt-4.1", []string{"ATOMIC_CHAT_API_KEY"}),
 	// ChatGPT subscription via a local OAuth proxy. A ChatGPT (Plus/Pro) OAuth
 	// token only works against ChatGPT's own backend (which is Cloudflare-gated to
-	// the official client), so zero does not call it directly; instead point this
+	// the official client), so KajiCode does not call it directly; instead point this
 	// at a local proxy that holds the OAuth session and exposes an OpenAI-compatible
 	// endpoint. Local (no API key — the proxy authenticates); override the base URL
 	// for your proxy's port. See docs/oauth-subscriptions.md.
@@ -311,8 +311,8 @@ func aimlapi() Descriptor {
 	descriptor := openAICompat(AIMLAPIID, "aimlapi.com", "https://api.aimlapi.com/v1", "anthropic/claude-sonnet-5", []string{"AIMLAPI_API_KEY"}, "aimlapi", "aiml api", "ai/ml api", "ai ml api")
 	descriptor.CustomHeaders = map[string]string{
 		"X-AIMLAPI-Partner-ID":          "part_62yQoGYDq4Yqnrj2R1iGrDNJ",
-		"X-AIMLAPI-Integration-Repo":    "Gitlawb/zero",
-		"X-AIMLAPI-Integration-Version": "zero",
+		"X-AIMLAPI-Integration-Repo":    "dishant0406/KajiCode",
+		"X-AIMLAPI-Integration-Version": "kajicode",
 	}
 	// Onboarding is key-based only: the TUI sub-flow takes an existing key or an
 	// email top-up (internal/aimlapi Paths A/B). Not flagged

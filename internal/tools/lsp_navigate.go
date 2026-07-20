@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/Gitlawb/zero/internal/lsp"
+	"github.com/dishant0406/KajiCode/internal/lsp"
 )
 
 // lspNavigateTool exposes LSP code navigation (jump-to-definition, find-all-

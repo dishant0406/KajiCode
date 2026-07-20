@@ -16,7 +16,7 @@ import (
 
 // TestBuildPlatformPackagesAssemblesPublishPayloads runs the release-time
 // assembly script against a fixture linux-x64 archive shaped like the output
-// of `zero-release package` and checks the npm publish payloads it emits:
+// of `kajicode-release package` and checks the npm publish payloads it emits:
 // the platform payload (suffixed version, os/cpu gate, pack-safe helper
 // shims, pruned agent-browser binaries) and the wrapper (no scripts, no
 // dependencies, full optionalDependencies alias matrix).
@@ -32,14 +32,14 @@ func TestBuildPlatformPackagesAssemblesPublishPayloads(t *testing.T) {
 	staging := filepath.Join(root, "staging")
 
 	// Payload the platform package must keep.
-	writeFixtureFile(t, filepath.Join(staging, "zero"), "#!/usr/bin/env sh\necho fixture-zero\n", 0o755)
-	writeFixtureFile(t, filepath.Join(staging, "zero-linux-sandbox"), "#!/usr/bin/env sh\n", 0o755)
-	writeFixtureFile(t, filepath.Join(staging, "zero-seccomp"), "#!/usr/bin/env sh\n", 0o755)
+	writeFixtureFile(t, filepath.Join(staging, "kajicode"), "#!/usr/bin/env sh\necho fixture-kajicode\n", 0o755)
+	writeFixtureFile(t, filepath.Join(staging, "kajicode-linux-sandbox"), "#!/usr/bin/env sh\n", 0o755)
+	writeFixtureFile(t, filepath.Join(staging, "kajicode-seccomp"), "#!/usr/bin/env sh\n", 0o755)
 	// Wrapper-owned files the platform package must exclude.
-	writeFixtureFile(t, filepath.Join(staging, "package.json"), `{"name":"@gitlawb/zero"}`, 0o644)
+	writeFixtureFile(t, filepath.Join(staging, "package.json"), `{"name":"@dishant0406/kajicode"}`, 0o644)
 	writeFixtureFile(t, filepath.Join(staging, "README.md"), "readme\n", 0o644)
 	writeFixtureFile(t, filepath.Join(staging, "VERSION"), version+"\n", 0o644)
-	writeFixtureFile(t, filepath.Join(staging, "bin", "zero.js"), "#!/usr/bin/env node\n", 0o755)
+	writeFixtureFile(t, filepath.Join(staging, "bin", "kajicode.js"), "#!/usr/bin/env node\n", 0o755)
 	// Vendored helpers tree with npm's symlink .bin shims and agent-browser's
 	// multi-platform binary set.
 	agentBrowserDir := filepath.Join(staging, "helpers", "node_modules", "agent-browser")
@@ -66,9 +66,9 @@ func TestBuildPlatformPackagesAssemblesPublishPayloads(t *testing.T) {
 		t.Fatalf("Symlink tuistory shim: %v", err)
 	}
 
-	// Archive with the payload at the archive root, like zero-release's
+	// Archive with the payload at the archive root, like kajicode-release's
 	// createArchive, plus the sha256 sidecar the script verifies against.
-	assetName := fmt.Sprintf("zero-v%s-linux-x64.tar.gz", version)
+	assetName := fmt.Sprintf("kajicode-v%s-linux-x64.tar.gz", version)
 	archivePath := filepath.Join(root, assetName)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -92,7 +92,7 @@ func TestBuildPlatformPackagesAssemblesPublishPayloads(t *testing.T) {
 		t.Fatalf("build-platform-packages failed: %v\n%s", err, output)
 	}
 
-	platformDir := filepath.Join(outDir, "platforms", "zero-linux-x64")
+	platformDir := filepath.Join(outDir, "platforms", "kajicode-linux-x64")
 	var platformPkg struct {
 		Name    string   `json:"name"`
 		Version string   `json:"version"`
@@ -101,8 +101,8 @@ func TestBuildPlatformPackagesAssemblesPublishPayloads(t *testing.T) {
 		Scripts map[string]string
 	}
 	unmarshalJSONFile(t, filepath.Join(platformDir, "package.json"), &platformPkg)
-	if platformPkg.Name != "@gitlawb/zero" {
-		t.Fatalf("platform package name = %q, want @gitlawb/zero (same-name suffixed versions share one trusted publisher)", platformPkg.Name)
+	if platformPkg.Name != "@dishant0406/kajicode" {
+		t.Fatalf("platform package name = %q, want @dishant0406/kajicode (same-name suffixed versions share one trusted publisher)", platformPkg.Name)
 	}
 	if want := version + "-linux-x64"; platformPkg.Version != want {
 		t.Fatalf("platform package version = %q, want %q", platformPkg.Version, want)
@@ -114,7 +114,7 @@ func TestBuildPlatformPackagesAssemblesPublishPayloads(t *testing.T) {
 		t.Fatalf("platform package has lifecycle scripts: %v", platformPkg.Scripts)
 	}
 
-	info, err := os.Stat(filepath.Join(platformDir, "zero"))
+	info, err := os.Stat(filepath.Join(platformDir, "kajicode"))
 	if err != nil {
 		t.Fatalf("platform package binary missing: %v", err)
 	}
@@ -198,11 +198,11 @@ func TestBuildPlatformPackagesAssemblesPublishPayloads(t *testing.T) {
 		t.Fatalf("published wrapper has dependencies: %v (helpers are vendored in the platform payloads)", wrapperPkg.Dependencies)
 	}
 	wantAliases := map[string]string{
-		"@gitlawb/zero-darwin-arm64": "npm:@gitlawb/zero@" + version + "-darwin-arm64",
-		"@gitlawb/zero-darwin-x64":   "npm:@gitlawb/zero@" + version + "-darwin-x64",
-		"@gitlawb/zero-linux-arm64":  "npm:@gitlawb/zero@" + version + "-linux-arm64",
-		"@gitlawb/zero-linux-x64":    "npm:@gitlawb/zero@" + version + "-linux-x64",
-		"@gitlawb/zero-win32-x64":    "npm:@gitlawb/zero@" + version + "-win32-x64",
+		"@dishant0406/kajicode-darwin-arm64": "npm:@dishant0406/kajicode@" + version + "-darwin-arm64",
+		"@dishant0406/kajicode-darwin-x64":   "npm:@dishant0406/kajicode@" + version + "-darwin-x64",
+		"@dishant0406/kajicode-linux-arm64":  "npm:@dishant0406/kajicode@" + version + "-linux-arm64",
+		"@dishant0406/kajicode-linux-x64":    "npm:@dishant0406/kajicode@" + version + "-linux-x64",
+		"@dishant0406/kajicode-win32-x64":    "npm:@dishant0406/kajicode@" + version + "-win32-x64",
 	}
 	if len(wrapperPkg.Optional) != len(wantAliases) {
 		t.Fatalf("wrapper optionalDependencies = %v, want %v", wrapperPkg.Optional, wantAliases)
@@ -212,7 +212,7 @@ func TestBuildPlatformPackagesAssemblesPublishPayloads(t *testing.T) {
 			t.Fatalf("wrapper optionalDependencies[%q] = %q, want %q", alias, wrapperPkg.Optional[alias], spec)
 		}
 	}
-	for _, file := range []string{"bin/zero.js", "scripts/postinstall.mjs", "README.md", "LICENSE"} {
+	for _, file := range []string{"bin/kajicode.js", "scripts/postinstall.mjs", "README.md", "LICENSE"} {
 		if _, err := os.Stat(filepath.Join(wrapperDir, filepath.FromSlash(file))); err != nil {
 			t.Fatalf("wrapper payload missing %s: %v", file, err)
 		}

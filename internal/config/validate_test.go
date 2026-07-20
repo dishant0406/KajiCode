@@ -91,7 +91,7 @@ func TestValidateFileMissingModelWarns(t *testing.T) {
 func TestValidateFileDefaultsOfficialKindModels(t *testing.T) {
 	// Official-API kinds (anthropic/google) fall back to their catalog default
 	// model, so a hand-written model-less profile validates clean instead of
-	// bricking zero config / bare zero setup — the only commands that could
+	// bricking kajicode config / bare kajicode setup — the only commands that could
 	// have fixed it (the reported google case).
 	path := writeValidateFixture(t, `{
 		"activeProvider": "google",

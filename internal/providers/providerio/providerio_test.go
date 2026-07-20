@@ -355,7 +355,7 @@ func TestHTTPClientReturnsStallHardenedSharedClient(t *testing.T) {
 	// DisableKeepAlives is the stronger mitigation scoped to darwin only: the
 	// two timeouts above catch a reused connection that's fully dead or idle
 	// too long, but not one that's alive-and-degraded (still delivers real
-	// bytes, just at a crippled rate) — which resets Zero's stream watchdogs
+	// bytes, just at a crippled rate) — which resets KajiCode's stream watchdogs
 	// without ever recovering. Removing pooling from the equation entirely is
 	// only worth its reconnect cost on the platform this class of bug has
 	// actually reproduced on.

@@ -19,7 +19,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/Gitlawb/zero/internal/tools"
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
 // maxSidebarFiles caps the FILES rows so the section stays a glanceable set,
@@ -188,7 +188,7 @@ func (m model) sidebarFilesHeader(width int) string {
 	if n == 0 {
 		return sidebarHeader("FILES", width)
 	}
-	return sidebarHeaderWithCount("FILES", fmt.Sprintf("%d", n), zeroTheme.muted, width)
+	return sidebarHeaderWithCount("FILES", fmt.Sprintf("%d", n), kajicodeTheme.muted, width)
 }
 
 // sidebarFileLines renders the FILES section body: the live "writing" pulse row
@@ -209,8 +209,8 @@ func (m model) sidebarFileLines(width int) ([]string, []fileHit) {
 	// The file being written this instant: an accent pulse, not yet clickable
 	// (its result row — the diff — doesn't exist until the call completes).
 	if live != "" {
-		lines = append(lines, " "+zeroTheme.accent.Render("●")+" "+
-			zeroTheme.ink.Render(truncatePathLeft(live, room)))
+		lines = append(lines, " "+kajicodeTheme.accent.Render("●")+" "+
+			kajicodeTheme.ink.Render(truncatePathLeft(live, room)))
 	}
 
 	// Filter the live row out FIRST so the "+N more" trailer counts only rows
@@ -225,7 +225,7 @@ func (m model) sidebarFileLines(width int) ([]string, []fileHit) {
 	shown := 0
 	for _, f := range visible {
 		if shown >= maxSidebarFiles {
-			lines = append(lines, "   "+zeroTheme.faint.Render(fmt.Sprintf("+%d more", len(visible)-shown)))
+			lines = append(lines, "   "+kajicodeTheme.faint.Render(fmt.Sprintf("+%d more", len(visible)-shown)))
 			break
 		}
 		shown++
@@ -239,12 +239,12 @@ func (m model) sidebarFileLines(width int) ([]string, []fileHit) {
 // and the +/− diffstat, with the selected file carrying an accent marker so the
 // selection reads in the sidebar as well as in the chat tint.
 func (m model) renderFileRow(f touchedFile, room int) string {
-	badge := zeroTheme.muted.Render("M")
+	badge := kajicodeTheme.muted.Render("M")
 	switch {
 	case f.failed:
-		badge = zeroTheme.red.Render("✗")
+		badge = kajicodeTheme.red.Render("✗")
 	case f.created:
-		badge = zeroTheme.green.Render("A")
+		badge = kajicodeTheme.green.Render("A")
 	}
 	// Reserve the diffstat's width so the path truncates around it.
 	stat := ""
@@ -252,15 +252,15 @@ func (m model) renderFileRow(f touchedFile, room int) string {
 		stat = fmt.Sprintf(" +%d −%d", f.adds, f.dels)
 	}
 	pathRoom := maxInt(4, room-len(stat))
-	pathStyle := zeroTheme.muted
+	pathStyle := kajicodeTheme.muted
 	lead := " "
 	if m.selectedFile == f.path {
-		lead = zeroTheme.accent.Render("▸")
-		pathStyle = zeroTheme.ink
+		lead = kajicodeTheme.accent.Render("▸")
+		pathStyle = kajicodeTheme.ink
 	}
 	line := lead + badge + " " + pathStyle.Render(truncatePathLeft(f.path, pathRoom))
 	if stat != "" {
-		line += zeroTheme.faintest.Render(stat)
+		line += kajicodeTheme.faintest.Render(stat)
 	}
 	return line
 }

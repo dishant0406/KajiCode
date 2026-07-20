@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
 )
 
 func TestGeminiPartTextOnlySerializationOmitsInlineData(t *testing.T) {
@@ -31,8 +31,8 @@ func TestGeminiInlineDataSerialization(t *testing.T) {
 }
 
 func TestMapMessagesTextOnlyUserUnchanged(t *testing.T) {
-	_, contents, err := mapMessages([]zeroruntime.Message{
-		{Role: zeroruntime.MessageRoleUser, Content: "Read the file."},
+	_, contents, err := mapMessages([]kajicoderuntime.Message{
+		{Role: kajicoderuntime.MessageRoleUser, Content: "Read the file."},
 	})
 	if err != nil {
 		t.Fatalf("mapMessages returned error: %v", err)
@@ -48,11 +48,11 @@ func TestMapMessagesTextOnlyUserUnchanged(t *testing.T) {
 
 func TestMapMessagesImageAndTextUserTurn(t *testing.T) {
 	raw := []byte("ABC")
-	_, contents, err := mapMessages([]zeroruntime.Message{
+	_, contents, err := mapMessages([]kajicoderuntime.Message{
 		{
-			Role:    zeroruntime.MessageRoleUser,
+			Role:    kajicoderuntime.MessageRoleUser,
 			Content: "What is this?",
-			Images:  []zeroruntime.ImageBlock{{MediaType: "image/png", Data: raw}},
+			Images:  []kajicoderuntime.ImageBlock{{MediaType: "image/png", Data: raw}},
 		},
 	})
 	if err != nil {
@@ -80,10 +80,10 @@ func TestMapMessagesImageAndTextUserTurn(t *testing.T) {
 }
 
 func TestMapMessagesImageOnlyUserTurn(t *testing.T) {
-	_, contents, err := mapMessages([]zeroruntime.Message{
+	_, contents, err := mapMessages([]kajicoderuntime.Message{
 		{
-			Role:   zeroruntime.MessageRoleUser,
-			Images: []zeroruntime.ImageBlock{{MediaType: "image/jpeg", Data: bytes.Repeat([]byte{0xFF}, 3)}},
+			Role:   kajicoderuntime.MessageRoleUser,
+			Images: []kajicoderuntime.ImageBlock{{MediaType: "image/jpeg", Data: bytes.Repeat([]byte{0xFF}, 3)}},
 		},
 	})
 	if err != nil {

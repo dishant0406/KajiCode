@@ -8,8 +8,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	internalmcp "github.com/Gitlawb/zero/internal/mcp"
-	"github.com/Gitlawb/zero/internal/redaction"
+	internalmcp "github.com/dishant0406/KajiCode/internal/mcp"
+	"github.com/dishant0406/KajiCode/internal/redaction"
 )
 
 const (

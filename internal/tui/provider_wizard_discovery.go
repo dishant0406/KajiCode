@@ -9,12 +9,12 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/Gitlawb/zero/internal/aimlapi"
-	"github.com/Gitlawb/zero/internal/browser"
-	"github.com/Gitlawb/zero/internal/config"
-	"github.com/Gitlawb/zero/internal/providercatalog"
-	"github.com/Gitlawb/zero/internal/providermodeldiscovery"
-	"github.com/Gitlawb/zero/internal/redaction"
+	"github.com/dishant0406/KajiCode/internal/aimlapi"
+	"github.com/dishant0406/KajiCode/internal/browser"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/providercatalog"
+	"github.com/dishant0406/KajiCode/internal/providermodeldiscovery"
+	"github.com/dishant0406/KajiCode/internal/redaction"
 )
 
 type providerModelsDiscoveredMsg struct {

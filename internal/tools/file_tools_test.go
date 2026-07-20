@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/sandbox"
+	"github.com/dishant0406/KajiCode/internal/sandbox"
 )
 
 func TestReadFileToolReadsLineRanges(t *testing.T) {
@@ -136,7 +136,7 @@ func TestListDirectoryToolListsRecursivelyAndIgnoresJunk(t *testing.T) {
 	root := t.TempDir()
 	writeTestFile(t, filepath.Join(root, "src", "main.go"), "package main")
 	writeTestFile(t, filepath.Join(root, "node_modules", "leftpad", "index.js"), "module.exports = 1")
-	writeTestFile(t, filepath.Join(root, "README.md"), "# Zero")
+	writeTestFile(t, filepath.Join(root, "README.md"), "# KajiCode")
 
 	result := NewListDirectoryTool(root).Run(context.Background(), map[string]any{
 		"path":      ".",
@@ -160,7 +160,7 @@ func TestListDirectoryToolListsRecursivelyAndIgnoresJunk(t *testing.T) {
 
 func TestGlobToolFindsMatchesWithLimit(t *testing.T) {
 	root := t.TempDir()
-	writeTestFile(t, filepath.Join(root, "a.go"), "package zero")
+	writeTestFile(t, filepath.Join(root, "a.go"), "package kajicode")
 	writeTestFile(t, filepath.Join(root, "nested", "b.go"), "package nested")
 	writeTestFile(t, filepath.Join(root, "nested", "c.txt"), "text")
 
@@ -700,7 +700,7 @@ func TestGrepSkipsAlwaysExcludedDirectories(t *testing.T) {
 	}
 	mustWrite("keep.txt", "needle here")
 	mustWrite(".git/config", "needle here")
-	mustWrite(".zero/state.json", "needle here")
+	mustWrite(".kajicode/state.json", "needle here")
 	mustWrite("node_modules/pkg/index.js", "needle here")
 	mustWrite("vendor/pkg/lib.go", "needle here")
 	mustWrite(".worktrees/branch/main.go", "needle here")
@@ -712,7 +712,7 @@ func TestGrepSkipsAlwaysExcludedDirectories(t *testing.T) {
 	if res.Status != StatusOK {
 		t.Fatalf("status=%s output=%s", res.Status, res.Output)
 	}
-	for _, forbidden := range []string{".git", ".zero", "node_modules", "vendor", ".worktrees"} {
+	for _, forbidden := range []string{".git", ".kajicode", "node_modules", "vendor", ".worktrees"} {
 		if strings.Contains(res.Output, forbidden) {
 			t.Fatalf("grep must not descend into excluded dir %q, got:\n%s", forbidden, res.Output)
 		}
@@ -808,7 +808,7 @@ func TestGrepSkipsBinaryLikeFiles(t *testing.T) {
 func TestGlobSkipsWorkspaceExcludedDirectoriesAndBinaryFiles(t *testing.T) {
 	root := t.TempDir()
 	writeTestFile(t, filepath.Join(root, "keep.txt"), "keep")
-	writeTestFile(t, filepath.Join(root, ".zero", "state.json"), "{}")
+	writeTestFile(t, filepath.Join(root, ".kajicode", "state.json"), "{}")
 	writeTestFile(t, filepath.Join(root, "vendor", "pkg", "lib.go"), "package lib")
 	writeTestFile(t, filepath.Join(root, ".worktrees", "branch", "main.go"), "package main")
 	writeTestFile(t, filepath.Join(root, "image.png"), "binary")
@@ -820,7 +820,7 @@ func TestGlobSkipsWorkspaceExcludedDirectoriesAndBinaryFiles(t *testing.T) {
 	if res.Status != StatusOK {
 		t.Fatalf("status=%s output=%s", res.Status, res.Output)
 	}
-	for _, forbidden := range []string{".zero", "vendor", ".worktrees", "image.png"} {
+	for _, forbidden := range []string{".kajicode", "vendor", ".worktrees", "image.png"} {
 		if strings.Contains(res.Output, forbidden) {
 			t.Fatalf("glob must skip %q, got:\n%s", forbidden, res.Output)
 		}

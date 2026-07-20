@@ -8,16 +8,16 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/Gitlawb/zero/internal/sessions"
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
+	"github.com/dishant0406/KajiCode/internal/sessions"
 )
 
 // titleProvider is a fakeProvider that streams a single line of text as the
 // model's title response.
 func titleProvider(title string) *fakeProvider {
-	return &fakeProvider{events: []zeroruntime.StreamEvent{
-		{Type: zeroruntime.StreamEventText, Content: title},
-		{Type: zeroruntime.StreamEventDone},
+	return &fakeProvider{events: []kajicoderuntime.StreamEvent{
+		{Type: kajicoderuntime.StreamEventText, Content: title},
+		{Type: kajicoderuntime.StreamEventDone},
 	}}
 }
 
@@ -143,7 +143,7 @@ func TestSessionTitleIsAuto(t *testing.T) {
 	if !sessionTitleIsAuto("", events) {
 		t.Fatal("an empty title must count as auto")
 	}
-	if !sessionTitleIsAuto("Zero TUI session", events) {
+	if !sessionTitleIsAuto("KajiCode TUI session", events) {
 		t.Fatal("the default placeholder title must count as auto")
 	}
 	if sessionTitleIsAuto("Hand Picked Name", events) {

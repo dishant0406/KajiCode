@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/release"
+	"github.com/dishant0406/KajiCode/internal/release"
 )
 
 // DefaultDownloadTimeout bounds the archive/checksum download phase of a
@@ -32,10 +32,10 @@ type ApplyResult struct {
 
 // windowsOptionalBinaries/linuxOptionalBinaries mirror the helper binary
 // names scripts/postinstall.mjs copies alongside the main binary when
-// present, so `zero upgrade` refreshes them too instead of leaving them stale.
+// present, so `kajicode upgrade` refreshes them too instead of leaving them stale.
 var (
-	windowsOptionalBinaries = []string{"zero-windows-command-runner.exe", "zero-windows-sandbox-setup.exe"}
-	linuxOptionalBinaries   = []string{"zero-linux-sandbox", "zero-seccomp"}
+	windowsOptionalBinaries = []string{"kajicode-windows-command-runner.exe", "kajicode-windows-sandbox-setup.exe"}
+	linuxOptionalBinaries   = []string{"kajicode-linux-sandbox", "kajicode-seccomp"}
 )
 
 // Apply checks for an update and, if one is available, installs it: via
@@ -100,7 +100,7 @@ func FormatApply(result ApplyResult) string {
 		return Format(result.Result)
 	}
 	lines := []string{
-		fmt.Sprintf("[zero] %s (%s -> %s)", result.Message, result.CurrentVersion, result.LatestVersion),
+		fmt.Sprintf("[kajicode] %s (%s -> %s)", result.Message, result.CurrentVersion, result.LatestVersion),
 		"Binary: " + result.BinaryPath,
 	}
 	for _, warning := range result.Warnings {
@@ -129,7 +129,7 @@ func applyStandaloneUpdate(ctx context.Context, result Result, executablePath st
 		return nil, fmt.Errorf("release asset for %s-%s could not be verified", asset.Platform, asset.Arch)
 	}
 
-	tempDir, err := os.MkdirTemp("", "zero-update-*")
+	tempDir, err := os.MkdirTemp("", "kajicode-update-*")
 	if err != nil {
 		return nil, err
 	}
@@ -160,10 +160,10 @@ func applyStandaloneUpdate(ctx context.Context, result Result, executablePath st
 		return nil, fmt.Errorf("extract release archive: %w", err)
 	}
 
-	binaryName := "zero"
+	binaryName := "kajicode"
 	optionalBinaries := linuxOptionalBinaries
 	if runtime.GOOS == "windows" {
-		binaryName = "zero.exe"
+		binaryName = "kajicode.exe"
 		optionalBinaries = windowsOptionalBinaries
 	} else if runtime.GOOS == "darwin" {
 		optionalBinaries = nil
@@ -262,7 +262,7 @@ func downloadFile(ctx context.Context, url string, destPath string) error {
 	if err != nil {
 		return err
 	}
-	request.Header.Set("User-Agent", "zero/update")
+	request.Header.Set("User-Agent", "kajicode/update")
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {
 		return err

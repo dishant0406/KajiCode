@@ -4,8 +4,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/config"
-	"github.com/Gitlawb/zero/internal/dictation"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/dictation"
 )
 
 func TestFactoryFallsBackToBatchWhenLocalStreamingNotConfigured(t *testing.T) {

@@ -1,5 +1,5 @@
 // Package cron implements a small, dependency-free standard 5-field cron parser
-// and next-run evaluator for the `zero cron` scheduler.
+// and next-run evaluator for the `kajicode cron` scheduler.
 package cron
 
 import (

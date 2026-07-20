@@ -3,7 +3,7 @@ package acp
 import (
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/agent"
+	"github.com/dishant0406/KajiCode/internal/agent"
 )
 
 func TestBuildPermissionOptions(t *testing.T) {
@@ -22,7 +22,7 @@ func TestBuildPermissionOptions(t *testing.T) {
 	if len(opts) != 4 {
 		t.Fatalf("expected 4 options (cancel dropped), got %d: %+v", len(opts), opts)
 	}
-	// optionId must carry the ZERO action verbatim for a clean round trip.
+	// optionId must carry the KAJICODE action verbatim for a clean round trip.
 	if opts[0].OptionID != string(agent.PermissionDecisionAllow) || opts[0].Kind != PermAllowOnce {
 		t.Errorf("allow option = %+v", opts[0])
 	}

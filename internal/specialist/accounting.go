@@ -5,8 +5,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/Gitlawb/zero/internal/background"
-	"github.com/Gitlawb/zero/internal/sessions"
+	"github.com/dishant0406/KajiCode/internal/background"
+	"github.com/dishant0406/KajiCode/internal/sessions"
 )
 
 const specialistAccountingSource = "specialist"

@@ -41,7 +41,7 @@ const defaultAgentOutputLimit = 1 << 20 // 1 MiB per stream
 
 type CommandAgentRunner struct {
 	Command []string
-	// OutputLimit caps captured stdout/stderr per stream in bytes. Zero applies
+	// OutputLimit caps captured stdout/stderr per stream in bytes. KajiCode applies
 	// defaultAgentOutputLimit; a negative value disables the cap.
 	OutputLimit int
 }

@@ -125,7 +125,7 @@ func TestIsPDF(t *testing.T) {
 
 func TestLoadDocumentTextExtraction(t *testing.T) {
 	root := t.TempDir()
-	want := "Hello ZERO PDF"
+	want := "Hello KAJICODE PDF"
 	if err := os.WriteFile(filepath.Join(root, "doc.pdf"), buildMinimalPDF(want), 0o644); err != nil {
 		t.Fatalf("write pdf: %v", err)
 	}

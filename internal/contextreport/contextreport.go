@@ -8,15 +8,15 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Gitlawb/zero/internal/agent"
-	"github.com/Gitlawb/zero/internal/config"
-	"github.com/Gitlawb/zero/internal/modelregistry"
-	"github.com/Gitlawb/zero/internal/providers"
-	"github.com/Gitlawb/zero/internal/repomap"
-	"github.com/Gitlawb/zero/internal/tools"
+	"github.com/dishant0406/KajiCode/internal/agent"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/modelregistry"
+	"github.com/dishant0406/KajiCode/internal/providers"
+	"github.com/dishant0406/KajiCode/internal/repomap"
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
-const ContractV1 = "zero.context.report.v1"
+const ContractV1 = "kajicode.context.report.v1"
 const RuntimeGo = "go"
 
 const (
@@ -27,7 +27,7 @@ const (
 	CategoryFree              = "free"
 )
 
-var defaultProjectContextFiles = []string{"AGENTS.md", "ZERO.md", ".zero/AGENTS.md"}
+var defaultProjectContextFiles = []string{"AGENTS.md", "KAJICODE.md", ".kajicode/AGENTS.md"}
 
 const maxProjectContextBytes = 8 << 10
 const maxWorkspaceMapContextBytes = 4 << 10
@@ -157,7 +157,7 @@ func systemPromptFootprint(root string, modelID string) string {
 
 func Format(report Report) string {
 	lines := []string{
-		"Zero context report",
+		"KajiCode context report",
 		"root: " + report.Root,
 	}
 	if report.ProviderName != "" {

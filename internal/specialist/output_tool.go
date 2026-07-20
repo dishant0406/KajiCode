@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/background"
-	"github.com/Gitlawb/zero/internal/sessions"
-	"github.com/Gitlawb/zero/internal/streamjson"
-	"github.com/Gitlawb/zero/internal/tools"
+	"github.com/dishant0406/KajiCode/internal/background"
+	"github.com/dishant0406/KajiCode/internal/sessions"
+	"github.com/dishant0406/KajiCode/internal/streamjson"
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
 const (
@@ -48,7 +48,7 @@ func (tool *OutputTool) Name() string {
 }
 
 func (tool *OutputTool) Description() string {
-	return "Poll the output of a background Zero specialist task."
+	return "Poll the output of a background KajiCode specialist task."
 }
 
 func (tool *OutputTool) Parameters() tools.Schema {

@@ -8,12 +8,12 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
 )
 
 // captureRequestBody runs one StreamCompletion against a stub server that
 // records the decoded JSON request body, then returns it for assertions.
-func captureRequestBody(t *testing.T, request zeroruntime.CompletionRequest) map[string]any {
+func captureRequestBody(t *testing.T, request kajicoderuntime.CompletionRequest) map[string]any {
 	t.Helper()
 	var gotBody map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -60,9 +60,9 @@ func firstUserContentBlocks(t *testing.T, body map[string]any) []any {
 // TestUserTextOnlyTurnUnchanged pins the text-only wire shape: a single
 // user message whose content is a one-element text-block array.
 func TestUserTextOnlyTurnUnchanged(t *testing.T) {
-	body := captureRequestBody(t, zeroruntime.CompletionRequest{
-		Messages: []zeroruntime.Message{
-			{Role: zeroruntime.MessageRoleUser, Content: "Describe this."},
+	body := captureRequestBody(t, kajicoderuntime.CompletionRequest{
+		Messages: []kajicoderuntime.Message{
+			{Role: kajicoderuntime.MessageRoleUser, Content: "Describe this."},
 		},
 	})
 	blocks := firstUserContentBlocks(t, body)
@@ -79,12 +79,12 @@ func TestUserTextOnlyTurnUnchanged(t *testing.T) {
 // source block carrying base64 of the RAW bytes.
 func TestUserImagePlusTextTurn(t *testing.T) {
 	raw := []byte{0x89, 0x50, 0x4e, 0x47, 0x01, 0x02}
-	body := captureRequestBody(t, zeroruntime.CompletionRequest{
-		Messages: []zeroruntime.Message{
+	body := captureRequestBody(t, kajicoderuntime.CompletionRequest{
+		Messages: []kajicoderuntime.Message{
 			{
-				Role:    zeroruntime.MessageRoleUser,
+				Role:    kajicoderuntime.MessageRoleUser,
 				Content: "Describe this.",
-				Images:  []zeroruntime.ImageBlock{{MediaType: "image/png", Data: raw}},
+				Images:  []kajicoderuntime.ImageBlock{{MediaType: "image/png", Data: raw}},
 			},
 		},
 	})
@@ -113,11 +113,11 @@ func TestUserImagePlusTextTurn(t *testing.T) {
 // still produces a user message with a single image block.
 func TestUserImageOnlyTurnEmits(t *testing.T) {
 	raw := []byte{0xff, 0xd8, 0xff, 0xe0}
-	body := captureRequestBody(t, zeroruntime.CompletionRequest{
-		Messages: []zeroruntime.Message{
+	body := captureRequestBody(t, kajicoderuntime.CompletionRequest{
+		Messages: []kajicoderuntime.Message{
 			{
-				Role:   zeroruntime.MessageRoleUser,
-				Images: []zeroruntime.ImageBlock{{MediaType: "image/jpeg", Data: raw}},
+				Role:   kajicoderuntime.MessageRoleUser,
+				Images: []kajicoderuntime.ImageBlock{{MediaType: "image/jpeg", Data: raw}},
 			},
 		},
 	})

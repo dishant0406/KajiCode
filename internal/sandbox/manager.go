@@ -9,23 +9,23 @@ import (
 )
 
 // errWindowsSandboxNotInitialized is returned only to a caller that explicitly
-// REQUIRED the sandbox (--sandbox require) on Windows before `zero sandbox setup`
+// REQUIRED the sandbox (--sandbox require) on Windows before `kajicode sandbox setup`
 // has run. The default (auto) preference degrades instead — see BuildExecutionRequest.
 var errWindowsSandboxNotInitialized = errors.New(
-	"the Windows sandbox is not initialized — run `zero sandbox setup` from an elevated (Administrator) terminal, " +
+	"the Windows sandbox is not initialized — run `kajicode sandbox setup` from an elevated (Administrator) terminal, " +
 		"or drop `--sandbox require` to run with workspace path-confinement and per-command approval")
 
 // windowsSetupDowngradeReason is surfaced when Windows falls back to the
 // in-process policy gate because the OS sandbox has not been set up.
 const windowsSetupDowngradeReason = "Windows OS sandbox inactive — commands run with workspace path-confinement and " +
-	"per-command approval only. Run `zero sandbox setup` from an elevated (Administrator) terminal for full filesystem and network isolation."
+	"per-command approval only. Run `kajicode sandbox setup` from an elevated (Administrator) terminal for full filesystem and network isolation."
 
 // windowsUnelevatedDowngradeReason is surfaced when Windows runs the sandbox in
 // the unelevated tier: the restricted-token write-jail is enforced (the command
 // runner applies the workspace ACLs itself, which needs no Administrator
 // rights), but the WFP network filters are Administrator-only and absent.
 const windowsUnelevatedDowngradeReason = "Windows sandbox running unelevated — the filesystem write-jail is enforced, but network " +
-	"isolation still relies on per-command approval. Run `zero sandbox setup` from an elevated (Administrator) terminal for OS-level network enforcement."
+	"isolation still relies on per-command approval. Run `kajicode sandbox setup` from an elevated (Administrator) terminal for OS-level network enforcement."
 
 // windowsSandboxInitialized reports whether the per-host Windows sandbox setup
 // marker exists. A missing marker is the common fresh-install state, so the
@@ -228,7 +228,7 @@ func (manager SandboxManager) BuildExecutionRequest(request SandboxManagerReques
 	if request.ValidateExecution && preference == SandboxPreferenceRequire && backend.SupportLevel() != BackendSupportNative {
 		return SandboxExecutionRequest{}, nativeSandboxUnavailableError(backend)
 	}
-	// Windows: the FULL OS sandbox needs a one-time elevated `zero sandbox setup`
+	// Windows: the FULL OS sandbox needs a one-time elevated `kajicode sandbox setup`
 	// (it applies WFP network filters + workspace ACLs and writes a marker).
 	// Without it, a restricted-filesystem profile can still run in the UNELEVATED
 	// tier: the command runner applies the workspace ACL plan itself (DACL edits

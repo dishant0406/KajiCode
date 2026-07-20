@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/tools"
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
 func TestModelSupportsVisionTUI(t *testing.T) {
@@ -154,10 +154,10 @@ func TestSubmitThreadsImagesThenClears(t *testing.T) {
 	root := t.TempDir()
 	writeTestPNG(t, root, "photo.png")
 
-	captured := make(chan []zeroruntime.ImageBlock, 1)
-	provider := &fakeProvider{events: []zeroruntime.StreamEvent{
-		{Type: zeroruntime.StreamEventText, Content: "ok"},
-		{Type: zeroruntime.StreamEventDone},
+	captured := make(chan []kajicoderuntime.ImageBlock, 1)
+	provider := &fakeProvider{events: []kajicoderuntime.StreamEvent{
+		{Type: kajicoderuntime.StreamEventText, Content: "ok"},
+		{Type: kajicoderuntime.StreamEventDone},
 	}}
 
 	m := newModel(context.Background(), Options{
@@ -170,7 +170,7 @@ func TestSubmitThreadsImagesThenClears(t *testing.T) {
 	})
 	// Capture the Images the agent run is launched with.
 	m.agentOptions.OnText = func(string) {}
-	m.captureRunImages = func(imgs []zeroruntime.ImageBlock) { captured <- imgs }
+	m.captureRunImages = func(imgs []kajicoderuntime.ImageBlock) { captured <- imgs }
 
 	m.input.SetValue("/image photo.png")
 	updated, _ := m.handleSubmit()
@@ -210,10 +210,10 @@ func TestSubmitDropsImagesWhenModelSwitchedToNonVision(t *testing.T) {
 	root := t.TempDir()
 	writeTestPNG(t, root, "photo.png")
 
-	captured := make(chan []zeroruntime.ImageBlock, 1)
-	provider := &fakeProvider{events: []zeroruntime.StreamEvent{
-		{Type: zeroruntime.StreamEventText, Content: "ok"},
-		{Type: zeroruntime.StreamEventDone},
+	captured := make(chan []kajicoderuntime.ImageBlock, 1)
+	provider := &fakeProvider{events: []kajicoderuntime.StreamEvent{
+		{Type: kajicoderuntime.StreamEventText, Content: "ok"},
+		{Type: kajicoderuntime.StreamEventDone},
 	}}
 
 	m := newModel(context.Background(), Options{
@@ -225,7 +225,7 @@ func TestSubmitDropsImagesWhenModelSwitchedToNonVision(t *testing.T) {
 		SessionStore: testSessionStore(t),
 	})
 	m.agentOptions.OnText = func(string) {}
-	m.captureRunImages = func(imgs []zeroruntime.ImageBlock) { captured <- imgs }
+	m.captureRunImages = func(imgs []kajicoderuntime.ImageBlock) { captured <- imgs }
 
 	// Attach on the vision model.
 	m.input.SetValue("/image photo.png")
@@ -412,9 +412,9 @@ func TestSubmitPrependsDocumentTextThenClears(t *testing.T) {
 	root := t.TempDir()
 	writeTestPDF(t, root, "spec.pdf", "Top secret design notes")
 
-	provider := &fakeProvider{events: []zeroruntime.StreamEvent{
-		{Type: zeroruntime.StreamEventText, Content: "ok"},
-		{Type: zeroruntime.StreamEventDone},
+	provider := &fakeProvider{events: []kajicoderuntime.StreamEvent{
+		{Type: kajicoderuntime.StreamEventText, Content: "ok"},
+		{Type: kajicoderuntime.StreamEventDone},
 	}}
 	m := newModel(context.Background(), Options{
 		Cwd:          root,
@@ -453,7 +453,7 @@ func TestSubmitPrependsDocumentTextThenClears(t *testing.T) {
 	// the user's question.
 	msgs := provider.requests[0].Messages
 	last := msgs[len(msgs)-1]
-	if last.Role != zeroruntime.MessageRoleUser {
+	if last.Role != kajicoderuntime.MessageRoleUser {
 		t.Fatalf("last message role = %v, want user", last.Role)
 	}
 	if !strings.Contains(last.Content, "Top secret design notes") {
@@ -492,10 +492,10 @@ func TestRenderAttachmentChips(t *testing.T) {
 func TestRetryResendsAttachments(t *testing.T) {
 	root := t.TempDir()
 
-	captured := make(chan []zeroruntime.ImageBlock, 1)
-	provider := &fakeProvider{events: []zeroruntime.StreamEvent{
-		{Type: zeroruntime.StreamEventText, Content: "ok"},
-		{Type: zeroruntime.StreamEventDone},
+	captured := make(chan []kajicoderuntime.ImageBlock, 1)
+	provider := &fakeProvider{events: []kajicoderuntime.StreamEvent{
+		{Type: kajicoderuntime.StreamEventText, Content: "ok"},
+		{Type: kajicoderuntime.StreamEventDone},
 	}}
 	m := newModel(context.Background(), Options{
 		Cwd:          root,
@@ -506,12 +506,12 @@ func TestRetryResendsAttachments(t *testing.T) {
 		SessionStore: testSessionStore(t),
 	})
 	m.agentOptions.OnText = func(string) {}
-	m.captureRunImages = func(imgs []zeroruntime.ImageBlock) { captured <- imgs }
+	m.captureRunImages = func(imgs []kajicoderuntime.ImageBlock) { captured <- imgs }
 
 	// State left after a prior vision+PDF prompt was submitted: the pending queues
 	// are cleared, but the remembered snapshot survives so /retry can reproduce it.
 	m.lastPrompt = "describe both"
-	m.lastImages = []zeroruntime.ImageBlock{{MediaType: "image/png", Data: []byte{0x89, 'P', 'N', 'G'}}}
+	m.lastImages = []kajicoderuntime.ImageBlock{{MediaType: "image/png", Data: []byte{0x89, 'P', 'N', 'G'}}}
 	m.lastImageLabels = []string{"photo.png"}
 	m.lastDocuments = []pendingDocument{{label: "spec.pdf", text: "Top secret design notes"}}
 

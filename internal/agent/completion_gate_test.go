@@ -5,13 +5,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/tools"
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
 // someRequestContains reports whether any message sent to the provider across all
 // turns contains substr — used to assert a continue nudge was actually injected.
-func someRequestContains(requests []zeroruntime.CompletionRequest, substr string) bool {
+func someRequestContains(requests []kajicoderuntime.CompletionRequest, substr string) bool {
 	for _, req := range requests {
 		for _, msg := range req.Messages {
 			if strings.Contains(msg.Content, substr) {
@@ -24,7 +24,7 @@ func someRequestContains(requests []zeroruntime.CompletionRequest, substr string
 
 // planTurn is a turn that calls update_plan with the given item statuses (reusing
 // the package's shared toolTurn helper).
-func planTurn(statuses ...string) []zeroruntime.StreamEvent {
+func planTurn(statuses ...string) []kajicoderuntime.StreamEvent {
 	items := make([]string, len(statuses))
 	for i, s := range statuses {
 		items[i] = `{"content":"step ` + s + `","status":"` + s + `"}`
@@ -42,7 +42,7 @@ func TestCompletionGatePendingPlanContinuesThenIncomplete(t *testing.T) {
 	registry := tools.NewRegistry()
 	registry.Register(tools.NewUpdatePlanTool())
 
-	provider := &mockProvider{turns: [][]zeroruntime.StreamEvent{
+	provider := &mockProvider{turns: [][]kajicoderuntime.StreamEvent{
 		planTurn("completed", "pending", "pending"),
 		textTurn(cue), textTurn(cue), textTurn(cue), textTurn(cue), textTurn(cue),
 	}}
@@ -72,7 +72,7 @@ func TestCompletionGatePendingPlanContinuesThenIncomplete(t *testing.T) {
 // A genuinely-complete single-turn answer (no plan, no continuation cue) must
 // still finalize as success — the gate must not break short/read-only tasks.
 func TestCompletionGateAcceptsGenuineCompletion(t *testing.T) {
-	provider := &mockProvider{turns: [][]zeroruntime.StreamEvent{
+	provider := &mockProvider{turns: [][]kajicoderuntime.StreamEvent{
 		textTurn("The file contains 42 lines."),
 	}}
 
@@ -99,7 +99,7 @@ func TestCompletionGateAcceptsGenuineCompletion(t *testing.T) {
 // finishes (clean answer, no cue, no pending plan) the run exits as success — the
 // nudge gives the model a path to a legitimate completion.
 func TestCompletionGateContinuesOnCueThenSucceeds(t *testing.T) {
-	provider := &mockProvider{turns: [][]zeroruntime.StreamEvent{
+	provider := &mockProvider{turns: [][]kajicoderuntime.StreamEvent{
 		textTurn("Let me read the file:"),
 		textTurn("Done. The file has 42 lines."),
 	}}
@@ -131,7 +131,7 @@ func TestCompletionGateContinuesOnCueThenSucceeds(t *testing.T) {
 // change for non-headless callers.
 func TestCompletionGateOffPreservesLegacyBehavior(t *testing.T) {
 	cue := "Let me check the config:"
-	provider := &mockProvider{turns: [][]zeroruntime.StreamEvent{
+	provider := &mockProvider{turns: [][]kajicoderuntime.StreamEvent{
 		textTurn(cue),
 	}}
 
@@ -184,7 +184,7 @@ func TestMaxTurnsCutoffIsIncompleteUnderGate(t *testing.T) {
 	registry := tools.NewRegistry()
 	registry.Register(tools.NewUpdatePlanTool())
 	toolEvery := toolTurn("c", "update_plan", `{"plan":[{"content":"step","status":"in_progress"}]}`)
-	provider := &mockProvider{turns: [][]zeroruntime.StreamEvent{
+	provider := &mockProvider{turns: [][]kajicoderuntime.StreamEvent{
 		toolEvery, toolEvery, toolEvery, toolEvery,
 	}}
 

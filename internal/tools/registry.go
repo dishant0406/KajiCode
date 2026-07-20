@@ -4,9 +4,9 @@ import (
 	"context"
 	"sort"
 
-	"github.com/Gitlawb/zero/internal/redaction"
-	"github.com/Gitlawb/zero/internal/sandbox"
-	"github.com/Gitlawb/zero/internal/streamjson"
+	"github.com/dishant0406/KajiCode/internal/redaction"
+	"github.com/dishant0406/KajiCode/internal/sandbox"
+	"github.com/dishant0406/KajiCode/internal/streamjson"
 )
 
 type Registry struct {
@@ -26,7 +26,7 @@ type RunOptions struct {
 	Cwd               string
 	// FileTracker, when set, records the version of each file read or written this
 	// session so write_file/edit_file can refuse to clobber a file that changed on
-	// disk outside Zero since it was last read. nil disables the feature entirely
+	// disk outside KajiCode since it was last read. nil disables the feature entirely
 	// (the read/write tools behave exactly as before).
 	FileTracker *FileTracker
 	// EnabledTools / DisabledTools carry the run's operator tool filters so a

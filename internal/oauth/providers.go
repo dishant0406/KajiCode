@@ -29,33 +29,33 @@ func ValidateProviderName(name string) error {
 }
 
 // Registry resolves a provider's Config from env/config. By default every provider
-// is defined entirely by the operator via ZERO_OAUTH_<NAME>_* variables, so no
+// is defined entirely by the operator via KAJICODE_OAUTH_<NAME>_* variables, so no
 // third-party OAuth client identity is used. A small set of built-in presets
 // exists for convenience but stays inert unless the operator opts in with
-// ZERO_OAUTH_ALLOW_PRESETS (see presetsAllowed); env always overrides a preset.
+// KAJICODE_OAUTH_ALLOW_PRESETS (see presetsAllowed); env always overrides a preset.
 type Registry struct{}
 
 // NewRegistry returns the (stateless) env-driven registry.
 func NewRegistry() *Registry { return &Registry{} }
 
-// envKey builds the ZERO_OAUTH_<NAME>_<suffix> variable name for a provider.
+// envKey builds the KAJICODE_OAUTH_<NAME>_<suffix> variable name for a provider.
 func envKey(name, suffix string) string {
 	up := strings.ToUpper(name)
 	up = strings.NewReplacer("-", "_", ".", "_").Replace(up)
-	return "ZERO_OAUTH_" + up + "_" + suffix
+	return "KAJICODE_OAUTH_" + up + "_" + suffix
 }
 
 // ResolveConfig builds the oauth.Config and default Flow for a provider from its
 // env/config:
 //
-//	ZERO_OAUTH_<NAME>_CLIENT_ID       (required)
-//	ZERO_OAUTH_<NAME>_CLIENT_SECRET   (optional)
-//	ZERO_OAUTH_<NAME>_AUTHORIZE_URL   (loopback flow; or discovered via issuer)
-//	ZERO_OAUTH_<NAME>_TOKEN_URL       (or discovered via issuer)
-//	ZERO_OAUTH_<NAME>_DEVICE_URL      (device flow; or discovered via issuer)
-//	ZERO_OAUTH_<NAME>_ISSUER_URL      (RFC 8414 / OIDC discovery base)
-//	ZERO_OAUTH_<NAME>_SCOPES          (space-separated)
-//	ZERO_OAUTH_<NAME>_FLOW            ("loopback" [default] | "device")
+//	KAJICODE_OAUTH_<NAME>_CLIENT_ID       (required)
+//	KAJICODE_OAUTH_<NAME>_CLIENT_SECRET   (optional)
+//	KAJICODE_OAUTH_<NAME>_AUTHORIZE_URL   (loopback flow; or discovered via issuer)
+//	KAJICODE_OAUTH_<NAME>_TOKEN_URL       (or discovered via issuer)
+//	KAJICODE_OAUTH_<NAME>_DEVICE_URL      (device flow; or discovered via issuer)
+//	KAJICODE_OAUTH_<NAME>_ISSUER_URL      (RFC 8414 / OIDC discovery base)
+//	KAJICODE_OAUTH_<NAME>_SCOPES          (space-separated)
+//	KAJICODE_OAUTH_<NAME>_FLOW            ("loopback" [default] | "device")
 //
 // Pinned credential-bearing endpoints must be https (loopback exempt).
 func (r *Registry) ResolveConfig(name string, env map[string]string) (Config, Flow, error) {
@@ -63,8 +63,8 @@ func (r *Registry) ResolveConfig(name string, env map[string]string) (Config, Fl
 		return Config{}, "", err
 	}
 	// A baked-in preset (if any) supplies defaults, but ONLY when the operator opts
-	// in with ZERO_OAUTH_ALLOW_PRESETS — otherwise no third-party client identity is
-	// used and every field must come from a ZERO_OAUTH_<NAME>_* env var (env wins).
+	// in with KAJICODE_OAUTH_ALLOW_PRESETS — otherwise no third-party client identity is
+	// used and every field must come from a KAJICODE_OAUTH_<NAME>_* env var (env wins).
 	var preset providerPreset
 	if presetsAllowed(env) {
 		preset, _ = lookupOAuthPreset(name)
@@ -81,7 +81,7 @@ func (r *Registry) ResolveConfig(name string, env map[string]string) (Config, Fl
 	if cfg.ClientID == "" {
 		hint := ""
 		if _, ok := lookupOAuthPreset(name); ok {
-			hint = " (or set ZERO_OAUTH_ALLOW_PRESETS=1 to use the built-in preset)"
+			hint = " (or set KAJICODE_OAUTH_ALLOW_PRESETS=1 to use the built-in preset)"
 		}
 		return Config{}, "", fmt.Errorf("oauth: provider %q is not configured; set %s (and its endpoints or an issuer)%s", name, envKey(name, "CLIENT_ID"), hint)
 	}

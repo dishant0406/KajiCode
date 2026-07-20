@@ -24,7 +24,7 @@ func TestBuildCommandPlanWrapsLinuxHelper(t *testing.T) {
 		Backend: Backend{
 			Name:       BackendLinuxBwrap,
 			Available:  true,
-			Executable: "/usr/bin/zero-linux-sandbox",
+			Executable: "/usr/bin/kajicode-linux-sandbox",
 			Platform:   "linux",
 			Message:    "Linux sandbox helper available",
 		},
@@ -39,7 +39,7 @@ func TestBuildCommandPlanWrapsLinuxHelper(t *testing.T) {
 		t.Fatalf("BuildCommandPlan: %v", err)
 	}
 
-	if !plan.Wrapped || plan.Name != "/usr/bin/zero-linux-sandbox" || plan.Backend.Name != BackendLinuxBwrap {
+	if !plan.Wrapped || plan.Name != "/usr/bin/kajicode-linux-sandbox" || plan.Backend.Name != BackendLinuxBwrap {
 		t.Fatalf("plan backend = %#v, want wrapped Linux helper", plan)
 	}
 	assertArgsContainSequence(t, plan.Args, "--sandbox-policy-cwd", resolvedRoot)
@@ -130,7 +130,7 @@ func TestBuildCommandPlanDegradesUnavailableFallback(t *testing.T) {
 // unscrubbed.
 func TestBuildCommandPlanDegradedFallbackScrubsInheritedEnv(t *testing.T) {
 	t.Setenv("COMPANY_LLM_SECRET", "custom-secret")
-	t.Setenv("ZERO_OAUTH_ACME_CLIENT_SECRET", "oauth-secret")
+	t.Setenv("KAJICODE_OAUTH_ACME_CLIENT_SECRET", "oauth-secret")
 	t.Setenv("SAFE_VAR", "hello")
 
 	root := t.TempDir()
@@ -154,7 +154,7 @@ func TestBuildCommandPlanDegradedFallbackScrubsInheritedEnv(t *testing.T) {
 	}
 	for _, entry := range plan.Env {
 		key, _, _ := strings.Cut(entry, "=")
-		if strings.EqualFold(key, "COMPANY_LLM_SECRET") || strings.EqualFold(key, "ZERO_OAUTH_ACME_CLIENT_SECRET") {
+		if strings.EqualFold(key, "COMPANY_LLM_SECRET") || strings.EqualFold(key, "KAJICODE_OAUTH_ACME_CLIENT_SECRET") {
 			t.Fatalf("degraded plan.Env retained sensitive key %q: %v", key, plan.Env)
 		}
 	}
@@ -467,7 +467,7 @@ func TestSeatbeltProfileProtectsMetadataAndDenyOrdering(t *testing.T) {
 			WriteRoots: []WritableRoot{{
 				Root:                   "/repo",
 				ReadOnlySubpaths:       []string{"/repo/vendor"},
-				ProtectedMetadataNames: []string{".git", ".zero"},
+				ProtectedMetadataNames: []string{".git", ".kajicode"},
 			}},
 			DenyRead:  []string{"/repo/secret-read"},
 			DenyWrite: []string{"/repo/secret-write"},
@@ -485,7 +485,7 @@ func TestSeatbeltProfileProtectsMetadataAndDenyOrdering(t *testing.T) {
 		`(deny file-write* (literal "/repo/vendor"))`,
 		`(deny file-write* (subpath "/repo/vendor"))`,
 		`(deny file-write* (regex #"^/repo/\.git(/.*)?$"))`,
-		`(deny file-write* (regex #"^/repo/\.zero(/.*)?$"))`,
+		`(deny file-write* (regex #"^/repo/\.kajicode(/.*)?$"))`,
 		denySecretReadRule,
 		denySecretReadUnlinkRule,
 		denySecretWriteRule,
@@ -615,7 +615,7 @@ func TestLinuxHelperPlanCarriesExtraWriteRoots(t *testing.T) {
 		WorkspaceRoot: workspace,
 		Policy:        DefaultPolicy(),
 		Scope:         scope,
-		Backend:       Backend{Name: BackendLinuxBwrap, Available: true, Executable: "/usr/bin/zero-linux-sandbox"},
+		Backend:       Backend{Name: BackendLinuxBwrap, Available: true, Executable: "/usr/bin/kajicode-linux-sandbox"},
 	})
 	plan, err := engine.BuildCommandPlan(CommandSpec{Name: "true"})
 	if err != nil {
@@ -658,7 +658,7 @@ func TestLinuxHelperPlanPreservesRealExtraRootCwd(t *testing.T) {
 		WorkspaceRoot: workspace,
 		Policy:        DefaultPolicy(),
 		Scope:         scope,
-		Backend:       Backend{Name: BackendLinuxBwrap, Available: true, Executable: "/usr/bin/zero-linux-sandbox"},
+		Backend:       Backend{Name: BackendLinuxBwrap, Available: true, Executable: "/usr/bin/kajicode-linux-sandbox"},
 	})
 	resolvedExtra := scope.Roots()[1]
 	plan, err := engine.BuildCommandPlan(CommandSpec{Name: "true", Dir: extra})
@@ -673,7 +673,7 @@ func TestLinuxHelperPlanPreservesRealExtraRootCwd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseLinuxSandboxHelperArgs: %v", err)
 	}
-	bwrapArgs, err := BuildLinuxSandboxBwrapArgs(LinuxSandboxBwrapOptions{Config: config, HelperPath: "/usr/bin/zero-linux-sandbox"})
+	bwrapArgs, err := BuildLinuxSandboxBwrapArgs(LinuxSandboxBwrapOptions{Config: config, HelperPath: "/usr/bin/kajicode-linux-sandbox"})
 	if err != nil {
 		t.Fatalf("BuildLinuxSandboxBwrapArgs: %v", err)
 	}
@@ -695,18 +695,18 @@ func TestScrubSensitiveEnv(t *testing.T) {
 		"HUGGINGFACE_API_KEY=hf_12345",
 		"GOOGLE_APPLICATION_CREDENTIALS=/home/user/sa-key.json",
 		"COMPANY_LLM_SECRET=custom-secret",
-		"ZERO_OAUTH_MY_SVC_CLIENT_SECRET=oauth-secret",
-		"zero_oauth_second_client_secret=case-insensitive-secret",
-		"ZERO_OAUTH_CLIENT_SECRET=not-a-provider-secret",
+		"KAJICODE_OAUTH_MY_SVC_CLIENT_SECRET=oauth-secret",
+		"kajicode_oauth_second_client_secret=case-insensitive-secret",
+		"KAJICODE_OAUTH_CLIENT_SECRET=not-a-provider-secret",
 		"AWS_PROFILE=staging",
 		"SAFE_VAR=hello",
 	}
 	scrubbed := scrubSensitiveEnv(inputEnv, " COMPANY_LLM_SECRET ", "company_llm_secret", "GITHUB_TOKEN=ghp_pasted-assignment", "=", "")
 	expected := map[string]string{
-		"PATH":                     "/usr/bin",
-		"SAFE_VAR":                 "hello",
-		"AWS_PROFILE":              "staging",
-		"ZERO_OAUTH_CLIENT_SECRET": "not-a-provider-secret",
+		"PATH":                         "/usr/bin",
+		"SAFE_VAR":                     "hello",
+		"AWS_PROFILE":                  "staging",
+		"KAJICODE_OAUTH_CLIENT_SECRET": "not-a-provider-secret",
 	}
 	actual := make(map[string]string, len(scrubbed))
 	for _, entry := range scrubbed {
@@ -726,7 +726,7 @@ func TestEngineScrubsConfiguredSensitiveEnvKeys(t *testing.T) {
 	engine := NewEngine(EngineOptions{
 		WorkspaceRoot:    workspace,
 		Policy:           DefaultPolicy(),
-		Backend:          Backend{Name: BackendLinuxBwrap, Available: true, Executable: "/usr/bin/zero-linux-sandbox"},
+		Backend:          Backend{Name: BackendLinuxBwrap, Available: true, Executable: "/usr/bin/kajicode-linux-sandbox"},
 		SensitiveEnvKeys: []string{"COMPANY_LLM_SECRET"},
 	})
 	plan, err := engine.BuildCommandPlan(CommandSpec{
@@ -734,7 +734,7 @@ func TestEngineScrubsConfiguredSensitiveEnvKeys(t *testing.T) {
 		Env: []string{
 			"PATH=/usr/bin",
 			"COMPANY_LLM_SECRET=custom-secret",
-			"ZERO_OAUTH_CUSTOM_CLIENT_SECRET=oauth-secret",
+			"KAJICODE_OAUTH_CUSTOM_CLIENT_SECRET=oauth-secret",
 			"SAFE_VAR=hello",
 		},
 	})
@@ -743,7 +743,7 @@ func TestEngineScrubsConfiguredSensitiveEnvKeys(t *testing.T) {
 	}
 	for _, entry := range plan.Env {
 		key, _, _ := strings.Cut(entry, "=")
-		if strings.EqualFold(key, "COMPANY_LLM_SECRET") || strings.EqualFold(key, "ZERO_OAUTH_CUSTOM_CLIENT_SECRET") {
+		if strings.EqualFold(key, "COMPANY_LLM_SECRET") || strings.EqualFold(key, "KAJICODE_OAUTH_CUSTOM_CLIENT_SECRET") {
 			t.Fatalf("plan.Env retained sensitive key %q: %v", key, plan.Env)
 		}
 	}

@@ -3,8 +3,8 @@ package tui
 import (
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/Gitlawb/zero/internal/imageinput"
 	"github.com/atotto/clipboard"
+	"github.com/dishant0406/KajiCode/internal/imageinput"
 )
 
 // clipboardReadMsg carries the result of an async OS-clipboard read back to

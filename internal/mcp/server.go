@@ -10,7 +10,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Gitlawb/zero/internal/tools"
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
 const defaultProtocolVersion = "2024-11-05"
@@ -96,7 +96,7 @@ func Serve(ctx context.Context, input io.Reader, output io.Writer, registry *too
 
 func (options ServeOptions) withDefaults() ServeOptions {
 	if strings.TrimSpace(options.Name) == "" {
-		options.Name = "zero"
+		options.Name = "kajicode"
 	}
 	if strings.TrimSpace(options.Version) == "" {
 		options.Version = "dev"

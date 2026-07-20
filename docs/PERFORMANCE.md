@@ -1,15 +1,15 @@
-# Zero Performance Benchmarks
+# KajiCode Performance Benchmarks
 
 The performance harness tracks three release-facing signals:
 
-- Cold start: process startup time for `zero --version`.
-- Binary first output: time from spawning the built `zero --version` command to
+- Cold start: process startup time for `kajicode --version`.
+- Binary first output: time from spawning the built `kajicode --version` command to
   the first stdout or stderr chunk.
 - Harness end memory: RSS for the Go benchmark harness after the spawned
   command exits, plus the delta from the pre-spawn RSS sample.
 
-Cold start uses the built Go binary at `./zero` or `./zero.exe`. Run
-`go run ./cmd/zero-release build` before the benchmark so it measures the
+Cold start uses the built Go binary at `./kajicode` or `./kajicode.exe`. Run
+`go run ./cmd/kajicode-release build` before the benchmark so it measures the
 production runtime.
 On Linux the harness memory metric reads RSS from `/proc/self/statm`; on other
 hosts `readHarnessMemoryMb()` falls back to `runtime.ReadMemStats()` and reports
@@ -22,20 +22,20 @@ deterministic local streaming path.
 ## Run Locally
 
 ```bash
-go run ./cmd/zero-perf-bench
+go run ./cmd/kajicode-perf-bench
 ```
 
 Run against a freshly built binary:
 
 ```bash
-go run ./cmd/zero-release build
-go run ./cmd/zero-perf-bench
+go run ./cmd/kajicode-release build
+go run ./cmd/kajicode-perf-bench
 ```
 
 Write the JSON report used by CI:
 
 ```bash
-go run ./cmd/zero-perf-bench --output dist/perf/perf-bench.json
+go run ./cmd/kajicode-perf-bench --output dist/perf/perf-bench.json
 ```
 
 Default warning thresholds:
@@ -49,27 +49,27 @@ The default sample count is intentionally small for CI smoke coverage. `p95` use
 Override thresholds with CLI flags:
 
 ```bash
-go run ./cmd/zero-perf-bench --cold-start-warn-ms=350 --first-output-warn-ms=600 --harness-end-rss-warn-mb=384
+go run ./cmd/kajicode-perf-bench --cold-start-warn-ms=350 --first-output-warn-ms=600 --harness-end-rss-warn-mb=384
 ```
 
 Or with environment variables:
 
 ```bash
-ZERO_PERF_COLD_START_WARN_MS=350 go run ./cmd/zero-perf-bench
+KAJICODE_PERF_COLD_START_WARN_MS=350 go run ./cmd/kajicode-perf-bench
 ```
 
 Supported environment variables:
 
-- `ZERO_PERF_ITERATIONS`
-- `ZERO_PERF_WARMUP_ITERATIONS`
-- `ZERO_PERF_COLD_START_WARN_MS`
-- `ZERO_PERF_FIRST_OUTPUT_WARN_MS`
-- `ZERO_PERF_HARNESS_END_RSS_WARN_MB`
+- `KAJICODE_PERF_ITERATIONS`
+- `KAJICODE_PERF_WARMUP_ITERATIONS`
+- `KAJICODE_PERF_COLD_START_WARN_MS`
+- `KAJICODE_PERF_FIRST_OUTPUT_WARN_MS`
+- `KAJICODE_PERF_HARNESS_END_RSS_WARN_MB`
 
 ## CI Behavior
 
 The `Performance Smoke` job builds the binary, runs
-`go run ./cmd/zero-perf-bench --output dist/perf/perf-bench.json --ci`, and
+`go run ./cmd/kajicode-perf-bench --output dist/perf/perf-bench.json --ci`, and
 uploads `dist/perf/perf-bench.json`.
 
 Threshold drift is emitted as GitHub Actions warnings. The job fails only if the benchmark cannot run, the build fails, or `--fail-on-warning` is passed explicitly.

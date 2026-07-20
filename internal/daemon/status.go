@@ -2,7 +2,7 @@ package daemon
 
 import "time"
 
-// StatusReport is the daemon/worker/session snapshot returned by `zero daemon
+// StatusReport is the daemon/worker/session snapshot returned by `kajicode daemon
 // status` (CtrlStatusResult). Mirrors reference-daemon-code-agent-js/status.js.
 type StatusReport struct {
 	PID        int             `json:"pid"`

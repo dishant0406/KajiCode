@@ -9,9 +9,9 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/Gitlawb/zero/internal/config"
-	"github.com/Gitlawb/zero/internal/repomap"
-	"github.com/Gitlawb/zero/internal/workspaceseed"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/repomap"
+	"github.com/dishant0406/KajiCode/internal/workspaceseed"
 )
 
 // coreSystemPrompt is the de-branded coding-craft instruction set: identity,
@@ -30,20 +30,20 @@ var confirmationPolicy string
 
 // fallbackSystemPrompt is used only if the embedded core prompt is somehow empty
 // (it never should be) so a run always has a non-empty system turn.
-const fallbackSystemPrompt = "You are Zero, a terminal coding agent. Help with the current workspace and use tools when needed."
+const fallbackSystemPrompt = "You are KajiCode, a terminal coding agent. Help with the current workspace and use tools when needed."
 
 // projectContextFiles are workspace docs injected into the system prompt so the
 // agent honors project-specific conventions (mirrors AGENTS.md / CLAUDE.md).
 // The first match at each directory level wins; the loader walks the chain
 // from the git root down to the cwd and injects the matches in
 // general-to-specific order.
-var projectContextFiles = []string{"AGENTS.md", "ZERO.md", ".zero/AGENTS.md"}
+var projectContextFiles = []string{"AGENTS.md", "KAJICODE.md", ".kajicode/AGENTS.md"}
 
 // userContextFile is the per-user instruction file, resolved under
-// config.UserConfigDir()/zero/ alongside the rest of Zero's per-user config
+// config.UserConfigDir()/kajicode/ alongside the rest of KajiCode's per-user config
 // (config.json, commands, specialists) so users can keep personal guidance out
 // of individual repositories.
-const userContextFile = "ZERO.md"
+const userContextFile = "KAJICODE.md"
 
 var userConfigDirForPrompt = config.UserConfigDir
 
@@ -107,7 +107,7 @@ func buildSystemPromptParts(options Options) systemPromptParts {
 		sections = append(sections, seed)
 	}
 	// User guidelines are injected before workspace/project guidelines so the
-	// project's AGENTS.md/ZERO.md is the later, more specific instruction
+	// project's AGENTS.md/KAJICODE.md is the later, more specific instruction
 	// block. See userGuidelines for the explicit precedence note carried in
 	// the section text itself.
 	if user := userGuidelines(); user != "" {
@@ -311,7 +311,7 @@ func workspaceContext(cwd string) string {
 	b.WriteString("Working directory: " + cwd + "\n")
 	b.WriteString("Operating system: " + runtime.GOOS + "\n")
 	if runtime.GOOS == "windows" {
-		b.WriteString("Shell syntax: Windows cmd.exe syntax for exec_command/bash tools. To put | & > < etc inside an arg value, use double quotes around the value, not single quotes (single quotes do not protect metachars in cmd.exe): gh --jq \".a | b\", go test -run \"A|B\". Do not pipe to or invoke POSIX coreutils from Git for Windows (usr\\bin head/grep/tail/cat/...): they are MSYS binaries and fail under the write-restricted sandbox; use native Zero tools (grep, read_file, list_directory, glob) or cmd.exe findstr/more instead, or sandbox_permissions require_escalated only when host-level execution is truly required. Prefer the workdir/cwd argument over cd when changing directories.\n")
+		b.WriteString("Shell syntax: Windows cmd.exe syntax for exec_command/bash tools. To put | & > < etc inside an arg value, use double quotes around the value, not single quotes (single quotes do not protect metachars in cmd.exe): gh --jq \".a | b\", go test -run \"A|B\". Do not pipe to or invoke POSIX coreutils from Git for Windows (usr\\bin head/grep/tail/cat/...): they are MSYS binaries and fail under the write-restricted sandbox; use native KajiCode tools (grep, read_file, list_directory, glob) or cmd.exe findstr/more instead, or sandbox_permissions require_escalated only when host-level execution is truly required. Prefer the workdir/cwd argument over cd when changing directories.\n")
 	} else {
 		b.WriteString("Shell syntax: /bin/sh syntax for exec_command/bash tools; prefer the workdir/cwd argument instead of cd when changing directories.\n")
 	}
@@ -372,13 +372,13 @@ func projectGuidelines(cwd, gitRoot string) string {
 	return b.String()
 }
 
-// userGuidelines returns the per-user ZERO.md instructions block, if present.
-// The file lives in config.UserConfigDir()/zero/ next to Zero's other
+// userGuidelines returns the per-user KAJICODE.md instructions block, if present.
+// The file lives in config.UserConfigDir()/kajicode/ next to KajiCode's other
 // per-user config; the basename match is case-insensitive so a file saved as
-// zero.md still resolves on case-sensitive filesystems, mirroring the project
+// kajicode.md still resolves on case-sensitive filesystems, mirroring the project
 // guideline loader. The section carries an explicit precedence note because
 // this is a global, personal preferences file: it is injected earlier in the
-// prompt than the project's AGENTS.md/ZERO.md (see buildSystemPrompt), and
+// prompt than the project's AGENTS.md/KAJICODE.md (see buildSystemPrompt), and
 // the note keeps that precedence unambiguous even if a model weighs later
 // context more heavily than section order alone implies.
 func userGuidelines() string {
@@ -390,7 +390,7 @@ func userGuidelines() string {
 	if configDir == "" {
 		return ""
 	}
-	match := findCaseInsensitiveFile(filepath.Join(configDir, "zero"), userContextFile)
+	match := findCaseInsensitiveFile(filepath.Join(configDir, "kajicode"), userContextFile)
 	if match == "" {
 		return ""
 	}
@@ -405,7 +405,7 @@ func userGuidelines() string {
 	content = truncateGuidelineContent(content, maxProjectContextBytes)
 	return "## User guidelines (" + filepath.Base(match) + ")\n\n" +
 		"These are the operator's personal preferences, not project policy. " +
-		"Where they conflict with a repository's project guidelines below (AGENTS.md/ZERO.md), the project guidelines take precedence.\n\n" +
+		"Where they conflict with a repository's project guidelines below (AGENTS.md/KAJICODE.md), the project guidelines take precedence.\n\n" +
 		content
 }
 

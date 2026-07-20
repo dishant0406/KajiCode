@@ -25,10 +25,10 @@ func TestNormalizeOutcome(t *testing.T) {
 
 func TestBuildChecksFromEnvDetectsBlockers(t *testing.T) {
 	checks := BuildChecksFromEnv(map[string]string{
-		"ZERO_REVIEW_DIFF_CHECK": "success",
-		"ZERO_REVIEW_TEST":       "failure",
-		"ZERO_REVIEW_BUILD":      "success",
-		"ZERO_REVIEW_SMOKE":      "skipped",
+		"KAJICODE_REVIEW_DIFF_CHECK": "success",
+		"KAJICODE_REVIEW_TEST":       "failure",
+		"KAJICODE_REVIEW_BUILD":      "success",
+		"KAJICODE_REVIEW_SMOKE":      "skipped",
 	})
 
 	got := make([]Outcome, 0, len(checks))
@@ -51,16 +51,16 @@ func TestBuildChecksFromEnvDetectsBlockers(t *testing.T) {
 
 func TestBuildMarkdownApprovingReview(t *testing.T) {
 	checks := BuildChecksFromEnv(map[string]string{
-		"ZERO_REVIEW_DIFF_CHECK": "success",
-		"ZERO_REVIEW_TEST":       "success",
-		"ZERO_REVIEW_BUILD":      "success",
-		"ZERO_REVIEW_SMOKE":      "success",
+		"KAJICODE_REVIEW_DIFF_CHECK": "success",
+		"KAJICODE_REVIEW_TEST":       "success",
+		"KAJICODE_REVIEW_BUILD":      "success",
+		"KAJICODE_REVIEW_SMOKE":      "success",
 	})
 	markdown := BuildMarkdown(SummaryInput{
 		Number:       30,
 		HeadSHA:      "abcdef1234567890",
 		Checks:       checks,
-		ChangedFiles: []string{"cmd/zero-pr-review/main.go", "internal/review/review_test.go"},
+		ChangedFiles: []string{"cmd/kajicode-pr-review/main.go", "internal/review/review_test.go"},
 	})
 
 	for _, want := range []string{
@@ -78,10 +78,10 @@ func TestBuildMarkdownApprovingReview(t *testing.T) {
 
 func TestBuildMarkdownFormatsFailuresAsBlockers(t *testing.T) {
 	checks := BuildChecksFromEnv(map[string]string{
-		"ZERO_REVIEW_DIFF_CHECK": "success",
-		"ZERO_REVIEW_TEST":       "failure",
-		"ZERO_REVIEW_BUILD":      "success",
-		"ZERO_REVIEW_SMOKE":      "success",
+		"KAJICODE_REVIEW_DIFF_CHECK": "success",
+		"KAJICODE_REVIEW_TEST":       "failure",
+		"KAJICODE_REVIEW_BUILD":      "success",
+		"KAJICODE_REVIEW_SMOKE":      "success",
 	})
 	markdown := BuildMarkdown(SummaryInput{
 		Number: 31,
@@ -134,10 +134,10 @@ func TestBuildMarkdownCapsChangedFiles(t *testing.T) {
 
 func TestBuildSummaryInputFromEnv(t *testing.T) {
 	input := BuildSummaryInputFromEnv(map[string]string{
-		"ZERO_PR_NUMBER":         "42",
-		"ZERO_REVIEW_HEAD_SHA":   "0123456789abcdef",
-		"ZERO_REVIEW_DIFF_CHECK": "success",
-		"ZERO_CHANGED_FILES":     "b.go\na.go",
+		"KAJICODE_PR_NUMBER":         "42",
+		"KAJICODE_REVIEW_HEAD_SHA":   "0123456789abcdef",
+		"KAJICODE_REVIEW_DIFF_CHECK": "success",
+		"KAJICODE_CHANGED_FILES":     "b.go\na.go",
 	})
 
 	if input.Number != 42 {

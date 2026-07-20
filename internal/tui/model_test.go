@@ -16,13 +16,13 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/Gitlawb/zero/internal/agent"
-	"github.com/Gitlawb/zero/internal/config"
-	"github.com/Gitlawb/zero/internal/notify"
-	"github.com/Gitlawb/zero/internal/sandbox"
-	"github.com/Gitlawb/zero/internal/sessions"
-	"github.com/Gitlawb/zero/internal/tools"
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/agent"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
+	"github.com/dishant0406/KajiCode/internal/notify"
+	"github.com/dishant0406/KajiCode/internal/sandbox"
+	"github.com/dishant0406/KajiCode/internal/sessions"
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
 // execCmd runs a possibly-batched command synchronously and returns the first
@@ -48,16 +48,16 @@ func execCmd(cmd tea.Cmd) tea.Msg {
 }
 
 type fakeProvider struct {
-	events   []zeroruntime.StreamEvent
-	requests []zeroruntime.CompletionRequest
+	events   []kajicoderuntime.StreamEvent
+	requests []kajicoderuntime.CompletionRequest
 }
 
 func (provider *fakeProvider) StreamCompletion(
 	ctx context.Context,
-	request zeroruntime.CompletionRequest,
-) (<-chan zeroruntime.StreamEvent, error) {
+	request kajicoderuntime.CompletionRequest,
+) (<-chan kajicoderuntime.StreamEvent, error) {
 	provider.requests = append(provider.requests, request)
-	ch := make(chan zeroruntime.StreamEvent, len(provider.events))
+	ch := make(chan kajicoderuntime.StreamEvent, len(provider.events))
 	for _, event := range provider.events {
 		ch <- event
 	}
@@ -67,9 +67,9 @@ func (provider *fakeProvider) StreamCompletion(
 
 func TestPromptSubmitInjectsLiveSessionModelContext(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
-	provider := &fakeProvider{events: []zeroruntime.StreamEvent{
-		{Type: zeroruntime.StreamEventText, Content: "I am using the active session model."},
-		{Type: zeroruntime.StreamEventDone},
+	provider := &fakeProvider{events: []kajicoderuntime.StreamEvent{
+		{Type: kajicoderuntime.StreamEventText, Content: "I am using the active session model."},
+		{Type: kajicoderuntime.StreamEventDone},
 	}}
 	m := newModel(context.Background(), Options{
 		Cwd:          t.TempDir(),
@@ -109,11 +109,11 @@ func TestPromptSubmitInjectsLiveSessionModelContext(t *testing.T) {
 
 func TestPromptSubmitStoresReasoningSeparatelyFromAnswer(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
-	provider := &fakeProvider{events: []zeroruntime.StreamEvent{
-		{Type: zeroruntime.StreamEventReasoning, Content: "private "},
-		{Type: zeroruntime.StreamEventReasoning, Content: "thought"},
-		{Type: zeroruntime.StreamEventText, Content: "public answer"},
-		{Type: zeroruntime.StreamEventDone},
+	provider := &fakeProvider{events: []kajicoderuntime.StreamEvent{
+		{Type: kajicoderuntime.StreamEventReasoning, Content: "private "},
+		{Type: kajicoderuntime.StreamEventReasoning, Content: "thought"},
+		{Type: kajicoderuntime.StreamEventText, Content: "public answer"},
+		{Type: kajicoderuntime.StreamEventDone},
 	}}
 	m := newModel(context.Background(), Options{
 		Cwd:          t.TempDir(),
@@ -197,7 +197,7 @@ func TestParseCommand(t *testing.T) {
 		{input: "/effort high", kind: commandEffort, text: "high"},
 		{input: "/style concise", kind: commandStyle, text: "concise"},
 		{input: "/debug-mode", kind: commandDebug},
-		{input: "hello zero", kind: commandPrompt, text: "hello zero"},
+		{input: "hello KajiCode", kind: commandPrompt, text: "hello KajiCode"},
 	}
 
 	for _, tc := range cases {
@@ -254,7 +254,7 @@ func TestTranscriptReducer(t *testing.T) {
 
 func TestInitialRenderShowsLimeChatSurface(t *testing.T) {
 	model := newModel(context.Background(), Options{
-		Cwd:          `/workspace/zero`,
+		Cwd:          `/workspace/kajicode`,
 		ProviderName: "openai",
 		ModelName:    "gpt-4.1",
 	})
@@ -262,14 +262,14 @@ func TestInitialRenderShowsLimeChatSurface(t *testing.T) {
 	model.height = 34
 
 	view := viewString(model.View())
-	assertContains(t, view, `/workspace/zero`)
+	assertContains(t, view, `/workspace/kajicode`)
 	assertContains(t, view, "openai/gpt-4.1")
 	assertContains(t, view, emptyStateTagline)
-	assertNotContains(t, view, "running zero against ")
+	assertNotContains(t, view, "running KajiCode against ")
 	assertNotContains(t, view, " 0 ")
 	assertContains(t, view, composerPlaceholder)
 	assertNotContains(t, view, "interactive")
-	if strings.Contains(view, "Welcome to Zero") {
+	if strings.Contains(view, "Welcome to KajiCode") {
 		t.Fatalf("empty chat surface should not show welcome transcript clutter, got %q", view)
 	}
 }
@@ -465,7 +465,7 @@ func TestContextCommandShowsSessionState(t *testing.T) {
 	registry := tools.NewRegistry()
 	registry.Register(tools.NewReadFileTool("."))
 	m := newModel(context.Background(), Options{
-		Cwd:            `D:\codings\Opensource\Zero`,
+		Cwd:            `D:\codings\Opensource\KajiCode`,
 		ProviderName:   "openai",
 		ModelName:      "gpt-4.1",
 		Registry:       registry,
@@ -480,7 +480,7 @@ func TestContextCommandShowsSessionState(t *testing.T) {
 		t.Fatal("expected /context to be handled without starting an agent run")
 	}
 	for _, want := range []string{
-		`D:\codings\Opensource\Zero`,
+		`D:\codings\Opensource\KajiCode`,
 		"go runtime | ask permissions | 1 tool",
 		"provider   openai",
 		"model      gpt-4.1",
@@ -535,7 +535,7 @@ func TestModelCommandSwitchesSessionModel(t *testing.T) {
 			Model:        "gpt-4.1",
 		},
 		Provider: &fakeProvider{},
-		NewProvider: func(profile config.ProviderProfile) (zeroruntime.Provider, error) {
+		NewProvider: func(profile config.ProviderProfile) (kajicoderuntime.Provider, error) {
 			rebuilt = profile
 			return nextProvider, nil
 		},
@@ -562,7 +562,7 @@ func TestModelCommandSwitchesSessionModel(t *testing.T) {
 }
 
 func TestModelCommandPersistsSelectedModelToUserConfig(t *testing.T) {
-	configPath := filepath.Join(t.TempDir(), "zero.json")
+	configPath := filepath.Join(t.TempDir(), "kajicode.json")
 	if _, err := config.UpsertProvider(configPath, config.ProviderProfile{
 		Name:         "openai",
 		ProviderKind: config.ProviderKindOpenAI,
@@ -585,7 +585,7 @@ func TestModelCommandPersistsSelectedModelToUserConfig(t *testing.T) {
 			Model:        "gpt-4.1",
 		},
 		Provider: &fakeProvider{},
-		NewProvider: func(config.ProviderProfile) (zeroruntime.Provider, error) {
+		NewProvider: func(config.ProviderProfile) (kajicoderuntime.Provider, error) {
 			return &fakeProvider{}, nil
 		},
 	})
@@ -664,7 +664,7 @@ func TestModelCommandRequestsCompactionBeforeDirtyContextSwitch(t *testing.T) {
 			Model:        "gpt-4.1",
 		},
 		Provider: originalProvider,
-		NewProvider: func(config.ProviderProfile) (zeroruntime.Provider, error) {
+		NewProvider: func(config.ProviderProfile) (kajicoderuntime.Provider, error) {
 			rebuilds++
 			return &fakeProvider{}, nil
 		},
@@ -769,7 +769,7 @@ func TestModelCommandReportsProviderRebuildErrors(t *testing.T) {
 			BaseURL:      config.OpenAIBaseURL,
 			Model:        "gpt-4.1",
 		},
-		NewProvider: func(config.ProviderProfile) (zeroruntime.Provider, error) {
+		NewProvider: func(config.ProviderProfile) (kajicoderuntime.Provider, error) {
 			return nil, errors.New("rebuild failed")
 		},
 	})
@@ -954,7 +954,7 @@ func TestResumePickerSelectionHydratesSession(t *testing.T) {
 	if next.activeSession.SessionID != target.SessionID {
 		t.Fatalf("active session = %q, want %q", next.activeSession.SessionID, target.SessionID)
 	}
-	if !transcriptContains(next.transcript, "Resumed Zero session") || !transcriptContains(next.transcript, target.SessionID) {
+	if !transcriptContains(next.transcript, "Resumed KajiCode session") || !transcriptContains(next.transcript, target.SessionID) {
 		t.Fatalf("expected the resume summary in the transcript, got %#v", next.transcript)
 	}
 }
@@ -1056,16 +1056,16 @@ func TestResumeCommandWithUnknownIDReportsMissingSession(t *testing.T) {
 	updated, _ := m.Update(testKey(tea.KeyEnter))
 	next := updated.(model)
 
-	if !transcriptContains(next.transcript, "zero session not found: zero_123") {
+	if !transcriptContains(next.transcript, "kajicode session not found: zero_123") {
 		t.Fatalf("expected missing session message, got %#v", next.transcript)
 	}
 }
 
 func TestPromptSubmitAppendsUserAndAssistantRows(t *testing.T) {
-	provider := &fakeProvider{events: []zeroruntime.StreamEvent{
-		{Type: zeroruntime.StreamEventText, Content: "hello"},
-		{Type: zeroruntime.StreamEventText, Content: " back"},
-		{Type: zeroruntime.StreamEventDone},
+	provider := &fakeProvider{events: []kajicoderuntime.StreamEvent{
+		{Type: kajicoderuntime.StreamEventText, Content: "hello"},
+		{Type: kajicoderuntime.StreamEventText, Content: " back"},
+		{Type: kajicoderuntime.StreamEventDone},
 	}}
 	m := newModel(context.Background(), Options{
 		Provider:     provider,
@@ -1741,40 +1741,40 @@ func TestAppendTranscriptRowDedupesRuntimeRowsByID(t *testing.T) {
 }
 
 func TestAgentEventRenderingMappingCoversRuntimeContract(t *testing.T) {
-	surfaces := map[zeroruntime.AgentEventType]string{
-		zeroruntime.AgentEventText:       "assistant transcript row",
-		zeroruntime.AgentEventToolCall:   "tool call transcript row",
-		zeroruntime.AgentEventToolResult: "tool result transcript row",
-		zeroruntime.AgentEventThinking:   "deferred: no transcript row until runtime emits thinking deltas",
-		zeroruntime.AgentEventUsage:      "usage tracker footer segment",
-		zeroruntime.AgentEventPlanUpdate: "system transcript row from /plan",
-		zeroruntime.AgentEventError:      "error transcript row",
-		zeroruntime.AgentEventTurnEnd:    "control boundary, no transcript row",
+	surfaces := map[kajicoderuntime.AgentEventType]string{
+		kajicoderuntime.AgentEventText:       "assistant transcript row",
+		kajicoderuntime.AgentEventToolCall:   "tool call transcript row",
+		kajicoderuntime.AgentEventToolResult: "tool result transcript row",
+		kajicoderuntime.AgentEventThinking:   "deferred: no transcript row until runtime emits thinking deltas",
+		kajicoderuntime.AgentEventUsage:      "usage tracker footer segment",
+		kajicoderuntime.AgentEventPlanUpdate: "system transcript row from /plan",
+		kajicoderuntime.AgentEventError:      "error transcript row",
+		kajicoderuntime.AgentEventTurnEnd:    "control boundary, no transcript row",
 	}
-	for _, eventType := range []zeroruntime.AgentEventType{
-		zeroruntime.AgentEventText,
-		zeroruntime.AgentEventToolCall,
-		zeroruntime.AgentEventToolResult,
-		zeroruntime.AgentEventThinking,
-		zeroruntime.AgentEventUsage,
-		zeroruntime.AgentEventPlanUpdate,
-		zeroruntime.AgentEventError,
-		zeroruntime.AgentEventTurnEnd,
+	for _, eventType := range []kajicoderuntime.AgentEventType{
+		kajicoderuntime.AgentEventText,
+		kajicoderuntime.AgentEventToolCall,
+		kajicoderuntime.AgentEventToolResult,
+		kajicoderuntime.AgentEventThinking,
+		kajicoderuntime.AgentEventUsage,
+		kajicoderuntime.AgentEventPlanUpdate,
+		kajicoderuntime.AgentEventError,
+		kajicoderuntime.AgentEventTurnEnd,
 	} {
 		if strings.TrimSpace(surfaces[eventType]) == "" {
 			t.Fatalf("missing TUI rendering surface note for %s", eventType)
 		}
 	}
 
-	renderedRows := map[zeroruntime.AgentEventType]struct {
+	renderedRows := map[kajicoderuntime.AgentEventType]struct {
 		row   transcriptRow
 		wants []string
 	}{
-		zeroruntime.AgentEventText: {
+		kajicoderuntime.AgentEventText: {
 			row:   transcriptRow{kind: rowAssistant, text: "assistant text"},
 			wants: []string{"assistant text"},
 		},
-		zeroruntime.AgentEventToolCall: {
+		kajicoderuntime.AgentEventToolCall: {
 			row: transcriptRow{
 				kind:   rowToolCall,
 				text:   "tool call: read_file",
@@ -1783,7 +1783,7 @@ func TestAgentEventRenderingMappingCoversRuntimeContract(t *testing.T) {
 			},
 			wants: []string{"Read", "README.md"},
 		},
-		zeroruntime.AgentEventToolResult: {
+		kajicoderuntime.AgentEventToolResult: {
 			row: transcriptRow{
 				kind:   rowToolResult,
 				text:   "tool result: apply_patch error",
@@ -1799,11 +1799,11 @@ func TestAgentEventRenderingMappingCoversRuntimeContract(t *testing.T) {
 			},
 			wants: []string{"Patched", "file.txt", "old", "new"},
 		},
-		zeroruntime.AgentEventPlanUpdate: {
+		kajicoderuntime.AgentEventPlanUpdate: {
 			row:   transcriptRow{kind: rowSystem, text: "Plan updated\n- inspect: completed"},
 			wants: []string{"Plan updated", "inspect"},
 		},
-		zeroruntime.AgentEventError: {
+		kajicoderuntime.AgentEventError: {
 			row:   transcriptRow{kind: rowError, text: "provider failed"},
 			wants: []string{"provider failed"},
 		},
@@ -1822,7 +1822,7 @@ func TestAgentEventRenderingMappingCoversRuntimeContract(t *testing.T) {
 		PermissionMode: agent.PermissionModeAsk,
 	})
 	m.width = 96
-	m, usageRows := m.recordUsageEvent("gpt-4.1", zeroruntime.Usage{InputTokens: 100, OutputTokens: 20})
+	m, usageRows := m.recordUsageEvent("gpt-4.1", kajicoderuntime.Usage{InputTokens: 100, OutputTokens: 20})
 	if len(usageRows) != 0 {
 		t.Fatalf("valid usage should update footer without transcript rows, got %#v", usageRows)
 	}
@@ -2181,7 +2181,7 @@ func TestSelectionHighlightUsesGutterShiftedCoordinate(t *testing.T) {
 	if !strings.Contains(plainRender(t, styled), "    Hello world") {
 		t.Fatalf("expected a 4-cell gutter-padded line, got %q", styled)
 	}
-	if !strings.Contains(styled, zeroTheme.selection.Render("world")) {
+	if !strings.Contains(styled, kajicodeTheme.selection.Render("world")) {
 		t.Fatalf("expected 'world' highlighted at the gutter-shifted position, got %q", styled)
 	}
 }
@@ -2236,7 +2236,7 @@ func TestTranscriptSelectionPaintsHighlightOnceNotTwice(t *testing.T) {
 	}
 	out := strings.Join(row2.render(0).lines, "\n")
 
-	sentinel := zeroTheme.selection.Render("\x00")
+	sentinel := kajicodeTheme.selection.Render("\x00")
 	open := sentinel[:strings.IndexByte(sentinel, 0)]
 	if open == "" {
 		t.Fatal("selection style emitted no opening sequence to count")
@@ -2835,10 +2835,10 @@ func TestCommandArgumentHintFollowsCursorVisibility(t *testing.T) {
 	if visible == hidden {
 		t.Fatal("expected the rendered hint line to differ between visible and hidden caret states")
 	}
-	if want := composerCursor(zeroTheme.faint.Render("h")); !strings.Contains(visible, want) {
+	if want := composerCursor(kajicodeTheme.faint.Render("h")); !strings.Contains(visible, want) {
 		t.Fatalf("expected visible-caret render to contain the styled cursor cell, got %q", visible)
 	}
-	if got := hidden; strings.Contains(got, composerCursor(zeroTheme.faint.Render("h"))) {
+	if got := hidden; strings.Contains(got, composerCursor(kajicodeTheme.faint.Render("h"))) {
 		t.Fatalf("expected hidden-caret render to drop the styled cursor cell, got %q", got)
 	}
 }
@@ -2905,9 +2905,9 @@ func TestOverlayViewportLinesCompositesAndPreservesBackdropText(t *testing.T) {
 func burstTestModel(t *testing.T, termuxVersion string) model {
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	t.Setenv("TERMUX_VERSION", termuxVersion)
-	provider := &fakeProvider{events: []zeroruntime.StreamEvent{
-		{Type: zeroruntime.StreamEventText, Content: "ok"},
-		{Type: zeroruntime.StreamEventDone},
+	provider := &fakeProvider{events: []kajicoderuntime.StreamEvent{
+		{Type: kajicoderuntime.StreamEventText, Content: "ok"},
+		{Type: kajicoderuntime.StreamEventDone},
 	}}
 	m := newModel(context.Background(), Options{
 		Cwd:          t.TempDir(),

@@ -113,7 +113,7 @@ func TestLocalRuntimeActionOffersNoKeySetup(t *testing.T) {
 	}, Reachable: true}
 
 	action := runtime.SetupAction()
-	if !strings.Contains(action.Command, "zero providers add ollama") {
+	if !strings.Contains(action.Command, "kajicode providers add ollama") {
 		t.Fatalf("setup command should add the ollama provider, got %q", action.Command)
 	}
 	if strings.Contains(action.Command, "--api-key-env") {

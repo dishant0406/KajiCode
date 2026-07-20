@@ -29,7 +29,7 @@ type RewindMarker struct {
 func (store *Store) RestoreToSequence(sessionID, workspaceRoot string, targetSeq int) (RestoreReport, error) {
 	report := RestoreReport{TargetSequence: targetSeq}
 	if !ValidSessionID(sessionID) {
-		return report, fmt.Errorf("invalid zero session id %q", sessionID)
+		return report, fmt.Errorf("invalid kajicode session id %q", sessionID)
 	}
 	unlock, err := store.lockSession(sessionID)
 	if err != nil {
@@ -182,7 +182,7 @@ func resolveWithinWorkspace(root, rel string) (string, bool) {
 // Sequence <= keepThroughSequence, and updates metadata EventCount.
 func (store *Store) TruncateEvents(sessionID string, keepThroughSequence int) error {
 	if !ValidSessionID(sessionID) {
-		return fmt.Errorf("invalid zero session id %q", sessionID)
+		return fmt.Errorf("invalid kajicode session id %q", sessionID)
 	}
 	unlock, err := store.lockSession(sessionID)
 	if err != nil {
@@ -234,7 +234,7 @@ func (store *Store) truncateEventsLocked(sessionID string, keepThroughSequence i
 // marker. Returns the restore report.
 func (store *Store) ApplyRewind(sessionID, workspaceRoot string, targetSeq int) (RestoreReport, error) {
 	if !ValidSessionID(sessionID) {
-		return RestoreReport{TargetSequence: targetSeq}, fmt.Errorf("invalid zero session id %q", sessionID)
+		return RestoreReport{TargetSequence: targetSeq}, fmt.Errorf("invalid kajicode session id %q", sessionID)
 	}
 	// Hold the session lock ONCE across restore + truncate + prune + marker so a
 	// concurrent writer cannot interleave between the sub-steps. The sub-steps
@@ -278,7 +278,7 @@ func (store *Store) writeFileAtomic(path string, content []byte, mode uint32) er
 		// Mode not captured: preserve the existing file's permission bits.
 		perm = info.Mode().Perm()
 	}
-	tmp := fmt.Sprintf("%s.zero-restore-tmp-%d", path, store.idCounter.Add(1))
+	tmp := fmt.Sprintf("%s.kajicode-restore-tmp-%d", path, store.idCounter.Add(1))
 	// fsync the temp so a restored file's bytes are durable, not just in the page
 	// cache, before it is renamed into place.
 	if err := writeFileSync(tmp, content, perm); err != nil {

@@ -3,18 +3,18 @@ package agent
 import (
 	"context"
 
-	"github.com/Gitlawb/zero/internal/hooks"
-	"github.com/Gitlawb/zero/internal/sandbox"
-	"github.com/Gitlawb/zero/internal/streamjson"
-	"github.com/Gitlawb/zero/internal/tools"
-	"github.com/Gitlawb/zero/internal/trace"
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/hooks"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
+	"github.com/dishant0406/KajiCode/internal/sandbox"
+	"github.com/dishant0406/KajiCode/internal/streamjson"
+	"github.com/dishant0406/KajiCode/internal/tools"
+	"github.com/dishant0406/KajiCode/internal/trace"
 )
 
-type Message = zeroruntime.Message
-type Provider = zeroruntime.Provider
-type ToolCall = zeroruntime.ToolCall
-type Usage = zeroruntime.Usage
+type Message = kajicoderuntime.Message
+type Provider = kajicoderuntime.Provider
+type ToolCall = kajicoderuntime.ToolCall
+type Usage = kajicoderuntime.Usage
 
 type PermissionMode string
 type PermissionAction string
@@ -119,7 +119,7 @@ type ProfilePolicy struct {
 // applied mid-run when an armed trigger fires. Targets are the values the
 // selected profile DISPLACED at run start (i.e. "restore the balanced
 // posture"), so escalation can never introduce a value that was not already
-// valid for this run and model. Zero-valued targets leave that knob untouched.
+// valid for this run and model. KajiCode-valued targets leave that knob untouched.
 type PostureEscalation struct {
 	// MaxTurns raises the turn ceiling to this value when greater than the
 	// ceiling in effect. 0 leaves the ceiling untouched.
@@ -284,7 +284,7 @@ type Options struct {
 	// Images are optional image attachments to seed onto the initial user turn.
 	// nil for text-only runs (the seeded message then carries no images, exactly
 	// as before).
-	Images []zeroruntime.ImageBlock
+	Images []kajicoderuntime.ImageBlock
 	// ContextWindow is the model's maximum input token budget. When > 0 the agent
 	// loop compacts long conversations once the estimated size crosses a fraction
 	// of this window. 0 DISABLES compaction entirely (every existing caller/test
@@ -298,7 +298,7 @@ type Options struct {
 	Autonomy               string
 	Sandbox                *sandbox.Engine
 	// FileTracker records per-session file read/write versions so the write tools
-	// can detect a file changed on disk outside Zero since it was last read. nil
+	// can detect a file changed on disk outside KajiCode since it was last read. nil
 	// disables the check. Created once per session and threaded into every tool run.
 	FileTracker *tools.FileTracker
 	// Hooks, when set, runs configured beforeTool (blocking) and afterTool
@@ -343,7 +343,7 @@ type Options struct {
 	// keeps the default: the loop wraps the passed provider in a no-op session
 	// whose Stream IS provider.StreamCompletion, so behavior is byte-identical
 	// and every existing caller is unaffected.
-	TurnSessionProvider zeroruntime.TurnSessionProvider
+	TurnSessionProvider kajicoderuntime.TurnSessionProvider
 	// ModelSessionSwitcher, when set, is the target-aware escalation hook: the
 	// loop prefers it over ModelSwitcher, and its TurnSessionProvider keeps an
 	// optimized session (and its capabilities) across a mid-run model switch.
@@ -351,7 +351,7 @@ type Options struct {
 	// default no-op session — today's behavior, unchanged. Same non-fatal error
 	// contract as ModelSwitcher: a returned error records a note and the run
 	// continues on the current model and session.
-	ModelSessionSwitcher func(ctx context.Context, modelID string) (zeroruntime.TurnSessionProvider, error)
+	ModelSessionSwitcher func(ctx context.Context, modelID string) (kajicoderuntime.TurnSessionProvider, error)
 	// Profile, when set, arms the execution-profile posture controller for this
 	// run (auto-escalation to stricter knob values on failure/uncertainty/risky
 	// mutation signals). nil — the default everywhere today — leaves the loop
@@ -406,7 +406,7 @@ type Result struct {
 	Messages    []Message
 	StopReason  StopReason
 	// FinishReason is the provider's normalized terminal stop reason for the turn
-	// that produced FinalAnswer: zeroruntime.FinishReasonLength when the output
+	// that produced FinalAnswer: kajicoderuntime.FinishReasonLength when the output
 	// hit the token cap, FinishReasonContentFilter when it was filtered. Empty for
 	// a normal completion.
 	FinishReason string
@@ -435,10 +435,10 @@ func (result Result) Truncated() bool {
 // wording stays consistent.
 func (result Result) TruncationNotice() string {
 	switch result.FinishReason {
-	case zeroruntime.FinishReasonLength:
+	case kajicoderuntime.FinishReasonLength:
 		return "Response was cut off at the output token limit and may be incomplete. " +
-			"Raise the model's max output tokens or ask zero to continue."
-	case zeroruntime.FinishReasonContentFilter:
+			"Raise the model's max output tokens or ask KajiCode to continue."
+	case kajicoderuntime.FinishReasonContentFilter:
 		return "Response was withheld or cut off by the provider's content filter and may be incomplete."
 	case "":
 		return ""

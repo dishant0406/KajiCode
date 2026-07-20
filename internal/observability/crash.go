@@ -20,7 +20,7 @@ const crashExitCode = 1
 
 // FormatCrashReport renders a human-readable crash report.
 func FormatCrashReport(label string, recovered any, stack []byte, ts time.Time) string {
-	return fmt.Sprintf("zero crash report\ntime:  %s\nlabel: %s\npanic: %v\n\nstack:\n%s\n",
+	return fmt.Sprintf("kajicode crash report\ntime:  %s\nlabel: %s\npanic: %v\n\nstack:\n%s\n",
 		ts.UTC().Format(time.RFC3339), label, recovered, stack)
 }
 
@@ -39,9 +39,9 @@ func WriteCrashReport(dir, label string, recovered any, stack []byte, ts time.Ti
 // DefaultCrashDir is where crash reports are written by default.
 func DefaultCrashDir() string {
 	if home, err := os.UserHomeDir(); err == nil && home != "" {
-		return filepath.Join(home, ".zero", "crashes")
+		return filepath.Join(home, ".kajicode", "crashes")
 	}
-	return filepath.Join(os.TempDir(), "zero-crashes")
+	return filepath.Join(os.TempDir(), "kajicode-crashes")
 }
 
 // Recover is deferred at a top-level entrypoint. On a panic it captures the
@@ -55,9 +55,9 @@ func Recover(dir, label string, stderr io.Writer, code *int) {
 	}
 	stack := debug.Stack()
 	if path, err := WriteCrashReport(dir, label, recovered, stack, time.Now()); err == nil {
-		fmt.Fprintf(stderr, "zero crashed: %v\nA crash report was saved to %s\n", recovered, path)
+		fmt.Fprintf(stderr, "kajicode crashed: %v\nA crash report was saved to %s\n", recovered, path)
 	} else {
-		fmt.Fprintf(stderr, "zero crashed: %v\n%s\n", recovered, stack)
+		fmt.Fprintf(stderr, "kajicode crashed: %v\n%s\n", recovered, stack)
 	}
 	*code = crashExitCode
 }

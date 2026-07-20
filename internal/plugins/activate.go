@@ -14,11 +14,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/hooks"
-	"github.com/Gitlawb/zero/internal/mcp"
-	"github.com/Gitlawb/zero/internal/secrets"
-	"github.com/Gitlawb/zero/internal/skills"
-	"github.com/Gitlawb/zero/internal/tools"
+	"github.com/dishant0406/KajiCode/internal/hooks"
+	"github.com/dishant0406/KajiCode/internal/mcp"
+	"github.com/dishant0406/KajiCode/internal/secrets"
+	"github.com/dishant0406/KajiCode/internal/skills"
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
 // pluginRootPlaceholder is the manifest path placeholder a plugin may use in a
@@ -62,7 +62,7 @@ type commandOutput struct {
 type toolRunner func(ctx context.Context, command pluginCommand) commandOutput
 
 // ToolProvenance records which plugin a registered tool originated from, for
-// `zero plugin list` and debugging.
+// `kajicode plugin list` and debugging.
 type ToolProvenance struct {
 	ToolName string `json:"toolName"`
 	PluginID string `json:"pluginId"`
@@ -327,7 +327,7 @@ func NewSkillTool(defaultDir string, pluginRoots []string) tools.Tool {
 func (tool skillTool) Name() string { return "skill" }
 
 func (tool skillTool) Description() string {
-	return "Load a named Zero skill and return its instructions as the tool output. " +
+	return "Load a named KajiCode skill and return its instructions as the tool output. " +
 		"Skills are reusable, on-demand instruction sets (including shared ~/.agents/skills and any contributed by plugins). " +
 		"Call this when a relevant skill exists; an unknown name returns the list of available skills."
 }
@@ -649,7 +649,7 @@ func formatPluginToolOutput(output commandOutput) string {
 		parts = append(parts, fmt.Sprintf("exit_code: %d", output.ExitCode))
 	}
 	if n := len(outFindings) + len(errFindings); n > 0 {
-		parts = append(parts, fmt.Sprintf("[zero] redacted %d likely secret(s) from this plugin tool output before showing it.", n))
+		parts = append(parts, fmt.Sprintf("[kajicode] redacted %d likely secret(s) from this plugin tool output before showing it.", n))
 	}
 	if len(parts) == 0 {
 		return "Plugin tool completed with no output."

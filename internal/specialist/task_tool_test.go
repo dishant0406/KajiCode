@@ -8,11 +8,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/agent"
-	"github.com/Gitlawb/zero/internal/background"
-	"github.com/Gitlawb/zero/internal/sessions"
-	"github.com/Gitlawb/zero/internal/streamjson"
-	"github.com/Gitlawb/zero/internal/tools"
+	"github.com/dishant0406/KajiCode/internal/agent"
+	"github.com/dishant0406/KajiCode/internal/background"
+	"github.com/dishant0406/KajiCode/internal/sessions"
+	"github.com/dishant0406/KajiCode/internal/streamjson"
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
 func TestTaskToolRunsForegroundSpecialist(t *testing.T) {
@@ -20,7 +20,7 @@ func TestTaskToolRunsForegroundSpecialist(t *testing.T) {
 	var gotBinary string
 	var gotArgs []string
 	executor := Executor{
-		BinaryPath:   "/usr/local/bin/zero",
+		BinaryPath:   "/usr/local/bin/kajicode",
 		NewSessionID: func() (string, error) { return "child_task", nil },
 		Load: func(LoadOptions) (LoadResult, error) {
 			return LoadResult{Specialists: []Manifest{{
@@ -68,7 +68,7 @@ func TestTaskToolRunsForegroundSpecialist(t *testing.T) {
 	if result.Meta["session_id"] != "child_task" {
 		t.Fatalf("session meta = %#v", result.Meta)
 	}
-	if gotBinary != "/usr/local/bin/zero" {
+	if gotBinary != "/usr/local/bin/kajicode" {
 		t.Fatalf("binary = %q", gotBinary)
 	}
 	for _, want := range [][]string{
@@ -189,7 +189,7 @@ func TestTaskToolRunsBackgroundSpecialist(t *testing.T) {
 	var gotOutputFile string
 	var gotArgs []string
 	executor := Executor{
-		BinaryPath:        "/usr/local/bin/zero",
+		BinaryPath:        "/usr/local/bin/kajicode",
 		BackgroundManager: manager,
 		NewSessionID:      func() (string, error) { return "child_task", nil },
 		Load: func(LoadOptions) (LoadResult, error) {
@@ -200,7 +200,7 @@ func TestTaskToolRunsBackgroundSpecialist(t *testing.T) {
 			}}}, nil
 		},
 		LaunchBackground: func(binaryPath string, args []string, outputFile string, onExit func(exitCode int)) (int, error) {
-			if binaryPath != "/usr/local/bin/zero" {
+			if binaryPath != "/usr/local/bin/kajicode" {
 				t.Fatalf("binaryPath = %q", binaryPath)
 			}
 			gotArgs = append([]string(nil), args...)

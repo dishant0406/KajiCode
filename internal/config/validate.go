@@ -13,7 +13,7 @@ type Issue struct {
 	Message   string `json:"message"`
 }
 
-// ValidateFile reads and parses path as a Zero FileConfig and runs the same
+// ValidateFile reads and parses path as a KajiCode FileConfig and runs the same
 // semantic provider/model rules used during resolution. It returns the parsed
 // config (zero value on parse failure) plus any structured issues. A parse
 // failure yields a single issue whose Message wraps the underlying JSON error
@@ -35,7 +35,7 @@ func ValidateFile(path string) (FileConfig, []Issue) {
 	return cfg, issues
 }
 
-// ValidateBytes parses data as a Zero FileConfig and runs the same semantic
+// ValidateBytes parses data as a KajiCode FileConfig and runs the same semantic
 // provider/model rules as ValidateFile. It returns the parsed config (zero
 // value on parse failure) plus any structured issues. A parse failure yields a
 // single issue whose Message wraps the underlying JSON error (path-less form:

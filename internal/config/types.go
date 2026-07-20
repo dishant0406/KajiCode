@@ -104,7 +104,7 @@ type PreferencesConfig struct {
 	RecentModels []RecentModelEntry `json:"recentModels,omitempty"`
 	// Theme is the persisted TUI palette preference — "auto" or a registered theme
 	// name (e.g. "dracula"). Applied at startup below the --theme flag and
-	// ZERO_THEME, so a /theme choice survives restart. Empty = unset (defaults auto).
+	// KAJICODE_THEME, so a /theme choice survives restart. Empty = unset (defaults auto).
 	Theme string `json:"theme,omitempty"`
 	// Recaps is a tri-state: nil (unset) defaults to ON; an explicit false means
 	// the user turned post-turn recaps off. A *bool is its own tri-state, so no
@@ -192,7 +192,7 @@ type STTConfig struct {
 	LocalServerPort int `json:"localServerPort,omitempty"`
 	// EngineVersion selects the sherpa-onnx release the auto-download fetches
 	// ("" → a pinned known-good default; "latest" or any release tag also works,
-	// so a newer engine needs no Zero update). Verified against the release's
+	// so a newer engine needs no KajiCode update). Verified against the release's
 	// published SHA256 digest either way.
 	EngineVersion string `json:"engineVersion,omitempty"`
 	// NumThreads sets the local engine's thread count (0 = engine default).
@@ -399,7 +399,7 @@ type ResolveOptions struct {
 	Env               map[string]string
 	Overrides         Overrides
 	// ExcludeProject drops the project config layer (ProjectConfigPath) from MCP
-	// resolution when the workspace is untrusted, so a cloned repo's ./.zero/config.json
+	// resolution when the workspace is untrusted, so a cloned repo's ./.kajicode/config.json
 	// cannot spawn stdio MCP servers. It is fail-closed: only a trusted workspace sets
 	// it false. Mirrors the ExcludeProject option hooks and plugins already honor.
 	ExcludeProject bool

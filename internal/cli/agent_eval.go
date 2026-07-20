@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/agenteval"
+	"github.com/dishant0406/KajiCode/internal/agenteval"
 )
 
 type agentEvalOptions struct {
@@ -345,7 +345,7 @@ func parseEvalTimeout(value string) (time.Duration, error) {
 
 func formatAgentEvalReport(report agentEvalReport) string {
 	lines := []string{
-		"Zero agent eval",
+		"KajiCode agent eval",
 		"suite: " + report.Suite,
 	}
 	if report.Name != "" {
@@ -398,9 +398,9 @@ func formatAgentEvalReport(report agentEvalReport) string {
 
 func writeAgentEvalHelp(w io.Writer) error {
 	_, err := fmt.Fprint(w, `Usage:
-  zero eval --suite <path> [flags]
-  zero eval run --suite <path> [flags]
-  zero eval bench --suite <path> [flags] [--model <id>] [--agent-command <argv...>]
+  kajicode eval --suite <path> [flags]
+  kajicode eval run --suite <path> [flags]
+  kajicode eval bench --suite <path> [flags] [--model <id>] [--agent-command <argv...>]
 
 Validates offline agent eval suites, scores an existing workspace, or benchmarks an agent command against fixture workspaces.
 
@@ -481,7 +481,7 @@ func agentEvalBenchWorkRoot(options agentEvalOptions) (string, string, error) {
 	if workRoot != "" {
 		return workRoot, "", nil
 	}
-	created, err := os.MkdirTemp("", "zero-eval-")
+	created, err := os.MkdirTemp("", "kajicode-eval-")
 	if err != nil {
 		return "", "", agentEvalRuntimeError{fmt.Errorf("create benchmark work root: %w", err)}
 	}

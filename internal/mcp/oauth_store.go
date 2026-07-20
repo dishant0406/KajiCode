@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/oauth"
+	"github.com/dishant0406/KajiCode/internal/oauth"
 )
 
 // tokenStoreSchemaVersion is the schema of the legacy mcp-oauth-tokens.json file,
@@ -76,7 +76,7 @@ type tokenFile struct {
 // file, honoring an explicit override, XDG_CONFIG_HOME, then the user home dir.
 // It is used to locate a pre-unification file for migration.
 func ResolveTokenStorePath(env map[string]string) (string, error) {
-	override := strings.TrimSpace(envValue(env, "ZERO_MCP_OAUTH_TOKENS_PATH"))
+	override := strings.TrimSpace(envValue(env, "KAJICODE_MCP_OAUTH_TOKENS_PATH"))
 	if override != "" {
 		if filepath.IsAbs(override) {
 			return filepath.Clean(override), nil
@@ -102,7 +102,7 @@ func ResolveTokenStorePath(env map[string]string) (string, error) {
 		}
 		configHome = resolved
 	}
-	return filepath.Join(configHome, "zero", "mcp-oauth-tokens.json"), nil
+	return filepath.Join(configHome, "kajicode", "mcp-oauth-tokens.json"), nil
 }
 
 // NewTokenStore builds the unified-store-backed token store and runs a one-time

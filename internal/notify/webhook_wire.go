@@ -9,10 +9,10 @@ import "strings"
 // behaves exactly as before.
 const (
 	// EnvWebhookURL holds the destination webhook/Slack URL. Empty disables it.
-	EnvWebhookURL = "ZERO_NOTIFY_WEBHOOK_URL"
+	EnvWebhookURL = "KAJICODE_NOTIFY_WEBHOOK_URL"
 	// EnvWebhookSummary is an optional one-line run summary attached to every
 	// payload (for example "nightly audit run").
-	EnvWebhookSummary = "ZERO_NOTIFY_WEBHOOK_SUMMARY"
+	EnvWebhookSummary = "KAJICODE_NOTIFY_WEBHOOK_SUMMARY"
 )
 
 // MaybeAddWebhookSink attaches a webhook sink to n when a webhook URL is present

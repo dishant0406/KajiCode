@@ -224,7 +224,7 @@ func Info(dir string, name string) (SkillInfo, bool) {
 // InfoFromRoots resolves the named skill across discovery roots (earlier roots
 // win). Lock source/hash are attached only when the winning skill lives under
 // primaryDir and that dir's lockfile has an entry — agents-only skills return
-// frontmatter + path with empty Source/Hash. primaryDir is typically the Zero
+// frontmatter + path with empty Source/Hash. primaryDir is typically the KajiCode
 // write root (DefaultDir / skillsDir).
 func InfoFromRoots(primaryDir string, roots []string, name string) (SkillInfo, bool) {
 	loaded, _, err := LoadFromRoots(roots)
@@ -251,7 +251,7 @@ func InfoFromRoots(primaryDir string, roots []string, name string) (SkillInfo, b
 	}
 	// Only attach lock metadata when the winner is from the primary write root.
 	// Compare path prefixes after cleaning so agents-only skills never pick up a
-	// Zero lock entry by name coincidence.
+	// KajiCode lock entry by name coincidence.
 	skillPath := filepath.Clean(skill.Path)
 	primaryRoot := filepath.Clean(primaryDir)
 	rel, err := filepath.Rel(primaryRoot, skillPath)
@@ -329,7 +329,7 @@ func fetchSource(ctx context.Context, source string, runner GitRunner) (string, 
 	if runner == nil {
 		runner = defaultGitRunner
 	}
-	temp, err := os.MkdirTemp("", "zero-skill-fetch-")
+	temp, err := os.MkdirTemp("", "kajicode-skill-fetch-")
 	if err != nil {
 		return "", func() {}, fmt.Errorf("create temp dir: %w", err)
 	}

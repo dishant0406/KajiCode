@@ -12,8 +12,8 @@ func TestRefreshSingleflightsConcurrentCallers(t *testing.T) {
 	// only ONE concurrent refresh must happen — the rest reuse the rotated token (M7).
 	fp := newFakeProvider(t, `{"access_token":"fresh-at","expires_in":3600}`)
 	env := map[string]string{
-		"ZERO_OAUTH_DEMO_CLIENT_ID": "client",
-		"ZERO_OAUTH_DEMO_TOKEN_URL": fp.server.URL + "/token",
+		"KAJICODE_OAUTH_DEMO_CLIENT_ID": "client",
+		"KAJICODE_OAUTH_DEMO_TOKEN_URL": fp.server.URL + "/token",
 	}
 	m := managerFor(t, env, nil)
 	if err := m.store.Save(ProviderKey("demo"), Token{AccessToken: "stale", RefreshToken: "rt", ExpiresAt: time.Now().Add(-time.Hour)}); err != nil {

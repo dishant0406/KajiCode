@@ -22,7 +22,7 @@ func defaultStarter(ctx context.Context, command []string, root string) (lspServ
 	return StartServer(ctx, command, root)
 }
 
-// Manager is the single entry point the rest of ZERO uses for LSP. It owns one
+// Manager is the single entry point the rest of KAJICODE uses for LSP. It owns one
 // long-lived server per language (lazily started, reused across calls — starting
 // gopls per edit would be far too slow), routes a file to the right server, and
 // degrades to "no diagnostics" when no server is available. Safe for concurrent

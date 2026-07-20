@@ -47,28 +47,28 @@ func renderSelectableList(options selectableListOptions) string {
 	lines := make([]string, 0, maxVisible+1)
 	for index, item := range visible {
 		absoluteIndex := start + index
-		surface := zeroTheme.onPanel
-		marker := surface(zeroTheme.faintest).Render("  ")
+		surface := kajicodeTheme.onPanel
+		marker := surface(kajicodeTheme.faintest).Render("  ")
 		if absoluteIndex == selected {
-			surface = zeroTheme.onSel
-			marker = surface(zeroTheme.accent).Render("❯ ")
+			surface = kajicodeTheme.onSel
+			marker = surface(kajicodeTheme.accent).Render("❯ ")
 		}
 
-		label := surface(zeroTheme.ink).Render(item.Label)
-		pad := surface(zeroTheme.ink).Render(strings.Repeat(" ", maxInt(0, labelWidth-lipgloss.Width(item.Label))))
+		label := surface(kajicodeTheme.ink).Render(item.Label)
+		pad := surface(kajicodeTheme.ink).Render(strings.Repeat(" ", maxInt(0, labelWidth-lipgloss.Width(item.Label))))
 		line := marker + label + pad
 		if strings.TrimSpace(item.Description) != "" {
 			descWidth := width - lipgloss.Width(marker) - labelWidth - 2
 			desc := truncateRunes(item.Description, maxInt(0, descWidth))
 			if desc != "" {
-				line += surface(zeroTheme.faint).Render("  " + desc)
+				line += surface(kajicodeTheme.faint).Render("  " + desc)
 			}
 		}
 		lines = append(lines, fitStyledLine(line, width))
 	}
 
 	if hidden := len(options.Items) - len(visible); hidden > 0 {
-		lines = append(lines, fitStyledLine(zeroTheme.faint.Render(fmt.Sprintf("  %d more", hidden)), width))
+		lines = append(lines, fitStyledLine(kajicodeTheme.faint.Render(fmt.Sprintf("  %d more", hidden)), width))
 	}
 	return strings.Join(lines, "\n")
 }

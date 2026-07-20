@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/tools"
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
 // Tool names. All swarm tools are additive and only act when invoked; the

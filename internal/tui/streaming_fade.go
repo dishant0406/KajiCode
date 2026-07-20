@@ -19,13 +19,13 @@ func defaultReducedMotion() bool {
 
 // reducedMotionEnabled reports whether animations (the streaming fade AND the
 // animated spinner) should be replaced with static equivalents. It is an
-// explicit accessibility/preference switch via ZERO_REDUCED_MOTION, and is also
+// explicit accessibility/preference switch via KAJICODE_REDUCED_MOTION, and is also
 // forced when there is no TTY (animation frames are meaningless to a pipe).
 // Reduced motion never removes liveness: a steady glyph plus the advancing
 // elapsed timer keeps the "still working" cue. It is one switch for all motion,
-// whereas ZERO_NO_FADE only governs the streaming-text fade.
+// whereas KAJICODE_NO_FADE only governs the streaming-text fade.
 func reducedMotionEnabled(env func(string) string, profile colorprofile.Profile) bool {
-	if v := strings.TrimSpace(env("ZERO_REDUCED_MOTION")); v != "" && v != "0" && !strings.EqualFold(v, "false") {
+	if v := strings.TrimSpace(env("KAJICODE_REDUCED_MOTION")); v != "" && v != "0" && !strings.EqualFold(v, "false") {
 		return true
 	}
 	return profile == colorprofile.NoTTY
@@ -79,7 +79,7 @@ type streamingFadeTickMsg time.Time
 // struct-field access and a single Render call, not a hex parse.
 var streamingFadePalette [streamingFadeSteps]lipgloss.Style
 
-// init builds the palette once at package load (after zeroTheme's var init), so
+// init builds the palette once at package load (after kajicodeTheme's var init), so
 // the fade tracks the active theme's accent→ink. Cheap; before any model exists.
 func init() {
 	rebuildStreamingFadePalette()
@@ -91,8 +91,8 @@ func init() {
 func rebuildStreamingFadePalette() {
 	streamingFadePalette = buildStreamingFadePalette(
 		streamingFadeSteps,
-		zeroTheme.accentColor,
-		zeroTheme.inkColor,
+		kajicodeTheme.accentColor,
+		kajicodeTheme.inkColor,
 	)
 }
 
@@ -271,10 +271,10 @@ func (m model) styleStreamingLine(line string, visualIndex, visualCount int) str
 		return line
 	}
 	if !m.fadeActive || m.lineAges == nil {
-		return zeroTheme.ink.Render(line)
+		return kajicodeTheme.ink.Render(line)
 	}
 	bornAt := streamingLineBornAt(visualIndex, visualCount, m.lineAges, m.lastStreamActivity)
-	return ageDimLine(line, bornAt, m.now(), zeroTheme.ink)
+	return ageDimLine(line, bornAt, m.now(), kajicodeTheme.ink)
 }
 
 // ensureAgeTickReschedule is a small helper used after a fade-state change

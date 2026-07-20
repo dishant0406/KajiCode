@@ -5,9 +5,9 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/tools"
-	"github.com/Gitlawb/zero/internal/trace"
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
+	"github.com/dishant0406/KajiCode/internal/tools"
+	"github.com/dishant0406/KajiCode/internal/trace"
 )
 
 func TestTaskStateReplayIsDeterministic(t *testing.T) {
@@ -66,16 +66,16 @@ func TestTaskStateCoalescesToolResultsIntoNextTraceEvent(t *testing.T) {
 func TestRunEmitsTaskStateFromExistingLoopEvents(t *testing.T) {
 	registry := tools.NewRegistry()
 	registry.Register(tools.NewUpdatePlanTool())
-	provider := &mockProvider{turns: [][]zeroruntime.StreamEvent{
+	provider := &mockProvider{turns: [][]kajicoderuntime.StreamEvent{
 		{
-			{Type: zeroruntime.StreamEventToolCallStart, ToolCallID: "plan-1", ToolName: planToolName},
-			{Type: zeroruntime.StreamEventToolCallDelta, ToolCallID: "plan-1", ArgumentsFragment: `{"plan":[{"content":"implement","status":"completed"}]}`},
-			{Type: zeroruntime.StreamEventToolCallEnd, ToolCallID: "plan-1"},
-			{Type: zeroruntime.StreamEventDone},
+			{Type: kajicoderuntime.StreamEventToolCallStart, ToolCallID: "plan-1", ToolName: planToolName},
+			{Type: kajicoderuntime.StreamEventToolCallDelta, ToolCallID: "plan-1", ArgumentsFragment: `{"plan":[{"content":"implement","status":"completed"}]}`},
+			{Type: kajicoderuntime.StreamEventToolCallEnd, ToolCallID: "plan-1"},
+			{Type: kajicoderuntime.StreamEventDone},
 		},
 		{
-			{Type: zeroruntime.StreamEventText, Content: "done"},
-			{Type: zeroruntime.StreamEventDone},
+			{Type: kajicoderuntime.StreamEventText, Content: "done"},
+			{Type: kajicoderuntime.StreamEventDone},
 		},
 	}}
 	recorder := trace.NewRecorder("session", "run", "")
@@ -120,7 +120,7 @@ func TestTaskStatePlanParityUsesLatestPlan(t *testing.T) {
 	state.observe(taskStateEvent{kind: taskStateEventPlan, arguments: `{"plan":[{"content":"old","status":"completed"}]}`})
 	state.observe(taskStateEvent{kind: taskStateEventPlan, arguments: `{"plan":[{"content":"new","status":"in_progress"}]}`})
 
-	messages := []zeroruntime.Message{{Role: zeroruntime.MessageRoleAssistant, ToolCalls: []zeroruntime.ToolCall{
+	messages := []kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleAssistant, ToolCalls: []kajicoderuntime.ToolCall{
 		{Name: planToolName, Arguments: `{"plan":[{"content":"new","status":"in_progress"}]}`},
 	}}}
 	if parity := state.observePlanParity(messages); parity != taskPlanParityMatch {
@@ -142,14 +142,14 @@ func TestTaskStateMatchesPlanToolNormalization(t *testing.T) {
 	if snapshot.Plan.Completed != 1 || snapshot.Plan.InProgress != 1 {
 		t.Fatalf("multiple active items were not normalized like the plan tool: %#v", snapshot.Plan)
 	}
-	messages := []zeroruntime.Message{{Role: zeroruntime.MessageRoleAssistant, ToolCalls: []zeroruntime.ToolCall{{Name: planToolName, Arguments: arguments}}}}
+	messages := []kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleAssistant, ToolCalls: []kajicoderuntime.ToolCall{{Name: planToolName, Arguments: arguments}}}}
 	if parity := state.observePlanParity(messages); parity != taskPlanParityMatch {
 		t.Fatalf("normalized state should still match its transcript event, got %q", parity)
 	}
 
 	empty := newTaskState("objective", nil)
 	empty.observe(taskStateEvent{kind: taskStateEventPlan, arguments: `{"plan":[]}`})
-	emptyMessages := []zeroruntime.Message{{Role: zeroruntime.MessageRoleAssistant, ToolCalls: []zeroruntime.ToolCall{{Name: planToolName, Arguments: `{"plan":[]}`}}}}
+	emptyMessages := []kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleAssistant, ToolCalls: []kajicoderuntime.ToolCall{{Name: planToolName, Arguments: `{"plan":[]}`}}}}
 	if parity := empty.observePlanParity(emptyMessages); parity != taskPlanParityMatch {
 		t.Fatalf("explicit empty plan should match transcript, got %q", parity)
 	}
@@ -158,7 +158,7 @@ func TestTaskStateMatchesPlanToolNormalization(t *testing.T) {
 func TestTaskStateContextFallsBackWhenTranscriptDiffers(t *testing.T) {
 	state := newTaskState("objective", nil)
 	state.observe(taskStateEvent{kind: taskStateEventPlan, arguments: `{"plan":[{"content":"tracked","status":"completed"}]}`})
-	messages := []zeroruntime.Message{{Role: zeroruntime.MessageRoleAssistant, ToolCalls: []zeroruntime.ToolCall{
+	messages := []kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleAssistant, ToolCalls: []kajicoderuntime.ToolCall{
 		{Name: planToolName, Arguments: `{"plan":[{"content":"transcript","status":"pending"}]}`},
 	}}}
 
@@ -174,15 +174,15 @@ func TestTaskStateContextFallsBackWhenTranscriptDiffers(t *testing.T) {
 func TestTaskStateCompactionSnapshotRetainsObjectiveOnPlanMismatch(t *testing.T) {
 	state := newTaskState("objective", nil)
 	state.observe(taskStateEvent{kind: taskStateEventPlan, arguments: `{"plan":[{"content":"verify","status":"pending"}]}`})
-	matching := []zeroruntime.Message{{Role: zeroruntime.MessageRoleAssistant, ToolCalls: []zeroruntime.ToolCall{
+	matching := []kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleAssistant, ToolCalls: []kajicoderuntime.ToolCall{
 		{Name: planToolName, Arguments: `{"plan":[{"content":"verify","status":"pending"}]}`},
 	}}}
 	if snapshot := state.snapshotForCompaction(matching); snapshot == nil || snapshot.Objective != "objective" {
 		t.Fatalf("matching transcript should produce compact state, got %#v", snapshot)
 	}
 
-	mismatching := append([]zeroruntime.Message(nil), matching...)
-	mismatching[0].ToolCalls = []zeroruntime.ToolCall{{Name: planToolName, Arguments: `{"plan":[{"content":"other","status":"pending"}]}`}}
+	mismatching := append([]kajicoderuntime.Message(nil), matching...)
+	mismatching[0].ToolCalls = []kajicoderuntime.ToolCall{{Name: planToolName, Arguments: `{"plan":[{"content":"other","status":"pending"}]}`}}
 	if snapshot := state.snapshotForCompaction(mismatching); snapshot == nil || snapshot.Objective != "objective" || snapshot.PlanParity != taskPlanParityMismatch {
 		t.Fatalf("plan mismatch must retain immutable objective and mark mutable state uncorroborated, got %#v", snapshot)
 	}

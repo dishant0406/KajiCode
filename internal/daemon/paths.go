@@ -7,17 +7,17 @@ import (
 )
 
 // DefaultDir returns the per-user directory for the daemon's runtime files:
-// $XDG_RUNTIME_DIR/zero when set (a tmpfs owned by the user on Linux), otherwise
-// ~/.zero. Mirrors supervisor.js / config.js choosing a per-user runtime dir.
+// $XDG_RUNTIME_DIR/kajicode when set (a tmpfs owned by the user on Linux), otherwise
+// ~/.kajicode. Mirrors supervisor.js / config.js choosing a per-user runtime dir.
 func DefaultDir() (string, error) {
 	if rt := strings.TrimSpace(os.Getenv("XDG_RUNTIME_DIR")); rt != "" {
-		return filepath.Join(rt, "zero"), nil
+		return filepath.Join(rt, "kajicode"), nil
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".zero"), nil
+	return filepath.Join(home, ".kajicode"), nil
 }
 
 // Paths bundles the daemon's socket, lock, and status file paths.

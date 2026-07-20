@@ -9,10 +9,10 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/Gitlawb/zero/internal/agent"
-	"github.com/Gitlawb/zero/internal/config"
-	"github.com/Gitlawb/zero/internal/sandbox"
-	"github.com/Gitlawb/zero/internal/tools"
+	"github.com/dishant0406/KajiCode/internal/agent"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/sandbox"
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
 func TestHelpCommandRendersGroupedSections(t *testing.T) {
@@ -35,7 +35,7 @@ func TestHelpCommandRendersGroupedSections(t *testing.T) {
 		"Meta",
 		"  /model [list|id]",
 		"  /permissions",
-		"hint: submit plain text to ask Zero",
+		"hint: submit plain text to ask KajiCode",
 	} {
 		assertContains(t, text, want)
 	}
@@ -259,7 +259,7 @@ func TestContextAndPermissionsCommandsRenderProductState(t *testing.T) {
 	}
 
 	m := newModel(context.Background(), Options{
-		Cwd:            `D:\codings\Opensource\Zero`,
+		Cwd:            `D:\codings\Opensource\KajiCode`,
 		ProviderName:   "openai",
 		ModelName:      "gpt-4.1",
 		Registry:       registry,
@@ -278,7 +278,7 @@ func TestContextAndPermissionsCommandsRenderProductState(t *testing.T) {
 		"Context",
 		"go runtime | ask permissions | 1 tool",
 		"Runtime",
-		"cwd        D:\\codings\\Opensource\\Zero",
+		"cwd        D:\\codings\\Opensource\\KajiCode",
 		"provider   openai",
 		"model      gpt-4.1",
 		"Session",

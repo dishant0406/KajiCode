@@ -7,8 +7,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
-	"github.com/Gitlawb/zero/internal/config"
-	"github.com/Gitlawb/zero/internal/dictation"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/dictation"
 )
 
 // sttKeyPromptState is the inline API-key prompt shown when a cloud dictation
@@ -140,24 +140,24 @@ func (m model) sttKeyPromptOverlay(width int) string {
 	// Input line mirrors the provider wizard's credential step (renderCredentialStep):
 	// an "api key > " prompt, cursor-before-placeholder when empty, masked key with a
 	// trailing cursor once typing starts — so both key prompts read the same.
-	value := zeroTheme.accent.Render("▌") + zeroTheme.faint.Render("paste key here")
+	value := kajicodeTheme.accent.Render("▌") + kajicodeTheme.faint.Render("paste key here")
 	if p.input != "" {
-		value = zeroTheme.ink.Render(maskedProviderWizardKey(p.input)) + zeroTheme.accent.Render("▌")
+		value = kajicodeTheme.ink.Render(maskedProviderWizardKey(p.input)) + kajicodeTheme.accent.Render("▌")
 	}
-	input := zeroTheme.userPrompt.Render("api key > ") + value
+	input := kajicodeTheme.userPrompt.Render("api key > ") + value
 	intro := p.label + " isn't set up yet. Paste or type your " + p.label + " API key:"
-	footer := "⏎ save · Esc cancel · stored in Zero's credential store"
+	footer := "⏎ save · Esc cancel · stored in KajiCode's credential store"
 	if p.optional {
 		// A key already resolves — this pass is for replacing an invalid/old one.
 		intro = p.label + " already has an API key. Paste a new one to replace it, or press Esc to keep it:"
-		footer = "⏎ replace · Esc keep saved key · stored in Zero's credential store"
+		footer = "⏎ replace · Esc keep saved key · stored in KajiCode's credential store"
 	}
 	lines := []string{
-		zeroTheme.ink.Render(intro),
+		kajicodeTheme.ink.Render(intro),
 		"",
 		input,
 		"",
-		zeroTheme.faint.Render(footer),
+		kajicodeTheme.faint.Render(footer),
 	}
-	return centerRenderedBlock(styledBlockFillTitle(overlayWidth, p.label+" API key", lines, zeroTheme.lineStrong, lipgloss.NewStyle()), width)
+	return centerRenderedBlock(styledBlockFillTitle(overlayWidth, p.label+" API key", lines, kajicodeTheme.lineStrong, lipgloss.NewStyle()), width)
 }

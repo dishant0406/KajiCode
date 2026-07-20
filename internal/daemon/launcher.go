@@ -10,13 +10,13 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/Gitlawb/zero/internal/background"
-	"github.com/Gitlawb/zero/internal/sandbox"
+	"github.com/dishant0406/KajiCode/internal/background"
+	"github.com/dishant0406/KajiCode/internal/sandbox"
 )
 
-// reentrancyMarkers are the env vars zero sets on a command it has ALREADY
+// reentrancyMarkers are the env vars KajiCode sets on a command it has ALREADY
 // wrapped in a sandbox. The daemon MUST strip them from every worker's
-// environment: a worker that inherited them would trip zero's re-entrancy guard
+// environment: a worker that inherited them would trip KajiCode's re-entrancy guard
 // (sandbox.IsAlreadySandboxed needs BOTH) and run with a pass-through plan —
 // i.e. UNSANDBOXED — silently defeating the sandbox. Stripping them forces each
 // worker to (re)establish its own sandbox. This is the daemon's #1 security
@@ -24,7 +24,7 @@ import (
 var reentrancyMarkers = []string{sandbox.EnvSandboxed, sandbox.EnvSandboxBackend}
 
 // scrubWorkerEnv returns env with the sandbox re-entrancy markers removed. Every
-// other variable is preserved — including the ZERO_SANDBOX_* policy config the
+// other variable is preserved — including the KAJICODE_SANDBOX_* policy config the
 // worker reads to rebuild its own policy — so the sandbox policy is PROPAGATED,
 // not bypassed. The caller's slice is never mutated.
 func scrubWorkerEnv(env []string) []string {
@@ -44,7 +44,7 @@ func scrubWorkerEnv(env []string) []string {
 	return out
 }
 
-// execWorker is a WorkerHandle backed by a `zero exec` child process speaking
+// execWorker is a WorkerHandle backed by a `kajicode exec` child process speaking
 // stream-json on stdout.
 type execWorker struct {
 	cmd    *exec.Cmd
@@ -103,7 +103,7 @@ func (rl *readerLines) Next() (string, bool, error) {
 
 // ExecLauncherConfig configures the production worker launcher.
 type ExecLauncherConfig struct {
-	// Executable is the zero binary to spawn (defaults to os.Executable()).
+	// Executable is the kajicode binary to spawn (defaults to os.Executable()).
 	Executable string
 	// BaseArgs are prepended before the per-session args (defaults to the headless
 	// stream-json exec invocation `exec --output-format stream-json`).
@@ -113,7 +113,7 @@ type ExecLauncherConfig struct {
 	Env []string
 }
 
-// NewExecLauncher builds a Launcher that spawns `zero exec` workers which speak
+// NewExecLauncher builds a Launcher that spawns `kajicode exec` workers which speak
 // stream-json on stdout. Each worker:
 //   - runs with the re-entrancy markers SCRUBBED from its env (so it establishes
 //     its own sandbox; the daemon never bypasses the sandbox), while the rest of
@@ -128,7 +128,7 @@ func NewExecLauncher(cfg ExecLauncherConfig) (Launcher, error) {
 	if exe == "" {
 		resolved, err := os.Executable()
 		if err != nil {
-			return nil, fmt.Errorf("daemon: locate zero executable: %w", err)
+			return nil, fmt.Errorf("daemon: locate kajicode executable: %w", err)
 		}
 		exe = resolved
 	}

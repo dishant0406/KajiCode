@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/config"
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
 )
 
 func openaiEligibleProfile() config.ProviderProfile {
@@ -18,9 +18,9 @@ func openaiEligibleProfile() config.ProviderProfile {
 	}
 }
 
-func buildGateProvider(t *testing.T, profile config.ProviderProfile) zeroruntime.Provider {
+func buildGateProvider(t *testing.T, profile config.ProviderProfile) kajicoderuntime.Provider {
 	t.Helper()
-	provider, err := New(profile, Options{UserAgent: "zero-gate-test"})
+	provider, err := New(profile, Options{UserAgent: "kajicode-gate-test"})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -29,7 +29,7 @@ func buildGateProvider(t *testing.T, profile config.ProviderProfile) zeroruntime
 
 type fakeGateProvider struct{}
 
-func (fakeGateProvider) StreamCompletion(context.Context, zeroruntime.CompletionRequest) (<-chan zeroruntime.StreamEvent, error) {
+func (fakeGateProvider) StreamCompletion(context.Context, kajicoderuntime.CompletionRequest) (<-chan kajicoderuntime.StreamEvent, error) {
 	return nil, nil
 }
 

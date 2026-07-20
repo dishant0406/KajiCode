@@ -49,10 +49,10 @@ jobs:
         run: go test ./...
 
       - name: Build binary
-        run: go run ./cmd/zero-release build
+        run: go run ./cmd/kajicode-release build
 
       - name: Smoke binary
-        run: go run ./cmd/zero-release smoke
+        run: go run ./cmd/kajicode-release smoke
 
   performance:
     name: Performance Smoke
@@ -71,16 +71,16 @@ jobs:
           cache: true
 
       - name: Build binary
-        run: go run ./cmd/zero-release build
+        run: go run ./cmd/kajicode-release build
 
       - name: Performance smoke
-        run: go run ./cmd/zero-perf-bench --output dist/perf/perf-bench.json --ci
+        run: go run ./cmd/kajicode-perf-bench --output dist/perf/perf-bench.json --ci
 
       - name: Upload performance report
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: zero-performance-smoke
+          name: kajicode-performance-smoke
           path: dist/perf/perf-bench.json
           if-no-files-found: warn
 

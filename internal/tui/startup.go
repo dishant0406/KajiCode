@@ -13,27 +13,25 @@ const (
 	minStartupWidth      = 58
 )
 
-// zeroWordmarkPrefixLines is the white `ZER` part of the empty-state ANSI
-// Shadow-style wordmark. zeroWordmarkOLines keeps the old lime `O` glyph.
-var zeroWordmarkPrefixLines = []string{
-	`███████╗███████╗██████╗ `,
-	`╚══███╔╝██╔════╝██╔══██╗`,
-	`  ███╔╝ █████╗  ██████╔╝`,
-	` ███╔╝  ██╔══╝  ██╔══██╗`,
-	`███████╗███████╗██║  ██║`,
-	`╚══════╝╚══════╝╚═╝  ╚═╝`,
+// kajicodeWordmarkKajiLines and kajicodeWordmarkCodeLines form the readable
+// KAJICODE wordmark used in the empty state. The CODE suffix carries the accent.
+var kajicodeWordmarkKajiLines = []string{
+	`K  K   A   JJJ  III `,
+	`K K   A A    J   I  `,
+	`KK    AAA    J   I  `,
+	`K K   A A  J J   I  `,
+	`K  K  A A   J   III `,
 }
 
-var zeroWordmarkOLines = []string{
-	` ██████╗ `,
-	`██╔═══██╗`,
-	`██║   ██║`,
-	`██║   ██║`,
-	`╚██████╔╝`,
-	` ╚═════╝ `,
+var kajicodeWordmarkCodeLines = []string{
+	` CCC  OOO  DDD  EEEE`,
+	`C    O   O D  D E   `,
+	`C    O   O D  D EEE `,
+	`C    O   O D  D E   `,
+	` CCC  OOO  DDD  EEEE`,
 }
 
-const emptyStateTagline = "Any model. Every tool. Zero limits."
+const emptyStateTagline = "Any model. Every tool. KajiCode."
 
 // emptyState renders the centered stream-area block shown while the
 // transcript has no real content: the brand glyph and tagline.
@@ -65,12 +63,12 @@ func (m model) emptyStateWithOverlay(width int, overlay string) string {
 
 func (m model) emptyStateLines(width int) []string {
 	lines := []string{}
-	for _, glyph := range zeroWordmarkLines() {
+	for _, glyph := range kajicodeWordmarkLines() {
 		lines = append(lines, centerLine(glyph, width))
 	}
 	lines = append(lines, "")
-	lines = append(lines, centerLine(zeroTheme.muted.Render(emptyStateTagline), width))
-	// Orientation: where ZERO is pointed (cwd · branch · model) so a returning user
+	lines = append(lines, centerLine(kajicodeTheme.muted.Render(emptyStateTagline), width))
+	// Orientation: where KajiCode is pointed (cwd · branch · model) so a returning user
 	// sees the context before typing instead of a blank brand screen.
 	if orient := m.emptyStateOrientation(); orient != "" {
 		lines = append(lines, "")
@@ -78,9 +76,9 @@ func (m model) emptyStateLines(width int) []string {
 	}
 	// A couple of example prompts to seed the first message.
 	lines = append(lines, "")
-	lines = append(lines, centerLine(zeroTheme.faint.Render(emptyStateExamples), width))
+	lines = append(lines, centerLine(kajicodeTheme.faint.Render(emptyStateExamples), width))
 	lines = append(lines, "")
-	lines = append(lines, centerLine(zeroTheme.faint.Render("Press ? for keyboard shortcuts · / for commands"), width))
+	lines = append(lines, centerLine(kajicodeTheme.faint.Render("Press ? for keyboard shortcuts · / for commands"), width))
 	// centerLine pads but never truncates; below ~62 cols the lines would exceed
 	// the frame without this fit.
 	for index := range lines {
@@ -112,7 +110,7 @@ func (m model) emptyStateOrientation() string {
 	if len(parts) == 0 {
 		return ""
 	}
-	return zeroTheme.faint.Render(strings.Join(parts, "  ·  "))
+	return kajicodeTheme.faint.Render(strings.Join(parts, "  ·  "))
 }
 
 // displayVersion formats the CLI build version for display: numeric releases
@@ -129,29 +127,29 @@ func displayVersion(version string) string {
 	return version
 }
 
-func zeroWordmarkLines() []string {
-	lines := make([]string, 0, minInt(len(zeroWordmarkPrefixLines), len(zeroWordmarkOLines)))
-	for index := 0; index < len(zeroWordmarkPrefixLines) && index < len(zeroWordmarkOLines); index++ {
-		lines = append(lines, zeroTheme.ink.Render(zeroWordmarkPrefixLines[index])+zeroTheme.accent.Render(zeroWordmarkOLines[index]))
+func kajicodeWordmarkLines() []string {
+	lines := make([]string, 0, minInt(len(kajicodeWordmarkKajiLines), len(kajicodeWordmarkCodeLines)))
+	for index := 0; index < len(kajicodeWordmarkKajiLines) && index < len(kajicodeWordmarkCodeLines); index++ {
+		lines = append(lines, kajicodeTheme.ink.Render(kajicodeWordmarkKajiLines[index])+kajicodeTheme.accent.Render(kajicodeWordmarkCodeLines[index]))
 	}
 	return lines
 }
 
 // Wordmark renders the brand ASCII art shown on the TUI's empty state, for
-// reuse outside the TUI (e.g. `zero --version`). It is deliberately
-// uncolored: only newModel resolves --theme/ZERO_THEME, so painting the
+// reuse outside the TUI (e.g. `kajicode --version`). It is deliberately
+// uncolored: only newModel resolves --theme/KAJICODE_THEME, so painting the
 // global palette here would ignore a selected light theme and be unreadable
 // on light terminals. The terminal's default foreground works everywhere.
 func Wordmark() string {
-	lines := make([]string, 0, minInt(len(zeroWordmarkPrefixLines), len(zeroWordmarkOLines)))
-	for index := 0; index < len(zeroWordmarkPrefixLines) && index < len(zeroWordmarkOLines); index++ {
-		lines = append(lines, zeroWordmarkPrefixLines[index]+zeroWordmarkOLines[index])
+	lines := make([]string, 0, minInt(len(kajicodeWordmarkKajiLines), len(kajicodeWordmarkCodeLines)))
+	for index := 0; index < len(kajicodeWordmarkKajiLines) && index < len(kajicodeWordmarkCodeLines); index++ {
+		lines = append(lines, kajicodeWordmarkKajiLines[index]+kajicodeWordmarkCodeLines[index])
 	}
 	return strings.Join(lines, "\n")
 }
 
 func borderedBlock(width int, lines []string) string {
-	return styledBlock(width, lines, zeroTheme.line)
+	return styledBlock(width, lines, kajicodeTheme.line)
 }
 
 // styledBlock draws a rounded box around lines with the given border style,

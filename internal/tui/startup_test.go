@@ -13,16 +13,16 @@ func TestEmptyStateShowsBrandAndTaglineOnly(t *testing.T) {
 	m.width, m.height = 100, 30
 
 	view := plainRender(t, m.View())
-	assertContains(t, view, "███████╗███████╗██████╗  ██████╗")
+	assertContains(t, view, "K  K   A   JJJ  III  CCC  OOO  DDD  EEEE")
 	assertContains(t, view, emptyStateTagline)
-	assertNotContains(t, view, "running zero against ")
+	assertNotContains(t, view, "running kajicode against ")
 	assertNotContains(t, view, "add a --version flag")
 	assertNotContains(t, view, "explain internal/agent/loop.go")
 	assertNotContains(t, view, "fix the failing test in internal/tools")
 }
 
 // TestWordmarkIsPlain guards the --version banner: it must carry no ANSI
-// escapes, because this renderer never resolves --theme/ZERO_THEME and any
+// escapes, because this renderer never resolves --theme/KAJICODE_THEME and any
 // palette color could be unreadable on the user's background.
 func TestWordmarkIsPlain(t *testing.T) {
 	wordmark := Wordmark()
@@ -30,11 +30,11 @@ func TestWordmarkIsPlain(t *testing.T) {
 		t.Fatalf("expected uncolored wordmark, got %q", wordmark)
 	}
 	lines := strings.Split(wordmark, "\n")
-	if len(lines) != len(zeroWordmarkPrefixLines) {
-		t.Fatalf("expected %d wordmark lines, got %d", len(zeroWordmarkPrefixLines), len(lines))
+	if len(lines) != len(kajicodeWordmarkKajiLines) {
+		t.Fatalf("expected %d wordmark lines, got %d", len(kajicodeWordmarkKajiLines), len(lines))
 	}
 	for index, line := range lines {
-		if want := zeroWordmarkPrefixLines[index] + zeroWordmarkOLines[index]; line != want {
+		if want := kajicodeWordmarkKajiLines[index] + kajicodeWordmarkCodeLines[index]; line != want {
 			t.Fatalf("wordmark line %d: expected %q, got %q", index, want, line)
 		}
 	}
@@ -111,7 +111,7 @@ func TestBorderedBlockFitsLongPlainLines(t *testing.T) {
 
 func TestBorderedBlockFitsLongStyledLines(t *testing.T) {
 	block := borderedBlock(26, []string{
-		zeroTheme.accent.Render("styled line should truncate inside the border"),
+		kajicodeTheme.accent.Render("styled line should truncate inside the border"),
 	})
 
 	assertContains(t, block, "\u2026")

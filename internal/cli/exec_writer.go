@@ -7,10 +7,10 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/Gitlawb/zero/internal/agent"
-	"github.com/Gitlawb/zero/internal/sessions"
-	"github.com/Gitlawb/zero/internal/streamjson"
-	"github.com/Gitlawb/zero/internal/tools"
+	"github.com/dishant0406/KajiCode/internal/agent"
+	"github.com/dishant0406/KajiCode/internal/sessions"
+	"github.com/dishant0406/KajiCode/internal/streamjson"
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
 const streamJSONToolResultOutputLimit = 10 * 1024
@@ -64,7 +64,7 @@ func (writer *execEventWriter) warning(message string) {
 		writer.writeStreamJSON(streamjson.Event{Type: streamjson.EventWarning, RunID: writer.runID, Message: message})
 		return
 	}
-	writer.writeStderr("[zero] WARNING: " + message + "\n")
+	writer.writeStderr("[kajicode] WARNING: " + message + "\n")
 }
 
 func (writer *execEventWriter) text(delta string) {
@@ -321,7 +321,7 @@ func (writer *execEventWriter) errorEvent(code string, message string, recoverab
 		writer.writeJSON(map[string]any{"type": "error", "code": code, "message": message})
 		return
 	}
-	writer.writeStderr("[zero] " + message + "\n")
+	writer.writeStderr("[kajicode] " + message + "\n")
 }
 
 func (writer *execEventWriter) runEnd(status string, exitCode int) {

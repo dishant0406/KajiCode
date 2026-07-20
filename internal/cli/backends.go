@@ -5,11 +5,11 @@ import (
 	"io"
 	"strings"
 
-	"github.com/Gitlawb/zero/internal/hooks"
-	"github.com/Gitlawb/zero/internal/mcp"
-	"github.com/Gitlawb/zero/internal/plugins"
-	"github.com/Gitlawb/zero/internal/redaction"
-	"github.com/Gitlawb/zero/internal/zerocommands"
+	"github.com/dishant0406/KajiCode/internal/hooks"
+	"github.com/dishant0406/KajiCode/internal/kajicodecommands"
+	"github.com/dishant0406/KajiCode/internal/mcp"
+	"github.com/dishant0406/KajiCode/internal/plugins"
+	"github.com/dishant0406/KajiCode/internal/redaction"
 )
 
 type backendStatusOptions struct {
@@ -119,65 +119,65 @@ func parseBackendsDoctorArgs(args []string) (backendDoctorOptions, bool, error) 
 	return options, false, nil
 }
 
-func backendLifecycleSnapshot(deps appDeps) (zerocommands.BackendLifecycleSnapshot, error) {
+func backendLifecycleSnapshot(deps appDeps) (kajicodecommands.BackendLifecycleSnapshot, error) {
 	cwd, err := deps.getwd()
 	if err != nil {
-		return zerocommands.BackendLifecycleSnapshot{}, fmt.Errorf("failed to resolve workspace: %w", err)
+		return kajicodecommands.BackendLifecycleSnapshot{}, fmt.Errorf("failed to resolve workspace: %w", err)
 	}
 
 	// Reporting/enumeration only, never spawns a server, so it is left ungated
 	// (excludeProject=false) to mirror the doctor/status hooks and plugins reports.
 	cfg, err := deps.resolveMCPConfig(cwd, false)
 	if err != nil {
-		return zerocommands.BackendLifecycleSnapshot{}, err
+		return kajicodecommands.BackendLifecycleSnapshot{}, err
 	}
 	servers, err := mcp.NormalizeConfig(cfg)
 	if err != nil {
-		return zerocommands.BackendLifecycleSnapshot{}, err
+		return kajicodecommands.BackendLifecycleSnapshot{}, err
 	}
 
 	hookResult, err := deps.loadHooks(hooks.LoadOptions{Cwd: cwd})
 	if err != nil {
-		return zerocommands.BackendLifecycleSnapshot{}, err
+		return kajicodecommands.BackendLifecycleSnapshot{}, err
 	}
 	pluginResult, err := deps.loadPlugins(plugins.LoadOptions{Cwd: cwd})
 	if err != nil {
-		return zerocommands.BackendLifecycleSnapshot{}, err
+		return kajicodecommands.BackendLifecycleSnapshot{}, err
 	}
 
-	return zerocommands.NewBackendLifecycleSnapshot(servers, hookResult.Config.Hooks, pluginResult.Plugins), nil
+	return kajicodecommands.NewBackendLifecycleSnapshot(servers, hookResult.Config.Hooks, pluginResult.Plugins), nil
 }
 
-func backendDoctorReport(deps appDeps) (zerocommands.BackendDoctorReport, error) {
+func backendDoctorReport(deps appDeps) (kajicodecommands.BackendDoctorReport, error) {
 	cwd, err := deps.getwd()
 	if err != nil {
-		return zerocommands.BackendDoctorReport{}, fmt.Errorf("failed to resolve workspace: %w", err)
+		return kajicodecommands.BackendDoctorReport{}, fmt.Errorf("failed to resolve workspace: %w", err)
 	}
 
 	// Reporting/enumeration only, never spawns a server, so it is left ungated
 	// (excludeProject=false) to mirror the doctor/status hooks and plugins reports.
 	cfg, err := deps.resolveMCPConfig(cwd, false)
 	if err != nil {
-		return zerocommands.BackendDoctorReport{}, err
+		return kajicodecommands.BackendDoctorReport{}, err
 	}
 	hookResult, err := deps.loadHooks(hooks.LoadOptions{Cwd: cwd})
 	if err != nil {
-		return zerocommands.BackendDoctorReport{}, err
+		return kajicodecommands.BackendDoctorReport{}, err
 	}
 	pluginResult, err := deps.loadPlugins(plugins.LoadOptions{Cwd: cwd})
 	if err != nil {
-		return zerocommands.BackendDoctorReport{}, err
+		return kajicodecommands.BackendDoctorReport{}, err
 	}
 
-	return zerocommands.NewBackendDoctorReport(zerocommands.BackendDoctorInput{
+	return kajicodecommands.NewBackendDoctorReport(kajicodecommands.BackendDoctorInput{
 		MCP:     cfg,
 		Hooks:   hookResult,
 		Plugins: pluginResult,
 	}), nil
 }
 
-func formatBackendLifecycleSnapshot(snapshot zerocommands.BackendLifecycleSnapshot) string {
-	lines := []string{"Zero Backends:"}
+func formatBackendLifecycleSnapshot(snapshot kajicodecommands.BackendLifecycleSnapshot) string {
+	lines := []string{"KajiCode Backends:"}
 	lines = append(lines, fmt.Sprintf("  MCP servers: %d", len(snapshot.MCPServers)))
 	for _, server := range snapshot.MCPServers {
 		detail := server.Command
@@ -225,9 +225,9 @@ func formatBackendLifecycleSnapshot(snapshot zerocommands.BackendLifecycleSnapsh
 	return strings.Join(lines, "\n")
 }
 
-func formatBackendDoctorReport(report zerocommands.BackendDoctorReport) string {
+func formatBackendDoctorReport(report kajicodecommands.BackendDoctorReport) string {
 	lines := []string{
-		"Zero backend doctor",
+		"KajiCode backend doctor",
 		"Overall: " + string(report.Status),
 	}
 	for _, check := range report.Checks {
@@ -245,8 +245,8 @@ func formatBackendDoctorReport(report zerocommands.BackendDoctorReport) string {
 
 func writeBackendsHelp(w io.Writer) error {
 	_, err := fmt.Fprint(w, `Usage:
-  zero backends [flags]
-  zero backends doctor [flags]
+  kajicode backends [flags]
+  kajicode backends doctor [flags]
 
 Inspect MCP, hook, and plugin backend lifecycle state without connecting to
 external MCP servers.
@@ -263,7 +263,7 @@ Flags:
 
 func writeBackendsDoctorHelp(w io.Writer) error {
 	_, err := fmt.Fprint(w, `Usage:
-  zero backends doctor [flags]
+  kajicode backends doctor [flags]
 
 Diagnose MCP, hook, and plugin backend setup without connecting to external MCP
 servers or executing hooks/plugins.

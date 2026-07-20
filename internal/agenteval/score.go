@@ -5,7 +5,7 @@ import (
 	"sort"
 )
 
-const ReportContractVersion = "zero.agenteval.report.v1"
+const ReportContractVersion = "kajicode.agenteval.report.v1"
 
 type Status string
 

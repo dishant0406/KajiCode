@@ -258,7 +258,7 @@ func TestEngineDoesNotAutoAllowProtectedMetadataWrites(t *testing.T) {
 		args map[string]any
 	}{
 		{name: "write_file git hook", args: map[string]any{"path": ".git/hooks/pre-commit"}},
-		{name: "edit_file zero config", args: map[string]any{"path": ".zero/config.json"}},
+		{name: "edit_file kajicode config", args: map[string]any{"path": ".kajicode/config.json"}},
 		{name: "apply_patch agents metadata", args: map[string]any{"patch": "--- /dev/null\n+++ b/.agents/config.json\n@@ -0,0 +1 @@\n+{}\n"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -803,7 +803,7 @@ func TestEvaluateAllowsWritesInsideDefaultTempRoot(t *testing.T) {
 		ToolName:   "write_file",
 		SideEffect: SideEffectWrite,
 		Permission: PermissionAllow,
-		Args:       map[string]any{"path": filepath.Join(tempRoot, "zero-toolcheck", "go.mod")},
+		Args:       map[string]any{"path": filepath.Join(tempRoot, "kajicode-toolcheck", "go.mod")},
 	})
 	if decision.Action != ActionAllow {
 		t.Fatalf("temp-root write Action=%q (%s), want allow", decision.Action, decision.Reason)

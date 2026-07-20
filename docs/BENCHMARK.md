@@ -1,6 +1,6 @@
-# Zero Task Benchmark
+# KajiCode Task Benchmark
 
-This is the **task** benchmark: how often ZERO completes a real coding task
+This is the **task** benchmark: how often KajiCode completes a real coding task
 end-to-end, headless, unattended. It is separate from
 [`docs/PERFORMANCE.md`](PERFORMANCE.md), which measures process startup and
 memory, not task success.
@@ -9,7 +9,7 @@ The methodology is the point, not the digit. A task-success score is **largely
 model-bounded** — most of the number comes from whichever model you bring. So we
 record the model with every result and we publish the score **with and without
 the self-correct loop**, because the delta between those two runs is the part
-ZERO actually contributes: the agent noticing its own broken edit and fixing it
+KajiCode actually contributes: the agent noticing its own broken edit and fixing it
 before it hands the task back.
 
 ## What is recorded
@@ -23,20 +23,20 @@ reproducible and auditable from the record alone:
 | `model`          | The model that ran — the score is model-bounded, so this is required |
 | `mode`           | Exec mode preset, if any                                      |
 | `selfCorrect`    | Whether the post-edit verify-and-correct loop was enabled     |
-| `version`        | ZERO version                                                  |
-| `commit`         | ZERO commit the run was built from                            |
+| `version`        | KajiCode version                                                  |
+| `commit`         | KajiCode commit the run was built from                            |
 | `date`           | UTC timestamp of the run                                      |
 | `tasksAttempted` | Tasks attempted                                               |
 | `tasksPassed`    | Tasks whose verification passed                               |
 | `passRate`       | `tasksPassed / tasksAttempted`                                |
 | `tasks`          | Per-task pass/fail/error with detail                          |
 
-## Integration point: headless `zero exec`
+## Integration point: headless `kajicode exec`
 
-The harness drives ZERO through its headless surface — the same path CI uses:
+The harness drives KajiCode through its headless surface — the same path CI uses:
 
 ```bash
-zero exec --output-format stream-json --model <model> [--self-correct] "<task prompt>"
+kajicode exec --output-format stream-json --model <model> [--self-correct] "<task prompt>"
 ```
 
 Per task, the harness reads the terminal `run_end` event's exit code from the
@@ -48,7 +48,7 @@ authoritative — mirroring Terminal-Bench's external-verifier model: the task i
 ## Task set format
 
 A task set is a JSON manifest. A runnable sample lives at
-[`cmd/zero-perf-bench/testdata/terminal-bench-sample.json`](../cmd/zero-perf-bench/testdata/terminal-bench-sample.json):
+[`cmd/kajicode-perf-bench/testdata/terminal-bench-sample.json`](../cmd/kajicode-perf-bench/testdata/terminal-bench-sample.json):
 
 ```json
 {
@@ -74,27 +74,27 @@ and commit so the records are reproducible:
 
 ```bash
 # build the production binary
-go run ./cmd/zero-release build
+go run ./cmd/kajicode-release build
 
 VERSION=$(git describe --tags --always)
 COMMIT=$(git rev-parse --short HEAD)
-SUITE=cmd/zero-perf-bench/testdata/terminal-bench-sample.json
+SUITE=cmd/kajicode-perf-bench/testdata/terminal-bench-sample.json
 MODEL=<your-model>
 
 # baseline: self-correct OFF
-go run ./cmd/zero-perf-bench tasks \
-  --suite "$SUITE" --binary ./zero --model "$MODEL" \
+go run ./cmd/kajicode-perf-bench tasks \
+  --suite "$SUITE" --binary ./kajicode --model "$MODEL" \
   --version "$VERSION" --commit "$COMMIT" \
   --output dist/bench/tasks-baseline.json
 
 # self-correct ON (auto-fix needs --auto medium or high; see note below)
-go run ./cmd/zero-perf-bench tasks \
-  --suite "$SUITE" --binary ./zero --model "$MODEL" --self-correct \
+go run ./cmd/kajicode-perf-bench tasks \
+  --suite "$SUITE" --binary ./kajicode --model "$MODEL" --self-correct \
   --version "$VERSION" --commit "$COMMIT" \
   --output dist/bench/tasks-selfcorrect.json
 ```
 
-`--version`/`--commit` also read from `ZERO_BENCH_VERSION` / `ZERO_BENCH_COMMIT`
+`--version`/`--commit` also read from `KAJICODE_BENCH_VERSION` / `KAJICODE_BENCH_COMMIT`
 when the flags are omitted, so CI can stamp them once in the environment.
 
 Use `--dry-run` to exercise the record path without invoking a model (every task
@@ -119,12 +119,12 @@ headline.
 | **Self-correct delta**  |           |              | **_TBD_** |        |
 
 Report the model alongside the number every time. A score without its model is
-not a claim about ZERO — it is a claim about the model. The honest signal is the
+not a claim about KajiCode — it is a claim about the model. The honest signal is the
 delta: how much the self-correct loop moved the same model on the same tasks.
 
 ## Reproducing a published number
 
 1. Check out the `commit` from the record.
-2. `go run ./cmd/zero-release build`.
+2. `go run ./cmd/kajicode-release build`.
 3. Run the two commands above with the recorded `model` and `suite`.
 4. Compare `passRate` in the new records against the published ones.

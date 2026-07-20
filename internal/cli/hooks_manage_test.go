@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/hooks"
+	"github.com/dishant0406/KajiCode/internal/hooks"
 )
 
 func hooksManageDeps(cwd string) appDeps {
@@ -32,7 +32,7 @@ func projectHooks(t *testing.T, cwd string) hooks.Config {
 func TestRunHooksAddPersistsToProjectConfig(t *testing.T) {
 	cwd := t.TempDir()
 	var stdout, stderr bytes.Buffer
-	code := runHooksAdd([]string{"zero.preflight", "--event", "beforeTool", "--matcher", "bash", "--command", "sh", "--arg", "-c", "--arg", "echo hi"}, &stdout, &stderr, hooksManageDeps(cwd))
+	code := runHooksAdd([]string{"kajicode.preflight", "--event", "beforeTool", "--matcher", "bash", "--command", "sh", "--arg", "-c", "--arg", "echo hi"}, &stdout, &stderr, hooksManageDeps(cwd))
 	if code != exitSuccess {
 		t.Fatalf("exit = %d, want %d; stderr=%q", code, exitSuccess, stderr.String())
 	}
@@ -41,7 +41,7 @@ func TestRunHooksAddPersistsToProjectConfig(t *testing.T) {
 		t.Fatalf("hooks = %d, want 1", len(config.Hooks))
 	}
 	hook := config.Hooks[0]
-	if hook.ID != "zero.preflight" || hook.Event != hooks.EventBeforeTool || hook.Command != "sh" {
+	if hook.ID != "kajicode.preflight" || hook.Event != hooks.EventBeforeTool || hook.Command != "sh" {
 		t.Fatalf("unexpected hook: %+v", hook)
 	}
 	if !hook.Enabled {

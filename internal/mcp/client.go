@@ -169,7 +169,7 @@ func (client *Client) initialize(ctx context.Context) error {
 		"protocolVersion": "2024-11-05",
 		"capabilities":    map[string]any{},
 		"clientInfo": map[string]any{
-			"name":    "zero",
+			"name":    "kajicode",
 			"version": "dev",
 		},
 	}, &result); err != nil {

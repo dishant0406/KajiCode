@@ -5,9 +5,9 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/config"
-	"github.com/Gitlawb/zero/internal/modelregistry"
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
+	"github.com/dishant0406/KajiCode/internal/modelregistry"
 )
 
 // TestNewTurnSessionProviderForEveryKind asserts every current provider kind
@@ -31,7 +31,7 @@ func TestNewTurnSessionProviderForEveryKind(t *testing.T) {
 				// A model absent from the registry: resolution falls back to the
 				// raw id, so this test stays hermetic across catalog changes.
 				Model: "pr7-unregistered-model",
-			}, Options{UserAgent: "zero-turn-session-test"})
+			}, Options{UserAgent: "kajicode-turn-session-test"})
 			if err != nil {
 				t.Fatalf("NewTurnSessionProvider(%s): %v", kind, err)
 			}
@@ -47,7 +47,7 @@ func TestNewTurnSessionProviderForEveryKind(t *testing.T) {
 			if err := session.Prewarm(context.Background()); err != nil {
 				t.Fatalf("Prewarm(%s): %v", kind, err)
 			}
-			if _, compactErr := session.Compact(context.Background(), zeroruntime.CompletionRequest{}); !errors.Is(compactErr, zeroruntime.ErrCompactionUnsupported) {
+			if _, compactErr := session.Compact(context.Background(), kajicoderuntime.CompletionRequest{}); !errors.Is(compactErr, kajicoderuntime.ErrCompactionUnsupported) {
 				t.Fatalf("Compact(%s) = %v, want ErrCompactionUnsupported", kind, compactErr)
 			}
 			caps := tsp.Capabilities()
@@ -107,7 +107,7 @@ func TestNewTurnSessionProviderProjectsRegistryCapabilities(t *testing.T) {
 		APIKey:       "sk-turn-session-test",
 		Model:        "pr7-caps-model",
 	}, Options{
-		UserAgent:     "zero-turn-session-test",
+		UserAgent:     "kajicode-turn-session-test",
 		ModelRegistry: &registry,
 	})
 	if err != nil {
@@ -174,7 +174,7 @@ func TestNewTurnSessionProviderUsesEffectiveReasoningEfforts(t *testing.T) {
 		APIKey:       "sk-turn-session-test",
 		Model:        "gpt-5-pr7-probe",
 	}, Options{
-		UserAgent:     "zero-turn-session-test",
+		UserAgent:     "kajicode-turn-session-test",
 		ModelRegistry: &registry,
 	})
 	if err != nil {

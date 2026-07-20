@@ -274,7 +274,7 @@ func readRecordingWithRetry(path string, now func() time.Time) ([]byte, error) {
 
 // batchCommand builds the record-to-file argv for desktop platforms (§9).
 // The max-duration cap is enforced by the tool itself so a runaway recording
-// ends even if Zero never calls Stop.
+// ends even if KajiCode never calls Stop.
 func batchCommand(opts RecorderOptions, path string) (commandSpec, error) {
 	rate := strconv.Itoa(opts.SampleRate)
 	maxSec := strconv.Itoa(maxSeconds(opts.MaxDuration))

@@ -9,13 +9,13 @@ model-specific, so a single snapshot here would mislead rather than inform.
 Run the harness over the checked-in manifest:
 
 ```sh
-make baseline ZERO_BENCH_MODEL=<model>              # uses ./zero
-make baseline ZERO_BENCH_MODEL=<model> ZERO_BENCH_BINARY=/path/to/zero
+make baseline KAJICODE_BENCH_MODEL=<model>              # uses ./kajicode
+make baseline KAJICODE_BENCH_MODEL=<model> KAJICODE_BENCH_BINARY=/path/to/kajicode
 ```
 
-This builds `zero`, then runs `zero-perf-bench turn` over
+This builds `kajicode`, then runs `kajicode-perf-bench turn` over
 `internal/perfbench/manifests/baseline.json`, capturing each turn's trace
-(`zero exec --trace <tmpfile>`) and writing the aggregated result to
+(`kajicode exec --trace <tmpfile>`) and writing the aggregated result to
 `reports/baseline.json`.
 
 The JSON report is self-describing: model, mode, self-correct flag, version,
@@ -77,7 +77,7 @@ expectation. `.gitkeep` keeps the directory present between runs.
 
 ## Caveats
 
-- Each task is a fresh `zero exec` process, so iterations are **cold-start**
+- Each task is a fresh `kajicode exec` process, so iterations are **cold-start**
   samples. A warm path (reusing an in-process agent) is future work.
 - Mutating tasks (edit/fix/refactor) run against a per-invocation **copy** of
   their fixture, so the checked-in fixtures stay clean and one task's edits

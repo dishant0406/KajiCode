@@ -19,11 +19,11 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Gitlawb/zero/internal/agent"
-	"github.com/Gitlawb/zero/internal/sandbox"
+	"github.com/dishant0406/KajiCode/internal/agent"
+	"github.com/dishant0406/KajiCode/internal/sandbox"
 )
 
-// Profile is a named execution posture. Zero-valued fields inherit the run's
+// Profile is a named execution posture. KajiCode-valued fields inherit the run's
 // existing value (flag, mode, config, or built-in default) — a profile only
 // ever fills knobs the caller left unset, except MaxTurns which REPLACES the
 // resolved budget (that displacement is what escalation restores).

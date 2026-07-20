@@ -5,9 +5,9 @@ import (
 	"io"
 	"strings"
 
-	"github.com/Gitlawb/zero/internal/redaction"
-	"github.com/Gitlawb/zero/internal/sessions"
-	"github.com/Gitlawb/zero/internal/zerocommands"
+	"github.com/dishant0406/KajiCode/internal/kajicodecommands"
+	"github.com/dishant0406/KajiCode/internal/redaction"
+	"github.com/dishant0406/KajiCode/internal/sessions"
 )
 
 type sessionCommandOptions struct {
@@ -254,12 +254,12 @@ func runSessionsList(store *sessions.Store, options sessionCommandOptions, stdou
 	}
 	items = filterSessionsByKind(items, options.kind)
 	if options.json {
-		if err := writePrettyJSON(stdout, redaction.RedactValue(zerocommands.SessionSnapshots(items), redaction.Options{})); err != nil {
+		if err := writePrettyJSON(stdout, redaction.RedactValue(kajicodecommands.SessionSnapshots(items), redaction.Options{})); err != nil {
 			return exitCrash
 		}
 		return exitSuccess
 	}
-	if _, err := fmt.Fprintln(stdout, formatSessionSnapshotsList(zerocommands.SessionSnapshots(items))); err != nil {
+	if _, err := fmt.Fprintln(stdout, formatSessionSnapshotsList(kajicodecommands.SessionSnapshots(items))); err != nil {
 		return exitCrash
 	}
 	return exitSuccess
@@ -284,12 +284,12 @@ func runSessionsChildren(store *sessions.Store, sessionID string, options sessio
 		return writeSessionCommandError(stderr, err)
 	}
 	if options.json {
-		if err := writePrettyJSON(stdout, redaction.RedactValue(zerocommands.SessionSnapshots(items), redaction.Options{})); err != nil {
+		if err := writePrettyJSON(stdout, redaction.RedactValue(kajicodecommands.SessionSnapshots(items), redaction.Options{})); err != nil {
 			return exitCrash
 		}
 		return exitSuccess
 	}
-	if _, err := fmt.Fprintln(stdout, formatSessionSnapshotsList(zerocommands.SessionSnapshots(items))); err != nil {
+	if _, err := fmt.Fprintln(stdout, formatSessionSnapshotsList(kajicodecommands.SessionSnapshots(items))); err != nil {
 		return exitCrash
 	}
 	return exitSuccess
@@ -301,13 +301,13 @@ func runSessionsLineage(store *sessions.Store, sessionID string, options session
 		return writeSessionCommandError(stderr, err)
 	}
 	if options.json {
-		if err := writePrettyJSON(stdout, redaction.RedactValue(zerocommands.SessionSnapshots(lineage), redaction.Options{})); err != nil {
+		if err := writePrettyJSON(stdout, redaction.RedactValue(kajicodecommands.SessionSnapshots(lineage), redaction.Options{})); err != nil {
 			return exitCrash
 		}
 		return exitSuccess
 	}
 	ids := make([]string, 0, len(lineage))
-	for _, session := range zerocommands.SessionSnapshots(lineage) {
+	for _, session := range kajicodecommands.SessionSnapshots(lineage) {
 		ids = append(ids, redact(session.SessionID))
 	}
 	if _, err := fmt.Fprintln(stdout, strings.Join(ids, " -> ")); err != nil {
@@ -322,12 +322,12 @@ func runSessionsTree(store *sessions.Store, sessionID string, options sessionCom
 		return writeSessionCommandError(stderr, err)
 	}
 	if options.json {
-		if err := writePrettyJSON(stdout, redaction.RedactValue(zerocommands.SessionTreeSnapshotFromNode(tree), redaction.Options{})); err != nil {
+		if err := writePrettyJSON(stdout, redaction.RedactValue(kajicodecommands.SessionTreeSnapshotFromNode(tree), redaction.Options{})); err != nil {
 			return exitCrash
 		}
 		return exitSuccess
 	}
-	if _, err := fmt.Fprint(stdout, formatSessionSnapshotTree(zerocommands.SessionTreeSnapshotFromNode(tree))); err != nil {
+	if _, err := fmt.Fprint(stdout, formatSessionSnapshotTree(kajicodecommands.SessionTreeSnapshotFromNode(tree))); err != nil {
 		return exitCrash
 	}
 	return exitSuccess
@@ -368,7 +368,7 @@ func runSessionsRewind(store *sessions.Store, sessionID string, options sessionC
 		return writeSessionCommandError(stderr, err)
 	}
 	if session == nil {
-		return writeExecUsageError(stderr, "Zero session not found: "+redact(sessionID))
+		return writeExecUsageError(stderr, "KajiCode session not found: "+redact(sessionID))
 	}
 	workspaceRoot := strings.TrimSpace(session.Cwd)
 	if workspaceRoot == "" {
@@ -419,11 +419,11 @@ func runSessionsCompactPlan(store *sessions.Store, sessionID string, options ses
 }
 
 func writeSessionCommandError(stderr io.Writer, err error) int {
-	message := strings.TrimPrefix(err.Error(), "zero session")
+	message := strings.TrimPrefix(err.Error(), "kajicode session")
 	if message != err.Error() {
-		message = "Zero session" + message
+		message = "KajiCode session" + message
 	}
-	if strings.Contains(message, "not found") || strings.Contains(message, "invalid zero session id") {
+	if strings.Contains(message, "not found") || strings.Contains(message, "invalid kajicode session id") {
 		return writeExecUsageError(stderr, message)
 	}
 	return writeAppError(stderr, message, exitCrash)
@@ -431,7 +431,7 @@ func writeSessionCommandError(stderr io.Writer, err error) int {
 
 func formatRewindPlan(plan sessions.RewindPlan) string {
 	return strings.Join([]string{
-		"Zero session rewind plan",
+		"KajiCode session rewind plan",
 		"session: " + redact(plan.SessionID),
 		"target: " + redact(plan.TargetEventID),
 		fmt.Sprintf("kept: %d", plan.KeptCount),
@@ -441,7 +441,7 @@ func formatRewindPlan(plan sessions.RewindPlan) string {
 
 func formatCompactionPlan(plan sessions.CompactionPlan) string {
 	lines := []string{
-		"Zero session compaction plan",
+		"KajiCode session compaction plan",
 		"session: " + redact(plan.SessionID),
 		fmt.Sprintf("compactable: %d", plan.CompactableCount),
 		fmt.Sprintf("preserved: %d", plan.PreservedCount),
@@ -453,31 +453,31 @@ func formatCompactionPlan(plan sessions.CompactionPlan) string {
 	return strings.Join(lines, "\n")
 }
 
-func formatSessionSnapshotsList(items []zerocommands.SessionSnapshot) string {
+func formatSessionSnapshotsList(items []kajicodecommands.SessionSnapshot) string {
 	if len(items) == 0 {
-		return "No Zero sessions found."
+		return "No KajiCode sessions found."
 	}
-	lines := []string{fmt.Sprintf("Zero sessions (%d):", len(items))}
+	lines := []string{fmt.Sprintf("KajiCode sessions (%d):", len(items))}
 	for _, session := range items {
 		lines = append(lines, "  "+formatSessionSnapshotLine(session))
 	}
 	return strings.Join(lines, "\n")
 }
 
-func formatSessionSnapshotTree(node zerocommands.SessionTreeSnapshot) string {
-	lines := []string{"Zero session tree:"}
+func formatSessionSnapshotTree(node kajicodecommands.SessionTreeSnapshot) string {
+	lines := []string{"KajiCode session tree:"}
 	appendSessionSnapshotTree(&lines, node, "")
 	return strings.Join(lines, "\n") + "\n"
 }
 
-func appendSessionSnapshotTree(lines *[]string, node zerocommands.SessionTreeSnapshot, prefix string) {
+func appendSessionSnapshotTree(lines *[]string, node kajicodecommands.SessionTreeSnapshot, prefix string) {
 	*lines = append(*lines, prefix+formatSessionSnapshotLine(node.Session))
 	for _, child := range node.Children {
 		appendSessionSnapshotTree(lines, child, prefix+"  ")
 	}
 }
 
-func formatSessionSnapshotLine(session zerocommands.SessionSnapshot) string {
+func formatSessionSnapshotLine(session kajicodecommands.SessionSnapshot) string {
 	parts := []string{"- " + redact(session.SessionID)}
 	if session.Kind != "" {
 		parts = append(parts, "["+redact(session.Kind)+"]")
@@ -522,10 +522,10 @@ func redact(value string) string {
 
 func writeSessionsHelp(w io.Writer) error {
 	_, err := fmt.Fprint(w, `Usage:
-  zero sessions <command> [flags]
+  kajicode sessions <command> [flags]
 
 Commands:
-  list                  List local Zero sessions
+  list                  List local KajiCode sessions
   children <id>         List direct child sessions for a parent session
   lineage <id>          Print the root-to-session lineage path
   tree <id>             Print a child-session tree

@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/hooks"
-	"github.com/Gitlawb/zero/internal/tools"
-	"github.com/Gitlawb/zero/internal/trace"
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/hooks"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
+	"github.com/dishant0406/KajiCode/internal/tools"
+	"github.com/dishant0406/KajiCode/internal/trace"
 )
 
 type propagationOutputTool struct {
@@ -19,7 +19,7 @@ type propagationOutputTool struct {
 
 func TestOutputBudgetHookHelperProcess(t *testing.T) {
 	for index, arg := range os.Args {
-		if arg != "--zero-output-budget-hook" || index+1 >= len(os.Args) {
+		if arg != "--kajicode-output-budget-hook" || index+1 >= len(os.Args) {
 			continue
 		}
 		if _, err := os.Stdout.WriteString(os.Args[index+1]); err != nil {
@@ -41,7 +41,7 @@ func largeOutputBudgetHookDispatcher() *hooks.Dispatcher {
 			Args: []string{
 				"-test.run=TestOutputBudgetHookHelperProcess",
 				"--",
-				"--zero-output-budget-hook",
+				"--kajicode-output-budget-hook",
 				feedback,
 			},
 			Enabled: true,
@@ -63,7 +63,7 @@ func (tool propagationOutputTool) Run(context.Context, map[string]any) tools.Res
 
 func TestExecuteToolCallPropagatesOutputTruncation(t *testing.T) {
 	t.Setenv("TMPDIR", t.TempDir())
-	t.Setenv("ZERO_TOOL_OUTPUT_CEILING_TOKENS", "80")
+	t.Setenv("KAJICODE_TOOL_OUTPUT_CEILING_TOKENS", "80")
 	registry := tools.NewRegistry()
 	registry.Register(propagationOutputTool{output: strings.Repeat("large output\n", 1000)})
 
@@ -112,7 +112,7 @@ func TestRecordOutputBudgetTraceUsesOnlyCompactMetadata(t *testing.T) {
 }
 
 func TestExecuteToolCallRebudgetsOversizedAfterToolFeedback(t *testing.T) {
-	t.Setenv("ZERO_TOOL_OUTPUT_CEILING_TOKENS", "80")
+	t.Setenv("KAJICODE_TOOL_OUTPUT_CEILING_TOKENS", "80")
 	registry := tools.NewRegistry()
 	registry.Register(propagationOutputTool{output: "tool output"})
 	dispatcher := largeOutputBudgetHookDispatcher()
@@ -134,18 +134,18 @@ func TestExecuteToolCallRebudgetsOversizedAfterToolFeedback(t *testing.T) {
 }
 
 func TestRunTraceReflectsPostHookBudget(t *testing.T) {
-	t.Setenv("ZERO_TOOL_OUTPUT_CEILING_TOKENS", "80")
+	t.Setenv("KAJICODE_TOOL_OUTPUT_CEILING_TOKENS", "80")
 	registry := tools.NewRegistry()
 	registry.Register(propagationOutputTool{output: "tool output"})
 	dispatcher := largeOutputBudgetHookDispatcher()
-	provider := &mockProvider{turns: [][]zeroruntime.StreamEvent{
+	provider := &mockProvider{turns: [][]kajicoderuntime.StreamEvent{
 		{
-			{Type: zeroruntime.StreamEventToolCallStart, ToolCallID: "call-hook-trace", ToolName: "propagation_output"},
-			{Type: zeroruntime.StreamEventToolCallDelta, ToolCallID: "call-hook-trace", ArgumentsFragment: `{}`},
-			{Type: zeroruntime.StreamEventToolCallEnd, ToolCallID: "call-hook-trace"},
-			{Type: zeroruntime.StreamEventDone},
+			{Type: kajicoderuntime.StreamEventToolCallStart, ToolCallID: "call-hook-trace", ToolName: "propagation_output"},
+			{Type: kajicoderuntime.StreamEventToolCallDelta, ToolCallID: "call-hook-trace", ArgumentsFragment: `{}`},
+			{Type: kajicoderuntime.StreamEventToolCallEnd, ToolCallID: "call-hook-trace"},
+			{Type: kajicoderuntime.StreamEventDone},
 		},
-		{{Type: zeroruntime.StreamEventText, Content: "done"}, {Type: zeroruntime.StreamEventDone}},
+		{{Type: kajicoderuntime.StreamEventText, Content: "done"}, {Type: kajicoderuntime.StreamEventDone}},
 	}}
 	recorder := trace.NewRecorder("session", "run", "")
 	var toolResults []ToolResult

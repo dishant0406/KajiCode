@@ -62,7 +62,7 @@ func TestSearchOrdersTiedScoresByPath(t *testing.T) {
 
 func TestSearchRanksCompleteMultiTermMatchesAheadOfPartialMatches(t *testing.T) {
 	snapshot := Snapshot{Files: []File{
-		{Path: "internal/zeroruntime/runtime.go"},
+		{Path: "internal/kajicoderuntime/runtime.go"},
 		{Path: "internal/agent/runtime.go"},
 		{Path: "internal/agent/loop.go"},
 	}}
@@ -82,7 +82,7 @@ func TestSearchRanksCompleteMultiTermMatchesAheadOfPartialMatches(t *testing.T) 
 
 func TestSearchAppliesLimitAndIgnoresBlankQueries(t *testing.T) {
 	snapshot := Snapshot{Files: []File{
-		{Path: "cmd/zero/main.go"},
+		{Path: "cmd/kajicode/main.go"},
 		{Path: "internal/agent/loop.go"},
 		{Path: "internal/cli/serve.go"},
 	}}
@@ -96,6 +96,6 @@ func TestSearchAppliesLimitAndIgnoresBlankQueries(t *testing.T) {
 		t.Fatalf("blank query returned results: %#v", results)
 	}
 	if results := Search(snapshot, "go", 0); len(results) != 0 {
-		t.Fatalf("zero limit returned results: %#v", results)
+		t.Fatalf("kajicode limit returned results: %#v", results)
 	}
 }

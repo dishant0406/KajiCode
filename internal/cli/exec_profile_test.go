@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/execprofile"
+	"github.com/dishant0406/KajiCode/internal/execprofile"
 )
 
 func TestApplyExecProfileFillsOnlyUnset(t *testing.T) {

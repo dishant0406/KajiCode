@@ -104,7 +104,7 @@ func performInitialize(ctx context.Context, client *Client, rootPath string) err
 	return client.Notify(ctx, "initialized", map[string]any{})
 }
 
-// clientCapabilities advertises the minimal capabilities ZERO needs: full-text
+// clientCapabilities advertises the minimal capabilities KAJICODE needs: full-text
 // document sync and diagnostics via publishDiagnostics.
 func clientCapabilities() map[string]any {
 	return map[string]any{

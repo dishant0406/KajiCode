@@ -104,7 +104,7 @@ func TestCaptureRejectsTraversalTargets(t *testing.T) {
 }
 
 func TestCaptureSkipsOversizeFiles(t *testing.T) {
-	t.Setenv("ZERO_CHECKPOINT_MAX_BYTES", "4")
+	t.Setenv("KAJICODE_CHECKPOINT_MAX_BYTES", "4")
 	store, ws := newCkStore(t)
 	mustWriteFile(t, filepath.Join(ws, "big.txt"), "123456")
 	ev, err := store.CaptureToolCheckpoint("s", ws, "write_file", []string{"big.txt"})
@@ -121,7 +121,7 @@ func TestCaptureSkipsOversizeFiles(t *testing.T) {
 }
 
 func TestCaptureDisabled(t *testing.T) {
-	t.Setenv("ZERO_CHECKPOINTS", "off")
+	t.Setenv("KAJICODE_CHECKPOINTS", "off")
 	store, ws := newCkStore(t)
 	mustWriteFile(t, filepath.Join(ws, "a.txt"), "v1")
 	ev, err := store.CaptureToolCheckpoint("s", ws, "write_file", []string{"a.txt"})

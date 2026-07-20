@@ -10,13 +10,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/config"
-	"github.com/Gitlawb/zero/internal/mcp"
-	"github.com/Gitlawb/zero/internal/tools"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/mcp"
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
 func TestRunMCPAddStdioPersistsUserConfig(t *testing.T) {
-	configPath := filepath.Join(t.TempDir(), "zero", "config.json")
+	configPath := filepath.Join(t.TempDir(), "kajicode", "config.json")
 	var stdout, stderr bytes.Buffer
 
 	exitCode := runWithDeps([]string{"mcp", "add", "docs", "--env", "DOCS_TOKEN=secret", "--", "docs-mcp", "--port", "123"}, &stdout, &stderr, appDeps{
@@ -46,7 +46,7 @@ func TestRunMCPAddStdioPersistsUserConfig(t *testing.T) {
 }
 
 func TestRunMCPAddHTTPPreservesConfigAndRedactsHeader(t *testing.T) {
-	configPath := filepath.Join(t.TempDir(), "zero", "config.json")
+	configPath := filepath.Join(t.TempDir(), "kajicode", "config.json")
 	writeMCPCommandRawConfig(t, configPath, `{
   "activeProvider": "fast",
   "futureTop": {"keep": true},
@@ -101,7 +101,7 @@ func TestRunMCPAddHTTPPreservesConfigAndRedactsHeader(t *testing.T) {
 }
 
 func TestRunMCPAddHTTPAcceptsColonHeader(t *testing.T) {
-	configPath := filepath.Join(t.TempDir(), "zero", "config.json")
+	configPath := filepath.Join(t.TempDir(), "kajicode", "config.json")
 	var stdout, stderr bytes.Buffer
 
 	exitCode := runWithDeps([]string{"mcp", "add", "remote", "--url", "https://remote.example/mcp", "--header", "Authorization: Bearer secret-header"}, &stdout, &stderr, appDeps{
@@ -119,7 +119,7 @@ func TestRunMCPAddHTTPAcceptsColonHeader(t *testing.T) {
 }
 
 func TestRunMCPAddDisabledHTTPAllowsInvalidURL(t *testing.T) {
-	configPath := filepath.Join(t.TempDir(), "zero", "config.json")
+	configPath := filepath.Join(t.TempDir(), "kajicode", "config.json")
 	var stdout, stderr bytes.Buffer
 
 	exitCode := runWithDeps([]string{"mcp", "add", "draft", "--type", "http", "--url", "sxas", "--disabled"}, &stdout, &stderr, appDeps{
@@ -140,7 +140,7 @@ func TestRunMCPAddDisabledHTTPAllowsInvalidURL(t *testing.T) {
 }
 
 func TestRunMCPAddUpdatePreservesUnknownServerFields(t *testing.T) {
-	configPath := filepath.Join(t.TempDir(), "zero", "config.json")
+	configPath := filepath.Join(t.TempDir(), "kajicode", "config.json")
 	writeMCPCommandRawConfig(t, configPath, `{
   "mcp": {
     "servers": {
@@ -187,7 +187,7 @@ func TestRunMCPAddUpdatePreservesUnknownServerFields(t *testing.T) {
 }
 
 func TestRunMCPAddUpdatePreservesExistingOAuth(t *testing.T) {
-	configPath := filepath.Join(t.TempDir(), "zero", "config.json")
+	configPath := filepath.Join(t.TempDir(), "kajicode", "config.json")
 	writeMCPCommandRawConfig(t, configPath, `{
   "mcp": {
     "servers": {
@@ -239,7 +239,7 @@ func TestRunMCPAddUpdatePreservesExistingOAuth(t *testing.T) {
 }
 
 func TestRunMCPAddMigratesLegacyServerRawFields(t *testing.T) {
-	configPath := filepath.Join(t.TempDir(), "zero", "config.json")
+	configPath := filepath.Join(t.TempDir(), "kajicode", "config.json")
 	writeMCPCommandRawConfig(t, configPath, `{
   "mcpServers": {
     "legacy": {
@@ -280,7 +280,7 @@ func TestRunMCPAddMigratesLegacyServerRawFields(t *testing.T) {
 }
 
 func TestRunMCPRemoveDeletesUserConfigServer(t *testing.T) {
-	configPath := filepath.Join(t.TempDir(), "zero", "config.json")
+	configPath := filepath.Join(t.TempDir(), "kajicode", "config.json")
 	writeMCPCommandConfig(t, configPath, config.FileConfig{
 		MCP: config.MCPConfig{Servers: map[string]config.MCPServerConfig{
 			"docs":  {Type: "stdio", Command: "docs-mcp"},
@@ -316,7 +316,7 @@ func TestRunMCPRemoveDeletesUserConfigServer(t *testing.T) {
 }
 
 func TestRunMCPToggleEnableDisablePreservesConfig(t *testing.T) {
-	configPath := filepath.Join(t.TempDir(), "zero", "config.json")
+	configPath := filepath.Join(t.TempDir(), "kajicode", "config.json")
 	writeMCPCommandRawConfig(t, configPath, `{
   "activeProvider": "fast",
   "mcp": {
@@ -400,7 +400,7 @@ func TestRunMCPToggleMigratesLegacyServerAliases(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			configPath := filepath.Join(t.TempDir(), "zero", "config.json")
+			configPath := filepath.Join(t.TempDir(), "kajicode", "config.json")
 			writeMCPCommandRawConfig(t, configPath, `{
   "activeProvider": "fast",
   "`+tc.aliasName+`": {
@@ -465,7 +465,7 @@ func TestRunMCPToggleMigratesLegacyServerAliases(t *testing.T) {
 }
 
 func TestRunMCPRemovePreservesUnrelatedConfigFields(t *testing.T) {
-	configPath := filepath.Join(t.TempDir(), "zero", "config.json")
+	configPath := filepath.Join(t.TempDir(), "kajicode", "config.json")
 	writeMCPCommandRawConfig(t, configPath, `{
   "activeProvider": "fast",
   "futureTop": {"keep": true},

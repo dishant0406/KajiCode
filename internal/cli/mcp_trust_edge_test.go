@@ -12,18 +12,18 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/config"
+	"github.com/dishant0406/KajiCode/internal/config"
 )
 
-// writeProjectMCPConfig drops a ./.zero/config.json under dir declaring one MCP server,
+// writeProjectMCPConfig drops a ./.kajicode/config.json under dir declaring one MCP server,
 // so projectMCPConfigExists() reads it as present.
 func writeProjectMCPConfig(t *testing.T, dir string) {
 	t.Helper()
-	if err := os.MkdirAll(filepath.Join(dir, ".zero"), 0o700); err != nil {
+	if err := os.MkdirAll(filepath.Join(dir, ".kajicode"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	body := `{"mcp":{"servers":{"proj":{"type":"stdio","command":"proj-cmd"}}}}`
-	if err := os.WriteFile(filepath.Join(dir, ".zero", "config.json"), []byte(body), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, ".kajicode", "config.json"), []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -34,7 +34,7 @@ func writeProjectMCPConfig(t *testing.T, dir string) {
 func breakTrustStore(t *testing.T) {
 	t.Helper()
 	configRoot := setTrustConfigRoot(t)
-	if err := os.MkdirAll(filepath.Join(configRoot, "zero", "trust.json"), 0o700); err != nil {
+	if err := os.MkdirAll(filepath.Join(configRoot, "kajicode", "trust.json"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -140,7 +140,7 @@ func TestRunMCPOAuthLoginNoticeCoFiresWithNonOAuthError(t *testing.T) {
 	if !strings.Contains(got, "oauth") {
 		t.Fatalf("want the not-oauth error, got %q", got)
 	}
-	if !strings.Contains(got, "zero trust") {
+	if !strings.Contains(got, "kajicode trust") {
 		t.Fatalf("expected the advisory trust notice to co-fire (accepted behavior), got %q", got)
 	}
 }

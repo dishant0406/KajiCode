@@ -20,7 +20,7 @@ const (
 	DefaultDesktopDriver  = "cua-driver"
 	DefaultTerminalDriver = "tuistory"
 	DefaultTimeout        = 30 * time.Second
-	EnvHelperManifest     = "ZERO_LOCAL_CONTROL_HELPERS"
+	EnvHelperManifest     = "KAJICODE_LOCAL_CONTROL_HELPERS"
 )
 
 type HelperOptions struct {

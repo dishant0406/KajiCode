@@ -5,7 +5,7 @@
 // providerio.ClassifiedError ("auth error:", "rate limit error:", …); lower-level
 // failures (DNS, TLS, timeouts, context-length) arrive as raw driver or library
 // messages. Classify matches both so the interactive error row (TUI) and the
-// `zero exec` provider-error path (CLI) can append one concrete next step instead
+// `kajicode exec` provider-error path (CLI) can append one concrete next step instead
 // of dumping an identical red blob for every failure mode.
 package errhint
 
@@ -100,19 +100,19 @@ func TUIHint(err error) string {
 	}
 }
 
-// CLIHint returns a one-line hint referencing `zero …` subcommands, or "" when the
-// category is Unknown. Meant for the non-interactive `zero exec` error path, where
+// CLIHint returns a one-line hint referencing `kajicode …` subcommands, or "" when the
+// category is Unknown. Meant for the non-interactive `kajicode exec` error path, where
 // slash commands don't apply.
 func CLIHint(err error) string {
 	switch Classify(err) {
 	case Auth:
-		return "API key rejected — run `zero setup`, `zero auth openrouter` for OpenRouter, or set the provider's API key"
+		return "API key rejected — run `kajicode setup`, `kajicode auth openrouter` for OpenRouter, or set the provider's API key"
 	case RateLimit:
 		return "Rate limited — wait a moment, or switch model with --model"
 	case Connectivity:
-		return "Can't reach the provider — run `zero doctor`"
+		return "Can't reach the provider — run `kajicode doctor`"
 	case ModelNotFound:
-		return "Model unavailable — run `zero doctor` or pick another with --model"
+		return "Model unavailable — run `kajicode doctor` or pick another with --model"
 	case ContextOverflow:
 		return "Context window full — shorten the prompt or start a fresh session"
 	default:

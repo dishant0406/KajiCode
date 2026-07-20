@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/hooks"
-	"github.com/Gitlawb/zero/internal/skills"
-	"github.com/Gitlawb/zero/internal/tools"
+	"github.com/dishant0406/KajiCode/internal/hooks"
+	"github.com/dishant0406/KajiCode/internal/skills"
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
 // fakeToolRunner records the invocation and returns a canned result so tool
@@ -41,8 +41,8 @@ func (tool *fakeRegisteredTool) Run(context.Context, map[string]any) tools.Resul
 func toolPlugin(pluginDir string, tool ToolExtension) LoadedPlugin {
 	return LoadedPlugin{
 		SchemaVersion: 1,
-		ID:            "zero.demo",
-		Name:          "Zero Demo",
+		ID:            "kajicode.demo",
+		Name:          "KajiCode Demo",
 		Version:       "0.1.0",
 		Enabled:       true,
 		Source:        SourceProject,
@@ -105,7 +105,7 @@ func TestActivateRegistersToolThatInvokesCommand(t *testing.T) {
 	if !envContains(call.Env, "AGENT_PLUGIN_ROOT="+pluginDir) {
 		t.Fatalf("env missing AGENT_PLUGIN_ROOT=%s: %#v", pluginDir, call.Env)
 	}
-	if result.Tools[0].ToolName != "lookup" || result.Tools[0].PluginID != "zero.demo" {
+	if result.Tools[0].ToolName != "lookup" || result.Tools[0].PluginID != "kajicode.demo" {
 		t.Fatalf("provenance = %#v", result.Tools)
 	}
 }
@@ -224,7 +224,7 @@ func TestActivateSkipsToolWhoseNameCollidesWithRegisteredTool(t *testing.T) {
 func TestActivateBuildsHookDefinitionsForMappedEvent(t *testing.T) {
 	registry := tools.NewRegistry()
 	plugin := LoadedPlugin{
-		ID:        "zero.guard",
+		ID:        "kajicode.guard",
 		Name:      "Guard",
 		Enabled:   true,
 		Source:    SourceProject,
@@ -287,7 +287,7 @@ func TestActivateExposesSkillDirInLoaderRoots(t *testing.T) {
 
 	registry := tools.NewRegistry()
 	plugin := LoadedPlugin{
-		ID:        "zero.review",
+		ID:        "kajicode.review",
 		Name:      "Review",
 		Enabled:   true,
 		Source:    SourceProject,
@@ -328,7 +328,7 @@ func TestActivateResolvesManifestRelativeSkillRoot(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			pluginDir := t.TempDir()
 			plugin := LoadedPlugin{
-				ID:        "zero.review",
+				ID:        "kajicode.review",
 				Name:      "Review",
 				Enabled:   true,
 				Source:    SourceProject,
@@ -511,7 +511,7 @@ func TestNewSkillToolLoadsAgentsSkillWithoutPluginRoots(t *testing.T) {
 	tool := NewSkillTool(t.TempDir(), nil)
 	got := tool.Run(context.Background(), map[string]any{"name": "agents-skill"})
 	if got.Status != tools.StatusOK || !strings.Contains(got.Output, "agents body") {
-		t.Fatalf("expected agents skill body with zero plugin roots, got %q (%s)", got.Status, got.Output)
+		t.Fatalf("expected agents skill body with kajicode plugin roots, got %q (%s)", got.Status, got.Output)
 	}
 }
 
@@ -521,7 +521,7 @@ func TestActivateSkipsMalformedPluginAndContinues(t *testing.T) {
 	// A tool extension with an empty command is malformed: it can never be invoked,
 	// so activation must skip it with a warning rather than register a broken tool.
 	bad := toolPlugin(t.TempDir(), ToolExtension{Name: "bad", Command: "   ", Permission: PermissionPrompt})
-	bad.ID = "zero.bad"
+	bad.ID = "kajicode.bad"
 
 	result := Activate(registry, []LoadedPlugin{bad, good}, ActivateOptions{runTool: (&fakeToolRunner{}).run})
 
@@ -534,7 +534,7 @@ func TestActivateSkipsMalformedPluginAndContinues(t *testing.T) {
 	if len(result.Warnings) == 0 {
 		t.Fatalf("expected a warning for the malformed plugin")
 	}
-	if !containsSubstring(result.Warnings, "bad") && !containsSubstring(result.Warnings, "zero.bad") {
+	if !containsSubstring(result.Warnings, "bad") && !containsSubstring(result.Warnings, "kajicode.bad") {
 		t.Fatalf("warning should identify the offending plugin/tool: %#v", result.Warnings)
 	}
 }
@@ -558,8 +558,8 @@ func TestActivateIsDeterministic(t *testing.T) {
 	dirA := t.TempDir()
 	dirB := t.TempDir()
 	plugins := []LoadedPlugin{
-		{ID: "zero.b", Name: "B", Enabled: true, PluginDir: dirB, Hooks: []HookExtension{{Name: "hb", Event: HookSessionStart, Command: "b.sh"}}},
-		{ID: "zero.a", Name: "A", Enabled: true, PluginDir: dirA, Hooks: []HookExtension{{Name: "ha", Event: HookSessionStart, Command: "a.sh"}}},
+		{ID: "kajicode.b", Name: "B", Enabled: true, PluginDir: dirB, Hooks: []HookExtension{{Name: "hb", Event: HookSessionStart, Command: "b.sh"}}},
+		{ID: "kajicode.a", Name: "A", Enabled: true, PluginDir: dirA, Hooks: []HookExtension{{Name: "ha", Event: HookSessionStart, Command: "a.sh"}}},
 	}
 
 	first := Activate(tools.NewRegistry(), plugins, ActivateOptions{})
@@ -572,9 +572,9 @@ func TestActivateIsDeterministic(t *testing.T) {
 			t.Fatalf("hook order not deterministic at %d: %q vs %q", i, first.Hooks[i].ID, second.Hooks[i].ID)
 		}
 	}
-	// Deterministic order is by plugin ID then extension name: zero.a before zero.b.
-	if first.Hooks[0].ID != "zero.a.ha" {
-		t.Fatalf("first hook id = %q, want zero.a.ha (deterministic by plugin then name)", first.Hooks[0].ID)
+	// Deterministic order is by plugin ID then extension name: kajicode.a before kajicode.b.
+	if first.Hooks[0].ID != "kajicode.a.ha" {
+		t.Fatalf("first hook id = %q, want kajicode.a.ha (deterministic by plugin then name)", first.Hooks[0].ID)
 	}
 }
 
@@ -627,7 +627,7 @@ func containsSubstring(values []string, want string) bool {
 }
 
 func TestExpandPluginRootPathRelative(t *testing.T) {
-	pluginDir := "/etc/zero/plugin"
+	pluginDir := "/etc/kajicode/plugin"
 	cases := []struct {
 		input string
 		want  string

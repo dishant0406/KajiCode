@@ -124,7 +124,7 @@ func (m model) streamingToolCallView(width int) string {
 		// byte count so it reads as progressing, never frozen.
 		headTag = fmt.Sprintf("receiving %.1f KB", float64(d.rawLen)/1024)
 	}
-	head := toolCardHead(m.streamCallName, d.path, "", headTag, "", "", true, zeroTheme.ink, false, width, cardRenderOptions{cwd: m.cwd})
-	lines := []string{zeroTheme.accent.Render(m.spinnerGlyph()) + " " + head}
+	head := toolCardHead(m.streamCallName, d.path, "", headTag, "", "", true, kajicodeTheme.ink, false, width, cardRenderOptions{cwd: m.cwd})
+	lines := []string{kajicodeTheme.accent.Render(m.spinnerGlyph()) + " " + head}
 	return strings.Join(lines, "\n")
 }

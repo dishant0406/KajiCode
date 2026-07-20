@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/tools"
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
 // fakeTurnSession wraps an inner provider for streaming while counting the
@@ -22,13 +22,13 @@ type fakeTurnSession struct {
 
 func (s *fakeTurnSession) Prewarm(context.Context) error { s.prewarms++; return nil }
 
-func (s *fakeTurnSession) Stream(ctx context.Context, request zeroruntime.CompletionRequest) (<-chan zeroruntime.StreamEvent, error) {
+func (s *fakeTurnSession) Stream(ctx context.Context, request kajicoderuntime.CompletionRequest) (<-chan kajicoderuntime.StreamEvent, error) {
 	s.streams++
 	return s.inner.StreamCompletion(ctx, request)
 }
 
-func (s *fakeTurnSession) Compact(context.Context, zeroruntime.CompletionRequest) ([]zeroruntime.Message, error) {
-	return nil, zeroruntime.ErrCompactionUnsupported
+func (s *fakeTurnSession) Compact(context.Context, kajicoderuntime.CompletionRequest) ([]kajicoderuntime.Message, error) {
+	return nil, kajicoderuntime.ErrCompactionUnsupported
 }
 
 func (s *fakeTurnSession) Close() error { s.closes++; return s.closeErr }
@@ -40,7 +40,7 @@ type fakeTurnSessionProvider struct {
 	opens   int
 }
 
-func (p *fakeTurnSessionProvider) OpenTurnSession(context.Context) (zeroruntime.TurnSession, error) {
+func (p *fakeTurnSessionProvider) OpenTurnSession(context.Context) (kajicoderuntime.TurnSession, error) {
 	p.opens++
 	if p.openErr != nil {
 		return nil, p.openErr
@@ -48,14 +48,14 @@ func (p *fakeTurnSessionProvider) OpenTurnSession(context.Context) (zeroruntime.
 	return p.session, nil
 }
 
-func (p *fakeTurnSessionProvider) Capabilities() zeroruntime.ProviderCapabilities {
-	return zeroruntime.ProviderCapabilities{}
+func (p *fakeTurnSessionProvider) Capabilities() kajicoderuntime.ProviderCapabilities {
+	return kajicoderuntime.ProviderCapabilities{}
 }
 
-func singleAnswerTurns(answer string) [][]zeroruntime.StreamEvent {
-	return [][]zeroruntime.StreamEvent{{
-		{Type: zeroruntime.StreamEventText, Content: answer},
-		{Type: zeroruntime.StreamEventDone},
+func singleAnswerTurns(answer string) [][]kajicoderuntime.StreamEvent {
+	return [][]kajicoderuntime.StreamEvent{{
+		{Type: kajicoderuntime.StreamEventText, Content: answer},
+		{Type: kajicoderuntime.StreamEventDone},
 	}}
 }
 
@@ -151,7 +151,7 @@ func TestRunDefaultTurnSessionMatchesRawProvider(t *testing.T) {
 		registry.Register(escalatingTool{target: ""})
 		options := Options{Registry: registry, MaxTurns: 4}
 		if explicit {
-			options.TurnSessionProvider = zeroruntime.NewProviderTurnSessionProvider(provider, zeroruntime.ProviderCapabilities{})
+			options.TurnSessionProvider = kajicoderuntime.NewProviderTurnSessionProvider(provider, kajicoderuntime.ProviderCapabilities{})
 		}
 		result, err := Run(context.Background(), "go", provider, options)
 		if err != nil {
@@ -238,7 +238,7 @@ func TestRunModelSessionSwitcherCarriesOptimizedSession(t *testing.T) {
 		Model:               "claude-sonnet-4.5",
 		MaxTurns:            4,
 		TurnSessionProvider: initial,
-		ModelSessionSwitcher: func(_ context.Context, modelID string) (zeroruntime.TurnSessionProvider, error) {
+		ModelSessionSwitcher: func(_ context.Context, modelID string) (kajicoderuntime.TurnSessionProvider, error) {
 			switchedTo = modelID
 			return switched, nil
 		},
@@ -297,7 +297,7 @@ func TestRunModelSessionSwitcherOpenFailureIsNonFatal(t *testing.T) {
 		Model:               "claude-sonnet-4.5",
 		MaxTurns:            4,
 		TurnSessionProvider: &fakeTurnSessionProvider{session: session},
-		ModelSessionSwitcher: func(_ context.Context, _ string) (zeroruntime.TurnSessionProvider, error) {
+		ModelSessionSwitcher: func(_ context.Context, _ string) (kajicoderuntime.TurnSessionProvider, error) {
 			return failingOpen, nil
 		},
 	})
@@ -317,7 +317,7 @@ func TestRunModelSessionSwitcherOpenFailureIsNonFatal(t *testing.T) {
 	}
 	var sawNote bool
 	for _, message := range inner.requests[1].Messages {
-		if message.Role == zeroruntime.MessageRoleUser && strings.Contains(strings.ToLower(message.Content), "could not switch") {
+		if message.Role == kajicoderuntime.MessageRoleUser && strings.Contains(strings.ToLower(message.Content), "could not switch") {
 			sawNote = true
 		}
 	}
@@ -341,7 +341,7 @@ func TestRunModelSessionSwitcherErrorIsNonFatal(t *testing.T) {
 		Model:               "claude-sonnet-4.5",
 		MaxTurns:            4,
 		TurnSessionProvider: &fakeTurnSessionProvider{session: session},
-		ModelSessionSwitcher: func(_ context.Context, _ string) (zeroruntime.TurnSessionProvider, error) {
+		ModelSessionSwitcher: func(_ context.Context, _ string) (kajicoderuntime.TurnSessionProvider, error) {
 			return nil, errors.New("session build blew up")
 		},
 	})
@@ -357,7 +357,7 @@ func TestRunModelSessionSwitcherErrorIsNonFatal(t *testing.T) {
 	}
 	var sawNote bool
 	for _, request := range inner.requests[1].Messages {
-		if request.Role == zeroruntime.MessageRoleUser && strings.Contains(strings.ToLower(request.Content), "could not switch") {
+		if request.Role == kajicoderuntime.MessageRoleUser && strings.Contains(strings.ToLower(request.Content), "could not switch") {
 			sawNote = true
 		}
 	}

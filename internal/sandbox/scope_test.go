@@ -109,7 +109,7 @@ func TestScopeAddTildeExpansion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewScope: %v", err)
 	}
-	if _, err := scope.Add("~nonexistent-subdir-zero-test"); err == nil {
+	if _, err := scope.Add("~nonexistent-subdir-kajicode-test"); err == nil {
 		t.Fatal("Add(~nonexistent-subdir) = nil error, want rejection")
 	}
 }
@@ -206,11 +206,11 @@ func TestDefaultTempWriteRootCandidatesMatchPlatformEnvironment(t *testing.T) {
 	}
 
 	unix := defaultTempWriteRootCandidatesForGOOS("linux", env(map[string]string{
-		"TMPDIR": "/var/tmp/zero",
+		"TMPDIR": "/var/tmp/kajicode",
 		"TEMP":   "/ignored",
 		"TMP":    "/ignored",
 	}))
-	if len(unix) != 2 || unix[0] != "/tmp" || unix[1] != "/var/tmp/zero" {
+	if len(unix) != 2 || unix[0] != "/tmp" || unix[1] != "/var/tmp/kajicode" {
 		t.Fatalf("unix temp roots = %#v, want /tmp and TMPDIR", unix)
 	}
 }
@@ -227,13 +227,13 @@ func rootsCoverPath(roots []string, path string) bool {
 func outsideDefaultTempPath(workspaceRoot string, elems ...string) string {
 	volume := filepath.VolumeName(workspaceRoot)
 	root := volume + string(filepath.Separator)
-	parts := append([]string{root, "zero-sandbox-outside-test"}, elems...)
+	parts := append([]string{root, "kajicode-sandbox-outside-test"}, elems...)
 	return filepath.Join(parts...)
 }
 
 func tempDirOutsideDefaultTemp(t *testing.T) string {
 	t.Helper()
-	dir, err := os.MkdirTemp(".", ".zero-sandbox-outside-")
+	dir, err := os.MkdirTemp(".", ".kajicode-sandbox-outside-")
 	if err != nil {
 		t.Fatalf("MkdirTemp outside default temp: %v", err)
 	}

@@ -8,7 +8,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/Gitlawb/zero/internal/config"
+	"github.com/dishant0406/KajiCode/internal/config"
 )
 
 // parsedBinding is the parsed representation of a keybinding string such as
@@ -320,7 +320,7 @@ func resolveKeyBindings(cfg config.KeyBindingsConfig) keyBindings {
 }
 
 // keyMatch returns true when msg matches either the user-configured binding b
-// or (when b is zero/unset) the built-in default matcher defaultFn. This is
+// or (when b is kajicode/unset) the built-in default matcher defaultFn. This is
 // the bridge between the config surface and the hot dispatch path in model.go.
 func (m model) keyMatch(b parsedBinding, msg tea.KeyMsg, defaultFn func(tea.KeyMsg) bool) bool {
 	if !b.isZero() {

@@ -22,7 +22,7 @@ const TaskSchemaVersion = 1
 
 // TaskSet is a reproducible benchmark task list. It mirrors the shape of a
 // Terminal-Bench task manifest: each task is an isolated workspace plus a prompt
-// ZERO must satisfy. The set is recorded by ID with every result so a published
+// KAJICODE must satisfy. The set is recorded by ID with every result so a published
 // number is traceable to the exact tasks that produced it.
 type TaskSet struct {
 	ID          string      `json:"id"`
@@ -41,7 +41,7 @@ type TaskSet struct {
 
 // BenchTask is one benchmark task. WorkspaceFixture is the relative path of the
 // task's starting workspace; VerificationCommand (optional) is the command the
-// default runner executes to decide pass/fail after ZERO finishes. Class groups
+// default runner executes to decide pass/fail after KAJICODE finishes. Class groups
 // the task for the turn-benchmark's per-group latency breakdown (e.g. "nav",
 // "edit", "fix"); it is optional and ignored by the pass/fail runner.
 type BenchTask struct {
@@ -74,7 +74,7 @@ type TaskConfig struct {
 	// Now overrides the clock for the recorded date (tests inject a fixed time).
 	Now func() time.Time
 	// Runner executes one task and reports the outcome. Required. The default
-	// production runner (NewExecRunner) invokes headless `zero exec`.
+	// production runner (NewExecRunner) invokes headless `kajicode exec`.
 	Runner TaskRunner
 }
 
@@ -260,7 +260,7 @@ func FormatTaskSummary(result TaskRunResult) string {
 		}
 	}
 	lines := []string{
-		"Zero task benchmark: " + displayOrUnknown(result.Suite),
+		"KajiCode task benchmark: " + displayOrUnknown(result.Suite),
 		"model: " + displayOrUnknown(result.Model),
 	}
 	if mode := strings.TrimSpace(result.Mode); mode != "" {
@@ -314,9 +314,9 @@ func displayOrUnknown(value string) string {
 	return "unknown"
 }
 
-// NewExecRunner builds the production runner: it invokes headless `zero exec`
+// NewExecRunner builds the production runner: it invokes headless `kajicode exec`
 // with stream-json output for each task and decides pass/fail. binary is the path
-// to the `zero` binary; extraArgs are appended to every invocation (e.g. sandbox
+// to the `kajicode` binary; extraArgs are appended to every invocation (e.g. sandbox
 // flags). The self-correct flag from RunContext is translated into the exec
 // invocation so the recorded config matches what actually ran.
 //
@@ -355,7 +355,7 @@ func NewExecRunner(binary string, extraArgs ...string) TaskRunner {
 			if detail == "" {
 				detail = "missing terminal run_end event"
 			}
-			return TaskOutcome{Err: fmt.Errorf("zero exec failed: %s", detail)}
+			return TaskOutcome{Err: fmt.Errorf("kajicode exec failed: %s", detail)}
 		}
 
 		if len(task.VerificationCommand) > 0 {
@@ -413,7 +413,7 @@ type streamJSONResult struct {
 }
 
 // parseStreamJSON scans stream-json output once and returns the terminal
-// run_end exit code and the final event's text. ZERO emits one JSON object per
+// run_end exit code and the final event's text. KAJICODE emits one JSON object per
 // line; the last run_end carries the exit code and the last final carries the
 // answer. Lines that don't parse are skipped. The scanner buffer is raised so a
 // large single-line event (e.g. a big final answer) doesn't error out.
@@ -454,9 +454,9 @@ func streamJSONExitCode(output []byte) (int, bool) {
 }
 
 // streamJSONFinalText scans stream-json output for the terminal "final" event
-// and returns its text (the agent's final answer). ZERO emits one final event
+// and returns its text (the agent's final answer). KAJICODE emits one final event
 // per run on both the success and incomplete paths (exec.go writer.final), so
-// the last one wins. The turn benchmark writes this to .zero-answer.txt in the
+// the last one wins. The turn benchmark writes this to .kajicode-answer.txt in the
 // fixture copy so nav answer-oracles can grep the captured answer rather than
 // the raw stream. Returns "" when no final event was emitted (e.g. a provider
 // error path) — the caller writes an empty file and a nav grep then fails,

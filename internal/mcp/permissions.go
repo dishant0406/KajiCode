@@ -96,7 +96,7 @@ var (
 )
 
 func ResolvePermissionPath(env map[string]string) (string, error) {
-	override := strings.TrimSpace(envValue(env, "ZERO_MCP_PERMISSIONS_PATH"))
+	override := strings.TrimSpace(envValue(env, "KAJICODE_MCP_PERMISSIONS_PATH"))
 	if override != "" {
 		if filepath.IsAbs(override) {
 			return filepath.Clean(override), nil
@@ -122,7 +122,7 @@ func ResolvePermissionPath(env map[string]string) (string, error) {
 		}
 		configHome = resolved
 	}
-	return filepath.Join(configHome, "zero", "mcp-permissions.json"), nil
+	return filepath.Join(configHome, "kajicode", "mcp-permissions.json"), nil
 }
 
 func NewPermissionStore(options StoreOptions) (*PermissionStore, error) {

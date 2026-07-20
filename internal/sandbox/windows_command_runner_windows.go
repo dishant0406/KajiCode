@@ -94,7 +94,7 @@ func runWindowsSandboxCommand(config WindowsSandboxCommandConfig, stderr io.Writ
 // capability SIDs are granted. DACL edits on user-owned workspace and temp
 // roots need no Administrator rights; the WFP network filters DO, so this tier
 // provisions no network enforcement — the offline-marker SID composed into the
-// token stays inert until an elevated `zero sandbox setup` installs the block
+// token stays inert until an elevated `kajicode sandbox setup` installs the block
 // filters. Applied plans are recorded by hash so repeat commands skip the
 // re-apply; like the elevated setup, grants are left in place (the rollback is
 // deliberately discarded) because they only name synthetic capability SIDs
@@ -113,7 +113,7 @@ func ensureWindowsUnelevatedSetup(config WindowsSandboxCommandConfig) error {
 	}
 	if _, err := applyWindowsACLPlan(plan); err != nil {
 		return fmt.Errorf("apply unelevated workspace ACLs: %w — the workspace may be on a filesystem the current user does not own; "+
-			"run `zero sandbox setup` from an elevated (Administrator) terminal, or re-run with `--sandbox forbid` to skip OS sandboxing", err)
+			"run `kajicode sandbox setup` from an elevated (Administrator) terminal, or re-run with `--sandbox forbid` to skip OS sandboxing", err)
 	}
 	return recordWindowsUnelevatedAppliedPlan(config.SandboxHome, applied)
 }

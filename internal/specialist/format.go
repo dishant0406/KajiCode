@@ -6,7 +6,7 @@ import (
 )
 
 func FormatList(result LoadResult) string {
-	lines := []string{"Zero Specialists:"}
+	lines := []string{"KajiCode Specialists:"}
 	for _, warning := range result.Warnings {
 		lines = append(lines, "  warning: "+warning)
 	}
@@ -29,7 +29,7 @@ func FormatList(result LoadResult) string {
 
 func FormatShow(manifest Manifest) string {
 	lines := []string{
-		"Zero Specialist: " + manifest.Metadata.Name,
+		"KajiCode Specialist: " + manifest.Metadata.Name,
 		"location: " + string(manifest.Location),
 		"path: " + manifest.FilePath,
 		"description: " + manifest.Metadata.Description,
@@ -56,7 +56,7 @@ func FormatShow(manifest Manifest) string {
 
 func FormatPaths(paths Paths) string {
 	lines := []string{
-		"Zero Specialist Paths:",
+		"KajiCode Specialist Paths:",
 		"  user: " + paths.UserDir,
 	}
 	if paths.ProjectDir != "" {

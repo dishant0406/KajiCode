@@ -17,10 +17,10 @@ func TestReducedMotionEnabled(t *testing.T) {
 		want    bool
 	}{
 		{"off by default", nil, colorprofile.TrueColor, false},
-		{"explicit 1", map[string]string{"ZERO_REDUCED_MOTION": "1"}, colorprofile.TrueColor, true},
-		{"explicit true", map[string]string{"ZERO_REDUCED_MOTION": "true"}, colorprofile.TrueColor, true},
-		{"explicit 0 is off", map[string]string{"ZERO_REDUCED_MOTION": "0"}, colorprofile.TrueColor, false},
-		{"explicit false is off", map[string]string{"ZERO_REDUCED_MOTION": "false"}, colorprofile.TrueColor, false},
+		{"explicit 1", map[string]string{"KAJICODE_REDUCED_MOTION": "1"}, colorprofile.TrueColor, true},
+		{"explicit true", map[string]string{"KAJICODE_REDUCED_MOTION": "true"}, colorprofile.TrueColor, true},
+		{"explicit 0 is off", map[string]string{"KAJICODE_REDUCED_MOTION": "0"}, colorprofile.TrueColor, false},
+		{"explicit false is off", map[string]string{"KAJICODE_REDUCED_MOTION": "false"}, colorprofile.TrueColor, false},
 		{"no-TTY forces on", nil, colorprofile.NoTTY, true},
 		{"SSH alone does not force reduced motion", map[string]string{"SSH_CONNECTION": "x"}, colorprofile.TrueColor, false},
 	}

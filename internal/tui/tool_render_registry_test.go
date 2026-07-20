@@ -41,7 +41,7 @@ func TestDefaultToolBodyRegistrySelectsCoreRenderers(t *testing.T) {
 		{
 			name:   "read_file",
 			hint:   "README.md",
-			detail: "File: README.md\n\n  7 | # Zero",
+			detail: "File: README.md\n\n  7 | # KajiCode",
 			want:   []string{"Read", "README.md"},
 		},
 		{
@@ -79,7 +79,7 @@ func TestDefaultToolBodyRegistrySelectsCoreRenderers(t *testing.T) {
 					t.Fatalf("%s body = %q, missing %q", tt.name, got, want)
 				}
 			}
-			if tt.name == "read_file" && strings.Contains(got, "# Zero") {
+			if tt.name == "read_file" && strings.Contains(got, "# KajiCode") {
 				t.Fatalf("read_file body = %q, must not expose read contents", got)
 			}
 			if tt.name == "grep" && strings.Contains(got, "internal/tui/rendering.go:41") {
@@ -92,7 +92,7 @@ func TestDefaultToolBodyRegistrySelectsCoreRenderers(t *testing.T) {
 func TestToolBodyRegistryReplacementIsScopedToOneTool(t *testing.T) {
 	registry := newDefaultToolBodyRegistry()
 	registry.register("grep", toolBodyRendererFunc(func(req toolBodyRequest) cardBody {
-		return cardBody{lines: []string{zeroTheme.onPanel(zeroTheme.ink).Render("replacement grep body")}}
+		return cardBody{lines: []string{kajicodeTheme.onPanel(kajicodeTheme.ink).Render("replacement grep body")}}
 	}))
 
 	opts := cardRenderOptions{bodyCap: cardBodyMaxLines}
@@ -125,7 +125,7 @@ func TestToolBodyRegistryReplacementIsScopedToOneTool(t *testing.T) {
 func TestToolBodyRegistryTrimsRegisteredNames(t *testing.T) {
 	registry := newToolBodyRegistry(unknownToolBodyRenderer{})
 	registry.register(" grep ", toolBodyRendererFunc(func(req toolBodyRequest) cardBody {
-		return cardBody{lines: []string{zeroTheme.onPanel(zeroTheme.ink).Render("trimmed grep body")}}
+		return cardBody{lines: []string{kajicodeTheme.onPanel(kajicodeTheme.ink).Render("trimmed grep body")}}
 	}))
 
 	body := registry.render(toolBodyRequest{

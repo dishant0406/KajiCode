@@ -13,8 +13,8 @@ import (
 
 	"charm.land/lipgloss/v2"
 
-	"github.com/Gitlawb/zero/internal/agent"
-	"github.com/Gitlawb/zero/internal/tools"
+	"github.com/dishant0406/KajiCode/internal/agent"
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
 func displayValue(value string, fallback string) string {
@@ -281,7 +281,7 @@ func (m model) renderRowModeUncached(row transcriptRow, width int, rc rowContext
 // appended after the final answer). Uses the same faint metadata style as the
 // "worked for …" done-line.
 func renderRecapRow(row transcriptRow, width int) string {
-	return fitStyledLine(zeroTheme.faint.Render("※ recap: "+strings.TrimSpace(row.text)), width)
+	return fitStyledLine(kajicodeTheme.faint.Render("※ recap: "+strings.TrimSpace(row.text)), width)
 }
 
 func isInternalToolArgumentError(row transcriptRow) bool {
@@ -342,7 +342,7 @@ var userHomeDir = os.UserHomeDir
 // trailing segments with a `…/` prefix:
 //
 //	under cwd      → examples/calc/calc.go
-//	under $HOME    → ~/projects/zero/main.go
+//	under $HOME    → ~/projects/kajicode/main.go
 //	elsewhere      → …/other/calc.go   (last displayPathTailSegments segments)
 //	already short  → returned unchanged (relative input, no separators, etc.)
 //
@@ -520,7 +520,7 @@ func renderUserRow(row transcriptRow, width int) string {
 	// reference agents instead of a heavy chat bubble.
 	lines = append(lines, "")
 	for _, line := range wrapped {
-		lines = append(lines, renderUserPromptStyledLine(zeroTheme.ink.Bold(true).Render(line), contentWidth))
+		lines = append(lines, renderUserPromptStyledLine(kajicodeTheme.ink.Bold(true).Render(line), contentWidth))
 	}
 	return strings.Join(lines, "\n")
 }
@@ -537,10 +537,10 @@ func userPromptContentWidth(width int) int {
 
 func renderUserPromptStyledLine(styledText string, contentWidth int) string {
 	if contentWidth <= 0 {
-		return zeroTheme.userPrompt.Render("▌")
+		return kajicodeTheme.userPrompt.Render("▌")
 	}
 	fitted := fitStyledLine(styledText, contentWidth)
-	return zeroTheme.userPrompt.Render("▌") + "  " + fitted
+	return kajicodeTheme.userPrompt.Render("▌") + "  " + fitted
 }
 
 // renderAssistantRow draws final answers as plain response text plus completion
@@ -555,7 +555,7 @@ func renderAssistantRow(row transcriptRow, width int) string {
 		narr := renderAssistantMarkdownText(row.text, assistantMeasure(width), tableMeasure, true)
 		out := make([]string, 0, len(narr))
 		for _, line := range narr {
-			styled := styleAssistantMarkdownLine(line, zeroTheme.ink)
+			styled := styleAssistantMarkdownLine(line, kajicodeTheme.ink)
 			out = append(out, fitStyledLine(styled, width))
 		}
 		return strings.Join(out, "\n")
@@ -563,7 +563,7 @@ func renderAssistantRow(row transcriptRow, width int) string {
 	// Committed final answer: highlighting runs here (once, behind the render cache).
 	lines := renderAssistantMarkdownText(row.text, assistantMeasure(width), tableMeasure, true)
 	for index := range lines {
-		lines[index] = styleAssistantMarkdownLine(lines[index], zeroTheme.ink)
+		lines[index] = styleAssistantMarkdownLine(lines[index], kajicodeTheme.ink)
 	}
 	if row.turnElapsed >= longTurnBookend {
 		lines = append(lines, doneLine(row))
@@ -598,7 +598,7 @@ func renderReasoningBlock(text string, expanded bool, width int, running bool, e
 		body = body[hidden:]
 	}
 	for _, line := range body {
-		lines = append(lines, fitStyledLine("  "+styleAssistantMarkdownLine(line, zeroTheme.sayText), width))
+		lines = append(lines, fitStyledLine("  "+styleAssistantMarkdownLine(line, kajicodeTheme.sayText), width))
 	}
 	return strings.Join(lines, "\n")
 }
@@ -606,7 +606,7 @@ func renderReasoningBlock(text string, expanded bool, width int, running bool, e
 // reasoningHiddenMarker is the faint line shown in place of capped reasoning body
 // lines; the display and selectable paths share it so they stay line-aligned.
 func reasoningHiddenMarker(hidden int) string {
-	return zeroTheme.faint.Render(fmt.Sprintf("… %d earlier lines · Ctrl+O for all", hidden))
+	return kajicodeTheme.faint.Render(fmt.Sprintf("… %d earlier lines · Ctrl+O for all", hidden))
 }
 
 func renderReasoningBodyLines(text string, width int) []string {
@@ -616,7 +616,7 @@ func renderReasoningBodyLines(text string, width int) []string {
 }
 
 func reasoningHeaderLine(text string, expanded bool, running bool, elapsed time.Duration) string {
-	return zeroTheme.faint.Render(reasoningHeaderText(text, expanded, running, elapsed))
+	return kajicodeTheme.faint.Render(reasoningHeaderText(text, expanded, running, elapsed))
 }
 
 func reasoningHeaderText(text string, expanded bool, running bool, elapsed time.Duration) string {
@@ -655,7 +655,7 @@ const longTurnBookend = 60 * time.Second
 // It carries no tool count (the tool cards above already show that) and never
 // marks errors (the bordered error note already signals failure).
 func doneLine(row transcriptRow) string {
-	return zeroTheme.faint.Render("worked for " + formatElapsedSeconds(row.turnElapsed))
+	return kajicodeTheme.faint.Render("worked for " + formatElapsedSeconds(row.turnElapsed))
 }
 
 // renderSystemNote draws a system notice as plain, lightly-marked lines — not a
@@ -664,9 +664,9 @@ func doneLine(row transcriptRow) string {
 // indent the continuation so the block still reads as one note.
 func renderSystemNote(text string, width int) string {
 	trimmed := strings.TrimSpace(text)
-	marker, style := zeroTheme.faint.Render("·"), zeroTheme.muted
+	marker, style := kajicodeTheme.faint.Render("·"), kajicodeTheme.muted
 	if isCancellationNotice(trimmed) {
-		marker, style = zeroTheme.amber.Render("⊘"), zeroTheme.amber
+		marker, style = kajicodeTheme.amber.Render("⊘"), kajicodeTheme.amber
 	}
 	srcLines := strings.Split(trimmed, "\n")
 	out := make([]string, 0, len(srcLines))
@@ -707,9 +707,9 @@ func renderCommandCardRow(text string, width int) string {
 				lines = append(lines, styled)
 			}
 		case isCommandCardActionsLine(trimmed):
-			lines = append(lines, zeroTheme.accent.Render("actions: ")+zeroTheme.ink.Render(strings.TrimSpace(strings.TrimPrefix(trimmed, "actions:"))))
+			lines = append(lines, kajicodeTheme.accent.Render("actions: ")+kajicodeTheme.ink.Render(strings.TrimSpace(strings.TrimPrefix(trimmed, "actions:"))))
 		case isCommandCardHintLine(trimmed):
-			lines = append(lines, zeroTheme.faint.Render(line))
+			lines = append(lines, kajicodeTheme.faint.Render(line))
 		case isIndentedCommandCardRow(line):
 			// A content row (indented): a "/cmd … - description" gets two-tone
 			// styling (bright name, muted description); a "key  value" field or a
@@ -717,10 +717,10 @@ func renderCommandCardRow(text string, width int) string {
 			lines = append(lines, styleCommandCardContentRow(line))
 		default:
 			// A non-indented, non-empty line is a group header (Model, Session…).
-			lines = append(lines, zeroTheme.accent.Bold(true).Render(line))
+			lines = append(lines, kajicodeTheme.accent.Bold(true).Render(line))
 		}
 	}
-	return styledBlockFillTitle(width, title, lines, zeroTheme.accent, lipgloss.NewStyle())
+	return styledBlockFillTitle(width, title, lines, kajicodeTheme.accent, lipgloss.NewStyle())
 }
 
 // renderPlanCardRow renders the plan-step detail card with a deliberately
@@ -745,16 +745,16 @@ func renderPlanCardRow(text string, width int) string {
 			// The border + title already convey state; drop the structural
 			// "status: …" line entirely for the minimal card.
 		case isCommandCardHintLine(trimmed):
-			lines = append(lines, zeroTheme.faint.Render(line))
+			lines = append(lines, kajicodeTheme.faint.Render(line))
 		case isIndentedCommandCardRow(line):
 			lines = append(lines, styleCommandCardContentRow(line))
 		default:
 			// A section group header (What we did / Files changed …): soft grey,
 			// not the loud lime accent the command cards use.
-			lines = append(lines, zeroTheme.muted.Bold(true).Render(line))
+			lines = append(lines, kajicodeTheme.muted.Bold(true).Render(line))
 		}
 	}
-	return styledBlockFillTitleStyled(width, title, lines, zeroTheme.faintest, lipgloss.NewStyle(), planCardTitleStyle(title))
+	return styledBlockFillTitleStyled(width, title, lines, kajicodeTheme.faintest, lipgloss.NewStyle(), planCardTitleStyle(title))
 }
 
 // planCardTitleStyle tints the plan card's title by the step state encoded in its
@@ -763,13 +763,13 @@ func renderPlanCardRow(text string, width int) string {
 func planCardTitleStyle(title string) lipgloss.Style {
 	switch {
 	case strings.HasSuffix(title, "· done"):
-		return zeroTheme.green
+		return kajicodeTheme.green
 	case strings.HasSuffix(title, "· failed"):
-		return zeroTheme.red
+		return kajicodeTheme.red
 	case strings.HasSuffix(title, "· in progress"):
-		return zeroTheme.ink
+		return kajicodeTheme.ink
 	default: // · up next (pending)
-		return zeroTheme.faint
+		return kajicodeTheme.faint
 	}
 }
 
@@ -791,17 +791,17 @@ func styleCommandCardContentRow(line string) string {
 	// arg/alias syntax) stays bright and the prose dims.
 	if strings.HasPrefix(body, "/") {
 		if name, desc, ok := strings.Cut(body, " - "); ok {
-			return indent + zeroTheme.ink.Bold(true).Render(name) + zeroTheme.muted.Render(" — "+desc)
+			return indent + kajicodeTheme.ink.Bold(true).Render(name) + kajicodeTheme.muted.Render(" — "+desc)
 		}
-		return indent + zeroTheme.ink.Bold(true).Render(body)
+		return indent + kajicodeTheme.ink.Bold(true).Render(body)
 	}
 	// "- bullet" list item: keep it readable (not dim grey).
 	if strings.HasPrefix(body, "- ") {
-		return indent + zeroTheme.ink.Render(body)
+		return indent + kajicodeTheme.ink.Render(body)
 	}
 	// "key   value" field row: the value carries the information, so keep the
 	// whole row in readable ink rather than the old faint grey.
-	return indent + zeroTheme.ink.Render(body)
+	return indent + kajicodeTheme.ink.Render(body)
 }
 
 // isCommandCardStatusLine reports whether trimmed is a "status: <state>" line.
@@ -816,9 +816,9 @@ func styledCommandCardStatus(trimmed string) string {
 	state := strings.TrimSpace(strings.TrimPrefix(trimmed, "status:"))
 	switch state {
 	case "warning":
-		return zeroTheme.amber.Render(trimmed)
+		return kajicodeTheme.amber.Render(trimmed)
 	case "blocked":
-		return zeroTheme.red.Render(trimmed)
+		return kajicodeTheme.red.Render(trimmed)
 	default: // ok, info — no signal worth the line
 		return ""
 	}
@@ -841,20 +841,20 @@ func renderMCPManagerCard(text string, width int) string {
 		case trimmed == "":
 			lines = append(lines, "")
 		case index == 0:
-			lines = append(lines, zeroTheme.accent.Bold(true).Render(line))
+			lines = append(lines, kajicodeTheme.accent.Bold(true).Render(line))
 		case index == 1:
-			lines = append(lines, zeroTheme.ink.Bold(true).Render(line))
+			lines = append(lines, kajicodeTheme.ink.Bold(true).Render(line))
 		case isMCPManagerHeading(trimmed):
-			lines = append(lines, zeroTheme.accent.Bold(true).Render(line))
-		case strings.Contains(trimmed, "zero mcp "):
-			lines = append(lines, zeroTheme.ink.Render(line))
+			lines = append(lines, kajicodeTheme.accent.Bold(true).Render(line))
+		case strings.Contains(trimmed, "kajicode mcp "):
+			lines = append(lines, kajicodeTheme.ink.Render(line))
 		case strings.HasPrefix(trimmed, "›") || strings.HasPrefix(trimmed, "- "):
-			lines = append(lines, zeroTheme.ink.Render(line))
+			lines = append(lines, kajicodeTheme.ink.Render(line))
 		default:
-			lines = append(lines, zeroTheme.muted.Render(line))
+			lines = append(lines, kajicodeTheme.muted.Render(line))
 		}
 	}
-	return styledBlock(width, lines, zeroTheme.accent)
+	return styledBlock(width, lines, kajicodeTheme.accent)
 }
 
 func isMCPManagerHeading(value string) bool {
@@ -872,19 +872,19 @@ func renderCompactRunningCard(text string, width int) string {
 	for index, line := range raw {
 		switch index {
 		case 0:
-			lines = append(lines, zeroTheme.amber.Bold(true).Render(line))
+			lines = append(lines, kajicodeTheme.amber.Bold(true).Render(line))
 		case 1:
-			lines = append(lines, zeroTheme.muted.Render(line))
+			lines = append(lines, kajicodeTheme.muted.Render(line))
 		case 2:
-			lines = append(lines, zeroTheme.amber.Bold(true).Render(line))
+			lines = append(lines, kajicodeTheme.amber.Bold(true).Render(line))
 		default:
-			lines = append(lines, zeroTheme.faint.Render(line))
+			lines = append(lines, kajicodeTheme.faint.Render(line))
 		}
 		if index == 0 {
 			lines = append(lines, "")
 		}
 	}
-	return styledBlock(width, lines, zeroTheme.amber)
+	return styledBlock(width, lines, kajicodeTheme.amber)
 }
 
 func renderCompactCompleteCard(text string, width int) string {
@@ -893,17 +893,17 @@ func renderCompactCompleteCard(text string, width int) string {
 	for index, line := range raw {
 		switch index {
 		case 0:
-			lines = append(lines, zeroTheme.green.Bold(true).Render(line))
+			lines = append(lines, kajicodeTheme.green.Bold(true).Render(line))
 		case 1:
-			lines = append(lines, zeroTheme.ink.Render(line))
+			lines = append(lines, kajicodeTheme.ink.Render(line))
 		default:
-			lines = append(lines, zeroTheme.muted.Render(line))
+			lines = append(lines, kajicodeTheme.muted.Render(line))
 		}
 		if index == 0 {
 			lines = append(lines, "")
 		}
 	}
-	return styledBlock(width, lines, zeroTheme.green)
+	return styledBlock(width, lines, kajicodeTheme.green)
 }
 
 func renderDoctorRunningCard(text string, width int) string {
@@ -912,19 +912,19 @@ func renderDoctorRunningCard(text string, width int) string {
 	for index, line := range raw {
 		switch index {
 		case 0:
-			lines = append(lines, zeroTheme.accent.Bold(true).Render(line))
+			lines = append(lines, kajicodeTheme.accent.Bold(true).Render(line))
 		case 1:
-			lines = append(lines, zeroTheme.muted.Render(line))
+			lines = append(lines, kajicodeTheme.muted.Render(line))
 		case 2:
-			lines = append(lines, zeroTheme.accent.Bold(true).Render(line))
+			lines = append(lines, kajicodeTheme.accent.Bold(true).Render(line))
 		default:
-			lines = append(lines, zeroTheme.faint.Render(line))
+			lines = append(lines, kajicodeTheme.faint.Render(line))
 		}
 		if index == 0 {
 			lines = append(lines, "")
 		}
 	}
-	return styledBlock(width, lines, zeroTheme.accent)
+	return styledBlock(width, lines, kajicodeTheme.accent)
 }
 
 func renderDoctorResultCard(text string, width int) string {
@@ -939,21 +939,21 @@ func renderDoctorResultCard(text string, width int) string {
 		case strings.HasPrefix(trimmed, "status:"):
 			lines = append(lines, border.Render(line))
 		case isDoctorResultHeading(trimmed):
-			lines = append(lines, zeroTheme.accent.Bold(true).Render(line))
+			lines = append(lines, kajicodeTheme.accent.Bold(true).Render(line))
 		case strings.HasPrefix(trimmed, "- [pass]"):
-			lines = append(lines, zeroTheme.green.Render(line))
+			lines = append(lines, kajicodeTheme.green.Render(line))
 		case strings.HasPrefix(trimmed, "- [warn]"):
-			lines = append(lines, zeroTheme.amber.Render(line))
+			lines = append(lines, kajicodeTheme.amber.Render(line))
 		case strings.HasPrefix(trimmed, "- [fail]"):
-			lines = append(lines, zeroTheme.red.Render(line))
+			lines = append(lines, kajicodeTheme.red.Render(line))
 		case strings.HasPrefix(trimmed, "hint:"):
-			lines = append(lines, zeroTheme.faint.Render(line))
+			lines = append(lines, kajicodeTheme.faint.Render(line))
 		case strings.HasPrefix(trimmed, "/") ||
 			strings.HasPrefix(trimmed, "WSL2") ||
 			strings.HasPrefix(trimmed, "install "):
-			lines = append(lines, zeroTheme.ink.Render(line))
+			lines = append(lines, kajicodeTheme.ink.Render(line))
 		default:
-			lines = append(lines, zeroTheme.muted.Render(line))
+			lines = append(lines, kajicodeTheme.muted.Render(line))
 		}
 		if index == 0 {
 			lines = append(lines, "")
@@ -966,14 +966,14 @@ func doctorResultBorderStyle(text string) lipgloss.Style {
 	for _, line := range strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n") {
 		switch strings.TrimSpace(line) {
 		case "status: ok":
-			return zeroTheme.green
+			return kajicodeTheme.green
 		case "status: blocked":
-			return zeroTheme.red
+			return kajicodeTheme.red
 		case "status: warning":
-			return zeroTheme.amber
+			return kajicodeTheme.amber
 		}
 	}
-	return zeroTheme.accent
+	return kajicodeTheme.accent
 }
 
 func isDoctorResultHeading(value string) bool {
@@ -986,12 +986,12 @@ func isDoctorResultHeading(value string) bool {
 }
 
 func renderErrorRow(row transcriptRow, width int) string {
-	note := noteBox(row.text, width, zeroTheme.cardErr, zeroTheme.red)
+	note := noteBox(row.text, width, kajicodeTheme.cardErr, kajicodeTheme.red)
 	// A recognized failure carries a one-line next step. Render it just below the
 	// red box in the faint metadata style so it reads as guidance, not more error
 	// text (and to avoid nesting ANSI styles inside noteBox's per-line red wrap).
 	if hint := strings.TrimSpace(row.hint); hint != "" {
-		note += "\n" + fitStyledLine(zeroTheme.faint.Render("→ "+hint), width)
+		note += "\n" + fitStyledLine(kajicodeTheme.faint.Render("→ "+hint), width)
 	}
 	return note
 }
@@ -1007,7 +1007,7 @@ func noteBox(text string, width int, borderStyle lipgloss.Style, textStyle lipgl
 }
 
 func renderAskUserRow(row transcriptRow, width int) string {
-	line := fitStyledLine(zeroTheme.accent.Render("ask zero")+"  "+zeroTheme.ink.Render(strings.TrimPrefix(row.text, "ask_user: ")), width)
+	line := fitStyledLine(kajicodeTheme.accent.Render("ask KajiCode")+"  "+kajicodeTheme.ink.Render(strings.TrimPrefix(row.text, "ask_user: ")), width)
 	if detail := strings.TrimSpace(row.detail); detail != "" {
 		line += "\n" + wrapDetailBlock(detail, width)
 	}
@@ -1021,7 +1021,7 @@ func renderAskUserRow(row transcriptRow, width int) string {
 func renderPermissionRow(row transcriptRow, width int) string {
 	event := row.permission
 	if event == nil {
-		return zeroTheme.amber.Render("permission") + "  " + zeroTheme.ink.Render(row.text)
+		return kajicodeTheme.amber.Render("permission") + "  " + kajicodeTheme.ink.Render(row.text)
 	}
 
 	name := event.ToolName
@@ -1029,7 +1029,7 @@ func renderPermissionRow(row transcriptRow, width int) string {
 		name = row.tool
 	}
 	displayName := permissionToolDisplayName(name)
-	dot := zeroTheme.faintest.Render(" · ")
+	dot := kajicodeTheme.faintest.Render(" · ")
 
 	switch event.Action {
 	case agent.PermissionActionAllow:
@@ -1045,18 +1045,18 @@ func renderPermissionRow(row transcriptRow, width int) string {
 			event.Grant != nil || event.GrantMatched {
 			label = "always"
 		}
-		line := zeroTheme.green.Render(label) + dot + zeroTheme.green.Render(displayName)
+		line := kajicodeTheme.green.Render(label) + dot + kajicodeTheme.green.Render(displayName)
 		if scope := strings.TrimSpace(event.Scope); scope != "" {
-			line += dot + zeroTheme.muted.Render(permissionEventScopeLabel(event)+":"+scope)
+			line += dot + kajicodeTheme.muted.Render(permissionEventScopeLabel(event)+":"+scope)
 		}
 		return fitStyledLine(line, width)
 	case agent.PermissionActionDeny:
-		line := zeroTheme.red.Render("denied") + dot + zeroTheme.red.Render(displayName)
+		line := kajicodeTheme.red.Render("denied") + dot + kajicodeTheme.red.Render(displayName)
 		if scope := strings.TrimSpace(event.Scope); scope != "" {
-			line += dot + zeroTheme.muted.Render(permissionEventScopeLabel(event)+":"+scope)
+			line += dot + kajicodeTheme.muted.Render(permissionEventScopeLabel(event)+":"+scope)
 		}
 		if reason := permissionDisplayReason(event.Reason); reason != "" {
-			line += zeroTheme.faint.Render(" — " + truncateRunes(reason, maxInt(16, width-lipgloss.Width(displayName)-16)))
+			line += kajicodeTheme.faint.Render(" — " + truncateRunes(reason, maxInt(16, width-lipgloss.Width(displayName)-16)))
 		}
 		out := fitStyledLine(line, width)
 		if detail := strings.TrimSpace(row.detail); detail != "" {
@@ -1064,12 +1064,12 @@ func renderPermissionRow(row transcriptRow, width int) string {
 		}
 		return out
 	case agent.PermissionActionCancel:
-		line := zeroTheme.red.Render("cancelled") + dot + zeroTheme.red.Render(displayName)
+		line := kajicodeTheme.red.Render("cancelled") + dot + kajicodeTheme.red.Render(displayName)
 		if scope := strings.TrimSpace(event.Scope); scope != "" {
-			line += dot + zeroTheme.muted.Render(permissionEventScopeLabel(event)+":"+scope)
+			line += dot + kajicodeTheme.muted.Render(permissionEventScopeLabel(event)+":"+scope)
 		}
 		if reason := permissionDisplayReason(event.Reason); reason != "" {
-			line += zeroTheme.faint.Render(" — " + truncateRunes(reason, maxInt(16, width-lipgloss.Width(displayName)-16)))
+			line += kajicodeTheme.faint.Render(" — " + truncateRunes(reason, maxInt(16, width-lipgloss.Width(displayName)-16)))
 		}
 		out := fitStyledLine(line, width)
 		if detail := strings.TrimSpace(row.detail); detail != "" {
@@ -1077,9 +1077,9 @@ func renderPermissionRow(row transcriptRow, width int) string {
 		}
 		return out
 	default:
-		line := zeroTheme.amber.Render("permission") + "  " + zeroTheme.ink.Render(displayName) + "  " + zeroTheme.amber.Render("prompt")
+		line := kajicodeTheme.amber.Render("permission") + "  " + kajicodeTheme.ink.Render(displayName) + "  " + kajicodeTheme.amber.Render("prompt")
 		if scope := strings.TrimSpace(event.Scope); scope != "" {
-			line += "  " + zeroTheme.muted.Render(permissionEventScopeLabel(event)+":"+scope)
+			line += "  " + kajicodeTheme.muted.Render(permissionEventScopeLabel(event)+":"+scope)
 		}
 		out := fitStyledLine(line, width)
 		if detail := strings.TrimSpace(row.detail); detail != "" {
@@ -1094,7 +1094,7 @@ func renderPermissionRow(row transcriptRow, width int) string {
 func wrapDetailBlock(detail string, width int) string {
 	lines := wrapPlainText(detail, maxInt(16, width-2))
 	for index := range lines {
-		lines[index] = "  " + zeroTheme.muted.Render(lines[index])
+		lines[index] = "  " + kajicodeTheme.muted.Render(lines[index])
 	}
 	return strings.Join(lines, "\n")
 }
@@ -1107,24 +1107,24 @@ func renderFocusedPermissionPrompt(request agent.PermissionRequest, cursor int, 
 	if name == "" {
 		name = "tool"
 	}
-	fill := zeroTheme.onPerm
+	fill := kajicodeTheme.onPerm
 
-	top := zeroTheme.permBadge.Render(" PERMISSION ")
+	top := kajicodeTheme.permBadge.Render(" PERMISSION ")
 
-	body := fill(zeroTheme.amber).Bold(true).Render(name)
+	body := fill(kajicodeTheme.amber).Bold(true).Render(name)
 	if request.ToolName == tools.RequestPermissionsToolName {
-		body = fill(zeroTheme.amber).Bold(true).Render("Grant requested permissions?")
+		body = fill(kajicodeTheme.amber).Bold(true).Render("Grant requested permissions?")
 	} else if request.SideEffect != "" {
-		body += fill(zeroTheme.ink).Render("  " + request.SideEffect)
+		body += fill(kajicodeTheme.ink).Render("  " + request.SideEffect)
 	}
 	lines := []string{top, body}
 	if reason := permissionDisplayReason(request.Reason); reason != "" {
-		lines = append(lines, fill(zeroTheme.muted).Render(reason))
+		lines = append(lines, fill(kajicodeTheme.muted).Render(reason))
 	}
 	// Surface exactly what the grant covers (file/dir/host) so "always" is a
 	// clear, bounded choice rather than a blind tool-wide yes.
 	if scope := strings.TrimSpace(request.Scope); scope != "" {
-		lines = append(lines, fill(zeroTheme.muted).Render(permissionScopeLine(request, scope)))
+		lines = append(lines, fill(kajicodeTheme.muted).Render(permissionScopeLine(request, scope)))
 	}
 
 	lines = append(lines, "")
@@ -1139,14 +1139,14 @@ func renderFocusedPermissionPrompt(request agent.PermissionRequest, cursor int, 
 	offsets := make([]int, len(options))
 	for index, option := range options {
 		offsets[index] = 1 + len(lines)
-		hotkey := fill(zeroTheme.faint).Render(" [" + option.hotkey + "]")
+		hotkey := fill(kajicodeTheme.faint).Render(" [" + option.hotkey + "]")
 		optionLabel := permissionOptionLabel(option, request)
 		if index == cursor {
-			marker := fill(zeroTheme.accent).Render("▸ ")
-			label := zeroTheme.badge.Render(" " + optionLabel + " ")
+			marker := fill(kajicodeTheme.accent).Render("▸ ")
+			label := kajicodeTheme.badge.Render(" " + optionLabel + " ")
 			lines = append(lines, marker+label+hotkey)
 		} else {
-			label := fill(zeroTheme.ink).Render(optionLabel)
+			label := fill(kajicodeTheme.ink).Render(optionLabel)
 			lines = append(lines, "  "+label+hotkey)
 		}
 	}
@@ -1156,9 +1156,9 @@ func renderFocusedPermissionPrompt(request agent.PermissionRequest, cursor int, 
 	if request.ToolName == tools.RequestPermissionsToolName {
 		footer = "↑↓ move · enter or click to confirm · [esc] continue without permissions"
 	}
-	lines = append(lines, fill(zeroTheme.faint).Render(footer))
+	lines = append(lines, fill(kajicodeTheme.faint).Render(footer))
 
-	return styledBlockFill(width, lines, zeroTheme.permBorder, zeroTheme.permBg), offsets
+	return styledBlockFill(width, lines, kajicodeTheme.permBorder, kajicodeTheme.permBg), offsets
 }
 
 func permissionScopeLine(request agent.PermissionRequest, scope string) string {
@@ -1221,7 +1221,7 @@ func permissionOptionLabel(option permissionOption, request agent.PermissionRequ
 	case permissionDecisionDeny:
 		return "No, continue without running it"
 	case permissionDecisionCancel:
-		return "No, and tell Zero what to do differently"
+		return "No, and tell KajiCode what to do differently"
 	default:
 		return option.label
 	}
@@ -1241,7 +1241,7 @@ func permissionEventScopeLabel(event *agent.PermissionEvent) string {
 func renderAskUserQuestionnaire(prompt pendingAskUserPrompt, input string, width int) string {
 	questions := prompt.request.Questions
 	if len(questions) == 0 {
-		return styledBlockFill(width, []string{zeroTheme.badge.Render(" ASK ")}, zeroTheme.lineStrong, lipgloss.NewStyle())
+		return styledBlockFill(width, []string{kajicodeTheme.badge.Render(" ASK ")}, kajicodeTheme.lineStrong, lipgloss.NewStyle())
 	}
 	// The questionnaire replaces the composer, so it paints on the terminal canvas
 	// (black) like the composer box — not a gray card. fill is an identity wrapper
@@ -1259,7 +1259,7 @@ func renderAskUserQuestionnaire(prompt pendingAskUserPrompt, input string, width
 
 	var lines []string
 	if header := strings.TrimSpace(prompt.request.Header); header != "" {
-		lines = append(lines, fill(zeroTheme.ink).Render(header))
+		lines = append(lines, fill(kajicodeTheme.ink).Render(header))
 	}
 
 	// Tab row (only for multi-question prompts): each question's short title + a
@@ -1270,17 +1270,17 @@ func renderAskUserQuestionnaire(prompt pendingAskUserPrompt, input string, width
 			title := askUserTabTitle(question, index)
 			switch {
 			case index == active:
-				tabs = append(tabs, zeroTheme.badge.Render(" "+title+" "))
+				tabs = append(tabs, kajicodeTheme.badge.Render(" "+title+" "))
 			case prompt.states[index].answered:
-				tabs = append(tabs, fill(zeroTheme.muted).Render(" ✓ "+title+" "))
+				tabs = append(tabs, fill(kajicodeTheme.muted).Render(" ✓ "+title+" "))
 			default:
-				tabs = append(tabs, fill(zeroTheme.faint).Render(" "+title+" "))
+				tabs = append(tabs, fill(kajicodeTheme.faint).Render(" "+title+" "))
 			}
 		}
 		if active == confirm {
-			tabs = append(tabs, zeroTheme.badge.Render(" Confirm "))
+			tabs = append(tabs, kajicodeTheme.badge.Render(" Confirm "))
 		} else {
-			tabs = append(tabs, fill(zeroTheme.faint).Render(" Confirm "))
+			tabs = append(tabs, fill(kajicodeTheme.faint).Render(" Confirm "))
 		}
 		lines = append(lines, strings.Join(tabs, " "))
 	}
@@ -1288,24 +1288,24 @@ func renderAskUserQuestionnaire(prompt pendingAskUserPrompt, input string, width
 	// Confirm tab: a review of the collected answers.
 	if active == confirm {
 		lines = append(lines, "")
-		lines = append(lines, fill(zeroTheme.ink).Render("Review and submit:"))
+		lines = append(lines, fill(kajicodeTheme.ink).Render("Review and submit:"))
 		for index, question := range questions {
 			answer := strings.TrimSpace(prompt.states[index].answer)
-			rendered := fill(zeroTheme.ink).Render(answer)
+			rendered := fill(kajicodeTheme.ink).Render(answer)
 			if answer == "" {
-				rendered = fill(zeroTheme.faint).Render("(no answer)")
+				rendered = fill(kajicodeTheme.faint).Render("(no answer)")
 			}
-			lines = append(lines, "  "+fill(zeroTheme.muted).Render(askUserTabTitle(question, index)+": ")+rendered)
+			lines = append(lines, "  "+fill(kajicodeTheme.muted).Render(askUserTabTitle(question, index)+": ")+rendered)
 		}
 		lines = append(lines, "")
-		lines = append(lines, fill(zeroTheme.faint).Render("⇆ tab · enter submit · esc dismiss"))
-		return styledBlockFill(width, lines, zeroTheme.lineStrong, lipgloss.NewStyle())
+		lines = append(lines, fill(kajicodeTheme.faint).Render("⇆ tab · enter submit · esc dismiss"))
+		return styledBlockFill(width, lines, kajicodeTheme.lineStrong, lipgloss.NewStyle())
 	}
 
 	question := questions[active]
 	state := prompt.states[active]
 	lines = append(lines, "")
-	lines = append(lines, fill(zeroTheme.ink).Render(question.Question))
+	lines = append(lines, fill(kajicodeTheme.ink).Render(question.Question))
 
 	if len(question.Options) > 0 && !state.typing {
 		// Picker: numbered options (with optional descriptions) + a trailing "type
@@ -1319,34 +1319,34 @@ func renderAskUserQuestionnaire(prompt pendingAskUserPrompt, input string, width
 				label += "  (recommended)"
 			}
 			if index == cursor {
-				lines = append(lines, fill(zeroTheme.accent).Render("▸ ")+zeroTheme.badge.Render(" "+label+" "))
+				lines = append(lines, fill(kajicodeTheme.accent).Render("▸ ")+kajicodeTheme.badge.Render(" "+label+" "))
 			} else {
-				lines = append(lines, "  "+fill(zeroTheme.ink).Render(label))
+				lines = append(lines, "  "+fill(kajicodeTheme.ink).Render(label))
 			}
 			if index < len(question.OptionDescriptions) && strings.TrimSpace(question.OptionDescriptions[index]) != "" {
-				lines = append(lines, "     "+fill(zeroTheme.faint).Render(question.OptionDescriptions[index]))
+				lines = append(lines, "     "+fill(kajicodeTheme.faint).Render(question.OptionDescriptions[index]))
 			}
 		}
 		typeOwn := fmt.Sprintf("%d. %s", len(question.Options)+1, askUserTypeMyOwnLabel)
 		if cursor >= len(question.Options) {
-			lines = append(lines, fill(zeroTheme.accent).Render("▸ ")+zeroTheme.badge.Render(" "+typeOwn+" "))
+			lines = append(lines, fill(kajicodeTheme.accent).Render("▸ ")+kajicodeTheme.badge.Render(" "+typeOwn+" "))
 		} else {
-			lines = append(lines, "  "+fill(zeroTheme.muted).Render(typeOwn))
+			lines = append(lines, "  "+fill(kajicodeTheme.muted).Render(typeOwn))
 		}
 		lines = append(lines, "")
 		footer := "↑↓ select · enter confirm · esc dismiss"
 		if multi {
 			footer = "⇆ tab · ↑↓ select · enter confirm · esc dismiss"
 		}
-		lines = append(lines, fill(zeroTheme.faint).Render(footer))
-		return styledBlockFill(width, lines, zeroTheme.lineStrong, lipgloss.NewStyle())
+		lines = append(lines, fill(kajicodeTheme.faint).Render(footer))
+		return styledBlockFill(width, lines, kajicodeTheme.lineStrong, lipgloss.NewStyle())
 	}
 
 	// Free-text mode: the typed answer is echoed here (this region IS the input now).
 	if question.MultiSelect && len(question.Options) > 0 {
-		lines = append(lines, fill(zeroTheme.muted).Render("suggested: "+strings.Join(question.Options, ", ")))
+		lines = append(lines, fill(kajicodeTheme.muted).Render("suggested: "+strings.Join(question.Options, ", ")))
 	}
-	lines = append(lines, zeroTheme.userPrompt.Render("❯ ")+fill(zeroTheme.ink).Render(input)+fill(zeroTheme.accent).Render("▌"))
+	lines = append(lines, kajicodeTheme.userPrompt.Render("❯ ")+fill(kajicodeTheme.ink).Render(input)+fill(kajicodeTheme.accent).Render("▌"))
 	footer := "enter submit · esc dismiss"
 	switch {
 	case !question.MultiSelect && len(question.Options) > 0:
@@ -1354,8 +1354,8 @@ func renderAskUserQuestionnaire(prompt pendingAskUserPrompt, input string, width
 	case multi:
 		footer = "⇆ tab · enter submit · esc dismiss"
 	}
-	lines = append(lines, fill(zeroTheme.faint).Render(footer))
-	return styledBlockFill(width, lines, zeroTheme.lineStrong, lipgloss.NewStyle())
+	lines = append(lines, fill(kajicodeTheme.faint).Render(footer))
+	return styledBlockFill(width, lines, kajicodeTheme.lineStrong, lipgloss.NewStyle())
 }
 
 // --- Tool cards -------------------------------------------------------------
@@ -1378,9 +1378,9 @@ type cardBody struct {
 // orphans (cancelled/errored turns, rehydrated history) — keying off the
 // global pending flag alone would re-animate dead cards on every later run.
 func (m model) renderRunningToolCard(row transcriptRow, width int, rc rowContext, opts cardRenderOptions) string {
-	glyph := zeroTheme.faintest.Render("…")
+	glyph := kajicodeTheme.faintest.Render("…")
 	if m.pending && row.runID != 0 && row.runID == m.activeRunID {
-		glyph = zeroTheme.accent.Render(m.spinnerGlyph())
+		glyph = kajicodeTheme.accent.Render(m.spinnerGlyph())
 	}
 	// The call row carries its own argHints; rc.hints/args only matter for
 	// result rows, whose detail is the tool output.
@@ -1394,25 +1394,25 @@ func (m model) renderRunningToolCard(row transcriptRow, width int, rc rowContext
 	}
 	// Running cards keep the normal name color; the accent spinner glyph at the
 	// front already marks them live (and orphaned dead cards must not look active).
-	head := toolCardHead(toolRowName(row), hint, arg, "", "", "", true, zeroTheme.ink, rc.auto[rcKey(row.runID, row.id)], width, opts)
-	return toolCard(head, glyph, nil, "", zeroTheme.cardRun, width)
+	head := toolCardHead(toolRowName(row), hint, arg, "", "", "", true, kajicodeTheme.ink, rc.auto[rcKey(row.runID, row.id)], width, opts)
+	return toolCard(head, glyph, nil, "", kajicodeTheme.cardRun, width)
 }
 
 func renderToolResultCard(row transcriptRow, width int, rc rowContext, opts cardRenderOptions) string {
 	name := toolRowName(row)
 	failed := row.status == tools.StatusError
-	glyph := zeroTheme.green.Render("•")
-	nameStyle := zeroTheme.green
-	borderStyle := zeroTheme.line
+	glyph := kajicodeTheme.green.Render("•")
+	nameStyle := kajicodeTheme.green
+	borderStyle := kajicodeTheme.line
 	if opts.fileSelected {
 		// The selected FILES row's edit card: accent border, same as the
 		// sidebar's ▸ marker, so click → highlight reads as one gesture.
-		borderStyle = zeroTheme.accent
+		borderStyle = kajicodeTheme.accent
 	}
 	if failed {
-		glyph = zeroTheme.red.Render("•")
-		nameStyle = zeroTheme.red
-		borderStyle = zeroTheme.cardErr
+		glyph = kajicodeTheme.red.Render("•")
+		nameStyle = kajicodeTheme.red
+		borderStyle = kajicodeTheme.cardErr
 	}
 	key := rcKey(row.runID, row.id)
 	headTarget := rc.hints[key]
@@ -1766,7 +1766,7 @@ func toolCardHead(name string, target string, arg string, headTag string, detail
 		if looksLikePath(target) {
 			shown = displayPath(opts.cwd, target)
 		}
-		styled := zeroTheme.toolTarget.Render(middleTruncate(shown, maxInt(16, width/2)))
+		styled := kajicodeTheme.toolTarget.Render(middleTruncate(shown, maxInt(16, width/2)))
 		if looksLikePath(target) {
 			styled = hyperlink(fileURL(opts.cwd, target), styled)
 		}
@@ -1774,13 +1774,13 @@ func toolCardHead(name string, target string, arg string, headTag string, detail
 	}
 	// The arg column is the first thing the width tiers drop (below 100 cols).
 	if arg = singleLineToolHeadText(arg); arg != "" && widthTier(width) == tierFull {
-		head += "  " + zeroTheme.toolArg.Render(truncateRunes(arg, maxInt(12, width/3)))
+		head += "  " + kajicodeTheme.toolArg.Render(truncateRunes(arg, maxInt(12, width/3)))
 	}
 	if headTag != "" {
 		if strings.Contains(headTag, "\x1b") {
 			head += "  " + headTag
 		} else {
-			head += "  " + zeroTheme.faint.Render(headTag)
+			head += "  " + kajicodeTheme.faint.Render(headTag)
 		}
 	}
 	_ = auto // the permission mode is shown in the composer divider; a per-card [auto] badge is redundant noise
@@ -1865,14 +1865,14 @@ func capCardLines(lines []string, cap int) []string {
 	}
 	hidden := len(lines) - cap
 	lines = lines[:cap]
-	return append(lines, zeroTheme.faint.Render(fmt.Sprintf("… %d more lines", hidden)))
+	return append(lines, kajicodeTheme.faint.Render(fmt.Sprintf("… %d more lines", hidden)))
 }
 
 func genericCardBody(detail string, opts cardRenderOptions) cardBody {
 	raw := strings.Split(detail, "\n")
 	lines := make([]string, 0, len(raw))
 	for _, line := range raw {
-		lines = append(lines, zeroTheme.muted.Render(line))
+		lines = append(lines, kajicodeTheme.muted.Render(line))
 	}
 	return cardBody{lines: capCardLines(lines, opts.bodyCap)}
 }
@@ -1915,11 +1915,11 @@ func diffCountTag(adds int, dels int) string {
 	if adds == 0 && dels == 0 {
 		return ""
 	}
-	return zeroTheme.faint.Render("(") +
-		zeroTheme.diffAdd.Render(fmt.Sprintf("+%d", adds)) +
-		zeroTheme.faint.Render(" ") +
-		zeroTheme.diffDel.Render(fmt.Sprintf("-%d", dels)) +
-		zeroTheme.faint.Render(")")
+	return kajicodeTheme.faint.Render("(") +
+		kajicodeTheme.diffAdd.Render(fmt.Sprintf("+%d", adds)) +
+		kajicodeTheme.faint.Render(" ") +
+		kajicodeTheme.diffDel.Render(fmt.Sprintf("-%d", dels)) +
+		kajicodeTheme.faint.Render(")")
 }
 
 func (meta diffMetadata) addOnly() bool {
@@ -1962,7 +1962,7 @@ func diffCardBody(detail string, width int, opts cardRenderOptions) cardBody {
 			// Preamble ("diff --git", "index …", a stray "stdout:") and the
 			// "\ No newline at end of file" marker are not content lines: no
 			// gutter number, and the hunk counters must not advance.
-			lines = append(lines, zeroTheme.diffMeta.Render(truncateRunes(line, innerWidth)))
+			lines = append(lines, kajicodeTheme.diffMeta.Render(truncateRunes(line, innerWidth)))
 		case strings.HasPrefix(line, "+"):
 			text := truncateRunes(strings.TrimPrefix(line, "+"), textBudget)
 			if len(highlightedAdds) == meta.adds && highlightAddIndex < len(highlightedAdds) {
@@ -1992,9 +1992,9 @@ func diffCardBody(detail string, width int, opts cardRenderOptions) cardBody {
 			oldLine++
 		default:
 			text := truncateRunes(strings.TrimPrefix(line, " "), textBudget)
-			row := "   " + zeroTheme.muted.Render(text)
+			row := "   " + kajicodeTheme.muted.Render(text)
 			if gutter {
-				row = zeroTheme.faintest.Render(fmt.Sprintf("%4d", newLine)) + row
+				row = kajicodeTheme.faintest.Render(fmt.Sprintf("%4d", newLine)) + row
 			}
 			lines = append(lines, row)
 			oldLine++
@@ -2017,7 +2017,7 @@ func highlightedAddedDiffLines(rawLines []string, meta diffMetadata, textBudget 
 	if len(content) == 0 {
 		return nil
 	}
-	highlighted, ok := highlightCodeForPath(content, meta.path, textBudget, zeroTheme.addLine.GetBackground())
+	highlighted, ok := highlightCodeForPath(content, meta.path, textBudget, kajicodeTheme.addLine.GetBackground())
 	if !ok || len(highlighted) != len(content) {
 		return nil
 	}
@@ -2035,21 +2035,21 @@ func diffBodyLine(number int, sign string, text string, added bool, textBudget i
 	if gutter {
 		num := fmt.Sprintf("%4d", number)
 		if added {
-			numCol = zeroTheme.addLineNum.Render(num)
+			numCol = kajicodeTheme.addLineNum.Render(num)
 		} else {
-			numCol = zeroTheme.delLineNum.Render(num)
+			numCol = kajicodeTheme.delLineNum.Render(num)
 		}
 	}
 	if added {
-		return numCol + zeroTheme.addSign.Render(" "+sign+" ") + zeroTheme.addLine.Render(text)
+		return numCol + kajicodeTheme.addSign.Render(" "+sign+" ") + kajicodeTheme.addLine.Render(text)
 	}
-	return numCol + zeroTheme.delSign.Render(" "+sign+" ") + zeroTheme.delLine.Render(text)
+	return numCol + kajicodeTheme.delSign.Render(" "+sign+" ") + kajicodeTheme.delLine.Render(text)
 }
 
 func diffBodyStyledLine(number int, sign string, styledText string, added bool, textBudget int, gutter bool) string {
-	lineStyle, signStyle, numStyle := zeroTheme.delLine, zeroTheme.delSign, zeroTheme.delLineNum
+	lineStyle, signStyle, numStyle := kajicodeTheme.delLine, kajicodeTheme.delSign, kajicodeTheme.delLineNum
 	if added {
-		lineStyle, signStyle, numStyle = zeroTheme.addLine, zeroTheme.addSign, zeroTheme.addLineNum
+		lineStyle, signStyle, numStyle = kajicodeTheme.addLine, kajicodeTheme.addSign, kajicodeTheme.addLineNum
 	}
 	if pad := textBudget - lipgloss.Width(styledText); pad > 0 {
 		styledText += lineStyle.Render(strings.Repeat(" ", pad))
@@ -2130,9 +2130,9 @@ func diffBodyLineSpanned(number int, sign string, text []rune, added bool, spanS
 	if spanEnd < spanStart {
 		spanEnd = spanStart
 	}
-	lineStyle, wordStyle, signStyle, numStyle := zeroTheme.delLine, zeroTheme.delLineWord, zeroTheme.delSign, zeroTheme.delLineNum
+	lineStyle, wordStyle, signStyle, numStyle := kajicodeTheme.delLine, kajicodeTheme.delLineWord, kajicodeTheme.delSign, kajicodeTheme.delLineNum
 	if added {
-		lineStyle, wordStyle, signStyle, numStyle = zeroTheme.addLine, zeroTheme.addLineWord, zeroTheme.addSign, zeroTheme.addLineNum
+		lineStyle, wordStyle, signStyle, numStyle = kajicodeTheme.addLine, kajicodeTheme.addLineWord, kajicodeTheme.addSign, kajicodeTheme.addLineNum
 	}
 	pre := string(text[:spanStart])
 	mid := string(text[spanStart:spanEnd])
@@ -2156,7 +2156,7 @@ func exploreCardBody(name string, hint string, arg string, detail string, width 
 	if !opts.expanded && opts.bodyCap > 0 {
 		footer := ""
 		if strings.TrimSpace(detail) != "" {
-			footer = zeroTheme.faint.Render("▸ details")
+			footer = kajicodeTheme.faint.Render("▸ details")
 		}
 		return cardBody{lines: []string{summary}, footer: footer}
 	}
@@ -2164,7 +2164,7 @@ func exploreCardBody(name string, hint string, arg string, detail string, width 
 	lines := append([]string{summary}, body.lines...)
 	footer := body.footer
 	if opts.expanded && opts.bodyCap > 0 && footer == "" {
-		footer = zeroTheme.faint.Render("▾ collapse")
+		footer = kajicodeTheme.faint.Render("▾ collapse")
 	}
 	return cardBody{lines: lines, footer: footer}
 }
@@ -2184,14 +2184,14 @@ func exploreCardLine(name string, hint string, arg string, detail string, width 
 	}
 	action := exploreChildAction(name)
 	target := exploreTarget(name, hint, arg, detail)
-	line := zeroTheme.faint.Render("  "+marker+" ") + zeroTheme.green.Render(action)
+	line := kajicodeTheme.faint.Render("  "+marker+" ") + kajicodeTheme.green.Render(action)
 	if target != "" {
 		shown := target
 		isPath := exploreTargetLooksLikePath(name, target)
 		if isPath {
 			shown = displayPath(opts.cwd, target)
 		}
-		styled := zeroTheme.toolTarget.Render(middleTruncate(shown, maxInt(8, width-lipgloss.Width(action)-6)))
+		styled := kajicodeTheme.toolTarget.Render(middleTruncate(shown, maxInt(8, width-lipgloss.Width(action)-6)))
 		if isPath {
 			styled = hyperlink(fileURL(opts.cwd, target), styled)
 		}
@@ -2280,7 +2280,7 @@ func localControlCardBody(name string, hint string, detail string, width int, op
 func localControlChildLine(text string, width int) string {
 	prefix := "  └ "
 	budget := maxInt(8, width-lipgloss.Width(prefix))
-	return zeroTheme.faint.Render(prefix) + zeroTheme.muted.Render(truncateDisplayWidth(text, budget))
+	return kajicodeTheme.faint.Render(prefix) + kajicodeTheme.muted.Render(truncateDisplayWidth(text, budget))
 }
 
 func browserOpenSummary(detail string, target string) string {
@@ -2340,12 +2340,12 @@ func bashCardBody(command string, detail string, width int, opts cardRenderOptio
 		case strings.HasPrefix(line, "exit_code: "):
 			code := strings.TrimPrefix(line, "exit_code: ")
 			if code != "0" {
-				footer = zeroTheme.red.Render("exit " + code)
+				footer = kajicodeTheme.red.Render("exit " + code)
 			}
 		default:
-			style := zeroTheme.muted
+			style := kajicodeTheme.muted
 			if section == "stderr" {
-				style = zeroTheme.delText
+				style = kajicodeTheme.delText
 			}
 			output = append(output, commandOutputLine{text: line, style: style})
 		}
@@ -2365,24 +2365,24 @@ func execCommandCardBody(command string, detail string, width int, opts cardRend
 			section = "output"
 		case line == "interrupted: true":
 			interrupted = true
-			footer = zeroTheme.green.Render("interrupted")
+			footer = kajicodeTheme.green.Render("interrupted")
 		case strings.HasPrefix(line, "exit_code: "):
 			code := strings.TrimPrefix(line, "exit_code: ")
 			if code == "0" {
 				// Successful completion is already visible from the green status dot.
 			} else if interrupted {
-				footer = zeroTheme.green.Render("interrupted")
+				footer = kajicodeTheme.green.Render("interrupted")
 			} else {
-				footer = zeroTheme.red.Render("exit " + code)
+				footer = kajicodeTheme.red.Render("exit " + code)
 			}
 		case strings.HasPrefix(line, "session_id: "):
-			footer = zeroTheme.faint.Render("session " + strings.TrimSpace(strings.TrimPrefix(line, "session_id: ")))
+			footer = kajicodeTheme.faint.Render("session " + strings.TrimSpace(strings.TrimPrefix(line, "session_id: ")))
 		case strings.HasPrefix(line, "Use write_stdin "):
 			continue
 		default:
-			style := zeroTheme.muted
+			style := kajicodeTheme.muted
 			if section == "" && strings.HasPrefix(line, "Command is still running.") {
-				style = zeroTheme.faint
+				style = kajicodeTheme.faint
 			}
 			output = append(output, commandOutputLine{text: line, style: style})
 		}
@@ -2406,7 +2406,7 @@ func renderCommandOutputLines(output []commandOutputLine, width int, opts cardRe
 		prefix := "  └ "
 		budget := maxInt(8, width-lipgloss.Width(prefix))
 		text := truncateDisplayWidth(output[0].text, budget)
-		return capCardLines([]string{zeroTheme.faint.Render(prefix) + output[0].style.Render(text)}, opts.bodyCap)
+		return capCardLines([]string{kajicodeTheme.faint.Render(prefix) + output[0].style.Render(text)}, opts.bodyCap)
 	}
 
 	lines := make([]string, 0, len(output))
@@ -2414,7 +2414,7 @@ func renderCommandOutputLines(output []commandOutputLine, width int, opts cardRe
 	budget := maxInt(8, width-lipgloss.Width(prefix))
 	for _, item := range output {
 		text := truncateDisplayWidth(item.text, budget)
-		lines = append(lines, zeroTheme.faint.Render(prefix)+item.style.Render(text))
+		lines = append(lines, kajicodeTheme.faint.Render(prefix)+item.style.Render(text))
 	}
 	return capCardLines(lines, opts.bodyCap)
 }
@@ -2449,22 +2449,22 @@ func renderSessionsCards(payload string, width int) string {
 	for _, record := range strings.Split(payload, "\n") {
 		fields := strings.Split(record, sessionsCardFieldSep)
 		if len(fields) < 4 {
-			blocks = append(blocks, fitStyledLine(zeroTheme.faint.Render(record), width))
+			blocks = append(blocks, fitStyledLine(kajicodeTheme.faint.Render(record), width))
 			continue
 		}
 		id, age, title, meta := fields[0], fields[1], fields[2], fields[3]
 		innerWidth := width - 4
-		top := joinHeaderLine(zeroTheme.onPanel(zeroTheme.accent).Render(id), zeroTheme.onPanel(zeroTheme.faint).Render(age), innerWidth)
+		top := joinHeaderLine(kajicodeTheme.onPanel(kajicodeTheme.accent).Render(id), kajicodeTheme.onPanel(kajicodeTheme.faint).Render(age), innerWidth)
 		metaParts := strings.Split(meta, " · ")
 		for index := range metaParts {
-			metaParts[index] = zeroTheme.onPanel(zeroTheme.faint).Render(metaParts[index])
+			metaParts[index] = kajicodeTheme.onPanel(kajicodeTheme.faint).Render(metaParts[index])
 		}
 		lines := []string{
 			top,
-			zeroTheme.onPanel(zeroTheme.ink).Render(title),
-			strings.Join(metaParts, zeroTheme.onPanel(zeroTheme.faintest).Render(" · ")),
+			kajicodeTheme.onPanel(kajicodeTheme.ink).Render(title),
+			strings.Join(metaParts, kajicodeTheme.onPanel(kajicodeTheme.faintest).Render(" · ")),
 		}
-		blocks = append(blocks, styledBlockFill(width, lines, zeroTheme.line, zeroTheme.panel))
+		blocks = append(blocks, styledBlockFill(width, lines, kajicodeTheme.line, kajicodeTheme.panel))
 	}
 	return strings.Join(blocks, "\n")
 }
@@ -2480,20 +2480,20 @@ func grepCardBody(detail string, width int, opts cardRenderOptions) cardBody {
 	for _, line := range raw {
 		if match := grepMatchPattern.FindStringSubmatch(line); match != nil {
 			matches++
-			location := zeroTheme.grepLoc.Render(match[1])
+			location := kajicodeTheme.grepLoc.Render(match[1])
 			// match[1] is "path:line" — link the file so a hit is one click away.
 			if path, _, ok := strings.Cut(match[1], ":"); ok && path != "" {
 				location = hyperlink(fileURL(opts.cwd, path), location)
 			}
 			budget := maxInt(8, innerWidth-lipgloss.Width(match[1])-2)
-			lines = append(lines, location+"  "+zeroTheme.muted.Render(truncateDisplayWidth(match[2], budget)))
+			lines = append(lines, location+"  "+kajicodeTheme.muted.Render(truncateDisplayWidth(match[2], budget)))
 			continue
 		}
-		lines = append(lines, zeroTheme.muted.Render(line))
+		lines = append(lines, kajicodeTheme.muted.Render(line))
 	}
 	footer := ""
 	if matches > 0 {
-		footer = zeroTheme.faint.Render(fmt.Sprintf("%d matches", matches))
+		footer = kajicodeTheme.faint.Render(fmt.Sprintf("%d matches", matches))
 	}
 	return cardBody{lines: capCardLines(lines, opts.bodyCap), footer: footer}
 }

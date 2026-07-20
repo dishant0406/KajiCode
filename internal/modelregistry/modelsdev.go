@@ -138,17 +138,17 @@ func applyModelsDevOverrides(entries []ModelEntry, providers map[string]map[stri
 	return entries
 }
 
-// modelsDevCachePath returns the on-disk cache location. ZERO_MODELS_CACHE_PATH
+// modelsDevCachePath returns the on-disk cache location. KAJICODE_MODELS_CACHE_PATH
 // overrides it (used by tests and unusual setups).
 func modelsDevCachePath() (string, error) {
-	if override := strings.TrimSpace(os.Getenv("ZERO_MODELS_CACHE_PATH")); override != "" {
+	if override := strings.TrimSpace(os.Getenv("KAJICODE_MODELS_CACHE_PATH")); override != "" {
 		return override, nil
 	}
 	base, err := os.UserCacheDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(base, "zero", "modelsdev.json"), nil
+	return filepath.Join(base, "kajicode", "modelsdev.json"), nil
 }
 
 var (
@@ -161,7 +161,7 @@ var (
 // snapshot on top of the curated catalog. The CLI entrypoint calls it; library
 // consumers and tests that never do get the curated catalog byte-identical to
 // before, so hermetic tests can't be perturbed by a cache file on the machine.
-// ZERO_DISABLE_MODELS_FETCH disables both the overlay and the fetch.
+// KAJICODE_DISABLE_MODELS_FETCH disables both the overlay and the fetch.
 func EnableModelsDevOverlay() {
 	modelsDevEnabled.Store(true)
 }
@@ -172,7 +172,7 @@ func EnableModelsDevOverlay() {
 // DefaultRegistry is called on hot paths (pickers, cost views) and must not
 // re-stat the file every time; a background refresh benefits the NEXT process.
 func cachedModelsDevProviders() map[string]map[string]modelsDevModel {
-	if !modelsDevEnabled.Load() || strings.TrimSpace(os.Getenv("ZERO_DISABLE_MODELS_FETCH")) != "" {
+	if !modelsDevEnabled.Load() || strings.TrimSpace(os.Getenv("KAJICODE_DISABLE_MODELS_FETCH")) != "" {
 		return nil
 	}
 	modelsDevOnce.Do(func() {
@@ -209,9 +209,9 @@ func resetModelsDevCacheForTest() {
 // when the cache is missing or older than modelsDevRefreshAfter. It is safe to
 // call fire-and-forget from startup (use a goroutine); it never affects the
 // current process's registry (see cachedModelsDevProviders). Disabled entirely
-// by ZERO_DISABLE_MODELS_FETCH. The URL can be overridden with ZERO_MODELS_URL.
+// by KAJICODE_DISABLE_MODELS_FETCH. The URL can be overridden with KAJICODE_MODELS_URL.
 func RefreshModelsDevCache(ctx context.Context) error {
-	if strings.TrimSpace(os.Getenv("ZERO_DISABLE_MODELS_FETCH")) != "" {
+	if strings.TrimSpace(os.Getenv("KAJICODE_DISABLE_MODELS_FETCH")) != "" {
 		return nil
 	}
 	path, err := modelsDevCachePath()
@@ -222,7 +222,7 @@ func RefreshModelsDevCache(ctx context.Context) error {
 		return nil
 	}
 
-	url := strings.TrimSpace(os.Getenv("ZERO_MODELS_URL"))
+	url := strings.TrimSpace(os.Getenv("KAJICODE_MODELS_URL"))
 	if url == "" {
 		url = modelsDevDefaultURL
 	}
@@ -232,7 +232,7 @@ func RefreshModelsDevCache(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	request.Header.Set("User-Agent", "zero-models-refresh/0.1")
+	request.Header.Set("User-Agent", "kajicode-models-refresh/0.1")
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {
 		return err

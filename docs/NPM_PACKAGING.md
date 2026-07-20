@@ -1,19 +1,19 @@
 # npm packaging
 
-How `@gitlawb/zero` is put together on npm, why it is shaped this way, and the
+How `@dishant0406/kajicode` is put together on npm, why it is shaped this way, and the
 rules the release pipeline must follow. Read this before touching
-`package.json`, `bin/zero.js`, `scripts/postinstall.mjs`,
+`package.json`, `bin/kajicode.js`, `scripts/postinstall.mjs`,
 `scripts/npm/build-platform-packages.mjs`, or the npm-publish steps of
 `release-artifacts.yml`.
 
 ## Goals
 
-A `npm install -g @gitlawb/zero` must be **silent and self-contained**:
+A `npm install -g @dishant0406/kajicode` must be **silent and self-contained**:
 
 - No `EBADENGINE` warnings — ours or from any package in the dependency tree.
 - No install scripts anywhere in the tree, so npm's `allow-scripts` gating,
   Bun's blocked-by-default lifecycle scripts, and pnpm's strict mode all
-  install zero without prompts, trust ceremonies, or broken binaries.
+  install KajiCode without prompts, trust ceremonies, or broken binaries.
 - No network fetches outside the npm registry at install time. GitHub being
   down or rate-limited must not break `npm install`.
 - Browser control (`agent-browser`) and terminal control (`tuistory`) work out
@@ -25,24 +25,24 @@ The model is the one used by Codex, esbuild, and Biome: a tiny wrapper package
 plus per-platform payloads carrying the native binaries.
 
 ```
-@gitlawb/zero                    <- wrapper: bin/zero.js + optionalDependencies
-├─ @gitlawb/zero-darwin-arm64 -> npm:@gitlawb/zero@{version}-darwin-arm64
-├─ @gitlawb/zero-darwin-x64   -> npm:@gitlawb/zero@{version}-darwin-x64
-├─ @gitlawb/zero-linux-arm64  -> npm:@gitlawb/zero@{version}-linux-arm64
-├─ @gitlawb/zero-linux-x64    -> npm:@gitlawb/zero@{version}-linux-x64
-└─ @gitlawb/zero-win32-x64    -> npm:@gitlawb/zero@{version}-win32-x64
+@dishant0406/kajicode                    <- wrapper: bin/kajicode.js + optionalDependencies
+├─ @dishant0406/kajicode-darwin-arm64 -> npm:@dishant0406/kajicode@{version}-darwin-arm64
+├─ @dishant0406/kajicode-darwin-x64   -> npm:@dishant0406/kajicode@{version}-darwin-x64
+├─ @dishant0406/kajicode-linux-arm64  -> npm:@dishant0406/kajicode@{version}-linux-arm64
+├─ @dishant0406/kajicode-linux-x64    -> npm:@dishant0406/kajicode@{version}-linux-x64
+└─ @dishant0406/kajicode-win32-x64    -> npm:@dishant0406/kajicode@{version}-win32-x64
 ```
 
-- The platform "packages" are **versions of the same `@gitlawb/zero` package**,
+- The platform "packages" are **versions of the same `@dishant0406/kajicode` package**,
   published at suffixed versions (`0.4.0-linux-x64`) and referenced through
   `npm:` aliases in `optionalDependencies`. One package name means one npm
   trusted-publisher configuration — no new publish credentials per platform.
   The alias suffixes use Node's `process.platform`/`process.arch` names so
-  `bin/zero.js` can derive its platform package directly.
+  `bin/kajicode.js` can derive its platform package directly.
 - Each platform version sets `os` and `cpu`, so npm installs exactly one of
   them and skips the rest.
 - A platform payload is assembled from the platform's release archive by
-  `scripts/npm/build-platform-packages.mjs` and contains the `zero` binary,
+  `scripts/npm/build-platform-packages.mjs` and contains the `kajicode` binary,
   the platform's sandbox helpers, and the vendored `helpers/` tree (see
   below). It has no `bin`, no scripts, and no dependencies — it is inert on
   its own; the wrapper execs the binary out of it.
@@ -54,9 +54,9 @@ plus per-platform payloads carrying the native binaries.
 - There is **no windows-arm64 build** (matches the release matrix); Windows on
   ARM runs the x64 build under emulation via the first-run fallback.
 
-### Binary resolution in `bin/zero.js`
+### Binary resolution in `bin/kajicode.js`
 
-1. Resolve `@gitlawb/zero-<platform>-<arch>` and exec the `zero` binary from
+1. Resolve `@dishant0406/kajicode-<platform>-<arch>` and exec the `kajicode` binary from
    it. This wins over any previously downloaded copy — the platform version is
    pinned to the wrapper release.
 2. Fall back to a binary previously downloaded next to the wrapper.
@@ -84,7 +84,7 @@ dependencies of the wrapper:
   and postinstall script produce `EBADENGINE` and `allow-scripts` warnings for
   every installer. As a vendored tree it produces none, because npm never
   resolves it.
-- `zero-release package` already stages the helpers tree into every release
+- `kajicode-release package` already stages the helpers tree into every release
   archive (`stageLocalControlHelpers` runs `npm ci` from the repo's
   `package.json` pins + lockfile on the native builder). The assembly script
   reuses that staged tree, so npm installs and `install.sh` installs get
@@ -129,9 +129,9 @@ one is user-visible immediately.
    payloads are versions of the same package, they reuse the single
    trusted-publisher configuration.
 
-`zero update` keeps working unchanged: it detects an npm install by finding a
-`package.json` named `@gitlawb/zero` next to the running binary — true inside
-a platform payload too — and updates via `npm install -g @gitlawb/zero@latest`.
+`kajicode update` keeps working unchanged: it detects an npm install by finding a
+`package.json` named `@dishant0406/kajicode` next to the running binary — true inside
+a platform payload too — and updates via `npm install -g @dishant0406/kajicode@latest`.
 
 ## Runbook: bumping the vendored helpers
 
@@ -144,7 +144,7 @@ lockfile pinned at build time.
   repo to update pin + lockfile, verify the browser/terminal tools end-to-end,
   ship with the next release.
 - Security response: if a vendored helper publishes a security fix, the bump
-  is release-worthy on its own — cut a patch release of zero carrying only the
+  is release-worthy on its own — cut a patch release of KajiCode carrying only the
   pin change.
 - Attribution: agent-browser is Apache-2.0; its LICENSE ships inside the
   vendored package directory (`helpers/node_modules/agent-browser/`), which

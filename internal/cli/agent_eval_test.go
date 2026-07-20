@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/agenteval"
+	"github.com/dishant0406/KajiCode/internal/agenteval"
 )
 
 func TestRunEvalHelpIsListed(t *testing.T) {
@@ -110,11 +110,11 @@ func TestRunEvalRunJSONModePassesRunnerOptions(t *testing.T) {
 		"eval", "run",
 		"--suite", "evals/context.json",
 		"--task", "edit-reader",
-		"--workspace", "D:\\work\\zero-fixture",
+		"--workspace", "D:\\work\\kajicode-fixture",
 		"--json",
 	}, &stdout, &stderr, appDeps{
 		runAgentEval: func(ctx context.Context, options agentEvalOptions) (agentEvalReport, error) {
-			if options.Mode != "run" || options.SuitePath != "evals/context.json" || options.TaskID != "edit-reader" || options.WorkspacePath != "D:\\work\\zero-fixture" || !options.JSON {
+			if options.Mode != "run" || options.SuitePath != "evals/context.json" || options.TaskID != "edit-reader" || options.WorkspacePath != "D:\\work\\kajicode-fixture" || !options.JSON {
 				t.Fatalf("unexpected eval run options: %#v", options)
 			}
 			return agentEvalReport{
@@ -151,16 +151,16 @@ func TestRunEvalBenchJSONModePassesHarnessOptions(t *testing.T) {
 		"eval", "bench",
 		"--suite", "evals/context.json",
 		"--task", "edit-reader",
-		"--work-root", "D:\\tmp\\zero-evals",
+		"--work-root", "D:\\tmp\\kajicode-evals",
 		"--json",
-		"--agent-command", "zero", "exec", "{prompt}",
+		"--agent-command", "kajicode", "exec", "{prompt}",
 	}, &stdout, &stderr, appDeps{
 		runAgentEval: func(ctx context.Context, options agentEvalOptions) (agentEvalReport, error) {
-			if options.Mode != "bench" || options.SuitePath != "evals/context.json" || options.TaskID != "edit-reader" || options.WorkRoot != "D:\\tmp\\zero-evals" || !options.JSON {
+			if options.Mode != "bench" || options.SuitePath != "evals/context.json" || options.TaskID != "edit-reader" || options.WorkRoot != "D:\\tmp\\kajicode-evals" || !options.JSON {
 				t.Fatalf("unexpected eval bench options: %#v", options)
 			}
-			if got, want := strings.Join(options.AgentCommand, "\x00"), strings.Join([]string{"zero", "exec", "{prompt}"}, "\x00"); got != want {
-				t.Fatalf("agent command = %#v, want zero exec {prompt}", options.AgentCommand)
+			if got, want := strings.Join(options.AgentCommand, "\x00"), strings.Join([]string{"kajicode", "exec", "{prompt}"}, "\x00"); got != want {
+				t.Fatalf("agent command = %#v, want kajicode exec {prompt}", options.AgentCommand)
 			}
 			return agentEvalReport{
 				Suite:  "quality-context",
@@ -367,7 +367,7 @@ func TestRunEvalBenchTextOutputShowsScores(t *testing.T) {
 	exitCode := runWithDeps([]string{
 		"eval", "bench",
 		"--suite", "evals/context.json",
-		"--agent-command", "zero", "exec", "{prompt}",
+		"--agent-command", "kajicode", "exec", "{prompt}",
 	}, &stdout, &stderr, appDeps{
 		runAgentEval: func(_ context.Context, _ agentEvalOptions) (agentEvalReport, error) {
 			// agentEvalReportFromBenchmark populates both Tasks and Total; the
@@ -404,7 +404,7 @@ func TestRunEvalBenchTextOutputSurfacesWorkRoot(t *testing.T) {
 		"eval", "bench",
 		"--suite", "evals/context.json",
 		"--keep-workspaces",
-		"--agent-command", "zero", "exec", "{prompt}",
+		"--agent-command", "kajicode", "exec", "{prompt}",
 	}, &stdout, &stderr, appDeps{
 		runAgentEval: func(_ context.Context, options agentEvalOptions) (agentEvalReport, error) {
 			if !options.KeepWorkspaces {
@@ -416,7 +416,7 @@ func TestRunEvalBenchTextOutputSurfacesWorkRoot(t *testing.T) {
 				OK:       true,
 				Total:    1,
 				Passed:   1,
-				WorkRoot: "/tmp/zero-eval-abc",
+				WorkRoot: "/tmp/kajicode-eval-abc",
 			}, nil
 		},
 	})
@@ -424,7 +424,7 @@ func TestRunEvalBenchTextOutputSurfacesWorkRoot(t *testing.T) {
 	if exitCode != exitSuccess {
 		t.Fatalf("expected success exit %d, got %d: %s", exitSuccess, exitCode, stderr.String())
 	}
-	if !strings.Contains(stdout.String(), "work-root: /tmp/zero-eval-abc") {
+	if !strings.Contains(stdout.String(), "work-root: /tmp/kajicode-eval-abc") {
 		t.Fatalf("expected kept work root in text output, got:\n%s", stdout.String())
 	}
 }
@@ -484,7 +484,7 @@ func TestRunEvalBenchParsesTimeout(t *testing.T) {
 		"--suite", "evals/context.json",
 		"--timeout", "90s",
 		"--json",
-		"--agent-command", "zero", "exec", "{prompt}",
+		"--agent-command", "kajicode", "exec", "{prompt}",
 	}, &stdout, &stderr, appDeps{
 		runAgentEval: func(_ context.Context, options agentEvalOptions) (agentEvalReport, error) {
 			if options.Timeout != 90*time.Second {
@@ -588,7 +588,7 @@ func TestRunEvalRunRejectsBenchOnlyFlags(t *testing.T) {
 	}{
 		{
 			name: "work root",
-			args: []string{"eval", "run", "--suite", "evals/context.json", "--work-root", "D:\\tmp\\zero-evals"},
+			args: []string{"eval", "run", "--suite", "evals/context.json", "--work-root", "D:\\tmp\\kajicode-evals"},
 			want: "--work-root is only valid for eval bench",
 		},
 		{
@@ -598,7 +598,7 @@ func TestRunEvalRunRejectsBenchOnlyFlags(t *testing.T) {
 		},
 		{
 			name: "agent command",
-			args: []string{"eval", "run", "--suite", "evals/context.json", "--agent-command", "zero", "exec", "{prompt}"},
+			args: []string{"eval", "run", "--suite", "evals/context.json", "--agent-command", "kajicode", "exec", "{prompt}"},
 			want: "--agent-command is only valid for eval bench",
 		},
 		{
@@ -833,7 +833,7 @@ func TestRunEvalDefaultRunnerLoadsSuite(t *testing.T) {
 			"id": "prompt-discipline",
 			"name": "Prompt discipline",
 			"prompt": "Improve the system prompt.",
-			"workspaceFixture": "fixtures/zero",
+			"workspaceFixture": "fixtures/kajicode",
 			"verificationCommands": [
 				{"id": "test", "name": "Tests", "command": ["go", "test", "./internal/agent"]}
 			],
@@ -891,7 +891,7 @@ func TestRunEvalFailingSuiteReturnsProviderExit(t *testing.T) {
 	if stderr.Len() != 0 {
 		t.Fatalf("expected empty stderr, got %q", stderr.String())
 	}
-	if !strings.Contains(stdout.String(), "Zero agent eval") || !strings.Contains(stdout.String(), "context.recall") {
+	if !strings.Contains(stdout.String(), "KajiCode agent eval") || !strings.Contains(stdout.String(), "context.recall") {
 		t.Fatalf("unexpected eval text output: %q", stdout.String())
 	}
 }

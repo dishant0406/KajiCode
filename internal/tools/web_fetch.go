@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/redaction"
-	zeroSandbox "github.com/Gitlawb/zero/internal/sandbox"
+	"github.com/dishant0406/KajiCode/internal/redaction"
+	zeroSandbox "github.com/dishant0406/KajiCode/internal/sandbox"
 )
 
 const (
@@ -211,7 +211,7 @@ func (tool webFetchTool) run(ctx context.Context, args map[string]any) Result {
 	if err != nil {
 		return errorResult("Error: Invalid URL for web_fetch: " + err.Error())
 	}
-	request.Header.Set("User-Agent", "zero-web-fetch/0.1")
+	request.Header.Set("User-Agent", "kajicode-web-fetch/0.1")
 	request.Header.Set("Accept", "text/*, application/json, application/xhtml+xml, application/xml;q=0.9, */*;q=0.5")
 
 	client := tool.clientForRun()

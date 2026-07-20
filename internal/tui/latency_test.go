@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/sessions"
+	"github.com/dishant0406/KajiCode/internal/sessions"
 )
 
 func TestAvgTurnLatencyText(t *testing.T) {

@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/agent"
-	"github.com/Gitlawb/zero/internal/sandbox"
+	"github.com/dishant0406/KajiCode/internal/agent"
+	"github.com/dishant0406/KajiCode/internal/sandbox"
 )
 
 func TestParseCommandRecognizesAddDir(t *testing.T) {
@@ -62,7 +62,7 @@ func TestHandleAddDirCommand(t *testing.T) {
 
 func tempDirOutsideDefaultTemp(t *testing.T) string {
 	t.Helper()
-	dir, err := os.MkdirTemp(".", ".zero-sandbox-outside-")
+	dir, err := os.MkdirTemp(".", ".kajicode-sandbox-outside-")
 	if err != nil {
 		t.Fatalf("MkdirTemp outside default temp: %v", err)
 	}

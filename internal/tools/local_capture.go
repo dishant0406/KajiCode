@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/localcontrol"
+	"github.com/dishant0406/KajiCode/internal/localcontrol"
 )
 
 const defaultArtifactBaseName = "capture"

@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/daemon"
+	"github.com/dishant0406/KajiCode/internal/daemon"
 )
 
 // ---- fake daemon worker (the daemon's test fakes are unexported) -------------
@@ -96,7 +96,7 @@ func genTestCert(t *testing.T) (certFile, keyFile string) {
 	}
 	tmpl := &x509.Certificate{
 		SerialNumber: big.NewInt(1),
-		Subject:      pkix.Name{CommonName: "zero-remote-test"},
+		Subject:      pkix.Name{CommonName: "kajicode-remote-test"},
 		NotBefore:    time.Now().Add(-time.Hour),
 		NotAfter:     time.Now().Add(time.Hour),
 		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,

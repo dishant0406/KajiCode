@@ -11,13 +11,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/agent"
-	"github.com/Gitlawb/zero/internal/config"
-	"github.com/Gitlawb/zero/internal/mcp"
-	"github.com/Gitlawb/zero/internal/sandbox"
-	"github.com/Gitlawb/zero/internal/sessions"
-	"github.com/Gitlawb/zero/internal/tools"
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/agent"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
+	"github.com/dishant0406/KajiCode/internal/mcp"
+	"github.com/dishant0406/KajiCode/internal/sandbox"
+	"github.com/dishant0406/KajiCode/internal/sessions"
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
 func TestRunExecHelpDocumentsProtocolFlags(t *testing.T) {
@@ -61,7 +61,7 @@ func TestRunExecListsFilteredToolsWithoutPromptOrProvider(t *testing.T) {
 		resolveConfig: func(string, config.Overrides) (config.ResolvedConfig, error) {
 			return execResolvedConfig(), nil
 		},
-		newProvider: func(config.ProviderProfile) (zeroruntime.Provider, error) {
+		newProvider: func(config.ProviderProfile) (kajicoderuntime.Provider, error) {
 			providerBuilt = true
 			return nil, errors.New("provider should not be constructed for --list-tools")
 		},
@@ -99,7 +99,7 @@ func TestRunExecListsToolsAsStreamJSONWhenRequested(t *testing.T) {
 		resolveConfig: func(string, config.Overrides) (config.ResolvedConfig, error) {
 			return execResolvedConfig(), nil
 		},
-		newProvider: func(config.ProviderProfile) (zeroruntime.Provider, error) {
+		newProvider: func(config.ProviderProfile) (kajicoderuntime.Provider, error) {
 			providerBuilt = true
 			return nil, errors.New("provider should not be constructed for --list-tools")
 		},
@@ -146,7 +146,7 @@ func TestRunExecListsMCPToolsWithoutProviderConstruction(t *testing.T) {
 		resolveConfig: func(string, config.Overrides) (config.ResolvedConfig, error) {
 			return execResolvedConfig(), nil
 		},
-		newProvider: func(config.ProviderProfile) (zeroruntime.Provider, error) {
+		newProvider: func(config.ProviderProfile) (kajicoderuntime.Provider, error) {
 			providerBuilt = true
 			return nil, errors.New("provider should not be constructed for --list-tools")
 		},
@@ -315,7 +315,7 @@ func TestRunExecStreamJSONOutputsRunEndAndRecordsSession(t *testing.T) {
 		resolveConfig: func(_ string, _ config.Overrides) (config.ResolvedConfig, error) {
 			return execResolvedConfig(), nil
 		},
-		newProvider: func(config.ProviderProfile) (zeroruntime.Provider, error) {
+		newProvider: func(config.ProviderProfile) (kajicoderuntime.Provider, error) {
 			return echoExecProvider{}, nil
 		},
 	})
@@ -347,7 +347,7 @@ func TestRunExecStreamJSONOutputsRunEndAndRecordsSession(t *testing.T) {
 	}
 
 	store := sessions.NewStore(sessions.StoreOptions{
-		RootDir: filepath.Join(dataHome, "zero", "sessions"),
+		RootDir: filepath.Join(dataHome, "kajicode", "sessions"),
 	})
 	recorded, err := store.ReadEvents(sessionID)
 	if err != nil {
@@ -372,7 +372,7 @@ func TestRunExecStreamJSONEmitsAndRecordsPermissionEvents(t *testing.T) {
 		resolveConfig: func(_ string, _ config.Overrides) (config.ResolvedConfig, error) {
 			return execResolvedConfig(), nil
 		},
-		newProvider: func(config.ProviderProfile) (zeroruntime.Provider, error) {
+		newProvider: func(config.ProviderProfile) (kajicoderuntime.Provider, error) {
 			return toolCallingExecProvider{
 				toolCallID: "call_write",
 				toolName:   "write_file",
@@ -420,7 +420,7 @@ func TestRunExecStreamJSONEmitsAndRecordsPermissionEvents(t *testing.T) {
 		t.Fatalf("expected run_start sessionId, got %#v", events[0])
 	}
 	store := sessions.NewStore(sessions.StoreOptions{
-		RootDir: filepath.Join(dataHome, "zero", "sessions"),
+		RootDir: filepath.Join(dataHome, "kajicode", "sessions"),
 	})
 	recorded, err := store.ReadEvents(sessionID)
 	if err != nil {
@@ -444,7 +444,7 @@ func TestRunExecStreamJSONEmitsAndRecordsPermissionEvents(t *testing.T) {
 		resolveConfig: func(_ string, _ config.Overrides) (config.ResolvedConfig, error) {
 			return execResolvedConfig(), nil
 		},
-		newProvider: func(config.ProviderProfile) (zeroruntime.Provider, error) {
+		newProvider: func(config.ProviderProfile) (kajicoderuntime.Provider, error) {
 			return toolCallingExecProvider{
 				toolCallID: "call_write_approved",
 				toolName:   "write_file",
@@ -509,7 +509,7 @@ func TestRunExecStreamJSONRunStartUsesResolvedAPIModel(t *testing.T) {
 				MaxTurns: 2,
 			}, nil
 		},
-		newProvider: func(config.ProviderProfile) (zeroruntime.Provider, error) {
+		newProvider: func(config.ProviderProfile) (kajicoderuntime.Provider, error) {
 			return echoExecProvider{}, nil
 		},
 	})
@@ -543,7 +543,7 @@ func TestRunExecStreamJSONEmitsReasoningEvents(t *testing.T) {
 		resolveConfig: func(_ string, _ config.Overrides) (config.ResolvedConfig, error) {
 			return execResolvedConfig(), nil
 		},
-		newProvider: func(config.ProviderProfile) (zeroruntime.Provider, error) {
+		newProvider: func(config.ProviderProfile) (kajicoderuntime.Provider, error) {
 			return reasoningExecProvider{}, nil
 		},
 	})
@@ -691,7 +691,7 @@ func TestRunExecJSONInterruptedEmitsTerminalEvents(t *testing.T) {
 	exitCode := runWithDeps([]string{"exec", "--output-format", "json", "hello"}, &stdout, &stderr, appDeps{
 		getwd:         func() (string, error) { return cwd, nil },
 		resolveConfig: func(_ string, _ config.Overrides) (config.ResolvedConfig, error) { return execResolvedConfig(), nil },
-		newProvider:   func(config.ProviderProfile) (zeroruntime.Provider, error) { return canceledExecProvider{}, nil },
+		newProvider:   func(config.ProviderProfile) (kajicoderuntime.Provider, error) { return canceledExecProvider{}, nil },
 	})
 
 	if exitCode != exitInterrupted {
@@ -731,7 +731,7 @@ func TestRunExecWarnsAboutScratchFileWhenProviderErrors(t *testing.T) {
 		resolveConfig: func(_ string, _ config.Overrides) (config.ResolvedConfig, error) {
 			return execResolvedConfig(), nil
 		},
-		newProvider: func(config.ProviderProfile) (zeroruntime.Provider, error) {
+		newProvider: func(config.ProviderProfile) (kajicoderuntime.Provider, error) {
 			return toolThenErrorExecProvider{
 				toolCallID: "call_scratch",
 				toolName:   "write_file",
@@ -769,7 +769,7 @@ func TestRunExecReadsStreamJSONPromptFromStdin(t *testing.T) {
 		resolveConfig: func(_ string, _ config.Overrides) (config.ResolvedConfig, error) {
 			return execResolvedConfig(), nil
 		},
-		newProvider: func(config.ProviderProfile) (zeroruntime.Provider, error) {
+		newProvider: func(config.ProviderProfile) (kajicoderuntime.Provider, error) {
 			return echoExecProvider{}, nil
 		},
 	})
@@ -842,55 +842,55 @@ type toolThenErrorExecProvider struct {
 
 type reasoningExecProvider struct{}
 
-func (reasoningExecProvider) StreamCompletion(context.Context, zeroruntime.CompletionRequest) (<-chan zeroruntime.StreamEvent, error) {
-	ch := make(chan zeroruntime.StreamEvent, 3)
-	ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventReasoning, Content: "Thinking. "}
-	ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventText, Content: "done"}
-	ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventDone}
+func (reasoningExecProvider) StreamCompletion(context.Context, kajicoderuntime.CompletionRequest) (<-chan kajicoderuntime.StreamEvent, error) {
+	ch := make(chan kajicoderuntime.StreamEvent, 3)
+	ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventReasoning, Content: "Thinking. "}
+	ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventText, Content: "done"}
+	ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventDone}
 	close(ch)
 	return ch, nil
 }
 
-func (provider toolCallingExecProvider) StreamCompletion(ctx context.Context, request zeroruntime.CompletionRequest) (<-chan zeroruntime.StreamEvent, error) {
+func (provider toolCallingExecProvider) StreamCompletion(ctx context.Context, request kajicoderuntime.CompletionRequest) (<-chan kajicoderuntime.StreamEvent, error) {
 	for _, message := range request.Messages {
-		if message.Role == zeroruntime.MessageRoleTool {
-			ch := make(chan zeroruntime.StreamEvent, 2)
-			ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventText, Content: provider.answer}
-			ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventDone}
+		if message.Role == kajicoderuntime.MessageRoleTool {
+			ch := make(chan kajicoderuntime.StreamEvent, 2)
+			ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventText, Content: provider.answer}
+			ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventDone}
 			close(ch)
 			return ch, nil
 		}
 	}
-	ch := make(chan zeroruntime.StreamEvent, 4)
+	ch := make(chan kajicoderuntime.StreamEvent, 4)
 	select {
 	case <-ctx.Done():
 		close(ch)
 		return ch, ctx.Err()
-	case ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventToolCallStart, ToolCallID: provider.toolCallID, ToolName: provider.toolName}:
+	case ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventToolCallStart, ToolCallID: provider.toolCallID, ToolName: provider.toolName}:
 	}
-	ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventToolCallDelta, ToolCallID: provider.toolCallID, ArgumentsFragment: provider.arguments}
-	ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventToolCallEnd, ToolCallID: provider.toolCallID}
-	ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventDone}
+	ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventToolCallDelta, ToolCallID: provider.toolCallID, ArgumentsFragment: provider.arguments}
+	ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventToolCallEnd, ToolCallID: provider.toolCallID}
+	ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventDone}
 	close(ch)
 	return ch, nil
 }
 
-func (provider toolThenErrorExecProvider) StreamCompletion(ctx context.Context, request zeroruntime.CompletionRequest) (<-chan zeroruntime.StreamEvent, error) {
+func (provider toolThenErrorExecProvider) StreamCompletion(ctx context.Context, request kajicoderuntime.CompletionRequest) (<-chan kajicoderuntime.StreamEvent, error) {
 	for _, message := range request.Messages {
-		if message.Role == zeroruntime.MessageRoleTool {
+		if message.Role == kajicoderuntime.MessageRoleTool {
 			return nil, provider.err
 		}
 	}
-	ch := make(chan zeroruntime.StreamEvent, 4)
+	ch := make(chan kajicoderuntime.StreamEvent, 4)
 	select {
 	case <-ctx.Done():
 		close(ch)
 		return ch, ctx.Err()
-	case ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventToolCallStart, ToolCallID: provider.toolCallID, ToolName: provider.toolName}:
+	case ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventToolCallStart, ToolCallID: provider.toolCallID, ToolName: provider.toolName}:
 	}
-	ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventToolCallDelta, ToolCallID: provider.toolCallID, ArgumentsFragment: provider.arguments}
-	ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventToolCallEnd, ToolCallID: provider.toolCallID}
-	ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventDone}
+	ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventToolCallDelta, ToolCallID: provider.toolCallID, ArgumentsFragment: provider.arguments}
+	ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventToolCallEnd, ToolCallID: provider.toolCallID}
+	ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventDone}
 	close(ch)
 	return ch, nil
 }

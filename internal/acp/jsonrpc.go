@@ -1,11 +1,11 @@
-// Package acp implements the Agent Client Protocol (ACP) surface for ZERO: a
+// Package acp implements the Agent Client Protocol (ACP) surface for KAJICODE: a
 // JSON-RPC 2.0 peer spoken over stdio (newline-delimited JSON) so editors such
-// as Zed, JetBrains, and Neovim can drive ZERO's agent core as a backend.
+// as Zed, JetBrains, and Neovim can drive KAJICODE's agent core as a backend.
 //
 // The protocol shapes (method names, message fields) are derived solely from the
 // public, Apache-licensed ACP specification at agentclientprotocol.com and the
 // agentclientprotocol/agent-client-protocol repository (schema/v1). All logic
-// here is written originally against ZERO's own interfaces.
+// here is written originally against KAJICODE's own interfaces.
 package acp
 
 import (

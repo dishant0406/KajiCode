@@ -6,8 +6,8 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/Gitlawb/zero/internal/trace"
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
+	"github.com/dishant0406/KajiCode/internal/trace"
 )
 
 // Session compaction.
@@ -55,7 +55,7 @@ type CompactionOptions struct {
 	// Summarize turns the to-be-elided middle into a single dense summary. It is
 	// injected so Compact stays pure and testable; the agent loop wires it to a
 	// real provider call.
-	Summarize func(toSummarize []zeroruntime.Message) (string, error)
+	Summarize func(toSummarize []kajicoderuntime.Message) (string, error)
 	// taskState is a snapshot supplied by the running agent. Its immutable
 	// objective is always preserved; mutable fields are admitted only when its
 	// plan projection still matches the transcript.
@@ -65,7 +65,7 @@ type CompactionOptions struct {
 // CompactionResult is the metadata-bearing result returned by CompactMessages.
 type CompactionResult struct {
 	// Messages is the original conversation or the compacted replacement.
-	Messages []zeroruntime.Message
+	Messages []kajicoderuntime.Message
 	// RemovedCount is the number of original messages summarized away.
 	RemovedCount int
 	// PreservedCount is the number of original messages kept verbatim, including
@@ -88,12 +88,12 @@ type CompactionResult struct {
 const imageTokenEstimate = 1000
 
 // ApproxTextTokens estimates the token count of text WITHOUT a real tokenizer.
-// The BPE tokenizers zero targets fold a run's leading space into the following
+// The BPE tokenizers KajiCode targets fold a run's leading space into the following
 // token rather than emitting whitespace as its own token, so naive len/4
 // overcounts real text by ~15-20% (measured: a 24.8k-char prompt counted 5.2k
 // real tokens where len/4 said 6.2k). Counting NON-whitespace bytes / 4 tracks
 // the provider's actual count closely (validated against live usage) while
-// staying allocation- and dependency-free. zero still receives the exact count
+// staying allocation- and dependency-free. KajiCode still receives the exact count
 // back as usage on every request; this estimate is only for the pre-request
 // context budget preview and the compaction threshold.
 func ApproxTextTokens(value string) int {
@@ -112,7 +112,7 @@ func ApproxTextTokens(value string) int {
 // across message content plus tool call names/arguments and a flat per-image
 // cost. It deliberately uses no real tokenizer; it only needs to be monotonic
 // and roughly proportional so the loop can decide when to compact.
-func estimateTokens(messages []zeroruntime.Message) int {
+func estimateTokens(messages []kajicoderuntime.Message) int {
 	total := 0
 	for _, message := range messages {
 		total += ApproxTextTokens(message.Content)
@@ -132,7 +132,7 @@ func estimateTokens(messages []zeroruntime.Message) int {
 // must include them: they ride on every turn, so ignoring them under-counts the
 // real context and can let it blow past the model limit while the message-only
 // estimate still looks under threshold.
-func estimateToolDefTokens(tools []zeroruntime.ToolDefinition) int {
+func estimateToolDefTokens(tools []kajicoderuntime.ToolDefinition) int {
 	total := 0
 	for _, tool := range tools {
 		total += ApproxTextTokens(tool.Name)
@@ -173,7 +173,7 @@ func compactionThreshold(contextWindow int) int {
 //
 // Compact is pure: it performs no provider I/O. A Summarize error is returned to
 // the caller, which decides how to recover.
-func Compact(messages []zeroruntime.Message, opts CompactionOptions) ([]zeroruntime.Message, error) {
+func Compact(messages []kajicoderuntime.Message, opts CompactionOptions) ([]kajicoderuntime.Message, error) {
 	result, err := CompactMessages(messages, opts)
 	if err != nil {
 		return nil, err
@@ -184,7 +184,7 @@ func Compact(messages []zeroruntime.Message, opts CompactionOptions) ([]zerorunt
 // CompactMessages summarizes the oldest middle of a conversation and returns
 // both the replacement messages and UI/session-friendly metadata about what
 // changed. It uses the same compaction rules as Compact.
-func CompactMessages(messages []zeroruntime.Message, opts CompactionOptions) (CompactionResult, error) {
+func CompactMessages(messages []kajicoderuntime.Message, opts CompactionOptions) (CompactionResult, error) {
 	preserveLast := opts.PreserveLast
 	if preserveLast <= 0 {
 		preserveLast = defaultCompactionPreserveLast
@@ -195,7 +195,7 @@ func CompactMessages(messages []zeroruntime.Message, opts CompactionOptions) (Co
 
 	// Leading system messages are kept verbatim at the head.
 	systemEnd := 0
-	for systemEnd < len(messages) && messages[systemEnd].Role == zeroruntime.MessageRoleSystem {
+	for systemEnd < len(messages) && messages[systemEnd].Role == kajicoderuntime.MessageRoleSystem {
 		systemEnd++
 	}
 
@@ -226,10 +226,10 @@ func CompactMessages(messages []zeroruntime.Message, opts CompactionOptions) (Co
 	// middle verbatim, so it is not lost or paraphrased away by the prose summary.
 	content := appendPreservedState(summaryLabel+"\n"+summary, middle, opts.taskState)
 
-	compacted := make([]zeroruntime.Message, 0, systemEnd+1+(len(messages)-boundary))
+	compacted := make([]kajicoderuntime.Message, 0, systemEnd+1+(len(messages)-boundary))
 	compacted = append(compacted, messages[:systemEnd]...)
-	compacted = append(compacted, zeroruntime.Message{
-		Role:    zeroruntime.MessageRoleUser,
+	compacted = append(compacted, kajicoderuntime.Message{
+		Role:    kajicoderuntime.MessageRoleUser,
 		Content: content,
 	})
 	compacted = append(compacted, messages[boundary:]...)
@@ -248,14 +248,14 @@ func CompactMessages(messages []zeroruntime.Message, opts CompactionOptions) (Co
 // is rejected by provider APIs, so the boundary must land on a safe turn start.
 // It never moves the boundary forward (the suffix only grows), and never crosses
 // systemEnd.
-func safeSuffixBoundary(messages []zeroruntime.Message, systemEnd int, boundary int) int {
+func safeSuffixBoundary(messages []kajicoderuntime.Message, systemEnd int, boundary int) int {
 	// Walk back so the preserved suffix begins with an assistant message. The
 	// summary is injected as a user-role message, so a user- or tool-led suffix
 	// would create consecutive same-role turns that strict providers (Anthropic)
 	// reject. Stopping on an assistant keeps user/assistant alternation valid;
 	// if no assistant exists above systemEnd, boundary lands at systemEnd and the
 	// middle is empty, so Compact no-ops (no summary is injected).
-	for boundary > systemEnd && messages[boundary].Role != zeroruntime.MessageRoleAssistant {
+	for boundary > systemEnd && messages[boundary].Role != kajicoderuntime.MessageRoleAssistant {
 		boundary--
 	}
 	return boundary
@@ -388,9 +388,9 @@ func newCompactionState(options Options, task *taskState) *compactionState {
 func (state *compactionState) maybeCompact(
 	ctx context.Context,
 	provider Provider,
-	messages []zeroruntime.Message,
-	tools []zeroruntime.ToolDefinition,
-) []zeroruntime.Message {
+	messages []kajicoderuntime.Message,
+	tools []kajicoderuntime.ToolDefinition,
+) []kajicoderuntime.Message {
 	if !state.enabled {
 		return messages
 	}
@@ -457,10 +457,10 @@ func (state *compactionState) maybeCompact(
 func (state *compactionState) recover(
 	ctx context.Context,
 	provider Provider,
-	messages []zeroruntime.Message,
-	tools []zeroruntime.ToolDefinition,
+	messages []kajicoderuntime.Message,
+	tools []kajicoderuntime.ToolDefinition,
 	errorMessage string,
-) (compacted []zeroruntime.Message, retried bool, err error) {
+) (compacted []kajicoderuntime.Message, retried bool, err error) {
 	if !state.enabled {
 		// Compaction disabled (ContextWindow==0): stay a strict no-op so a
 		// context-limit error never triggers an unexpected summarization call.
@@ -509,8 +509,8 @@ func (state *compactionState) recover(
 // provider call. The summary stream intentionally does NOT forward OnText (so
 // compaction stays invisible on the user-facing surface), but it DOES forward
 // OnUsage so the summarizer's token cost is still counted by usage/budgeting.
-func summarizeClosure(ctx context.Context, provider Provider, onUsage func(Usage)) func([]zeroruntime.Message) (string, error) {
-	return func(toSummarize []zeroruntime.Message) (string, error) {
+func summarizeClosure(ctx context.Context, provider Provider, onUsage func(Usage)) func([]kajicoderuntime.Message) (string, error) {
+	return func(toSummarize []kajicoderuntime.Message) (string, error) {
 		return summarizeWithFallback(ctx, provider, toSummarize, onUsage)
 	}
 }
@@ -522,7 +522,7 @@ func summarizeClosure(ctx context.Context, provider Provider, onUsage func(Usage
 // working when the elided middle is bigger than the summarizer's own context.
 // Non-context-limit errors (and a single message that still won't fit) surface
 // to the caller unchanged.
-func summarizeWithFallback(ctx context.Context, provider Provider, messages []zeroruntime.Message, onUsage func(Usage)) (string, error) {
+func summarizeWithFallback(ctx context.Context, provider Provider, messages []kajicoderuntime.Message, onUsage func(Usage)) (string, error) {
 	summary, err := summarizeMessagesOnce(ctx, provider, messages, onUsage)
 	if err == nil {
 		return summary, nil
@@ -547,8 +547,8 @@ func summarizeWithFallback(ctx context.Context, provider Provider, messages []ze
 	// on. If even the combined partials don't fit (extreme), fall back to the
 	// joined text: still better than failing, and each half is already compacted.
 	combined := strings.TrimSpace(left + "\n\n" + right)
-	reduced, reduceErr := summarizeMessagesOnce(ctx, provider, []zeroruntime.Message{
-		{Role: zeroruntime.MessageRoleUser, Content: combined},
+	reduced, reduceErr := summarizeMessagesOnce(ctx, provider, []kajicoderuntime.Message{
+		{Role: kajicoderuntime.MessageRoleUser, Content: combined},
 	}, onUsage)
 	if reduceErr != nil {
 		if isContextLimitError(reduceErr.Error()) {
@@ -565,11 +565,11 @@ func summarizeWithFallback(ctx context.Context, provider Provider, messages []ze
 }
 
 // summarizeMessagesOnce performs a single tool-less summarization call.
-func summarizeMessagesOnce(ctx context.Context, provider Provider, messages []zeroruntime.Message, onUsage func(Usage)) (string, error) {
-	request := zeroruntime.CompletionRequest{
-		Messages: []zeroruntime.Message{
-			{Role: zeroruntime.MessageRoleSystem, Content: summaryInstructions},
-			{Role: zeroruntime.MessageRoleUser, Content: "Summarize this conversation:\n\n" + renderTranscript(messages)},
+func summarizeMessagesOnce(ctx context.Context, provider Provider, messages []kajicoderuntime.Message, onUsage func(Usage)) (string, error) {
+	request := kajicoderuntime.CompletionRequest{
+		Messages: []kajicoderuntime.Message{
+			{Role: kajicoderuntime.MessageRoleSystem, Content: summaryInstructions},
+			{Role: kajicoderuntime.MessageRoleUser, Content: "Summarize this conversation:\n\n" + renderTranscript(messages)},
 		},
 		// No tools: this is a plain text summarization call.
 	}
@@ -579,7 +579,7 @@ func summarizeMessagesOnce(ctx context.Context, provider Provider, messages []ze
 	}
 	// Forward OnUsage (token accounting) but not OnText (keep compaction invisible
 	// to the user); a nil onUsage is a no-op.
-	collected := zeroruntime.CollectStreamWithOptions(ctx, stream, zeroruntime.CollectOptions{OnUsage: onUsage})
+	collected := kajicoderuntime.CollectStreamWithOptions(ctx, stream, kajicoderuntime.CollectOptions{OnUsage: onUsage})
 	if collected.Error != "" {
 		return "", errors.New(collected.Error)
 	}
@@ -592,11 +592,11 @@ func summarizeMessagesOnce(ctx context.Context, provider Provider, messages []ze
 
 // renderTranscript flattens messages into a plain-text transcript for the
 // summarizer. Secret scrubbing already happened upstream at the tool boundary.
-func renderTranscript(messages []zeroruntime.Message) string {
+func renderTranscript(messages []kajicoderuntime.Message) string {
 	lines := make([]string, 0, len(messages))
 	for _, message := range messages {
 		switch message.Role {
-		case zeroruntime.MessageRoleAssistant:
+		case kajicoderuntime.MessageRoleAssistant:
 			line := "assistant: " + message.Content
 			if len(message.ToolCalls) > 0 {
 				calls := make([]string, 0, len(message.ToolCalls))
@@ -606,7 +606,7 @@ func renderTranscript(messages []zeroruntime.Message) string {
 				line += "\n[tool calls: " + strings.Join(calls, "; ") + "]"
 			}
 			lines = append(lines, line)
-		case zeroruntime.MessageRoleTool:
+		case kajicoderuntime.MessageRoleTool:
 			lines = append(lines, "tool result: "+message.Content)
 		default:
 			lines = append(lines, string(message.Role)+": "+message.Content)

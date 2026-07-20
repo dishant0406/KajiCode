@@ -3,7 +3,7 @@ package tui
 import (
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/config"
+	"github.com/dishant0406/KajiCode/internal/config"
 )
 
 // Regression for issue #555's follow-up: /providers must not warn that a

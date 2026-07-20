@@ -43,9 +43,9 @@ type NetworkPolicy struct {
 // protectedMetadataNames marks control-plane directories where the app-level
 // auto-allow gate (see relativePathTouchesProtectedMetadata in engine.go)
 // always requires a prompt for direct file-tool writes (write_file, edit_file,
-// apply_patch): hand-editing git's objects/refs/index or Zero's own state
-// bypasses git's and Zero's own consistency checks, regardless of subpath.
-var protectedMetadataNames = []string{".git", ".zero", ".agents"}
+// apply_patch): hand-editing git's objects/refs/index or KajiCode's own state
+// bypasses git's and KajiCode's own consistency checks, regardless of subpath.
+var protectedMetadataNames = []string{".git", ".kajicode", ".agents"}
 
 // sandboxFullyProtectedMetadataNames are the metadata directories the OS-level
 // sandbox write-denies in full for shell-executed commands. .git is
@@ -55,7 +55,7 @@ var protectedMetadataNames = []string{".git", ".zero", ".agents"}
 // write. Only .git/hooks (auto-executing scripts) and .git/config (remote
 // URLs, credential.helper, core.hooksPath) stay write-denied, via
 // gitMetadataWriteCarveouts below.
-var sandboxFullyProtectedMetadataNames = []string{".zero", ".agents"}
+var sandboxFullyProtectedMetadataNames = []string{".kajicode", ".agents"}
 
 // gitMetadataWriteCarveouts returns the .git subpaths that stay write-denied
 // under the OS-level sandbox even though the rest of .git is writable to git

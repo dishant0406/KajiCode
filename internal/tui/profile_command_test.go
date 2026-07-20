@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/config"
-	"github.com/Gitlawb/zero/internal/modelregistry"
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
+	"github.com/dishant0406/KajiCode/internal/modelregistry"
 )
 
 // profileSwitchModel builds a session on a model whose catalog entry supports
@@ -26,7 +26,7 @@ func profileSwitchModel(t *testing.T) model {
 			{Name: "anthropic", CatalogID: "anthropic", Model: "claude-sonnet-4.5", APIKey: "k"},
 			{Name: "ollama", CatalogID: "ollama", ProviderKind: config.ProviderKindOpenAICompatible, BaseURL: "http://localhost:11434/v1", Model: "kimi-k2.7-code:cloud"},
 		},
-		NewProvider: func(config.ProviderProfile) (zeroruntime.Provider, error) {
+		NewProvider: func(config.ProviderProfile) (kajicoderuntime.Provider, error) {
 			return &fakeProvider{}, nil
 		},
 	})
@@ -352,7 +352,7 @@ func TestProfileCommandRevertLeavesCoincidingOverride(t *testing.T) {
 }
 
 // Reverting a profile whose displaced budget was zero (nothing was set before
-// it) must clear ZERO_MAX_TURNS: SetMaxTurnsEnv ignores zero, so without an
+// it) must clear KAJICODE_MAX_TURNS: SetMaxTurnsEnv ignores zero, so without an
 // explicit unset, spawned sub-agents would keep the removed profile's budget.
 func TestProfileCommandRevertFromZeroClearsMaxTurnsEnv(t *testing.T) {
 	t.Setenv(config.MaxTurnsEnv, "")

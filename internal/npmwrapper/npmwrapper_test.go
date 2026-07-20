@@ -20,13 +20,13 @@ const (
 	wrapperExitDoctor  = 1
 )
 
-// Canonical Bun recovery copy from bin/zero.js bunRecoveryParagraph() — shared
+// Canonical Bun recovery copy from bin/kajicode.js bunRecoveryParagraph() — shared
 // by the generic missing-binary path and the doctor text fallback.
 const (
 	bunRecoveryLead        = "You installed with Bun, which does not run dependency lifecycle scripts"
-	bunPmTrustProject      = "bun pm trust @gitlawb/zero"
-	bunPmTrustGlobal       = "bun pm -g trust @gitlawb/zero"
-	bunRecoveryTrustedDeps = `"trustedDependencies": ["@gitlawb/zero"]`
+	bunPmTrustProject      = "bun pm trust @dishant0406/kajicode"
+	bunPmTrustGlobal       = "bun pm -g trust @dishant0406/kajicode"
+	bunRecoveryTrustedDeps = `"trustedDependencies": ["@dishant0406/kajicode"]`
 	buildFromSourceLead    = "If this platform has no prebuilt binary, build from source:"
 )
 
@@ -40,8 +40,8 @@ func runWrapperFixtureWithEnv(t *testing.T, wrapperPath string, extraEnv []strin
 	ctx, cancel := context.WithTimeout(context.Background(), nodeWrapperTimeout())
 	defer cancel()
 	command := nodeWrapperCommand(ctx, node, wrapperPath, args...)
-	command.Env = append(withoutEnvKey(command.Env, "ZERO_LOCAL_CONTROL_HELPERS"), "ZERO_LOCAL_CONTROL_HELPERS=")
-	command.Env = append(withoutEnvKey(command.Env, "ZERO_WRAPPER_SIMULATE_BUN"), extraEnv...)
+	command.Env = append(withoutEnvKey(command.Env, "KAJICODE_LOCAL_CONTROL_HELPERS"), "KAJICODE_LOCAL_CONTROL_HELPERS=")
+	command.Env = append(withoutEnvKey(command.Env, "KAJICODE_WRAPPER_SIMULATE_BUN"), extraEnv...)
 	var stdoutBuf, stderrBuf strings.Builder
 	command.Stdout = &stdoutBuf
 	command.Stderr = &stderrBuf
@@ -80,14 +80,14 @@ func TestPackageBinPointsToNodeWrapper(t *testing.T) {
 	if err := json.Unmarshal(bytes, &pkg); err != nil {
 		t.Fatalf("Unmarshal package.json: %v", err)
 	}
-	if pkg.Name != "@gitlawb/zero" {
-		t.Fatalf("name = %q, want @gitlawb/zero", pkg.Name)
+	if pkg.Name != "@dishant0406/kajicode" {
+		t.Fatalf("name = %q, want @dishant0406/kajicode", pkg.Name)
 	}
-	if pkg.Bin["zero"] != "bin/zero.js" {
-		t.Fatalf("bin.zero = %q, want bin/zero.js", pkg.Bin["zero"])
+	if pkg.Bin["kajicode"] != "bin/kajicode.js" {
+		t.Fatalf("bin.kajicode = %q, want bin/kajicode.js", pkg.Bin["kajicode"])
 	}
-	if pkg.Module != "bin/zero.js" {
-		t.Fatalf("module = %q, want bin/zero.js", pkg.Module)
+	if pkg.Module != "bin/kajicode.js" {
+		t.Fatalf("module = %q, want bin/kajicode.js", pkg.Module)
 	}
 	// The published package must carry NO lifecycle scripts at all: the native
 	// binary arrives as a platform optionalDependency, with scripts/postinstall.mjs
@@ -111,7 +111,7 @@ func TestPackageBinPointsToNodeWrapper(t *testing.T) {
 			t.Fatalf("package.json dependencies is missing %q", name)
 		}
 	}
-	wantFiles := map[string]bool{"bin/zero.js": false, "scripts/postinstall.mjs": false}
+	wantFiles := map[string]bool{"bin/kajicode.js": false, "scripts/postinstall.mjs": false}
 	for _, f := range pkg.Files {
 		if _, ok := wantFiles[f]; ok {
 			wantFiles[f] = true
@@ -130,15 +130,15 @@ func TestPostinstallComputesAssetPlan(t *testing.T) {
 		platform, arch        string
 		wantAsset, wantBinary string
 	}{
-		{"linux", "x64", "zero-v" + version + "-linux-x64.tar.gz", "zero"},
-		{"darwin", "arm64", "zero-v" + version + "-macos-arm64.tar.gz", "zero"},
-		{"win32", "x64", "zero-v" + version + "-windows-x64.zip", "zero.exe"},
+		{"linux", "x64", "kajicode-v" + version + "-linux-x64.tar.gz", "kajicode"},
+		{"darwin", "arm64", "kajicode-v" + version + "-macos-arm64.tar.gz", "kajicode"},
+		{"win32", "x64", "kajicode-v" + version + "-windows-x64.zip", "kajicode.exe"},
 	}
 	for _, tc := range cases {
 		stdout, stderr, err := runPostinstall(t,
-			"ZERO_INSTALL_DRY_RUN=1",
-			"ZERO_INSTALL_PLATFORM="+tc.platform,
-			"ZERO_INSTALL_ARCH="+tc.arch,
+			"KAJICODE_INSTALL_DRY_RUN=1",
+			"KAJICODE_INSTALL_PLATFORM="+tc.platform,
+			"KAJICODE_INSTALL_ARCH="+tc.arch,
 		)
 		if err != nil {
 			t.Fatalf("%s/%s: dry-run err=%v stderr=%s", tc.platform, tc.arch, err, stderr)
@@ -158,7 +158,7 @@ func TestPostinstallComputesAssetPlan(t *testing.T) {
 		if plan.BinaryName != tc.wantBinary {
 			t.Fatalf("%s/%s: binaryName=%q want %q", tc.platform, tc.arch, plan.BinaryName, tc.wantBinary)
 		}
-		wantURL := "https://github.com/Gitlawb/zero/releases/download/v" + version + "/" + tc.wantAsset
+		wantURL := "https://github.com/dishant0406/KajiCode/releases/download/v" + version + "/" + tc.wantAsset
 		if plan.AssetURL != wantURL {
 			t.Fatalf("%s/%s: assetUrl=%q want %q", tc.platform, tc.arch, plan.AssetURL, wantURL)
 		}
@@ -170,9 +170,9 @@ func TestPostinstallComputesAssetPlan(t *testing.T) {
 
 func TestPostinstallSkipsUnsupportedPlatform(t *testing.T) {
 	stdout, stderr, err := runPostinstall(t,
-		"ZERO_INSTALL_DRY_RUN=1",
-		"ZERO_INSTALL_PLATFORM=plan9",
-		"ZERO_INSTALL_ARCH=x64",
+		"KAJICODE_INSTALL_DRY_RUN=1",
+		"KAJICODE_INSTALL_PLATFORM=plan9",
+		"KAJICODE_INSTALL_ARCH=x64",
 	)
 	if err != nil {
 		t.Fatalf("unsupported platform should exit 0, got err=%v stderr=%s", err, stderr)
@@ -190,9 +190,9 @@ func TestPostinstallSkipsWindowsArm64(t *testing.T) {
 	// no windows-arm64 artifact, so the install must skip gracefully (exit 0)
 	// rather than hard-fail on a 404 download.
 	stdout, stderr, err := runPostinstall(t,
-		"ZERO_INSTALL_DRY_RUN=1",
-		"ZERO_INSTALL_PLATFORM=win32",
-		"ZERO_INSTALL_ARCH=arm64",
+		"KAJICODE_INSTALL_DRY_RUN=1",
+		"KAJICODE_INSTALL_PLATFORM=win32",
+		"KAJICODE_INSTALL_ARCH=arm64",
 	)
 	if err != nil {
 		t.Fatalf("windows-arm64 should exit 0, got err=%v stderr=%s", err, stderr)
@@ -206,9 +206,9 @@ func TestPostinstallSkipsWindowsArm64(t *testing.T) {
 }
 
 func TestPostinstallHonorsSkipEnv(t *testing.T) {
-	stdout, stderr, err := runPostinstall(t, "ZERO_SKIP_DOWNLOAD=1")
+	stdout, stderr, err := runPostinstall(t, "KAJICODE_SKIP_DOWNLOAD=1")
 	if err != nil {
-		t.Fatalf("ZERO_SKIP_DOWNLOAD should exit 0, got err=%v stderr=%s", err, stderr)
+		t.Fatalf("KAJICODE_SKIP_DOWNLOAD should exit 0, got err=%v stderr=%s", err, stderr)
 	}
 	if strings.TrimSpace(stdout) != "" {
 		t.Fatalf("skip should print nothing to stdout, got %q", stdout)
@@ -258,7 +258,7 @@ func packageVersion(t *testing.T) string {
 
 func TestNodeWrapperIsExecutableAndDoesNotImportBun(t *testing.T) {
 	root := repoRoot(t)
-	wrapperPath := filepath.Join(root, "bin", "zero.js")
+	wrapperPath := filepath.Join(root, "bin", "kajicode.js")
 	bytes, err := os.ReadFile(wrapperPath)
 	if err != nil {
 		t.Fatalf("ReadFile wrapper: %v", err)
@@ -289,7 +289,7 @@ func TestNodeWrapperReportsMissingNativeBinary(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), nodeWrapperTimeout())
 	defer cancel()
 	command := nodeWrapperCommand(ctx, node, wrapperPath, "--version")
-	command.Env = append(withoutEnvKey(command.Env, "ZERO_LOCAL_CONTROL_HELPERS"), "ZERO_LOCAL_CONTROL_HELPERS=")
+	command.Env = append(withoutEnvKey(command.Env, "KAJICODE_LOCAL_CONTROL_HELPERS"), "KAJICODE_LOCAL_CONTROL_HELPERS=")
 	output, err := command.CombinedOutput()
 	if ctx.Err() != nil {
 		t.Fatalf("wrapper timed out reporting missing native binary: %v; output: %s", ctx.Err(), output)
@@ -317,18 +317,18 @@ func TestNodeWrapperPrefersPlatformPackageBinary(t *testing.T) {
 	// A stale downloaded binary next to the wrapper must lose to the platform
 	// package: the platform version is pinned to the wrapper release, the
 	// downloaded copy is whatever a previous fallback fetched.
-	if err := os.WriteFile(filepath.Join(root, "zero"), []byte("#!/usr/bin/env sh\nprintf 'downloaded-zero\\n'\n"), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "kajicode"), []byte("#!/usr/bin/env sh\nprintf 'downloaded-kajicode\\n'\n"), 0o755); err != nil {
 		t.Fatalf("WriteFile downloaded fixture: %v", err)
 	}
 
-	platformDir := filepath.Join(root, "node_modules", "@gitlawb", "zero-"+nodePlatformName()+"-"+nodeArchName())
+	platformDir := filepath.Join(root, "node_modules", "@dishant0406", "kajicode-"+nodePlatformName()+"-"+nodeArchName())
 	if err := os.MkdirAll(platformDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll platform package: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(platformDir, "package.json"), []byte(`{"name":"@gitlawb/zero"}`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(platformDir, "package.json"), []byte(`{"name":"@dishant0406/kajicode"}`), 0o644); err != nil {
 		t.Fatalf("WriteFile platform package.json: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(platformDir, "zero"), []byte("#!/usr/bin/env sh\nprintf 'platform-zero'; for arg in \"$@\"; do printf ' %s' \"$arg\"; done; printf '\\n'\n"), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(platformDir, "kajicode"), []byte("#!/usr/bin/env sh\nprintf 'platform-kajicode'; for arg in \"$@\"; do printf ' %s' \"$arg\"; done; printf '\\n'\n"), 0o755); err != nil {
 		t.Fatalf("WriteFile platform binary: %v", err)
 	}
 
@@ -342,8 +342,8 @@ func TestNodeWrapperPrefersPlatformPackageBinary(t *testing.T) {
 	if err != nil {
 		t.Fatalf("wrapper returned error: %v; output: %s", err, output)
 	}
-	if got := strings.TrimSpace(string(output)); got != "platform-zero --version" {
-		t.Fatalf("wrapper output = %q, want platform-zero --version", got)
+	if got := strings.TrimSpace(string(output)); got != "platform-kajicode --version" {
+		t.Fatalf("wrapper output = %q, want platform-kajicode --version", got)
 	}
 }
 
@@ -354,7 +354,7 @@ func TestNodeWrapperFallsBackToDownloadedBinary(t *testing.T) {
 	node := requireNode(t)
 	wrapperPath := copyWrapperFixture(t)
 	root := filepath.Dir(filepath.Dir(wrapperPath))
-	if err := os.WriteFile(filepath.Join(root, "zero"), []byte("#!/usr/bin/env sh\nprintf 'downloaded-zero\\n'\n"), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "kajicode"), []byte("#!/usr/bin/env sh\nprintf 'downloaded-kajicode\\n'\n"), 0o755); err != nil {
 		t.Fatalf("WriteFile downloaded fixture: %v", err)
 	}
 
@@ -368,8 +368,8 @@ func TestNodeWrapperFallsBackToDownloadedBinary(t *testing.T) {
 	if err != nil {
 		t.Fatalf("wrapper returned error: %v; output: %s", err, output)
 	}
-	if got := strings.TrimSpace(string(output)); got != "downloaded-zero" {
-		t.Fatalf("wrapper output = %q, want downloaded-zero", got)
+	if got := strings.TrimSpace(string(output)); got != "downloaded-kajicode" {
+		t.Fatalf("wrapper output = %q, want downloaded-kajicode", got)
 	}
 }
 
@@ -379,7 +379,7 @@ func TestNodeWrapperRunsFirstRunDownloaderWhenBinaryMissing(t *testing.T) {
 	root := filepath.Dir(filepath.Dir(wrapperPath))
 
 	// Give the fixture the real downloader so the wrapper's first-run path
-	// executes it; ZERO_SKIP_DOWNLOAD keeps the test offline, so the download
+	// executes it; KAJICODE_SKIP_DOWNLOAD keeps the test offline, so the download
 	// "succeeds" without producing a binary and the wrapper must exit 1 with
 	// guidance.
 	scriptsDir := filepath.Join(root, "scripts")
@@ -393,14 +393,14 @@ func TestNodeWrapperRunsFirstRunDownloaderWhenBinaryMissing(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(scriptsDir, "postinstall.mjs"), postinstall, 0o644); err != nil {
 		t.Fatalf("WriteFile postinstall fixture: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "package.json"), []byte(`{"type":"module","name":"@gitlawb/zero","version":"0.0.0"}`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "package.json"), []byte(`{"type":"module","name":"@dishant0406/kajicode","version":"0.0.0"}`), 0o644); err != nil {
 		t.Fatalf("WriteFile package fixture: %v", err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), nodeWrapperTimeout())
 	defer cancel()
 	command := nodeWrapperCommand(ctx, node, wrapperPath, "--version")
-	command.Env = append(command.Env, "ZERO_SKIP_DOWNLOAD=1")
+	command.Env = append(command.Env, "KAJICODE_SKIP_DOWNLOAD=1")
 	output, err := command.CombinedOutput()
 	if ctx.Err() != nil {
 		t.Fatalf("wrapper timed out on first-run download path: %v; output: %s", ctx.Err(), output)
@@ -441,7 +441,7 @@ func nodeArchName() string {
 	}
 }
 
-// Issue #405: `zero doctor` is the diagnostic command, so when the native
+// Issue #405: `kajicode doctor` is the diagnostic command, so when the native
 // binary is the thing that's broken it must NOT bail with the generic wrapper
 // error; that's exactly the blind alley the bug report calls out. Instead it
 // emits a doctor-shaped FAIL line for the runtime so the user's own diagnostic
@@ -460,7 +460,7 @@ func TestNodeWrapperDoctorReportsMissingNativeBinaryAsDoctorFail(t *testing.T) {
 	// Doctor-shaped report, not the generic wrapper bail. Matches the shape the
 	// Go-side doctor.Format emits: a header, "Overall: <pass/fail>", then
 	// "[<status>] <id> - <message>" lines.
-	if !strings.Contains(stdout, "Zero doctor report (") {
+	if !strings.Contains(stdout, "KajiCode doctor report (") {
 		t.Fatalf("doctor output should start with a doctor report header, got stdout=%q", stdout)
 	}
 	if !strings.Contains(stdout, "Overall: fail") {
@@ -469,7 +469,7 @@ func TestNodeWrapperDoctorReportsMissingNativeBinaryAsDoctorFail(t *testing.T) {
 	if !strings.Contains(stdout, "[fail] runtime.go") {
 		t.Fatalf("doctor must report a failing runtime.go check, got stdout=%q", stdout)
 	}
-	if !strings.Contains(stdout, "Native zero binary is missing next to the npm wrapper") {
+	if !strings.Contains(stdout, "Native kajicode binary is missing next to the npm wrapper") {
 		t.Fatalf("doctor must name the actual cause (missing native binary), got stdout=%q", stdout)
 	}
 	// The actionable remedy must point at the postinstall script that would fix
@@ -480,7 +480,7 @@ func TestNodeWrapperDoctorReportsMissingNativeBinaryAsDoctorFail(t *testing.T) {
 	// Regression guard for the original blind-alley bug: the doctor path must
 	// NOT emit the generic wrapper bail (that's what sent users debugging the
 	// wrong thing).
-	if strings.Contains(stdout, "[zero] No native binary is available for this install") {
+	if strings.Contains(stdout, "[kajicode] No native binary is available for this install") {
 		t.Fatalf("doctor must not emit the generic wrapper bail, got stdout=%q", stdout)
 	}
 }
@@ -521,7 +521,7 @@ func TestNodeWrapperDoctorJSONReportsMissingNativeBinaryAsJSONFail(t *testing.T)
 	if check.ID != "runtime.go" || check.Label != "Go runtime" || check.Status != "fail" {
 		t.Fatalf("doctor --json runtime check = %#v, want failing runtime.go check", check)
 	}
-	if !strings.Contains(check.Message, "Native zero binary is missing next to the npm wrapper") {
+	if !strings.Contains(check.Message, "Native kajicode binary is missing next to the npm wrapper") {
 		t.Fatalf("doctor --json must name the actual cause, got %#v", check)
 	}
 	remedy, _ := check.Details["remedy"].(string)
@@ -540,7 +540,7 @@ func TestNodeWrapperDoctorHelpShowsUsage(t *testing.T) {
 		if strings.TrimSpace(stderr) != "" {
 			t.Fatalf("%v help must write to stdout only, got stderr=%q", args, stderr)
 		}
-		if !strings.Contains(stdout, "Usage:") || !strings.Contains(stdout, "zero doctor [flags]") {
+		if !strings.Contains(stdout, "Usage:") || !strings.Contains(stdout, "kajicode doctor [flags]") {
 			t.Fatalf("%v help output = %q, want doctor usage text", args, stdout)
 		}
 	}
@@ -555,7 +555,7 @@ func TestNodeWrapperDoctorRejectsUnknownFlag(t *testing.T) {
 	if strings.TrimSpace(stdout) != "" {
 		t.Fatalf("invalid doctor flag should not write stdout, got %q", stdout)
 	}
-	if stderr != "[zero] unknown doctor flag \"--bogus\"\n" {
+	if stderr != "[kajicode] unknown doctor flag \"--bogus\"\n" {
 		t.Fatalf("invalid doctor flag stderr = %q", stderr)
 	}
 }
@@ -575,14 +575,14 @@ func TestNodeWrapperDoctorWithFlagsStillReportsDoctorFail(t *testing.T) {
 	if !strings.Contains(stdout, "[fail] runtime.go") {
 		t.Fatalf("doctor --connectivity must still emit the failing runtime.go line, got stdout=%q", stdout)
 	}
-	if strings.Contains(stdout, "[zero] No native binary is available for this install") {
+	if strings.Contains(stdout, "[kajicode] No native binary is available for this install") {
 		t.Fatalf("doctor --connectivity must not fall back to the generic bail, got stdout=%q", stdout)
 	}
 }
 
 func TestNodeWrapperGenericReportsBunRecoveryWhenInstalledByBun(t *testing.T) {
 	wrapperPath := copyWrapperFixture(t)
-	_, stderr, exitCode := runWrapperFixtureWithEnv(t, wrapperPath, []string{"ZERO_WRAPPER_SIMULATE_BUN=1"}, "--version")
+	_, stderr, exitCode := runWrapperFixtureWithEnv(t, wrapperPath, []string{"KAJICODE_WRAPPER_SIMULATE_BUN=1"}, "--version")
 	if exitCode != wrapperExitDoctor {
 		t.Fatalf("generic missing-binary exit = %d, want %d; stderr=%s", exitCode, wrapperExitDoctor, stderr)
 	}
@@ -594,7 +594,7 @@ func TestNodeWrapperGenericReportsBunRecoveryWhenInstalledByBun(t *testing.T) {
 
 func TestNodeWrapperDoctorReportsBunRecoveryWhenInstalledByBun(t *testing.T) {
 	wrapperPath := copyWrapperFixture(t)
-	stdout, stderr, exitCode := runWrapperFixtureWithEnv(t, wrapperPath, []string{"ZERO_WRAPPER_SIMULATE_BUN=1"}, "doctor")
+	stdout, stderr, exitCode := runWrapperFixtureWithEnv(t, wrapperPath, []string{"KAJICODE_WRAPPER_SIMULATE_BUN=1"}, "doctor")
 	if exitCode != wrapperExitDoctor {
 		t.Fatalf("doctor bun exit = %d, want %d; stdout=%s stderr=%s", exitCode, wrapperExitDoctor, stdout, stderr)
 	}
@@ -615,7 +615,7 @@ func TestNodeWrapperDoctorReportsBunRecoveryWhenInstalledByBun(t *testing.T) {
 
 func TestNodeWrapperDoctorAndGenericShareBunRecoveryCopy(t *testing.T) {
 	wrapperPath := copyWrapperFixture(t)
-	simulateBun := []string{"ZERO_WRAPPER_SIMULATE_BUN=1"}
+	simulateBun := []string{"KAJICODE_WRAPPER_SIMULATE_BUN=1"}
 	_, genericStderr, _ := runWrapperFixtureWithEnv(t, wrapperPath, simulateBun, "--version")
 	doctorStdout, _, _ := runWrapperFixtureWithEnv(t, wrapperPath, simulateBun, "doctor")
 	genericBun := extractBunRecoveryBlock(genericStderr)
@@ -663,8 +663,8 @@ func TestNodeWrapperLaunchesNativeBinary(t *testing.T) {
 	node := requireNode(t)
 	wrapperPath := copyWrapperFixture(t)
 	root := filepath.Dir(filepath.Dir(wrapperPath))
-	nativePath := filepath.Join(root, "zero")
-	if err := os.WriteFile(nativePath, []byte("#!/usr/bin/env sh\nprintf 'mock-zero'; for arg in \"$@\"; do printf ' %s' \"$arg\"; done; printf '\\n'\n"), 0o755); err != nil {
+	nativePath := filepath.Join(root, "kajicode")
+	if err := os.WriteFile(nativePath, []byte("#!/usr/bin/env sh\nprintf 'mock-kajicode'; for arg in \"$@\"; do printf ' %s' \"$arg\"; done; printf '\\n'\n"), 0o755); err != nil {
 		t.Fatalf("WriteFile native fixture: %v", err)
 	}
 
@@ -678,7 +678,7 @@ func TestNodeWrapperLaunchesNativeBinary(t *testing.T) {
 	if err != nil {
 		t.Fatalf("wrapper returned error: %v; output: %s", err, output)
 	}
-	if got := strings.TrimSpace(string(output)); got != "mock-zero --version" {
+	if got := strings.TrimSpace(string(output)); got != "mock-kajicode --version" {
 		t.Fatalf("wrapper output = %q", got)
 	}
 }
@@ -690,8 +690,8 @@ func TestNodeWrapperPassesLocalControlHelperManifest(t *testing.T) {
 	node := requireNode(t)
 	wrapperPath := copyWrapperFixture(t)
 	root := filepath.Dir(filepath.Dir(wrapperPath))
-	nativePath := filepath.Join(root, "zero")
-	if err := os.WriteFile(nativePath, []byte("#!/usr/bin/env sh\nprintf '%s\\n' \"$ZERO_LOCAL_CONTROL_HELPERS\"\n"), 0o755); err != nil {
+	nativePath := filepath.Join(root, "kajicode")
+	if err := os.WriteFile(nativePath, []byte("#!/usr/bin/env sh\nprintf '%s\\n' \"$KAJICODE_LOCAL_CONTROL_HELPERS\"\n"), 0o755); err != nil {
 		t.Fatalf("WriteFile native fixture: %v", err)
 	}
 	binDir := filepath.Join(root, "node_modules", ".bin")
@@ -751,15 +751,15 @@ func TestNodeWrapperClearsInheritedLocalControlHelperManifestWhenNoHelpers(t *te
 	node := requireNode(t)
 	wrapperPath := copyWrapperFixture(t)
 	root := filepath.Dir(filepath.Dir(wrapperPath))
-	nativePath := filepath.Join(root, "zero")
-	if err := os.WriteFile(nativePath, []byte("#!/usr/bin/env sh\nif [ -n \"${ZERO_LOCAL_CONTROL_HELPERS+x}\" ]; then printf 'set\\n'; else printf 'unset\\n'; fi\n"), 0o755); err != nil {
+	nativePath := filepath.Join(root, "kajicode")
+	if err := os.WriteFile(nativePath, []byte("#!/usr/bin/env sh\nif [ -n \"${KAJICODE_LOCAL_CONTROL_HELPERS+x}\" ]; then printf 'set\\n'; else printf 'unset\\n'; fi\n"), 0o755); err != nil {
 		t.Fatalf("WriteFile native fixture: %v", err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), nodeWrapperTimeout())
 	defer cancel()
 	command := nodeWrapperCommand(ctx, node, wrapperPath, "--version")
-	command.Env = append(withoutEnvKey(command.Env, "ZERO_LOCAL_CONTROL_HELPERS"), `ZERO_LOCAL_CONTROL_HELPERS={"version":1,"helpers":{"agent-browser":{"command":"stale"}}}`)
+	command.Env = append(withoutEnvKey(command.Env, "KAJICODE_LOCAL_CONTROL_HELPERS"), `KAJICODE_LOCAL_CONTROL_HELPERS={"version":1,"helpers":{"agent-browser":{"command":"stale"}}}`)
 	output, err := command.CombinedOutput()
 	if ctx.Err() != nil {
 		t.Fatalf("wrapper timed out launching native binary: %v; output: %s", ctx.Err(), output)
@@ -768,7 +768,7 @@ func TestNodeWrapperClearsInheritedLocalControlHelperManifestWhenNoHelpers(t *te
 		t.Fatalf("wrapper returned error: %v; output: %s", err, output)
 	}
 	if got := strings.TrimSpace(string(output)); got != "unset" {
-		t.Fatalf("ZERO_LOCAL_CONTROL_HELPERS state = %q, want unset", got)
+		t.Fatalf("KAJICODE_LOCAL_CONTROL_HELPERS state = %q, want unset", got)
 	}
 }
 
@@ -796,7 +796,7 @@ func withoutEnvKey(env []string, key string) []string {
 func copyWrapperFixture(t *testing.T) string {
 	t.Helper()
 	root := repoRoot(t)
-	bytes, err := os.ReadFile(filepath.Join(root, "bin", "zero.js"))
+	bytes, err := os.ReadFile(filepath.Join(root, "bin", "kajicode.js"))
 	if err != nil {
 		t.Fatalf("ReadFile wrapper: %v", err)
 	}
@@ -815,7 +815,7 @@ func copyWrapperFixture(t *testing.T) string {
 	if err := os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{"type":"module"}`), 0o644); err != nil {
 		t.Fatalf("WriteFile package fixture: %v", err)
 	}
-	wrapperPath := filepath.Join(binDir, "zero.js")
+	wrapperPath := filepath.Join(binDir, "kajicode.js")
 	if err := os.WriteFile(wrapperPath, bytes, 0o755); err != nil {
 		t.Fatalf("WriteFile wrapper fixture: %v", err)
 	}

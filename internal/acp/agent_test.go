@@ -11,24 +11,24 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/agent"
-	"github.com/Gitlawb/zero/internal/config"
-	"github.com/Gitlawb/zero/internal/sandbox"
-	"github.com/Gitlawb/zero/internal/sessions"
-	"github.com/Gitlawb/zero/internal/tools"
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/agent"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
+	"github.com/dishant0406/KajiCode/internal/sandbox"
+	"github.com/dishant0406/KajiCode/internal/sessions"
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
 // fakeProvider streams a canned assistant message and ends the turn — enough to
 // drive the real agent.Run loop without a live model.
 type fakeProvider struct{ text string }
 
-func (f fakeProvider) StreamCompletion(_ context.Context, _ zeroruntime.CompletionRequest) (<-chan zeroruntime.StreamEvent, error) {
-	ch := make(chan zeroruntime.StreamEvent, 4)
+func (f fakeProvider) StreamCompletion(_ context.Context, _ kajicoderuntime.CompletionRequest) (<-chan kajicoderuntime.StreamEvent, error) {
+	ch := make(chan kajicoderuntime.StreamEvent, 4)
 	go func() {
 		defer close(ch)
-		ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventText, Content: f.text}
-		ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventDone}
+		ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventText, Content: f.text}
+		ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventDone}
 	}()
 	return ch, nil
 }
@@ -47,8 +47,8 @@ func testDeps(t *testing.T) Deps {
 				MaxTurns: 4,
 			}, nil
 		},
-		NewProvider: func(config.ProviderProfile) (zeroruntime.Provider, error) {
-			return fakeProvider{text: "Hello from ZERO"}, nil
+		NewProvider: func(config.ProviderProfile) (kajicoderuntime.Provider, error) {
+			return fakeProvider{text: "Hello from KAJICODE"}, nil
 		},
 		RunAgent: agent.Run,
 		BuildWorkspace: func(string, config.ResolvedConfig) (*tools.Registry, *sandbox.Engine, error) {
@@ -58,7 +58,7 @@ func testDeps(t *testing.T) Deps {
 		},
 		ResolveWorkspaceRoot: func(cwd string) (string, error) { return cwd, nil },
 		Store:                store,
-		AgentInfo:            Implementation{Name: "zero", Version: "test"},
+		AgentInfo:            Implementation{Name: "kajicode", Version: "test"},
 	}
 }
 
@@ -151,7 +151,7 @@ func TestACPEndToEndPrompt(t *testing.T) {
 	}
 
 	// The streamed agent_message_chunk(s) should carry the assistant text.
-	if got := drainText(t, h.updates); !strings.Contains(got, "Hello from ZERO") {
+	if got := drainText(t, h.updates); !strings.Contains(got, "Hello from KAJICODE") {
 		t.Fatalf("streamed text = %q, want it to contain the assistant message", got)
 	}
 }
@@ -203,7 +203,7 @@ func TestACPRunTurnWiresSandboxAndScopedRegistry(t *testing.T) {
 		return reg, engine, nil
 	}
 	var captured agent.Options
-	deps.RunAgent = func(_ context.Context, _ string, _ zeroruntime.Provider, opts agent.Options) (agent.Result, error) {
+	deps.RunAgent = func(_ context.Context, _ string, _ kajicoderuntime.Provider, opts agent.Options) (agent.Result, error) {
 		captured = opts
 		return agent.Result{FinalAnswer: "ok"}, nil
 	}
@@ -271,7 +271,7 @@ func TestACPPromptWarnsWhenTurnPersistenceFails(t *testing.T) {
 		t.Fatalf("stopReason = %q, want %q", promptRes.StopReason, StopEndTurn)
 	}
 	got := drainTextUntil(t, h.updates, func(text string) bool {
-		return strings.Contains(text, "Hello from ZERO") &&
+		return strings.Contains(text, "Hello from KAJICODE") &&
 			strings.Contains(text, "Could not save session history")
 	})
 	if !strings.Contains(got, "Could not save session history") {
@@ -310,7 +310,7 @@ func TestACPLoadWarnsWhenHistoryReadFails(t *testing.T) {
 func drainText(t *testing.T, ch <-chan string) string {
 	t.Helper()
 	return drainTextUntil(t, ch, func(text string) bool {
-		return strings.Contains(text, "Hello from ZERO")
+		return strings.Contains(text, "Hello from KAJICODE")
 	})
 }
 

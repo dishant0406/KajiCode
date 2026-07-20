@@ -9,10 +9,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/config"
-	"github.com/Gitlawb/zero/internal/sandbox"
-	"github.com/Gitlawb/zero/internal/tools"
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
+	"github.com/dishant0406/KajiCode/internal/sandbox"
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
 // TestRunAddDirDispatchForwardsGrantIntoExecScope pins the dispatch seam
@@ -94,7 +94,7 @@ func runExecAddDirWriteProbe(t *testing.T, cwd string, args []string, target str
 		resolveConfig: func(_ string, _ config.Overrides) (config.ResolvedConfig, error) {
 			return execResolvedConfig(), nil
 		},
-		newProvider: func(config.ProviderProfile) (zeroruntime.Provider, error) {
+		newProvider: func(config.ProviderProfile) (kajicoderuntime.Provider, error) {
 			return toolCallingExecProvider{
 				toolCallID: "call_write_extra",
 				toolName:   "write_file",
@@ -178,7 +178,7 @@ func TestExecScopeReRegistrationSwapsCoreToolsByName(t *testing.T) {
 
 func tempDirOutsideDefaultTemp(t *testing.T) string {
 	t.Helper()
-	dir, err := os.MkdirTemp(".", ".zero-sandbox-outside-")
+	dir, err := os.MkdirTemp(".", ".kajicode-sandbox-outside-")
 	if err != nil {
 		t.Fatalf("MkdirTemp outside default temp: %v", err)
 	}

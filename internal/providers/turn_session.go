@@ -4,16 +4,16 @@ import (
 	"os"
 	"strings"
 
-	"github.com/Gitlawb/zero/internal/config"
-	"github.com/Gitlawb/zero/internal/providers/openai"
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
+	"github.com/dishant0406/KajiCode/internal/providers/openai"
 )
 
 // openaiTurnSessionEnv gates the optimized OpenAI turn session (prewarm +
 // prefix telemetry). Default OFF: unset, "0", or "false" (any case) leave the
 // agent loop's default adapter path untouched. Set to any other non-empty
-// value (e.g. "1") to enable — the same boolean idiom as ZERO_FORMAT_ON_WRITE.
-const openaiTurnSessionEnv = "ZERO_OPENAI_TURN_SESSION"
+// value (e.g. "1") to enable — the same boolean idiom as KAJICODE_FORMAT_ON_WRITE.
+const openaiTurnSessionEnv = "KAJICODE_OPENAI_TURN_SESSION"
 
 func openaiTurnSessionEnabled() bool {
 	value := strings.TrimSpace(os.Getenv(openaiTurnSessionEnv))
@@ -33,7 +33,7 @@ func openaiTurnSessionEnabled() bool {
 // No base-URL check on top of the kind: prewarm and fingerprint telemetry are
 // harmless against any host, and kind==openai mirrors the existing
 // official-OpenAI precedent used for prompt_cache_key.
-func OptimizedTurnSessions(profile config.ProviderProfile, provider zeroruntime.Provider, options Options) (zeroruntime.TurnSessionProvider, bool) {
+func OptimizedTurnSessions(profile config.ProviderProfile, provider kajicoderuntime.Provider, options Options) (kajicoderuntime.TurnSessionProvider, bool) {
 	if !openaiTurnSessionEnabled() {
 		return nil, false
 	}
@@ -63,10 +63,10 @@ func OptimizedTurnSessions(profile config.ProviderProfile, provider zeroruntime.
 // resolution failure degrades to an unknown (zero) projection rather than
 // failing the wrap: the default session has no behavior that depends on
 // capabilities, so a swap must never be blocked by a projection error.
-func DefaultTurnSessions(profile config.ProviderProfile, provider zeroruntime.Provider, options Options) zeroruntime.TurnSessionProvider {
+func DefaultTurnSessions(profile config.ProviderProfile, provider kajicoderuntime.Provider, options Options) kajicoderuntime.TurnSessionProvider {
 	caps, err := resolveCapabilities(profile, options)
 	if err != nil {
-		caps = zeroruntime.ProviderCapabilities{}
+		caps = kajicoderuntime.ProviderCapabilities{}
 	}
-	return zeroruntime.NewProviderTurnSessionProvider(provider, caps)
+	return kajicoderuntime.NewProviderTurnSessionProvider(provider, caps)
 }

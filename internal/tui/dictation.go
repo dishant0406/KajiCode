@@ -11,8 +11,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/Gitlawb/zero/internal/config"
-	"github.com/Gitlawb/zero/internal/dictation"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/dictation"
 )
 
 // Transcriber and Recorder are re-exported so Options and the model can refer to
@@ -395,7 +395,7 @@ func (m model) handleDictationTranscribed(msg dictationTranscribedMsg) (tea.Mode
 	if msg.err != nil && !errors.Is(msg.err, context.Canceled) {
 		// A cloud auth failure (missing/invalid key) is fixable in place: reopen the
 		// API-key prompt for the current provider so the user can paste a key and
-		// retry, instead of hitting a dead-end "run zero auth" line.
+		// retry, instead of hitting a dead-end "run kajicode auth" line.
 		if next, handled := m.maybeOfferKeyOnAuthError(msg.err); handled {
 			return next, nil
 		}
@@ -459,10 +459,10 @@ func (m model) dictationStatusChip() string {
 		if !m.dictation.eventTypesSupported {
 			stop = "press Space to stop" // press-to-toggle fallback
 		}
-		wave := zeroTheme.amber.Render("● " + renderWaveBars(m.dictation.waveBars) + " REC")
-		return wave + zeroTheme.muted.Render(" · "+stop+", Esc to cancel")
+		wave := kajicodeTheme.amber.Render("● " + renderWaveBars(m.dictation.waveBars) + " REC")
+		return wave + kajicodeTheme.muted.Render(" · "+stop+", Esc to cancel")
 	case dictTranscribing:
-		return zeroTheme.accent.Render("●") + " " + zeroTheme.muted.Render("transcribing…")
+		return kajicodeTheme.accent.Render("●") + " " + kajicodeTheme.muted.Render("transcribing…")
 	}
 	return ""
 }
@@ -582,7 +582,7 @@ func (m model) voiceModeIndicator() string {
 	if !m.dictation.voiceModeEnabled {
 		return ""
 	}
-	return zeroTheme.accent.Render("🎙 voice") + zeroTheme.muted.Render(" · "+m.dictation.currentModelLabel())
+	return kajicodeTheme.accent.Render("🎙 voice") + kajicodeTheme.muted.Render(" · "+m.dictation.currentModelLabel())
 }
 
 // dictationErrorText renders a dictation error for the transcript: a missing-

@@ -40,7 +40,7 @@ func TestRecoverCapturesPanic(t *testing.T) {
 	if code != crashExitCode {
 		t.Fatalf("exit code = %d, want %d", code, crashExitCode)
 	}
-	if !strings.Contains(stderr.String(), "zero crashed") || !strings.Contains(stderr.String(), "kaboom") {
+	if !strings.Contains(stderr.String(), "kajicode crashed") || !strings.Contains(stderr.String(), "kaboom") {
 		t.Fatalf("missing crash notice: %q", stderr.String())
 	}
 	entries, _ := os.ReadDir(dir)

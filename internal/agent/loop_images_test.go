@@ -5,27 +5,27 @@ import (
 	"context"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
 )
 
 // imageEchoProvider records the messages of the first request it receives, then
 // returns an empty final answer so the loop terminates after one turn.
 type imageEchoProvider struct {
-	seen []zeroruntime.Message
+	seen []kajicoderuntime.Message
 }
 
-func (p *imageEchoProvider) StreamCompletion(ctx context.Context, request zeroruntime.CompletionRequest) (<-chan zeroruntime.StreamEvent, error) {
+func (p *imageEchoProvider) StreamCompletion(ctx context.Context, request kajicoderuntime.CompletionRequest) (<-chan kajicoderuntime.StreamEvent, error) {
 	if p.seen == nil {
-		p.seen = append([]zeroruntime.Message{}, request.Messages...)
+		p.seen = append([]kajicoderuntime.Message{}, request.Messages...)
 	}
-	events := make(chan zeroruntime.StreamEvent)
+	events := make(chan kajicoderuntime.StreamEvent)
 	close(events)
 	return events, nil
 }
 
 func TestRunSeedsImagesIntoUserTurn(t *testing.T) {
 	provider := &imageEchoProvider{}
-	images := []zeroruntime.ImageBlock{{MediaType: "image/png", Data: []byte{0x89, 0x50}}}
+	images := []kajicoderuntime.ImageBlock{{MediaType: "image/png", Data: []byte{0x89, 0x50}}}
 
 	if _, err := Run(context.Background(), "look at this", provider, Options{
 		MaxTurns: 1,
@@ -38,7 +38,7 @@ func TestRunSeedsImagesIntoUserTurn(t *testing.T) {
 		t.Fatalf("provider saw %d messages, want >= 2", len(provider.seen))
 	}
 	user := provider.seen[len(provider.seen)-1]
-	if user.Role != zeroruntime.MessageRoleUser {
+	if user.Role != kajicoderuntime.MessageRoleUser {
 		t.Fatalf("last seeded message role = %q, want user", user.Role)
 	}
 	if len(user.Images) != 1 || user.Images[0].MediaType != "image/png" {
@@ -52,9 +52,9 @@ func TestRunSeedsImagesIntoUserTurn(t *testing.T) {
 func TestCopyMessagesDeepCopiesImageBytes(t *testing.T) {
 	source := []Message{
 		{
-			Role:    zeroruntime.MessageRoleUser,
+			Role:    kajicoderuntime.MessageRoleUser,
 			Content: "look",
-			Images: []zeroruntime.ImageBlock{
+			Images: []kajicoderuntime.ImageBlock{
 				{MediaType: "image/png", Data: []byte{0x89, 0x50, 0x4e, 0x47}},
 			},
 		},

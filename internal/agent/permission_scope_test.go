@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/sandbox"
+	"github.com/dishant0406/KajiCode/internal/sandbox"
 )
 
 func TestPermissionScope(t *testing.T) {

@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-export GOCACHE="${GOCACHE:-/tmp/zero-go-cache}"
+export GOCACHE="${GOCACHE:-/tmp/kajicode-go-cache}"
 
 go test ./internal/sandbox -run 'TestPermissionProfileFromPolicyBuildsWorkspaceWriteProfile|TestPermissionProfileFromDisabledPolicyDoesNotRequirePlatformSandbox|TestSandboxManagerBuildsExecutionRequestFromProfile|TestSandboxManagerBuildsCommandPlanThroughLinuxHelper|TestSandboxManagerBuildsCommandPlanThroughWindowsRunner|TestSandboxManagerRejectsUnavailableCommandPlan|TestSandboxManagerSelectsPlatformBackend|TestSelectBackendDelegatesToSandboxManagerSelection|TestSandboxManagerFailsClosedWhenNativeRequiredAndUnavailable|TestBuildLinuxSandboxCommandArgsSerializesPermissionProfile|TestParseLinuxSandboxHelperArgs|TestBuildLinuxSandboxBwrapArgsWrapsInnerSeccompStage|TestWindowsCapabilitySIDsPersistAndReuse|TestWindowsCapabilitySIDsAreScopedByRoot|TestWindowsCapabilitySIDsForConfigSelectsReadOnlySID|TestWindowsCapabilitySIDsForConfigSelectsWritableRootSIDs|TestBuildWindowsACLPlanForWorkspaceWriteProfile|TestBuildWindowsNetworkPlanForAllowKeepsWFPNamespaceForCleanup|TestBuildWindowsNetworkPlanForDenyUsesCapabilityIdentity|TestBuildWindowsNetworkPlanFailsClosedForScoped|TestWindowsNetworkPlanHashIsStableAcrossEntryOrder|TestBuildAndParseWindowsSandboxSetupArgs|TestRunWindowsSandboxCommandRunnerRejectsInvalidArgs|TestRunWindowsSandboxSetupRejectsInvalidArgs|TestWindowsSandboxSetupMarkerRefreshesWhenProfileChanges|TestWindowsACLPlanHashIsStableAcrossEntryOrder|TestTargetBackendForPlatformBaseline|TestBackendPlanCarriesPhase0ManagerFields|TestCommandPlanCarriesSandboxMetadata|TestUnavailableFailClosedForTargetPlatforms|TestLegacySandboxEntrypointsAreExplicitAndExist|TestSelectBackendChoosesPlatformAdapterWithFallback|TestBackendBuildPlanDocumentsBestEffortIsolation|TestBackendCapabilitiesReflectDisabledPolicy'
 go test ./internal/cli -run 'TestRunSandboxPolicyInspectTextAndJSON|TestRunSandboxPolicyJSONGoldenIncludesManagerBaselineFields|TestRunSandboxPolicyEffectiveTextAndJSON'
@@ -34,24 +34,24 @@ build_cmd() {
 for goos in linux darwin windows; do
   compile_pkg "$goos" ./internal/sandbox
   compile_pkg "$goos" ./internal/cli
-  compile_pkg "$goos" ./cmd/zero
+  compile_pkg "$goos" ./cmd/kajicode
 done
-compile_pkg linux ./cmd/zero-linux-sandbox
-compile_pkg linux ./cmd/zero-seccomp
-build_cmd windows ./cmd/zero-windows-command-runner zero-windows-command-runner.exe
-build_cmd windows ./cmd/zero-windows-sandbox-setup zero-windows-sandbox-setup.exe
+compile_pkg linux ./cmd/kajicode-linux-sandbox
+compile_pkg linux ./cmd/kajicode-seccomp
+build_cmd windows ./cmd/kajicode-windows-command-runner kajicode-windows-command-runner.exe
+build_cmd windows ./cmd/kajicode-windows-sandbox-setup kajicode-windows-sandbox-setup.exe
 
 case "$(go env GOOS)" in
   linux)
-    ZERO_SANDBOX_REAL_SMOKE=1 go test ./internal/sandbox -run 'TestLinuxHelperRealSandboxSmoke|TestLinuxLandlockRealSandboxSmoke' -count=1
+    KAJICODE_SANDBOX_REAL_SMOKE=1 go test ./internal/sandbox -run 'TestLinuxHelperRealSandboxSmoke|TestLinuxLandlockRealSandboxSmoke' -count=1
     ;;
   darwin)
     go test ./internal/sandbox -run TestSandboxExecProfileAllowsDevNullAndTemp -count=1
     ;;
   windows)
-    ZERO_SANDBOX_REAL_SMOKE=1 \
-      ZERO_WINDOWS_COMMAND_RUNNER_EXE="$tmpdir/windows-zero-windows-command-runner.exe" \
-      ZERO_WINDOWS_SANDBOX_SETUP_EXE="$tmpdir/windows-zero-windows-sandbox-setup.exe" \
+    KAJICODE_SANDBOX_REAL_SMOKE=1 \
+      KAJICODE_WINDOWS_COMMAND_RUNNER_EXE="$tmpdir/windows-kajicode-windows-command-runner.exe" \
+      KAJICODE_WINDOWS_SANDBOX_SETUP_EXE="$tmpdir/windows-kajicode-windows-sandbox-setup.exe" \
       go test ./internal/sandbox -run TestWindowsRestrictedTokenRealSandboxSmoke -count=1
     ;;
   *)

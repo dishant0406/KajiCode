@@ -8,10 +8,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/config"
-	"github.com/Gitlawb/zero/internal/mcp"
-	"github.com/Gitlawb/zero/internal/tools"
-	"github.com/Gitlawb/zero/internal/workspacetrust"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/mcp"
+	"github.com/dishant0406/KajiCode/internal/tools"
+	"github.com/dishant0406/KajiCode/internal/workspacetrust"
 )
 
 // mcpTrustDeps builds an appDeps whose resolveMCPConfig HONORS excludeProject: it
@@ -65,7 +65,7 @@ func TestMCPGateUntrustedExcludesProjectServer(t *testing.T) {
 	if _, ok := runtime.(noopMCPRuntime); !ok {
 		t.Fatalf("with the project server dropped, the runtime should be the noop runtime, got %T", runtime)
 	}
-	// This repo has no ./.zero/config.json, so there is no project MCP config to
+	// This repo has no ./.kajicode/config.json, so there is no project MCP config to
 	// notice about even though it is untrusted; the skip must stay clean.
 	if skip.excludedProjectConfig {
 		t.Fatalf("no project MCP config on disk, so the skip must not flag an excluded config")
@@ -137,18 +137,18 @@ func TestMCPGateTrustedSpawnsProjectServer(t *testing.T) {
 	}
 }
 
-// TestMCPToolsListSurfacesTrustNotice proves `zero mcp tools list` no longer drops the
+// TestMCPToolsListSurfacesTrustNotice proves `kajicode mcp tools list` no longer drops the
 // project MCP layer silently in an untrusted workspace: the gated skip is surfaced on
 // stderr (the list stays on stdout), so an empty list is explained rather than read as
 // "nothing configured". Trusting the repo silences it.
 func TestMCPToolsListSurfacesTrustNotice(t *testing.T) {
 	setTrustConfigRoot(t)
 	repo := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(repo, ".zero"), 0o700); err != nil {
+	if err := os.MkdirAll(filepath.Join(repo, ".kajicode"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	body := `{"mcp":{"servers":{"proj":{"type":"stdio","command":"proj-cmd"}}}}`
-	if err := os.WriteFile(filepath.Join(repo, ".zero", "config.json"), []byte(body), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(repo, ".kajicode", "config.json"), []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -165,7 +165,7 @@ func TestMCPToolsListSurfacesTrustNotice(t *testing.T) {
 	}
 
 	// Untrusted: the gated project MCP layer must be explained on stderr.
-	if errUntrusted := run(); !strings.Contains(errUntrusted, "MCP servers") || !strings.Contains(errUntrusted, "zero trust") {
+	if errUntrusted := run(); !strings.Contains(errUntrusted, "MCP servers") || !strings.Contains(errUntrusted, "kajicode trust") {
 		t.Fatalf("untrusted `mcp tools list` must surface the trust notice on stderr, got %q", errUntrusted)
 	}
 
@@ -179,14 +179,14 @@ func TestMCPToolsListSurfacesTrustNotice(t *testing.T) {
 }
 
 // TestProjectMCPConfigExists exercises every branch of the notice-gating detector:
-// only a ./.zero/config.json that parses AND declares at least one server is true.
+// only a ./.kajicode/config.json that parses AND declares at least one server is true.
 func TestProjectMCPConfigExists(t *testing.T) {
 	writeCfg := func(t *testing.T, dir, body string) {
 		t.Helper()
-		if err := os.MkdirAll(filepath.Join(dir, ".zero"), 0o700); err != nil {
+		if err := os.MkdirAll(filepath.Join(dir, ".kajicode"), 0o700); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(dir, ".zero", "config.json"), []byte(body), 0o600); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, ".kajicode", "config.json"), []byte(body), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -222,16 +222,16 @@ func TestProjectMCPConfigExists(t *testing.T) {
 // name the fail-closed reason -- the same error path the hook and plugin gates cover.
 func TestMCPGateFailClosedOnStoreError(t *testing.T) {
 	configRoot := setTrustConfigRoot(t)
-	trustPath := filepath.Join(configRoot, "zero", "trust.json")
+	trustPath := filepath.Join(configRoot, "kajicode", "trust.json")
 	if err := os.MkdirAll(trustPath, 0o700); err != nil {
 		t.Fatalf("create trust.json as a directory: %v", err)
 	}
 	repo := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(repo, ".zero"), 0o700); err != nil {
-		t.Fatalf("mkdir project .zero: %v", err)
+	if err := os.MkdirAll(filepath.Join(repo, ".kajicode"), 0o700); err != nil {
+		t.Fatalf("mkdir project .kajicode: %v", err)
 	}
 	body := `{"mcp":{"servers":{"proj":{"type":"stdio","command":"proj-cmd"}}}}`
-	if err := os.WriteFile(filepath.Join(repo, ".zero", "config.json"), []byte(body), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(repo, ".kajicode", "config.json"), []byte(body), 0o600); err != nil {
 		t.Fatalf("write project config.json: %v", err)
 	}
 
@@ -257,7 +257,7 @@ func TestMCPGateFailClosedOnStoreError(t *testing.T) {
 }
 
 // TestMCPGateUntrustedNoticesProjectMCPConfig proves the notice-surfacing fix: when an
-// untrusted workspace actually declares project MCP servers in ./.zero/config.json,
+// untrusted workspace actually declares project MCP servers in ./.kajicode/config.json,
 // registerMCPToolsForWorkspace reports excludedProjectConfig=true so the caller can
 // warn (the CodeRabbit finding: project MCP was gated silently). Trusting the repo
 // clears the skip.
@@ -265,11 +265,11 @@ func TestMCPGateUntrustedNoticesProjectMCPConfig(t *testing.T) {
 	setTrustConfigRoot(t)
 	repo := t.TempDir()
 	// A real project MCP config on disk: projectMCPConfigExists reads this file.
-	if err := os.MkdirAll(filepath.Join(repo, ".zero"), 0o700); err != nil {
-		t.Fatalf("mkdir project .zero: %v", err)
+	if err := os.MkdirAll(filepath.Join(repo, ".kajicode"), 0o700); err != nil {
+		t.Fatalf("mkdir project .kajicode: %v", err)
 	}
 	body := `{"mcp":{"servers":{"proj":{"type":"stdio","command":"proj-cmd"}}}}`
-	if err := os.WriteFile(filepath.Join(repo, ".zero", "config.json"), []byte(body), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(repo, ".kajicode", "config.json"), []byte(body), 0o600); err != nil {
 		t.Fatalf("write project config.json: %v", err)
 	}
 
@@ -303,8 +303,8 @@ func TestMCPGateUntrustedNoticesProjectMCPConfig(t *testing.T) {
 	}
 }
 
-// TestMCPCheckSurfacesTrustNotice proves the `zero mcp check` notice fix: in an untrusted
-// workspace whose only definition of a server lives in ./.zero/config.json, the gate
+// TestMCPCheckSurfacesTrustNotice proves the `kajicode mcp check` notice fix: in an untrusted
+// workspace whose only definition of a server lives in ./.kajicode/config.json, the gate
 // drops the server and the command must emit the one-line trust notice before the
 // "not configured" error, instead of a bare miss that hides the trust exclusion. The R4
 // half proves the notice self-gates: a genuinely-absent server in a workspace with no
@@ -324,11 +324,11 @@ func TestMCPCheckSurfacesTrustNotice(t *testing.T) {
 
 	// Untrusted workspace whose ONLY definition of `proj` is project config on disk.
 	repo := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(repo, ".zero"), 0o700); err != nil {
+	if err := os.MkdirAll(filepath.Join(repo, ".kajicode"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	body := `{"mcp":{"servers":{"proj":{"type":"stdio","command":"proj-cmd"}}}}`
-	if err := os.WriteFile(filepath.Join(repo, ".zero", "config.json"), []byte(body), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(repo, ".kajicode", "config.json"), []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	var out, errBuf bytes.Buffer
@@ -337,7 +337,7 @@ func TestMCPCheckSurfacesTrustNotice(t *testing.T) {
 		t.Fatalf("mcp check on a gated project server must fail, got success; stderr=%q", errBuf.String())
 	}
 	if got := errBuf.String(); !strings.Contains(got, "not configured") ||
-		!strings.Contains(got, "MCP servers") || !strings.Contains(got, "zero trust") {
+		!strings.Contains(got, "MCP servers") || !strings.Contains(got, "kajicode trust") {
 		t.Fatalf("untrusted mcp check must report not-configured AND surface the trust notice, got %q", got)
 	}
 
@@ -352,7 +352,7 @@ func TestMCPCheckSurfacesTrustNotice(t *testing.T) {
 	if got := errBuf2.String(); !strings.Contains(got, "not configured") {
 		t.Fatalf("stderr must report not configured, got %q", got)
 	}
-	if got := errBuf2.String(); strings.Contains(got, "ignoring project") || strings.Contains(got, "zero trust") {
+	if got := errBuf2.String(); strings.Contains(got, "ignoring project") || strings.Contains(got, "kajicode trust") {
 		t.Fatalf("no project config on disk means no trust notice, got %q", got)
 	}
 }

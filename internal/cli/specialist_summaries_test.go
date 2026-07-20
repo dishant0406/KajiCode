@@ -3,7 +3,7 @@ package cli
 import (
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/specialist"
+	"github.com/dishant0406/KajiCode/internal/specialist"
 )
 
 // TestSpecialistSummariesIncludesBuiltins confirms the orchestrator delegation

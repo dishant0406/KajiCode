@@ -106,7 +106,7 @@ func DefaultRoot(env map[string]string) string {
 	if base == "" {
 		base = filepath.Join(home, ".local", "share")
 	}
-	return filepath.Join(base, "zero", "background")
+	return filepath.Join(base, "kajicode", "background")
 }
 
 func (manager *Manager) RootDir() string {
@@ -506,7 +506,7 @@ func (manager *Manager) metadataFile(taskID string) string {
 func (manager *Manager) warnf(format string, args ...any) {
 	message := fmt.Sprintf(format, args...)
 	manager.warnings = append(manager.warnings, message)
-	log.Printf("zero background: %s", message)
+	log.Printf("kajicode background: %s", message)
 }
 
 func (manager *Manager) OutputPath(taskID string) string {

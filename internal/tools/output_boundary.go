@@ -20,7 +20,7 @@ const (
 func applyRegistryOutputBudget(tool Tool, toolName string, args map[string]any, result Result) Result {
 	budget := registryOutputBudget(toolName)
 	if budget.maxEstimatedTokens <= 0 && budget.hardMaxBytes <= 0 {
-		return result // preserve ZERO_TOOL_OUTPUT_CEILING_TOKENS=0 semantics
+		return result // preserve KAJICODE_TOOL_OUTPUT_CEILING_TOKENS=0 semantics
 	}
 
 	category := resolveOutputCategory(tool, toolName, args)
@@ -187,7 +187,7 @@ func shellOutputCategory(command string) outputCategory {
 	return outputCategoryProcess
 }
 
-// attachExistingSpill reuses Zero's hardened per-user spill directory. output
+// attachExistingSpill reuses KajiCode's hardened per-user spill directory. output
 // is the already-redacted text received by this layer; it may itself be a
 // capture-bounded view produced by a subprocess tool.
 func attachExistingSpill(toolName, output string, budget outputBudget, current budgetedOutput) budgetedOutput {
@@ -195,7 +195,7 @@ func attachExistingSpill(toolName, output string, budget outputBudget, current b
 	if path == "" {
 		return current
 	}
-	notice := "[zero] full output received by budgeting layer saved to " + path + " (grep or read_file it instead of re-running)"
+	notice := "[kajicode] full output received by budgeting layer saved to " + path + " (grep or read_file it instead of re-running)"
 	reduced := outputBudget{
 		maxEstimatedTokens: max(1, budget.maxEstimatedTokens-estimateOutputTokens("\n"+notice)),
 		hardMaxBytes:       max(1, budget.hardMaxBytes-len("\n"+notice)),

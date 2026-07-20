@@ -6,24 +6,24 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
 )
 
 func TestCompactMessagesReturnsMetadataForManualCompaction(t *testing.T) {
-	messages := []zeroruntime.Message{
-		{Role: zeroruntime.MessageRoleSystem, Content: "system prompt"},
-		{Role: zeroruntime.MessageRoleUser, Content: "first question"},
-		{Role: zeroruntime.MessageRoleAssistant, Content: "first answer"},
-		{Role: zeroruntime.MessageRoleUser, Content: "second question"},
-		{Role: zeroruntime.MessageRoleAssistant, Content: "recent answer"},
-		{Role: zeroruntime.MessageRoleUser, Content: "latest question"},
+	messages := []kajicoderuntime.Message{
+		{Role: kajicoderuntime.MessageRoleSystem, Content: "system prompt"},
+		{Role: kajicoderuntime.MessageRoleUser, Content: "first question"},
+		{Role: kajicoderuntime.MessageRoleAssistant, Content: "first answer"},
+		{Role: kajicoderuntime.MessageRoleUser, Content: "second question"},
+		{Role: kajicoderuntime.MessageRoleAssistant, Content: "recent answer"},
+		{Role: kajicoderuntime.MessageRoleUser, Content: "latest question"},
 	}
 
-	var captured []zeroruntime.Message
+	var captured []kajicoderuntime.Message
 	result, err := CompactMessages(messages, CompactionOptions{
 		PreserveLast: 2,
-		Summarize: func(toSummarize []zeroruntime.Message) (string, error) {
-			captured = append([]zeroruntime.Message(nil), toSummarize...)
+		Summarize: func(toSummarize []kajicoderuntime.Message) (string, error) {
+			captured = append([]kajicoderuntime.Message(nil), toSummarize...)
 			return "  manual summary  ", nil
 		},
 	})
@@ -52,7 +52,7 @@ func TestCompactMessagesReturnsMetadataForManualCompaction(t *testing.T) {
 	if result.Messages[0].Content != "system prompt" {
 		t.Fatalf("system message was not preserved at head: %#v", result.Messages)
 	}
-	if result.Messages[1].Role != zeroruntime.MessageRoleUser {
+	if result.Messages[1].Role != kajicoderuntime.MessageRoleUser {
 		t.Fatalf("summary message role = %s, want user", result.Messages[1].Role)
 	}
 	if !strings.Contains(result.Messages[1].Content, summaryLabel) || !strings.Contains(result.Messages[1].Content, "manual summary") {
@@ -64,15 +64,15 @@ func TestCompactMessagesReturnsMetadataForManualCompaction(t *testing.T) {
 }
 
 func TestCompactMessagesNoopReturnsUncompactedMetadata(t *testing.T) {
-	messages := []zeroruntime.Message{
-		{Role: zeroruntime.MessageRoleSystem, Content: "system"},
-		{Role: zeroruntime.MessageRoleUser, Content: "hi"},
+	messages := []kajicoderuntime.Message{
+		{Role: kajicoderuntime.MessageRoleSystem, Content: "system"},
+		{Role: kajicoderuntime.MessageRoleUser, Content: "hi"},
 	}
 	called := false
 
 	result, err := CompactMessages(messages, CompactionOptions{
 		PreserveLast: 8,
-		Summarize: func([]zeroruntime.Message) (string, error) {
+		Summarize: func([]kajicoderuntime.Message) (string, error) {
 			called = true
 			return "summary", nil
 		},
@@ -102,18 +102,18 @@ func TestCompactMessagesNoopReturnsUncompactedMetadata(t *testing.T) {
 }
 
 func TestCompactMessagesPropagatesSummarizeError(t *testing.T) {
-	messages := []zeroruntime.Message{
-		{Role: zeroruntime.MessageRoleSystem, Content: "system"},
-		{Role: zeroruntime.MessageRoleUser, Content: "first question"},
-		{Role: zeroruntime.MessageRoleAssistant, Content: "first answer"},
-		{Role: zeroruntime.MessageRoleUser, Content: "second question"},
-		{Role: zeroruntime.MessageRoleAssistant, Content: "recent answer"},
-		{Role: zeroruntime.MessageRoleUser, Content: "latest question"},
+	messages := []kajicoderuntime.Message{
+		{Role: kajicoderuntime.MessageRoleSystem, Content: "system"},
+		{Role: kajicoderuntime.MessageRoleUser, Content: "first question"},
+		{Role: kajicoderuntime.MessageRoleAssistant, Content: "first answer"},
+		{Role: kajicoderuntime.MessageRoleUser, Content: "second question"},
+		{Role: kajicoderuntime.MessageRoleAssistant, Content: "recent answer"},
+		{Role: kajicoderuntime.MessageRoleUser, Content: "latest question"},
 	}
 
 	_, err := CompactMessages(messages, CompactionOptions{
 		PreserveLast: 2,
-		Summarize: func([]zeroruntime.Message) (string, error) {
+		Summarize: func([]kajicoderuntime.Message) (string, error) {
 			return "", errors.New("summarizer unavailable")
 		},
 	})

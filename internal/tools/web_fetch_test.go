@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	zeroSandbox "github.com/Gitlawb/zero/internal/sandbox"
+	zeroSandbox "github.com/dishant0406/KajiCode/internal/sandbox"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -73,7 +73,7 @@ func TestWebFetchToolFetchesHTTPText(t *testing.T) {
 		if request.Header.Get("User-Agent") == "" {
 			t.Fatal("expected User-Agent header")
 		}
-		return webFetchTestResponse(request, http.StatusOK, "text/plain; charset=utf-8", "hello zero"), nil
+		return webFetchTestResponse(request, http.StatusOK, "text/plain; charset=utf-8", "hello KajiCode"), nil
 	}))
 
 	result := tool.Run(context.Background(), map[string]any{
@@ -83,7 +83,7 @@ func TestWebFetchToolFetchesHTTPText(t *testing.T) {
 	if result.Status != StatusOK {
 		t.Fatalf("expected ok status, got %s: %s", result.Status, result.Output)
 	}
-	for _, want := range []string{"URL: https://example.com/guide?token=[REDACTED]", "Status: 200 OK", "Content-Type: text/plain; charset=utf-8", "hello zero"} {
+	for _, want := range []string{"URL: https://example.com/guide?token=[REDACTED]", "Status: 200 OK", "Content-Type: text/plain; charset=utf-8", "hello KajiCode"} {
 		if !strings.Contains(result.Output, want) {
 			t.Fatalf("expected output to contain %q, got %q", want, result.Output)
 		}

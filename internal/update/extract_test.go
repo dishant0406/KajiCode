@@ -61,8 +61,8 @@ func TestExtractTarGzRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	archivePath := filepath.Join(dir, "archive.tar.gz")
 	writeTestTarGz(t, archivePath, map[string]string{
-		"zero":                 "main-binary",
-		"helpers/zero-seccomp": "helper-binary",
+		"kajicode":                 "main-binary",
+		"helpers/kajicode-seccomp": "helper-binary",
 	})
 
 	destDir := filepath.Join(dir, "extracted")
@@ -73,19 +73,19 @@ func TestExtractTarGzRoundTrip(t *testing.T) {
 		t.Fatalf("extractArchive: %v", err)
 	}
 
-	data, err := os.ReadFile(filepath.Join(destDir, "zero"))
+	data, err := os.ReadFile(filepath.Join(destDir, "kajicode"))
 	if err != nil {
-		t.Fatalf("ReadFile zero: %v", err)
+		t.Fatalf("ReadFile kajicode: %v", err)
 	}
 	if string(data) != "main-binary" {
-		t.Fatalf("zero content = %q", data)
+		t.Fatalf("kajicode content = %q", data)
 	}
-	data, err = os.ReadFile(filepath.Join(destDir, "helpers", "zero-seccomp"))
+	data, err = os.ReadFile(filepath.Join(destDir, "helpers", "kajicode-seccomp"))
 	if err != nil {
-		t.Fatalf("ReadFile helpers/zero-seccomp: %v", err)
+		t.Fatalf("ReadFile helpers/kajicode-seccomp: %v", err)
 	}
 	if string(data) != "helper-binary" {
-		t.Fatalf("helpers/zero-seccomp content = %q", data)
+		t.Fatalf("helpers/kajicode-seccomp content = %q", data)
 	}
 }
 
@@ -93,7 +93,7 @@ func TestExtractZipRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	archivePath := filepath.Join(dir, "archive.zip")
 	writeTestZip(t, archivePath, map[string]string{
-		"zero.exe": "main-binary",
+		"kajicode.exe": "main-binary",
 	})
 
 	destDir := filepath.Join(dir, "extracted")
@@ -104,12 +104,12 @@ func TestExtractZipRoundTrip(t *testing.T) {
 		t.Fatalf("extractArchive: %v", err)
 	}
 
-	data, err := os.ReadFile(filepath.Join(destDir, "zero.exe"))
+	data, err := os.ReadFile(filepath.Join(destDir, "kajicode.exe"))
 	if err != nil {
-		t.Fatalf("ReadFile zero.exe: %v", err)
+		t.Fatalf("ReadFile kajicode.exe: %v", err)
 	}
 	if string(data) != "main-binary" {
-		t.Fatalf("zero.exe content = %q", data)
+		t.Fatalf("kajicode.exe content = %q", data)
 	}
 }
 
@@ -160,7 +160,7 @@ func TestExtractZipRejectsSymlinkEntry(t *testing.T) {
 		t.Fatalf("Create archive: %v", err)
 	}
 	zipWriter := zip.NewWriter(file)
-	header := &zip.FileHeader{Name: "zero"}
+	header := &zip.FileHeader{Name: "kajicode"}
 	header.SetMode(os.ModeSymlink | 0o777)
 	writer, err := zipWriter.CreateHeader(header)
 	if err != nil {
@@ -183,7 +183,7 @@ func TestExtractZipRejectsSymlinkEntry(t *testing.T) {
 	if err := extractArchive(archivePath, destDir); err == nil {
 		t.Fatal("expected extractArchive to reject a symlink entry")
 	}
-	if _, err := os.Lstat(filepath.Join(destDir, "zero")); err == nil {
+	if _, err := os.Lstat(filepath.Join(destDir, "kajicode")); err == nil {
 		t.Fatal("symlink entry should not have been written to the destination")
 	}
 }
@@ -194,12 +194,12 @@ func TestFindByBasenameSearchesRecursively(t *testing.T) {
 	if err := os.MkdirAll(nested, 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
-	wantPath := filepath.Join(nested, "zero-seccomp")
+	wantPath := filepath.Join(nested, "kajicode-seccomp")
 	if err := os.WriteFile(wantPath, []byte("helper"), 0o755); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	found, err := findByBasename(dir, "zero-seccomp")
+	found, err := findByBasename(dir, "kajicode-seccomp")
 	if err != nil {
 		t.Fatalf("findByBasename: %v", err)
 	}

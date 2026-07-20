@@ -36,7 +36,7 @@ manifest's `buildOnlyClasses` list:
   `go test ./...`: the Go compiler is the structural verifier, so a no-op
   refactor, a missing field, or a reworded-but-not-removed line fails to
   compile/run. fix uses a scoped `go test -run <name>`. nav greps the agent's
-  captured final answer (`.zero-answer.txt`) for determinable facts. This is
+  captured final answer (`.kajicode-answer.txt`) for determinable facts. This is
   the only pass rate that can move with model quality: `tasksVerified` /
   `tasksPassed` / `correctnessPassRate`.
 - **Build-only** (0 tasks) — the tier is empty. refactor used to live here with
@@ -56,15 +56,15 @@ A task's tier is driven by oracle **presence** first: a task with no
 ### How the stamped oracle and captured answer work
 
 The production runner (`NewTurnExecRunner` in `turn_bench.go`) copies the fixture
-into an isolated temp dir, runs `zero exec --trace`, then — before running the
+into an isolated temp dir, runs `kajicode exec --trace`, then — before running the
 `verificationCommand` — stamps two files into the copy:
 
 - `oracle_test.go` from `task.OracleTest` (edit/refactor). It is stamped *after*
   the agent run so it can't interfere with the agent's own `go build`/`go test`
-  during the task (refactor-03's `package zeroapp` test would break a pre-rename
+  during the task (refactor-03's `package kajicodeapp` test would break a pre-rename
   build) and can't be pre-seen or tampered with. The `verificationCommand`
   (`go test ./...`) then compiles and runs it.
-- `.zero-answer.txt` from the `{"type":"final","text":...}` event in the
+- `.kajicode-answer.txt` from the `{"type":"final","text":...}` event in the
   stream-json output (nav). The `verificationCommand` is a compound `bash -c`
   grep requiring the determinable facts (e.g. nav-09 requires the answer to
   mention `port`, `name`, and `retries`). An empty file (no `final` event) makes
@@ -148,7 +148,7 @@ iteration or a later task.
 Each mutating fixture (and nav) carries a `go.mod` (`module <pkg>; go 1.22`) so
 `go test ./...` / `go build ./...` oracles work in the copy: `copyFixture`
 creates a unique, 0700 parent under the system temp root
-(`os.MkdirTemp(os.TempDir(), "zero-turn-bench-*")`) and nests the copy beneath
+(`os.MkdirTemp(os.TempDir(), "kajicode-turn-bench-*")`) and nests the copy beneath
 it, so the copy is a *grandchild* of the temp root. Go ignores `go.mod` in
 direct children of the system temp dir (a hijack guard), so the copy must sit
 one level below that root or every compiler-backed oracle would fail with

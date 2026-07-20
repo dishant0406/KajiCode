@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/keyring"
+	"github.com/dishant0406/KajiCode/internal/keyring"
 )
 
 const (
@@ -42,7 +42,7 @@ func ValidateKey(key string) error {
 // to lower case. Every write (Manager.Login, the ChatGPT flow) and every
 // lookup (FirstStored, GetFresh, logout, status filters) funnels through here,
 // so normalizing at this one choke point keeps them symmetric: without it,
-// `zero auth login xAI` stored "provider:xAI" while the profile scaffolded for
+// `kajicode auth login xAI` stored "provider:xAI" while the profile scaffolded for
 // it looked up "provider:xai" case-sensitively — a fresh, successful login
 // that was invisible to the runtime.
 func ProviderKey(name string) string {
@@ -88,7 +88,7 @@ type StoreOptions struct {
 	Now      func() time.Time
 	// Storage selects the backend: "" / "file" => a 0600 JSON file (default);
 	// "encrypted-file" => an AES-256-GCM encrypted file; "keyring" => the OS
-	// keyring. When empty it falls back to ZERO_OAUTH_STORAGE.
+	// keyring. When empty it falls back to KAJICODE_OAUTH_STORAGE.
 	Storage string
 	// Encrypted is a legacy alias for Storage=="encrypted-file" (AES-256-GCM at
 	// rest). Ignored when Storage is set.
@@ -108,7 +108,7 @@ type KeyringClient interface {
 
 // Keyring storage stores the whole token blob under one fixed entry.
 const (
-	keyringService = "zero"
+	keyringService = "kajicode"
 	keyringAccount = "oauth-tokens"
 )
 
@@ -129,9 +129,9 @@ type storeFile struct {
 }
 
 // ResolveStorePath determines the on-disk location for provider OAuth tokens,
-// honoring ZERO_OAUTH_TOKENS_PATH, then XDG_CONFIG_HOME, then the home dir.
+// honoring KAJICODE_OAUTH_TOKENS_PATH, then XDG_CONFIG_HOME, then the home dir.
 func ResolveStorePath(env map[string]string) (string, error) {
-	if override := strings.TrimSpace(envValue(env, "ZERO_OAUTH_TOKENS_PATH")); override != "" {
+	if override := strings.TrimSpace(envValue(env, "KAJICODE_OAUTH_TOKENS_PATH")); override != "" {
 		if filepath.IsAbs(override) {
 			return filepath.Clean(override), nil
 		}
@@ -155,11 +155,11 @@ func ResolveStorePath(env map[string]string) (string, error) {
 		}
 		configHome = resolved
 	}
-	return filepath.Join(configHome, "zero", "oauth-tokens.json"), nil
+	return filepath.Join(configHome, "kajicode", "oauth-tokens.json"), nil
 }
 
 // NewStore builds a token store with the configured backend (file by default,
-// or the OS keyring when Storage/ZERO_OAUTH_STORAGE selects it).
+// or the OS keyring when Storage/KAJICODE_OAUTH_STORAGE selects it).
 func NewStore(options StoreOptions) (*Store, error) {
 	now := options.Now
 	if now == nil {
@@ -167,7 +167,7 @@ func NewStore(options StoreOptions) (*Store, error) {
 	}
 	storage := strings.TrimSpace(options.Storage)
 	if storage == "" {
-		storage = strings.TrimSpace(envValue(options.Env, "ZERO_OAUTH_STORAGE"))
+		storage = strings.TrimSpace(envValue(options.Env, "KAJICODE_OAUTH_STORAGE"))
 	}
 	if storage == "" && options.Encrypted {
 		storage = "encrypted-file" // legacy alias
@@ -515,7 +515,7 @@ func FormatStatuses(statuses []Status) string {
 // envValue reads a variable. A non-nil env map is authoritative (hermetic): a
 // missing key returns "" rather than falling back to the process environment, so
 // a caller/test that passes a controlled map can never pick up ambient
-// ZERO_OAUTH_* / HOME / XDG_CONFIG_HOME values. Only a nil map uses os.Getenv.
+// KAJICODE_OAUTH_* / HOME / XDG_CONFIG_HOME values. Only a nil map uses os.Getenv.
 func envValue(env map[string]string, key string) string {
 	if env != nil {
 		return env[key]

@@ -14,11 +14,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/agent"
-	"github.com/Gitlawb/zero/internal/config"
-	"github.com/Gitlawb/zero/internal/modelregistry"
-	"github.com/Gitlawb/zero/internal/sessions"
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/agent"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
+	"github.com/dishant0406/KajiCode/internal/modelregistry"
+	"github.com/dishant0406/KajiCode/internal/sessions"
 )
 
 func TestRunExecHelpDocumentsM1Flags(t *testing.T) {
@@ -242,7 +242,7 @@ func TestRunExecUsesInitSessionIDAndSessionTitle(t *testing.T) {
 		resolveConfig: func(_ string, _ config.Overrides) (config.ResolvedConfig, error) {
 			return execResolvedConfig(), nil
 		},
-		newProvider: func(config.ProviderProfile) (zeroruntime.Provider, error) {
+		newProvider: func(config.ProviderProfile) (kajicoderuntime.Provider, error) {
 			return echoExecProvider{}, nil
 		},
 	})
@@ -250,7 +250,7 @@ func TestRunExecUsesInitSessionIDAndSessionTitle(t *testing.T) {
 		t.Fatalf("exitCode = %d stdout=%s stderr=%s", exitCode, stdout.String(), stderr.String())
 	}
 
-	store := sessions.NewStore(sessions.StoreOptions{RootDir: filepath.Join(dataHome, "zero", "sessions")})
+	store := sessions.NewStore(sessions.StoreOptions{RootDir: filepath.Join(dataHome, "kajicode", "sessions")})
 	session, err := store.Get("specialist_child")
 	if err != nil {
 		t.Fatalf("Get session returned error: %v", err)
@@ -269,7 +269,7 @@ func TestRunExecUsesInitSessionIDAndSessionTitle(t *testing.T) {
 func TestRunExecPersistsCallingSessionChildMetadata(t *testing.T) {
 	dataHome := t.TempDir()
 	t.Setenv("XDG_DATA_HOME", dataHome)
-	store := sessions.NewStore(sessions.StoreOptions{RootDir: filepath.Join(dataHome, "zero", "sessions")})
+	store := sessions.NewStore(sessions.StoreOptions{RootDir: filepath.Join(dataHome, "kajicode", "sessions")})
 	parent, err := store.Create(sessions.CreateInput{SessionID: "parent_session", Title: "Parent", Cwd: "/repo", ModelID: "gpt-parent", Provider: "openai"})
 	if err != nil {
 		t.Fatalf("Create parent returned error: %v", err)
@@ -294,7 +294,7 @@ func TestRunExecPersistsCallingSessionChildMetadata(t *testing.T) {
 		resolveConfig: func(_ string, _ config.Overrides) (config.ResolvedConfig, error) {
 			return execResolvedConfig(), nil
 		},
-		newProvider: func(config.ProviderProfile) (zeroruntime.Provider, error) {
+		newProvider: func(config.ProviderProfile) (kajicoderuntime.Provider, error) {
 			return echoExecProvider{}, nil
 		},
 	})
@@ -584,7 +584,7 @@ func TestRunExecJSONRunStartWriteFailureSkipsAgent(t *testing.T) {
 		resolveConfig: func(_ string, _ config.Overrides) (config.ResolvedConfig, error) {
 			return execResolvedConfig(), nil
 		},
-		newProvider: func(config.ProviderProfile) (zeroruntime.Provider, error) {
+		newProvider: func(config.ProviderProfile) (kajicoderuntime.Provider, error) {
 			return recordingExecProvider{called: &called}, nil
 		},
 	})
@@ -608,7 +608,7 @@ func TestRunExecUnsafeWarningWriteFailureSkipsAgent(t *testing.T) {
 		resolveConfig: func(_ string, _ config.Overrides) (config.ResolvedConfig, error) {
 			return execResolvedConfig(), nil
 		},
-		newProvider: func(config.ProviderProfile) (zeroruntime.Provider, error) {
+		newProvider: func(config.ProviderProfile) (kajicoderuntime.Provider, error) {
 			return recordingExecProvider{called: &called}, nil
 		},
 	})
@@ -654,17 +654,17 @@ type recordingExecProvider struct {
 	called *bool
 }
 
-func (provider recordingExecProvider) StreamCompletion(context.Context, zeroruntime.CompletionRequest) (<-chan zeroruntime.StreamEvent, error) {
+func (provider recordingExecProvider) StreamCompletion(context.Context, kajicoderuntime.CompletionRequest) (<-chan kajicoderuntime.StreamEvent, error) {
 	*provider.called = true
 	return nil, errors.New("provider should not run")
 }
 
 func TestRunPromptFlagRoutesToExecRunner(t *testing.T) {
-	execExitCode, execStdout, execStderr := runExecWithEcho(t, []string{"exec", "hello zero"})
+	execExitCode, execStdout, execStderr := runExecWithEcho(t, []string{"exec", "hello KajiCode"})
 
 	for _, args := range [][]string{
-		{"-p", "hello zero"},
-		{"--prompt", "hello zero"},
+		{"-p", "hello KajiCode"},
+		{"--prompt", "hello KajiCode"},
 	} {
 		t.Run(args[0], func(t *testing.T) {
 			exitCode, stdout, stderr := runExecWithEcho(t, args)
@@ -943,7 +943,7 @@ func TestRunExecJSONUnsafeOutputsWarningEvent(t *testing.T) {
 func TestRunExecUsesProjectConfigAndOpenAICompatibleProvider(t *testing.T) {
 	clearProviderEnv(t)
 	root := t.TempDir()
-	configDir := filepath.Join(root, ".zero")
+	configDir := filepath.Join(root, ".kajicode")
 	if err := os.MkdirAll(configDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -1042,7 +1042,7 @@ func runExecWithEcho(t *testing.T, args []string) (int, string, string) {
 				MaxTurns: 3,
 			}, nil
 		},
-		newProvider: func(config.ProviderProfile) (zeroruntime.Provider, error) {
+		newProvider: func(config.ProviderProfile) (kajicoderuntime.Provider, error) {
 			return echoExecProvider{}, nil
 		},
 	})
@@ -1070,28 +1070,28 @@ func TestExecSessionRecorderWarnsOnRecordingFailure(t *testing.T) {
 // signal-interrupted run (agent.Run returns the error verbatim).
 type canceledExecProvider struct{}
 
-func (canceledExecProvider) StreamCompletion(context.Context, zeroruntime.CompletionRequest) (<-chan zeroruntime.StreamEvent, error) {
+func (canceledExecProvider) StreamCompletion(context.Context, kajicoderuntime.CompletionRequest) (<-chan kajicoderuntime.StreamEvent, error) {
 	return nil, context.Canceled
 }
 
 type echoExecProvider struct{}
 
-func (echoExecProvider) StreamCompletion(ctx context.Context, request zeroruntime.CompletionRequest) (<-chan zeroruntime.StreamEvent, error) {
+func (echoExecProvider) StreamCompletion(ctx context.Context, request kajicoderuntime.CompletionRequest) (<-chan kajicoderuntime.StreamEvent, error) {
 	prompt := ""
 	for index := len(request.Messages) - 1; index >= 0; index-- {
-		if request.Messages[index].Role == zeroruntime.MessageRoleUser {
+		if request.Messages[index].Role == kajicoderuntime.MessageRoleUser {
 			prompt = request.Messages[index].Content
 			break
 		}
 	}
-	ch := make(chan zeroruntime.StreamEvent, 2)
+	ch := make(chan kajicoderuntime.StreamEvent, 2)
 	select {
 	case <-ctx.Done():
 		close(ch)
 		return ch, ctx.Err()
-	case ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventText, Content: prompt}:
+	case ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventText, Content: prompt}:
 	}
-	ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventDone}
+	ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventDone}
 	close(ch)
 	return ch, nil
 }
@@ -1100,8 +1100,8 @@ func clearProviderEnv(t *testing.T) {
 	t.Helper()
 
 	for _, key := range []string{
-		"ZERO_PROVIDER_COMMAND",
-		"ZERO_PROVIDER",
+		"KAJICODE_PROVIDER_COMMAND",
+		"KAJICODE_PROVIDER",
 		"OPENAI_API_KEY",
 		"OPENAI_BASE_URL",
 		"OPENAI_MODEL",
@@ -1164,7 +1164,7 @@ func runExecWithEffectiveModel(t *testing.T, effectiveModel string, args []strin
 				MaxTurns: 3,
 			}, nil
 		},
-		newProvider: func(config.ProviderProfile) (zeroruntime.Provider, error) {
+		newProvider: func(config.ProviderProfile) (kajicoderuntime.Provider, error) {
 			return echoExecProvider{}, nil
 		},
 	})
@@ -1322,20 +1322,20 @@ type escalatingExecProvider struct {
 	escalateOnce bool
 }
 
-func (provider *escalatingExecProvider) StreamCompletion(ctx context.Context, request zeroruntime.CompletionRequest) (<-chan zeroruntime.StreamEvent, error) {
+func (provider *escalatingExecProvider) StreamCompletion(ctx context.Context, request kajicoderuntime.CompletionRequest) (<-chan kajicoderuntime.StreamEvent, error) {
 	turn := provider.turns
 	provider.turns++
-	ch := make(chan zeroruntime.StreamEvent, 4)
+	ch := make(chan kajicoderuntime.StreamEvent, 4)
 	if provider.escalateOnce && turn == 0 {
-		ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventToolCallStart, ToolCallID: "call_escalate", ToolName: "escalate_model"}
-		ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventToolCallDelta, ToolCallID: "call_escalate", ArgumentsFragment: "{}"}
-		ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventToolCallEnd, ToolCallID: "call_escalate"}
-		ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventDone}
+		ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventToolCallStart, ToolCallID: "call_escalate", ToolName: "escalate_model"}
+		ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventToolCallDelta, ToolCallID: "call_escalate", ArgumentsFragment: "{}"}
+		ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventToolCallEnd, ToolCallID: "call_escalate"}
+		ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventDone}
 		close(ch)
 		return ch, nil
 	}
-	ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventText, Content: "done"}
-	ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventDone}
+	ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventText, Content: "done"}
+	ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventDone}
 	close(ch)
 	return ch, nil
 }
@@ -1373,7 +1373,7 @@ func TestRunExecWiresModelSwitcherUnderFlag(t *testing.T) {
 			cfg.MaxTurns = 3
 			return cfg, nil
 		},
-		newProvider: func(profile config.ProviderProfile) (zeroruntime.Provider, error) {
+		newProvider: func(profile config.ProviderProfile) (kajicoderuntime.Provider, error) {
 			providerModels = append(providerModels, profile.Model)
 			// First build escalates; every later build answers. Each instance owns
 			// its turn counter so we can assert exactly-one-turn per provider.
@@ -1449,7 +1449,7 @@ func TestRunExecNoSwitcherWithoutFlag(t *testing.T) {
 			cfg.MaxTurns = 3
 			return cfg, nil
 		},
-		newProvider: func(profile config.ProviderProfile) (zeroruntime.Provider, error) {
+		newProvider: func(profile config.ProviderProfile) (kajicoderuntime.Provider, error) {
 			providerModels = append(providerModels, profile.Model)
 			return &escalatingExecProvider{escalateOnce: true}, nil
 		},
@@ -1504,7 +1504,7 @@ func TestRunExecAttributesUsageToEscalatedModel(t *testing.T) {
 			cfg.MaxTurns = 3
 			return cfg, nil
 		},
-		newProvider: func(profile config.ProviderProfile) (zeroruntime.Provider, error) {
+		newProvider: func(profile config.ProviderProfile) (kajicoderuntime.Provider, error) {
 			// First build = escalation source (escalate + usage 3/4 pre-switch);
 			// second build = escalation target (answer + usage 5/7 post-switch).
 			escalate := builds == 0
@@ -1516,7 +1516,7 @@ func TestRunExecAttributesUsageToEscalatedModel(t *testing.T) {
 		t.Fatalf("exitCode = %d stdout=%s stderr=%s", exitCode, stdout.String(), stderr.String())
 	}
 
-	store := sessions.NewStore(sessions.StoreOptions{RootDir: filepath.Join(dataHome, "zero", "sessions")})
+	store := sessions.NewStore(sessions.StoreOptions{RootDir: filepath.Join(dataHome, "kajicode", "sessions")})
 	events, err := store.ReadEvents("escalation_run")
 	if err != nil {
 		t.Fatalf("ReadEvents returned error: %v", err)
@@ -1584,7 +1584,7 @@ func TestRunExecNilSwitchProviderKeepsOriginalAttribution(t *testing.T) {
 			cfg.MaxTurns = 3
 			return cfg, nil
 		},
-		newProvider: func(profile config.ProviderProfile) (zeroruntime.Provider, error) {
+		newProvider: func(profile config.ProviderProfile) (kajicoderuntime.Provider, error) {
 			builds++
 			// First build = the original (haiku). The escalation rebuild returns
 			// (nil, nil), so the loop keeps the original provider for every turn.
@@ -1598,7 +1598,7 @@ func TestRunExecNilSwitchProviderKeepsOriginalAttribution(t *testing.T) {
 		t.Fatalf("exitCode = %d stdout=%s stderr=%s", exitCode, stdout.String(), stderr.String())
 	}
 
-	store := sessions.NewStore(sessions.StoreOptions{RootDir: filepath.Join(dataHome, "zero", "sessions")})
+	store := sessions.NewStore(sessions.StoreOptions{RootDir: filepath.Join(dataHome, "kajicode", "sessions")})
 	events, err := store.ReadEvents("nil_switch_run")
 	if err != nil {
 		t.Fatalf("ReadEvents returned error: %v", err)
@@ -1629,22 +1629,22 @@ type escalateThenAnswerProvider struct {
 	turns int
 }
 
-func (provider *escalateThenAnswerProvider) StreamCompletion(ctx context.Context, request zeroruntime.CompletionRequest) (<-chan zeroruntime.StreamEvent, error) {
+func (provider *escalateThenAnswerProvider) StreamCompletion(ctx context.Context, request kajicoderuntime.CompletionRequest) (<-chan kajicoderuntime.StreamEvent, error) {
 	turn := provider.turns
 	provider.turns++
-	ch := make(chan zeroruntime.StreamEvent, 6)
+	ch := make(chan kajicoderuntime.StreamEvent, 6)
 	if turn == 0 {
-		ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventToolCallStart, ToolCallID: "call_escalate", ToolName: "escalate_model"}
-		ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventToolCallDelta, ToolCallID: "call_escalate", ArgumentsFragment: "{}"}
-		ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventToolCallEnd, ToolCallID: "call_escalate"}
-		ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventUsage, Usage: zeroruntime.Usage{InputTokens: 3, OutputTokens: 4}}
-		ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventDone}
+		ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventToolCallStart, ToolCallID: "call_escalate", ToolName: "escalate_model"}
+		ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventToolCallDelta, ToolCallID: "call_escalate", ArgumentsFragment: "{}"}
+		ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventToolCallEnd, ToolCallID: "call_escalate"}
+		ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventUsage, Usage: kajicoderuntime.Usage{InputTokens: 3, OutputTokens: 4}}
+		ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventDone}
 		close(ch)
 		return ch, nil
 	}
-	ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventText, Content: "done"}
-	ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventUsage, Usage: zeroruntime.Usage{InputTokens: 5, OutputTokens: 7}}
-	ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventDone}
+	ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventText, Content: "done"}
+	ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventUsage, Usage: kajicoderuntime.Usage{InputTokens: 5, OutputTokens: 7}}
+	ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventDone}
 	close(ch)
 	return ch, nil
 }
@@ -1657,22 +1657,22 @@ type usageEmittingEscalatingProvider struct {
 	escalate bool
 }
 
-func (provider *usageEmittingEscalatingProvider) StreamCompletion(ctx context.Context, request zeroruntime.CompletionRequest) (<-chan zeroruntime.StreamEvent, error) {
-	ch := make(chan zeroruntime.StreamEvent, 6)
+func (provider *usageEmittingEscalatingProvider) StreamCompletion(ctx context.Context, request kajicoderuntime.CompletionRequest) (<-chan kajicoderuntime.StreamEvent, error) {
+	ch := make(chan kajicoderuntime.StreamEvent, 6)
 	if provider.escalate {
-		ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventToolCallStart, ToolCallID: "call_escalate", ToolName: "escalate_model"}
-		ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventToolCallDelta, ToolCallID: "call_escalate", ArgumentsFragment: "{}"}
-		ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventToolCallEnd, ToolCallID: "call_escalate"}
+		ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventToolCallStart, ToolCallID: "call_escalate", ToolName: "escalate_model"}
+		ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventToolCallDelta, ToolCallID: "call_escalate", ArgumentsFragment: "{}"}
+		ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventToolCallEnd, ToolCallID: "call_escalate"}
 		// Pre-switch usage: still attributed to the ORIGINAL model.
-		ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventUsage, Usage: zeroruntime.Usage{InputTokens: 3, OutputTokens: 4}}
-		ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventDone}
+		ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventUsage, Usage: kajicoderuntime.Usage{InputTokens: 3, OutputTokens: 4}}
+		ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventDone}
 		close(ch)
 		return ch, nil
 	}
-	ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventText, Content: "done"}
+	ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventText, Content: "done"}
 	// Post-switch usage: attributed to the escalated model.
-	ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventUsage, Usage: zeroruntime.Usage{InputTokens: 5, OutputTokens: 7}}
-	ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventDone}
+	ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventUsage, Usage: kajicoderuntime.Usage{InputTokens: 5, OutputTokens: 7}}
+	ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventDone}
 	close(ch)
 	return ch, nil
 }
@@ -1682,11 +1682,11 @@ func (provider *usageEmittingEscalatingProvider) StreamCompletion(ctx context.Co
 // records usage.
 type usageEmittingEchoProvider struct{}
 
-func (usageEmittingEchoProvider) StreamCompletion(ctx context.Context, request zeroruntime.CompletionRequest) (<-chan zeroruntime.StreamEvent, error) {
-	ch := make(chan zeroruntime.StreamEvent, 3)
-	ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventText, Content: "done"}
-	ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventUsage, Usage: zeroruntime.Usage{InputTokens: 5, OutputTokens: 7}}
-	ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventDone}
+func (usageEmittingEchoProvider) StreamCompletion(ctx context.Context, request kajicoderuntime.CompletionRequest) (<-chan kajicoderuntime.StreamEvent, error) {
+	ch := make(chan kajicoderuntime.StreamEvent, 3)
+	ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventText, Content: "done"}
+	ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventUsage, Usage: kajicoderuntime.Usage{InputTokens: 5, OutputTokens: 7}}
+	ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventDone}
 	close(ch)
 	return ch, nil
 }
@@ -1723,7 +1723,7 @@ func TestRunExecUsageOmitsModelKeyWithoutEscalationFlag(t *testing.T) {
 			cfg.MaxTurns = 3
 			return cfg, nil
 		},
-		newProvider: func(config.ProviderProfile) (zeroruntime.Provider, error) {
+		newProvider: func(config.ProviderProfile) (kajicoderuntime.Provider, error) {
 			return usageEmittingEchoProvider{}, nil
 		},
 	})
@@ -1731,7 +1731,7 @@ func TestRunExecUsageOmitsModelKeyWithoutEscalationFlag(t *testing.T) {
 		t.Fatalf("exitCode = %d stdout=%s stderr=%s", exitCode, stdout.String(), stderr.String())
 	}
 
-	store := sessions.NewStore(sessions.StoreOptions{RootDir: filepath.Join(dataHome, "zero", "sessions")})
+	store := sessions.NewStore(sessions.StoreOptions{RootDir: filepath.Join(dataHome, "kajicode", "sessions")})
 	events, err := store.ReadEvents("no_escalation_run")
 	if err != nil {
 		t.Fatalf("ReadEvents returned error: %v", err)
@@ -1763,22 +1763,22 @@ type usageThenAnswerProvider struct {
 	turns int
 }
 
-func (provider *usageThenAnswerProvider) StreamCompletion(ctx context.Context, request zeroruntime.CompletionRequest) (<-chan zeroruntime.StreamEvent, error) {
+func (provider *usageThenAnswerProvider) StreamCompletion(ctx context.Context, request kajicoderuntime.CompletionRequest) (<-chan kajicoderuntime.StreamEvent, error) {
 	turn := provider.turns
 	provider.turns++
-	ch := make(chan zeroruntime.StreamEvent, 6)
+	ch := make(chan kajicoderuntime.StreamEvent, 6)
 	if turn == 0 {
-		ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventToolCallStart, ToolCallID: "call_escalate", ToolName: "escalate_model"}
-		ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventToolCallDelta, ToolCallID: "call_escalate", ArgumentsFragment: "{}"}
-		ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventToolCallEnd, ToolCallID: "call_escalate"}
-		ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventUsage, Usage: zeroruntime.Usage{InputTokens: 3, OutputTokens: 4}}
-		ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventDone}
+		ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventToolCallStart, ToolCallID: "call_escalate", ToolName: "escalate_model"}
+		ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventToolCallDelta, ToolCallID: "call_escalate", ArgumentsFragment: "{}"}
+		ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventToolCallEnd, ToolCallID: "call_escalate"}
+		ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventUsage, Usage: kajicoderuntime.Usage{InputTokens: 3, OutputTokens: 4}}
+		ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventDone}
 		close(ch)
 		return ch, nil
 	}
-	ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventText, Content: "done"}
-	ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventUsage, Usage: zeroruntime.Usage{InputTokens: 5, OutputTokens: 7}}
-	ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventDone}
+	ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventText, Content: "done"}
+	ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventUsage, Usage: kajicoderuntime.Usage{InputTokens: 5, OutputTokens: 7}}
+	ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventDone}
 	close(ch)
 	return ch, nil
 }
@@ -1821,7 +1821,7 @@ func TestRunExecSwitcherErrorKeepsOriginalModelAttribution(t *testing.T) {
 			cfg.MaxTurns = 3
 			return cfg, nil
 		},
-		newProvider: func(profile config.ProviderProfile) (zeroruntime.Provider, error) {
+		newProvider: func(profile config.ProviderProfile) (kajicoderuntime.Provider, error) {
 			builds++
 			// The first build (original model) succeeds; the rebuild on escalation
 			// FAILS, so the switcher returns an error and the run continues on the
@@ -1839,7 +1839,7 @@ func TestRunExecSwitcherErrorKeepsOriginalModelAttribution(t *testing.T) {
 		t.Fatalf("newProvider builds = %d, want 2 (initial + one failed rebuild attempt)", builds)
 	}
 
-	store := sessions.NewStore(sessions.StoreOptions{RootDir: filepath.Join(dataHome, "zero", "sessions")})
+	store := sessions.NewStore(sessions.StoreOptions{RootDir: filepath.Join(dataHome, "kajicode", "sessions")})
 	events, err := store.ReadEvents("switch_error_run")
 	if err != nil {
 		t.Fatalf("ReadEvents returned error: %v", err)
@@ -1958,7 +1958,7 @@ func TestRunExecTopTierDeclineNoSwitch(t *testing.T) {
 			cfg.MaxTurns = 3
 			return cfg, nil
 		},
-		newProvider: func(profile config.ProviderProfile) (zeroruntime.Provider, error) {
+		newProvider: func(profile config.ProviderProfile) (kajicoderuntime.Provider, error) {
 			providerModels = append(providerModels, profile.Model)
 			return &escalatingExecProvider{escalateOnce: true}, nil
 		},

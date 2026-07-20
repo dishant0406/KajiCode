@@ -18,7 +18,7 @@ func TestRunRepoMapHelpDocumentsFlags(t *testing.T) {
 	if exitCode != exitSuccess {
 		t.Fatalf("expected exit code %d, got %d: %s", exitSuccess, exitCode, stderr.String())
 	}
-	for _, want := range []string{"Usage:", "zero repo-map [flags]", "--json", "--query", "--max-files", "--scan-max-files", "--max-depth"} {
+	for _, want := range []string{"Usage:", "kajicode repo-map [flags]", "--json", "--query", "--max-files", "--scan-max-files", "--max-depth"} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("expected repo-map help to contain %q, got %q", want, stdout.String())
 		}
@@ -42,7 +42,7 @@ func TestRunRepoMapTextSummaryUsesCurrentWorkingDirectory(t *testing.T) {
 	if exitCode != exitSuccess {
 		t.Fatalf("expected exit code %d, got %d: %s", exitSuccess, exitCode, stderr.String())
 	}
-	for _, want := range []string{"Repo map", "Root: " + cwd, "Files:", "Languages:", "cmd/zero/main.go"} {
+	for _, want := range []string{"Repo map", "Root: " + cwd, "Files:", "Languages:", "cmd/kajicode/main.go"} {
 		if !repoMapOutputContains(stdout.String(), want) {
 			t.Fatalf("expected repo-map output to contain %q, got %q", want, stdout.String())
 		}
@@ -132,7 +132,7 @@ func TestRunRepoMapQueryPrintsRankedMatches(t *testing.T) {
 	if !repoMapOutputContains(out, "internal/agent/runtime.go") {
 		t.Fatalf("expected query output to include best match, got %q", out)
 	}
-	if repoMapOutputContains(out, "cmd/zero/main.go") {
+	if repoMapOutputContains(out, "cmd/kajicode/main.go") {
 		t.Fatalf("expected --max-files 1 to limit query output, got %q", out)
 	}
 	if stderr.Len() != 0 {
@@ -231,7 +231,7 @@ func newRepoMapFixture(t *testing.T) string {
 
 	dir := t.TempDir()
 	writeRepoMapFixtureFile(t, dir, "go.mod", "module example.test/repo-map\n\ngo 1.24\n")
-	writeRepoMapFixtureFile(t, dir, "cmd/zero/main.go", "package main\n\nfunc main() {}\n")
+	writeRepoMapFixtureFile(t, dir, "cmd/kajicode/main.go", "package main\n\nfunc main() {}\n")
 	writeRepoMapFixtureFile(t, dir, "internal/agent/runtime.go", "package agent\n\n// Agent runtime coordinates tools and model calls.\nfunc RunAgentRuntime() {}\n")
 	writeRepoMapFixtureFile(t, dir, "web/app.js", "export function renderApp() { return 'ui'; }\n")
 	writeRepoMapFixtureFile(t, dir, "docs/deep/nested/notes.md", "# Deep notes\n\nThis file is beyond max depth two.\n")

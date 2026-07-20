@@ -6,9 +6,9 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/Gitlawb/zero/internal/config"
-	"github.com/Gitlawb/zero/internal/lsp"
-	"github.com/Gitlawb/zero/internal/sandbox"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/lsp"
+	"github.com/dishant0406/KajiCode/internal/sandbox"
 )
 
 // sandboxBackendCheck reports whether the selected platform has a native
@@ -60,9 +60,9 @@ func sandboxRemedy(goos string, backend sandbox.Backend) string {
 		return "sandbox-exec ships with macOS; ensure /usr/bin is on PATH so `sandbox-exec` resolves"
 	case "windows":
 		if backend.Message != "" {
-			return "install the Windows sandbox command runner and setup helper together, then run `zero sandbox setup`"
+			return "install the Windows sandbox command runner and setup helper together, then run `kajicode sandbox setup`"
 		}
-		return "run `zero sandbox setup` to prepare the Windows native sandbox"
+		return "run `kajicode sandbox setup` to prepare the Windows native sandbox"
 	default:
 		return "no native sandbox adapter exists for " + goos + "; run inside Linux (bubblewrap) or macOS (sandbox-exec) for native isolation"
 	}
@@ -83,7 +83,7 @@ func windowsSandboxSetupCheck(goos string, backend sandbox.Backend, workspaceRoo
 			"platform":     goos,
 			"supportLevel": string(backend.SupportLevel()),
 			"setupStatus":  "invalid-config",
-			"remedy":       "fix sandbox.additionalWriteRoots, then run `zero sandbox setup`",
+			"remedy":       "fix sandbox.additionalWriteRoots, then run `kajicode sandbox setup`",
 		})
 		return &result
 	}
@@ -94,7 +94,7 @@ func windowsSandboxSetupCheck(goos string, backend sandbox.Backend, workspaceRoo
 			"platform":     goos,
 			"supportLevel": string(backend.SupportLevel()),
 			"setupStatus":  "unknown",
-			"remedy":       "run `zero sandbox setup` after fixing the sandbox home path",
+			"remedy":       "run `kajicode sandbox setup` after fixing the sandbox home path",
 		})
 		return &result
 	}
@@ -111,7 +111,7 @@ func windowsSandboxSetupCheck(goos string, backend sandbox.Backend, workspaceRoo
 			"platform":     goos,
 			"supportLevel": string(backend.SupportLevel()),
 			"setupStatus":  "missing-or-out-of-date",
-			"remedy":       "run `zero sandbox setup` to prepare the Windows native sandbox",
+			"remedy":       "run `kajicode sandbox setup` to prepare the Windows native sandbox",
 		})
 		return &result
 	}
@@ -128,8 +128,8 @@ func doctorSandboxPolicy(cfg config.SandboxConfig) sandbox.Policy {
 	return policy
 }
 
-// lspServersCheck reports which language servers ZERO would use are present on
-// PATH. Missing servers are not a failure — ZERO degrades to text-only edits for
+// lspServersCheck reports which language servers KAJICODE would use are present on
+// PATH. Missing servers are not a failure — KAJICODE degrades to text-only edits for
 // those languages — so the worst status is WARN, and each missing server gets an
 // actionable install command keyed by its binary name. Only the tier-1 servers
 // (lsp.CoreServerBinaries) drive the status: the long-tail servers configured

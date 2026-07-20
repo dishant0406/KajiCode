@@ -45,7 +45,7 @@
               "$WORKSPACE/.git/config"
             ],
             "protectedMetadataNames": [
-              ".zero",
+              ".kajicode",
               ".agents"
             ]
           }

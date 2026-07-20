@@ -5,9 +5,9 @@ import (
 	"io"
 	"strings"
 
-	"github.com/Gitlawb/zero/internal/redaction"
-	"github.com/Gitlawb/zero/internal/sessions"
-	"github.com/Gitlawb/zero/internal/specmode"
+	"github.com/dishant0406/KajiCode/internal/redaction"
+	"github.com/dishant0406/KajiCode/internal/sessions"
+	"github.com/dishant0406/KajiCode/internal/specmode"
 )
 
 type specCommandOptions struct {
@@ -60,7 +60,7 @@ func runSpec(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) in
 func parseSpecArgs(args []string) (string, string, specCommandOptions, bool, error) {
 	options := specCommandOptions{}
 	if len(args) == 0 {
-		return "", "", options, false, execUsageError{"spec command required. Use `zero spec show <spec>`."}
+		return "", "", options, false, execUsageError{"spec command required. Use `kajicode spec show <spec>`."}
 	}
 	command := ""
 	target := ""
@@ -122,13 +122,13 @@ func parseSpecArgs(args []string) (string, string, specCommandOptions, bool, err
 		return command, target, options, false, execUsageError{fmt.Sprintf("unknown spec command %q", command)}
 	}
 	if strings.TrimSpace(target) == "" {
-		return command, target, options, false, execUsageError{fmt.Sprintf("zero spec %s requires a spec id or draft session id", command)}
+		return command, target, options, false, execUsageError{fmt.Sprintf("kajicode spec %s requires a spec id or draft session id", command)}
 	}
 	if options.commentProvided && command != "approve" {
-		return command, target, options, false, execUsageError{"--comment is only valid for zero spec approve"}
+		return command, target, options, false, execUsageError{"--comment is only valid for kajicode spec approve"}
 	}
 	if options.reasonProvided && command != "reject" {
-		return command, target, options, false, execUsageError{"--reason is only valid for zero spec reject"}
+		return command, target, options, false, execUsageError{"--reason is only valid for kajicode spec reject"}
 	}
 	return command, strings.TrimSpace(target), options, false, nil
 }
@@ -145,7 +145,7 @@ func resolveSpecReviewTarget(store *sessions.Store, target string) (sessions.Met
 		}
 		if session != nil {
 			if session.SpecID == "" || session.SpecFilePath == "" {
-				return sessions.Metadata{}, fmt.Errorf("zero session has no recorded spec: %s", redact(target))
+				return sessions.Metadata{}, fmt.Errorf("kajicode session has no recorded spec: %s", redact(target))
 			}
 			return *session, nil
 		}
@@ -168,13 +168,13 @@ func resolveSpecReviewTarget(store *sessions.Store, target string) (sessions.Met
 		return draftMatches[0], nil
 	}
 	if len(draftMatches) > 1 {
-		return sessions.Metadata{}, fmt.Errorf("zero spec id is ambiguous: %s; use the draft session id", redact(target))
+		return sessions.Metadata{}, fmt.Errorf("kajicode spec id is ambiguous: %s; use the draft session id", redact(target))
 	}
 	if len(matches) == 0 {
-		return sessions.Metadata{}, fmt.Errorf("zero spec not found: %s", redact(target))
+		return sessions.Metadata{}, fmt.Errorf("kajicode spec not found: %s", redact(target))
 	}
 	if len(matches) > 1 {
-		return sessions.Metadata{}, fmt.Errorf("zero spec id is ambiguous: %s; use the draft session id", redact(target))
+		return sessions.Metadata{}, fmt.Errorf("kajicode spec id is ambiguous: %s; use the draft session id", redact(target))
 	}
 	return matches[0], nil
 }
@@ -205,10 +205,10 @@ func runSpecShow(store *sessions.Store, draft sessions.Metadata, options specCom
 
 func runSpecApprove(store *sessions.Store, draft sessions.Metadata, options specCommandOptions, stdout io.Writer, stderr io.Writer) int {
 	if draft.SessionKind != sessions.SessionKindSpecDraft {
-		return writeExecUsageError(stderr, "zero spec approve requires a spec-draft session")
+		return writeExecUsageError(stderr, "kajicode spec approve requires a spec-draft session")
 	}
 	if draft.SpecStatus == sessions.SpecStatusRejected {
-		return writeExecUsageError(stderr, "zero spec approve cannot approve a rejected spec")
+		return writeExecUsageError(stderr, "kajicode spec approve cannot approve a rejected spec")
 	}
 	if draft.SpecStatus == sessions.SpecStatusApproved && draft.SpecImplSessionID != "" {
 		return writeSpecResult(stdout, options, specCommandResult{
@@ -218,7 +218,7 @@ func runSpecApprove(store *sessions.Store, draft sessions.Metadata, options spec
 			DraftSessionID:          draft.SessionID,
 			ImplementationSessionID: draft.SpecImplSessionID,
 			Message:                 "Spec already approved.",
-			Next:                    "zero exec --resume " + draft.SpecImplSessionID + ` "Start implementation"`,
+			Next:                    "kajicode exec --resume " + draft.SpecImplSessionID + ` "Start implementation"`,
 		})
 	}
 	body, path, err := specmode.LoadSpecFile(draft.Cwd, draft.SpecFilePath)
@@ -263,16 +263,16 @@ func runSpecApprove(store *sessions.Store, draft sessions.Metadata, options spec
 		DraftSessionID:          updated.SessionID,
 		ImplementationSessionID: impl.SessionID,
 		Message:                 "Spec approved.",
-		Next:                    "zero exec --resume " + impl.SessionID + ` "Start implementation"`,
+		Next:                    "kajicode exec --resume " + impl.SessionID + ` "Start implementation"`,
 	})
 }
 
 func runSpecReject(store *sessions.Store, draft sessions.Metadata, options specCommandOptions, stdout io.Writer, stderr io.Writer) int {
 	if draft.SessionKind != sessions.SessionKindSpecDraft {
-		return writeExecUsageError(stderr, "zero spec reject requires a spec-draft session")
+		return writeExecUsageError(stderr, "kajicode spec reject requires a spec-draft session")
 	}
 	if draft.SpecStatus == sessions.SpecStatusApproved && draft.SpecImplSessionID != "" {
-		return writeExecUsageError(stderr, "zero spec reject cannot reject an approved spec with an implementation session")
+		return writeExecUsageError(stderr, "kajicode spec reject cannot reject an approved spec with an implementation session")
 	}
 	updated, _, err := store.RecordSpec(draft.SessionID, sessions.RecordSpecInput{
 		SpecID:              draft.SpecID,
@@ -292,7 +292,7 @@ func runSpecReject(store *sessions.Store, draft sessions.Metadata, options specC
 		SpecFilePath:   updated.SpecFilePath,
 		DraftSessionID: updated.SessionID,
 		Message:        "Spec rejected.",
-		Next:           "Run zero exec --use-spec again with a revised task.",
+		Next:           "Run kajicode exec --use-spec again with a revised task.",
 	})
 }
 
@@ -347,9 +347,9 @@ func firstNonEmptyString(values ...string) string {
 
 func writeSpecHelp(w io.Writer) error {
 	_, err := fmt.Fprint(w, `Usage:
-  zero spec show <spec-id|draft-session-id> [--json]
-  zero spec approve <spec-id|draft-session-id> [--comment <text>] [--json]
-  zero spec reject <spec-id|draft-session-id> [--reason <text>] [--json]
+  kajicode spec show <spec-id|draft-session-id> [--json]
+  kajicode spec approve <spec-id|draft-session-id> [--comment <text>] [--json]
+  kajicode spec reject <spec-id|draft-session-id> [--reason <text>] [--json]
 
 Commands:
   show      Print the saved draft spec

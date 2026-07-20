@@ -1,7 +1,7 @@
 {
-  "id": "zero-local-agent-quality",
-  "name": "zero-local-agent-quality",
-  "description": "Clean-room local fixture suite for exercising Zero coding-agent task success without provider or network calls.",
+  "id": "kajicode-local-agent-quality",
+  "name": "kajicode-local-agent-quality",
+  "description": "Clean-room local fixture suite for exercising KajiCode coding-agent task success without provider or network calls.",
   "tasks": [
     {
       "id": "document-stream-json-verify-events",
@@ -13,8 +13,8 @@
         "verify"
       ],
       "difficulty": "easy",
-      "prompt": "Update the stream-json protocol docs so maintainers can see how `zero verify --json` and `zero selfverify --json` report start, check, summary, and error events. Keep the wording accurate, local-first, deterministic, and do not change runtime code.",
-      "workspaceFixture": "fixtures/zero-mini",
+      "prompt": "Update the stream-json protocol docs so maintainers can see how `kajicode verify --json` and `kajicode selfverify --json` report start, check, summary, and error events. Keep the wording accurate, local-first, deterministic, and do not change runtime code.",
+      "workspaceFixture": "fixtures/kajicode-mini",
       "expectedChangedFiles": [
         "docs/STREAM_JSON_PROTOCOL.md"
       ],
@@ -55,8 +55,8 @@
         "npm-wrapper"
       ],
       "difficulty": "easy",
-      "prompt": "Improve the npm wrapper smoke checklist so a maintainer can distinguish Go release checks from direct `bin/zero.js` wrapper checks. Keep Node usage limited to the wrapper itself, avoid provider or network calls, and do not add Bun, TypeScript, or package build dependencies.",
-      "workspaceFixture": "fixtures/zero-mini",
+      "prompt": "Improve the npm wrapper smoke checklist so a maintainer can distinguish Go release checks from direct `bin/kajicode.js` wrapper checks. Keep Node usage limited to the wrapper itself, avoid provider or network calls, and do not add Bun, TypeScript, or package build dependencies.",
+      "workspaceFixture": "fixtures/kajicode-mini",
       "expectedChangedFiles": [
         "docs/NPM_WRAPPER_SMOKE.md"
       ],
@@ -66,7 +66,7 @@
       ],
       "contextChecks": {
         "requiredFiles": [
-          "bin/zero.js",
+          "bin/kajicode.js",
           "docs/NPM_WRAPPER_SMOKE.md",
           "internal/npmwrapper/wrapper.go"
         ]
@@ -95,7 +95,7 @@
       ],
       "difficulty": "medium",
       "prompt": "Add focused tests for provider catalog defaults so common model aliases and provider display names remain stable. Keep the change inside the model registry package, use only the local fixture code, and do not call provider APIs.",
-      "workspaceFixture": "fixtures/zero-mini",
+      "workspaceFixture": "fixtures/kajicode-mini",
       "expectedChangedFiles": [
         "internal/modelregistry/catalog_test.go"
       ],
@@ -135,7 +135,7 @@
       ],
       "difficulty": "medium",
       "prompt": "Make config validation return actionable errors when the default provider is missing from the provider map, and cover the behavior with a table test. Do not change config file locations, environment variable names, or provider lookup semantics.",
-      "workspaceFixture": "fixtures/zero-mini",
+      "workspaceFixture": "fixtures/kajicode-mini",
       "expectedChangedFiles": [
         "internal/config/validate.go",
         "internal/config/validate_test.go"
@@ -178,7 +178,7 @@
       ],
       "difficulty": "medium",
       "prompt": "Add coverage showing MCP server names are emitted in deterministic sorted order when rendering config summaries. Keep the production change, if any, inside the MCP config package and do not introduce external dependencies.",
-      "workspaceFixture": "fixtures/zero-mini",
+      "workspaceFixture": "fixtures/kajicode-mini",
       "expectedChangedFiles": [
         "internal/mcp/config.go",
         "internal/mcp/config_test.go"
@@ -220,7 +220,7 @@
       ],
       "difficulty": "medium",
       "prompt": "Clarify the local agent system prompt so denied file operations explain the blocked path and the next safe action. Add a focused test that checks the denial guidance without depending on a live model or provider response.",
-      "workspaceFixture": "fixtures/zero-mini",
+      "workspaceFixture": "fixtures/kajicode-mini",
       "expectedChangedFiles": [
         "internal/agent/system_prompt.md",
         "internal/agent/denial_test.go"
@@ -262,14 +262,14 @@
       ],
       "difficulty": "medium",
       "prompt": "Update the release smoke guidance and tests so maintainers can tell when a smoke run is using an already-built local binary. Keep the checks local, deterministic, and limited to the release command fixture.",
-      "workspaceFixture": "fixtures/zero-mini",
+      "workspaceFixture": "fixtures/kajicode-mini",
       "expectedChangedFiles": [
-        "cmd/zero-release/main_test.go",
+        "cmd/kajicode-release/main_test.go",
         "docs/RELEASE_SMOKE.md"
       ],
       "forbiddenChangedFiles": [
         "go.mod",
-        "bin/zero.js"
+        "bin/kajicode.js"
       ],
       "requiredTraceEvents": [
         "tool:read_file",
@@ -277,8 +277,8 @@
       ],
       "contextChecks": {
         "requiredFiles": [
-          "cmd/zero-release/main.go",
-          "cmd/zero-release/main_test.go",
+          "cmd/kajicode-release/main.go",
+          "cmd/kajicode-release/main_test.go",
           "docs/RELEASE_SMOKE.md"
         ]
       },
@@ -289,7 +289,7 @@
           "command": [
             "go",
             "test",
-            "./cmd/zero-release",
+            "./cmd/kajicode-release",
             "./internal/release"
           ]
         }
@@ -305,8 +305,8 @@
         "tests"
       ],
       "difficulty": "medium",
-      "prompt": "Refactor the npm wrapper helper to expose a reusable `WrapperCommand(args ...string) []string` that always prefixes `node bin/zero.js`, then update `DirectCommand` to use it for `--version`. Add focused tests for argument preservation. Keep Node usage limited to invoking `bin/zero.js` and do not add Bun, TypeScript, or package build dependencies.",
-      "workspaceFixture": "fixtures/zero-mini",
+      "prompt": "Refactor the npm wrapper helper to expose a reusable `WrapperCommand(args ...string) []string` that always prefixes `node bin/kajicode.js`, then update `DirectCommand` to use it for `--version`. Add focused tests for argument preservation. Keep Node usage limited to invoking `bin/kajicode.js` and do not add Bun, TypeScript, or package build dependencies.",
+      "workspaceFixture": "fixtures/kajicode-mini",
       "expectedChangedFiles": [
         "internal/npmwrapper/wrapper.go",
         "internal/npmwrapper/wrapper_test.go"
@@ -321,7 +321,7 @@
       ],
       "contextChecks": {
         "requiredFiles": [
-          "bin/zero.js",
+          "bin/kajicode.js",
           "internal/npmwrapper/wrapper.go",
           "internal/npmwrapper/wrapper_test.go"
         ]

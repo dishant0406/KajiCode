@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	DefaultRepository = "Gitlawb/zero"
+	DefaultRepository = "dishant0406/KajiCode"
 	DefaultTimeout    = 5 * time.Second
 )
 
@@ -141,7 +141,7 @@ func Check(ctx context.Context, options Options) (Result, error) {
 		currentVersion = "0.0.0"
 	}
 	repository := strings.TrimSpace(firstNonEmpty(options.Repository, DefaultRepository))
-	endpoint, err := resolveEndpoint(firstNonEmpty(options.Endpoint, os.Getenv("ZERO_UPDATE_RELEASE_URL")), repository)
+	endpoint, err := resolveEndpoint(firstNonEmpty(options.Endpoint, os.Getenv("KAJICODE_UPDATE_RELEASE_URL")), repository)
 	if err != nil {
 		return Result{}, err
 	}
@@ -201,19 +201,19 @@ func Check(ctx context.Context, options Options) (Result, error) {
 func Format(result Result) string {
 	if result.UpdateAvailable {
 		lines := []string{
-			fmt.Sprintf("[zero] Update available: %s -> %s", result.CurrentVersion, result.LatestVersion),
+			fmt.Sprintf("[kajicode] Update available: %s -> %s", result.CurrentVersion, result.LatestVersion),
 			"Release: " + result.ReleaseURL,
 		}
 		lines = appendAssetLines(lines, result.ReleaseAsset)
 		if target := releaseAssetTarget(result.ReleaseAsset); target != "" {
-			lines = append(lines, "Download the verified "+target+" release asset, then replace the current zero binary.")
+			lines = append(lines, "Download the verified "+target+" release asset, then replace the current kajicode binary.")
 		} else {
-			lines = append(lines, "Download the verified release asset, then replace the current zero binary.")
+			lines = append(lines, "Download the verified release asset, then replace the current kajicode binary.")
 		}
 		return strings.Join(lines, "\n")
 	}
 	lines := []string{
-		fmt.Sprintf("[zero] up to date (%s)", result.CurrentVersion),
+		fmt.Sprintf("[kajicode] up to date (%s)", result.CurrentVersion),
 		"Latest release: " + result.ReleaseURL,
 	}
 	lines = appendAssetLines(lines, result.ReleaseAsset)
@@ -250,7 +250,7 @@ func fetchRelease(ctx context.Context, endpoint string) (release Release, err er
 		return Release{}, err
 	}
 	request.Header.Set("Accept", "application/vnd.github+json")
-	request.Header.Set("User-Agent", "zero/update")
+	request.Header.Set("User-Agent", "kajicode/update")
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {
 		return Release{}, err
@@ -343,7 +343,7 @@ func expectedAssetCheck(version string, goos string, goarch string) (AssetCheck,
 	if platform == "windows" {
 		extension = "zip"
 	}
-	archiveName := fmt.Sprintf("zero-v%s-%s-%s.%s", version, platform, arch, extension)
+	archiveName := fmt.Sprintf("kajicode-v%s-%s-%s.%s", version, platform, arch, extension)
 	return AssetCheck{
 		Platform:     platform,
 		Arch:         arch,
@@ -363,11 +363,11 @@ func releasePlatform(goos string) (string, error) {
 	default:
 		// No prebuilt release archive is published for this GOOS (e.g.
 		// Android/Termux). This does not mean the platform is unsupported --
-		// Termux runs zero fine via the npm wrapper -- it just has no
+		// Termux runs KajiCode runs fine via the npm wrapper -- it just has no
 		// self-updating release asset. Point users at `npm update` rather
 		// than a source rebuild, since that's the documented Termux
 		// install/upgrade path and doesn't require a Go toolchain.
-		return "", fmt.Errorf("no published release for %q (release assets: linux, macos, windows). Your build is the current version of record. Upgrade with `npm update -g @gitlawb/zero` to get the latest.", goos)
+		return "", fmt.Errorf("no published release for %q (release assets: linux, macos, windows). Your build is the current version of record. Upgrade with `npm update -g @dishant0406/kajicode` to get the latest.", goos)
 	}
 }
 

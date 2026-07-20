@@ -34,14 +34,14 @@ const skillFileName = "SKILL.md"
 var errNotDirectory = errors.New("not a directory")
 
 // DefaultDir resolves the skills directory, mirroring sessions.DefaultRoot. An
-// explicit ZERO_SKILLS_DIR override wins; otherwise it is
-// $XDG_DATA_HOME/zero/skills or ~/.local/share/zero/skills. The directory is
+// explicit KAJICODE_SKILLS_DIR override wins; otherwise it is
+// $XDG_DATA_HOME/kajicode/skills or ~/.local/share/kajicode/skills. The directory is
 // NOT created — a missing directory simply yields no skills.
 //
 // DefaultDir is the primary write root for install/remove/lock. Runtime discovery
 // also considers AgentsDir and plugin skill roots via DiscoveryRoots / LoadFromRoots.
 func DefaultDir(env map[string]string) string {
-	if override := strings.TrimSpace(envValue(env, "ZERO_SKILLS_DIR")); override != "" {
+	if override := strings.TrimSpace(envValue(env, "KAJICODE_SKILLS_DIR")); override != "" {
 		return override
 	}
 	dataHome := strings.TrimSpace(envValue(env, "XDG_DATA_HOME"))
@@ -55,23 +55,23 @@ func DefaultDir(env map[string]string) string {
 	if base == "" {
 		if home == "" {
 			// No XDG_DATA_HOME and no resolvable home: returning a relative path
-			// here (".local/share/zero/skills") would bind skills to the process
+			// here (".local/share/kajicode/skills") would bind skills to the process
 			// CWD, so signal "no skills dir" and let the caller handle it.
 			return ""
 		}
 		base = filepath.Join(home, ".local", "share")
 	}
-	return filepath.Join(base, "zero", "skills")
+	return filepath.Join(base, "kajicode", "skills")
 }
 
 // AgentsDir returns ~/.agents/skills when that path exists and is a directory.
-// It is a shared, read-only multi-agent skills root (Zero, Hermes, Claude Code,
+// It is a shared, read-only multi-agent skills root (KajiCode, Hermes, Claude Code,
 // etc.) and is never the target of install/remove/lock. Missing, non-directory,
 // or unresolvable home yields "" with no error and no directory creation.
 //
 // Home resolution matches other packages: HOME, then USERPROFILE, then
-// os.UserHomeDir(). ZERO_SKILLS_DIR is intentionally ignored — agents is a
-// pure convention path, not a Zero-specific override.
+// os.UserHomeDir(). KAJICODE_SKILLS_DIR is intentionally ignored — agents is a
+// pure convention path, not a KajiCode-specific override.
 func AgentsDir(env map[string]string) string {
 	home := strings.TrimSpace(firstNonEmpty(
 		envValue(env, "HOME"),
@@ -344,7 +344,7 @@ func load(dir string) ([]Skill, []DuplicateName, error) {
 }
 
 // List loads the skills directory and returns each skill without its (possibly
-// large) Content body — handy for `zero skills` listings.
+// large) Content body — handy for `kajicode skills` listings.
 func List(dir string) ([]Skill, error) {
 	loaded, err := Load(dir)
 	if err != nil {

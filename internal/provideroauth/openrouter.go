@@ -18,7 +18,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/oauth"
+	"github.com/dishant0406/KajiCode/internal/oauth"
 )
 
 const (

@@ -6,7 +6,7 @@ import (
 )
 
 func TestResolveStreamIdleTimeout(t *testing.T) {
-	const env = "ZERO_STREAM_IDLE_TIMEOUT"
+	const env = "KAJICODE_STREAM_IDLE_TIMEOUT"
 
 	t.Run("explicit option wins over env", func(t *testing.T) {
 		t.Setenv(env, "30s")

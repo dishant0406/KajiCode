@@ -400,10 +400,10 @@ func TestManagerKillRunningStopsOnlyRunningTasks(t *testing.T) {
 
 func TestDefaultRootHonorsXDGDataHome(t *testing.T) {
 	got := DefaultRoot(map[string]string{
-		"XDG_DATA_HOME": "/tmp/zero-data",
+		"XDG_DATA_HOME": "/tmp/kajicode-data",
 		"HOME":          "/home/example",
 	})
-	want := filepath.Join("/tmp/zero-data", "zero", "background")
+	want := filepath.Join("/tmp/kajicode-data", "kajicode", "background")
 	if got != want {
 		t.Fatalf("DefaultRoot = %q, want %q", got, want)
 	}

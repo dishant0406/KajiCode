@@ -7,11 +7,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/config"
+	"github.com/dishant0406/KajiCode/internal/config"
 )
 
 func TestRunMCPAddJSONRedactsEnvAndPreservesConfig(t *testing.T) {
-	configPath := filepath.Join(t.TempDir(), "zero", "config.json")
+	configPath := filepath.Join(t.TempDir(), "kajicode", "config.json")
 	writeMCPCommandConfig(t, configPath, config.FileConfig{
 		ActiveProvider: "local",
 		MaxTurns:       42,
@@ -68,7 +68,7 @@ func TestRunMCPAddJSONRedactsEnvAndPreservesConfig(t *testing.T) {
 }
 
 func TestRunMCPAddJSONRedactsHeaders(t *testing.T) {
-	configPath := filepath.Join(t.TempDir(), "zero", "config.json")
+	configPath := filepath.Join(t.TempDir(), "kajicode", "config.json")
 	var stdout, stderr bytes.Buffer
 
 	exitCode := runWithDeps([]string{
@@ -134,7 +134,7 @@ func TestRunMCPAddRejectsTransportSpecificSecrets(t *testing.T) {
 			exitCode := runWithDeps(tc.args, &stdout, &stderr, appDeps{
 				userConfigPath: func() (string, error) {
 					configPathCalled = true
-					return filepath.Join(t.TempDir(), "zero", "config.json"), nil
+					return filepath.Join(t.TempDir(), "kajicode", "config.json"), nil
 				},
 			})
 

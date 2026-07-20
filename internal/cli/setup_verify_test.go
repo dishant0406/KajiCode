@@ -7,14 +7,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/config"
-	"github.com/Gitlawb/zero/internal/providerhealth"
-	"github.com/Gitlawb/zero/internal/tui"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/providerhealth"
+	"github.com/dishant0406/KajiCode/internal/tui"
 )
 
 func TestFormatSetupCompleteIncludesTryThisExample(t *testing.T) {
 	out := formatSetupComplete(tui.SetupResult{
-		ConfigPath: "/home/u/.config/zero/config.json",
+		ConfigPath: "/home/u/.config/kajicode/config.json",
 		Provider: config.ProviderProfile{
 			Name:         "openai",
 			ProviderKind: config.ProviderKindOpenAI,
@@ -22,12 +22,12 @@ func TestFormatSetupCompleteIncludesTryThisExample(t *testing.T) {
 			Model:        "gpt-4.1",
 		},
 	})
-	if !strings.Contains(out, "Zero setup complete") {
+	if !strings.Contains(out, "KajiCode setup complete") {
 		t.Fatalf("missing completion header: %q", out)
 	}
 	// The working-state confirmation must include a concrete one-line "try this"
 	// example so the user can immediately verify a real run.
-	if !strings.Contains(out, `zero exec "`) || !strings.Contains(out, "--model gpt-4.1") {
+	if !strings.Contains(out, `kajicode exec "`) || !strings.Contains(out, "--model gpt-4.1") {
 		t.Fatalf("missing try-this exec example: %q", out)
 	}
 }
@@ -90,7 +90,7 @@ func TestRunSetupVerifySucceedsAndConfirmsWorking(t *testing.T) {
 		t.Fatalf("exit code = %d, want %d: %s", exitCode, exitSuccess, stderr.String())
 	}
 	out := stdout.String()
-	if !strings.Contains(out, "Zero setup complete") {
+	if !strings.Contains(out, "KajiCode setup complete") {
 		t.Fatalf("missing completion header: %q", out)
 	}
 	if !strings.Contains(strings.ToLower(out), "verified") && !strings.Contains(strings.ToLower(out), "reachable") {

@@ -8,7 +8,7 @@ import (
 
 func TestDetectInstallMethodStandaloneByDefault(t *testing.T) {
 	dir := t.TempDir()
-	exePath := filepath.Join(dir, "zero")
+	exePath := filepath.Join(dir, "kajicode")
 	if err := os.WriteFile(exePath, []byte("binary"), 0o755); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
@@ -19,11 +19,11 @@ func TestDetectInstallMethodStandaloneByDefault(t *testing.T) {
 
 func TestDetectInstallMethodNpmViaMarkerFile(t *testing.T) {
 	dir := t.TempDir()
-	exePath := filepath.Join(dir, "zero")
+	exePath := filepath.Join(dir, "kajicode")
 	if err := os.WriteFile(exePath, []byte("binary"), 0o755); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, ".zero-binary-version"), []byte("0.1.0\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, ".kajicode-binary-version"), []byte("0.1.0\n"), 0o644); err != nil {
 		t.Fatalf("WriteFile marker: %v", err)
 	}
 	if method := DetectInstallMethod(exePath); method != InstallMethodNpm {
@@ -33,11 +33,11 @@ func TestDetectInstallMethodNpmViaMarkerFile(t *testing.T) {
 
 func TestDetectInstallMethodNpmViaPackageJSON(t *testing.T) {
 	dir := t.TempDir()
-	exePath := filepath.Join(dir, "zero")
+	exePath := filepath.Join(dir, "kajicode")
 	if err := os.WriteFile(exePath, []byte("binary"), 0o755); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{"name":"@gitlawb/zero"}`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "package.json"), []byte(`{"name":"@dishant0406/kajicode"}`), 0o644); err != nil {
 		t.Fatalf("WriteFile package.json: %v", err)
 	}
 	if method := DetectInstallMethod(exePath); method != InstallMethodNpm {
@@ -47,7 +47,7 @@ func TestDetectInstallMethodNpmViaPackageJSON(t *testing.T) {
 
 func TestDetectInstallMethodIgnoresUnrelatedPackageJSON(t *testing.T) {
 	dir := t.TempDir()
-	exePath := filepath.Join(dir, "zero")
+	exePath := filepath.Join(dir, "kajicode")
 	if err := os.WriteFile(exePath, []byte("binary"), 0o755); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}

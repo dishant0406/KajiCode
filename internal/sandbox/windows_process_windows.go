@@ -92,7 +92,7 @@ func windowsCommandLine(args []string) (string, error) {
 			return "", errorsNewWindowsProcess("command argument contains NUL")
 		}
 	}
-	// Zero's cmd.exe shell invocation needs its final element (the shell
+	// KajiCode's cmd.exe shell invocation needs its final element (the shell
 	// command text) reaching cmd.exe raw, not escaped like a normal argv
 	// element: see WindowsShellCommandLine for why. Every other command this
 	// runner might launch is escaped normally below.

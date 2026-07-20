@@ -163,8 +163,8 @@ func TestRunPluginAddListRemove(t *testing.T) {
 	pluginsDir := t.TempDir()
 	src := writeSourcePluginDir(t, filepath.Join(t.TempDir(), "src"), map[string]any{
 		"schemaVersion": float64(1),
-		"id":            "zero.demo",
-		"name":          "Zero Demo",
+		"id":            "kajicode.demo",
+		"name":          "KajiCode Demo",
 		"version":       "0.1.0",
 	})
 	deps := appDeps{pluginsDir: func() string { return pluginsDir }}
@@ -173,17 +173,17 @@ func TestRunPluginAddListRemove(t *testing.T) {
 	if exit := runWithDeps([]string{"plugin", "add", src}, &stdout, &stderr, deps); exit != 0 {
 		t.Fatalf("plugin add exit = %d, stderr = %s", exit, stderr.String())
 	}
-	if !strings.Contains(stdout.String(), "zero.demo") {
+	if !strings.Contains(stdout.String(), "kajicode.demo") {
 		t.Fatalf("add output missing id:\n%s", stdout.String())
 	}
 
 	// remove
 	stdout.Reset()
 	stderr.Reset()
-	if exit := runWithDeps([]string{"plugin", "remove", "zero.demo"}, &stdout, &stderr, deps); exit != 0 {
+	if exit := runWithDeps([]string{"plugin", "remove", "kajicode.demo"}, &stdout, &stderr, deps); exit != 0 {
 		t.Fatalf("plugin remove exit = %d, stderr = %s", exit, stderr.String())
 	}
-	if _, err := os.Stat(filepath.Join(pluginsDir, "zero.demo")); err == nil {
+	if _, err := os.Stat(filepath.Join(pluginsDir, "kajicode.demo")); err == nil {
 		t.Fatalf("plugin dir should be gone after remove")
 	}
 }
@@ -291,7 +291,7 @@ func TestRunToolsListSurfacesDiagnostics(t *testing.T) {
 func TestRunRemoveRejectsJSONFlag(t *testing.T) {
 	for _, args := range [][]string{
 		{"skill", "remove", "demo", "--json"},
-		{"plugin", "remove", "zero.demo", "--json"},
+		{"plugin", "remove", "kajicode.demo", "--json"},
 	} {
 		var stdout, stderr bytes.Buffer
 		exit := runWithDeps(args, &stdout, &stderr, appDeps{

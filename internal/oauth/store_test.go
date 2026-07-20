@@ -102,13 +102,13 @@ func TestStoreMalformedFailsClosed(t *testing.T) {
 }
 
 func TestEnvValueHermetic(t *testing.T) {
-	t.Setenv("ZERO_OAUTH_DEMO_CLIENT_ID", "ambient")
+	t.Setenv("KAJICODE_OAUTH_DEMO_CLIENT_ID", "ambient")
 	// A non-nil map omitting the key must NOT leak the ambient process value.
-	if got := envValue(map[string]string{}, "ZERO_OAUTH_DEMO_CLIENT_ID"); got != "" {
+	if got := envValue(map[string]string{}, "KAJICODE_OAUTH_DEMO_CLIENT_ID"); got != "" {
 		t.Fatalf("non-nil env map must be hermetic, got %q", got)
 	}
 	// A nil map reads the process environment.
-	if got := envValue(nil, "ZERO_OAUTH_DEMO_CLIENT_ID"); got != "ambient" {
+	if got := envValue(nil, "KAJICODE_OAUTH_DEMO_CLIENT_ID"); got != "ambient" {
 		t.Fatalf("nil env map should read os env, got %q", got)
 	}
 }
@@ -118,7 +118,7 @@ func TestResolveStorePathHonorsOverride(t *testing.T) {
 	// absolute on Windows (no drive), so it would be resolved against the current
 	// drive and a verbatim comparison would fail there.
 	override := filepath.Join(t.TempDir(), "custom", "tok.json")
-	path, err := ResolveStorePath(map[string]string{"ZERO_OAUTH_TOKENS_PATH": override})
+	path, err := ResolveStorePath(map[string]string{"KAJICODE_OAUTH_TOKENS_PATH": override})
 	if err != nil {
 		t.Fatalf("ResolveStorePath: %v", err)
 	}
@@ -128,7 +128,7 @@ func TestResolveStorePathHonorsOverride(t *testing.T) {
 }
 
 // TestProviderKeyNormalizesCase: every provider-login write and lookup funnels
-// through ProviderKey, so `zero auth login xAI` and the scaffolded profile's
+// through ProviderKey, so `kajicode auth login xAI` and the scaffolded profile's
 // candidate "xai" must resolve to the SAME store entry — the raw-typed casing
 // previously produced an invisible login.
 func TestProviderKeyNormalizesCase(t *testing.T) {

@@ -5,11 +5,11 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/Gitlawb/zero/internal/skills"
+	"github.com/dishant0406/KajiCode/internal/skills"
 )
 
 // Skill slash invocation: "/<skill-name> [args]" runs an installed skill
-// directly, mirroring user commands (.zero/commands). Skills were previously
+// directly, mirroring user commands (.kajicode/commands). Skills were previously
 // model-pulled only (the skill tool), which made invocation a matter of model
 // discretion; typing the skill's name makes it deterministic. Precedence is
 // builtin > user command > skill: parseCommand resolves builtins first, and the

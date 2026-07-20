@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// serverCommands maps a file extension to the language-server command (argv) ZERO
+// serverCommands maps a file extension to the language-server command (argv) KAJICODE
 // will spawn. The first element is the binary looked up on PATH; missing binaries
 // are not an error, the agent just degrades to text-only for that file. Every
 // command is the language's community-standard server invoked in stdio mode, so
@@ -122,7 +122,7 @@ var languageIDs = map[string]string{
 }
 
 // coreServerBinaries are the tier-1 servers for the languages agents hit most;
-// `zero doctor` treats their absence as warn-worthy. The long tail of servers
+// `kajicode doctor` treats their absence as warn-worthy. The long tail of servers
 // configured above for breadth is reported informationally only — warning about
 // a missing zls on a machine with no Zig code would be permanent noise.
 var coreServerBinaries = []string{
@@ -139,8 +139,8 @@ func CoreServerBinaries() []string {
 	return binaries
 }
 
-// ServerBinaries returns the unique set of language-server binaries ZERO may
-// spawn, sorted for stable output. It is the canonical list `zero doctor` checks
+// ServerBinaries returns the unique set of language-server binaries KAJICODE may
+// spawn, sorted for stable output. It is the canonical list `kajicode doctor` checks
 // against PATH, so the configured commands stay the single source of truth.
 func ServerBinaries() []string {
 	seen := map[string]bool{}

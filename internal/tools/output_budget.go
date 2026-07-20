@@ -14,7 +14,7 @@ const (
 
 // outputCategory selects the deterministic retention policy used for a tool
 // result. It is deliberately internal: categories are an implementation detail
-// of the tools boundary, not part of Zero's public tool protocol.
+// of the tools boundary, not part of KajiCode's public tool protocol.
 type outputCategory string
 
 const (
@@ -92,7 +92,7 @@ func outputTokenComponents(value string) (asciiNonSpace int, nonASCIIBytes int) 
 	return asciiNonSpace, nonASCIIBytes
 }
 
-const defaultSemanticTruncationNotice = "\n[zero] output truncated\n"
+const defaultSemanticTruncationNotice = "\n[kajicode] output truncated\n"
 
 // budgetDefaultOutput applies the safe fallback policy: retain a rune-safe head
 // and tail around a stable truncation notice. Small output is returned

@@ -612,7 +612,7 @@ func loopUsageText() string {
 }
 
 // validateLoopTarget rejects looping a built-in command or an unresolved custom
-// command — only a prompt or an existing custom /command (.zero/commands/<name>.md)
+// command — only a prompt or an existing custom /command (.kajicode/commands/<name>.md)
 // may loop. Resolving custom commands up front stops a typo'd `/loop 5m /nope` from
 // being scheduled and then re-sent as literal text on every tick.
 func (m model) validateLoopTarget(prompt string) (string, bool) {

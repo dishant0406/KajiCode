@@ -1,7 +1,7 @@
 // Package usercommands loads user-defined slash commands from markdown files.
 //
-// A user drops a file at `.zero/commands/<name>.md` (project, checked into the
-// repo and shared with the team) or `<userConfigDir>/zero/commands/<name>.md`
+// A user drops a file at `.kajicode/commands/<name>.md` (project, checked into the
+// repo and shared with the team) or `<userConfigDir>/kajicode/commands/<name>.md`
 // (personal), with optional YAML-style frontmatter:
 //
 //	---
@@ -11,7 +11,7 @@
 //	Create a pull request for the current branch. Title: $1. Summarize: $ARGUMENTS
 //
 // Typing `/<name> some args` expands the body template ($ARGUMENTS, $1..$N) and
-// submits it as a normal prompt. This turns Zero's model-pulled skills into
+// submits it as a normal prompt. This turns KajiCode's model-pulled skills into
 // user-invokable, repo-checked-in team workflows. Project commands override
 // user commands of the same name (mirrors the specialist scope precedence).
 package usercommands
@@ -31,7 +31,7 @@ type Command struct {
 	Agent       string // optional frontmatter `agent:`/`mode:` routing
 	Template    string // the markdown body, expanded on invocation
 	Path        string // source file, for diagnostics
-	Project     bool   // true if from the project `.zero/commands` dir
+	Project     bool   // true if from the project `.kajicode/commands` dir
 }
 
 // Paths are the directories scanned for command files, project first.
@@ -45,10 +45,10 @@ type Paths struct {
 func DefaultPaths(workspaceRoot, userConfigDir string) Paths {
 	p := Paths{}
 	if strings.TrimSpace(workspaceRoot) != "" {
-		p.ProjectDir = filepath.Join(workspaceRoot, ".zero", "commands")
+		p.ProjectDir = filepath.Join(workspaceRoot, ".kajicode", "commands")
 	}
 	if strings.TrimSpace(userConfigDir) != "" {
-		p.UserDir = filepath.Join(userConfigDir, "zero", "commands")
+		p.UserDir = filepath.Join(userConfigDir, "kajicode", "commands")
 	}
 	return p
 }

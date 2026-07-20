@@ -344,7 +344,7 @@ func (cost retainedUnitCost) fits(budget outputBudget) bool {
 }
 
 func omittedSectionsMarker(count int) string {
-	return fmt.Sprintf("[zero] ... %d section(s) omitted ...", count)
+	return fmt.Sprintf("[kajicode] ... %d section(s) omitted ...", count)
 }
 
 func renderSelectedUnits(units []diffUnit, selected map[int]bool) string {
@@ -390,7 +390,7 @@ func collapseConsecutiveDuplicateLines(lines []string) []string {
 		}
 		result = append(result, lines[index])
 		if count := end - index; count > 1 {
-			result = append(result, fmt.Sprintf("[zero] previous line repeated %d more time(s)", count-1))
+			result = append(result, fmt.Sprintf("[kajicode] previous line repeated %d more time(s)", count-1))
 		}
 		index = end
 	}

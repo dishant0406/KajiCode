@@ -39,12 +39,12 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 
 .cursor
 
-/zero
-/zero.exe
-/zero-windows-command-runner.exe
-/zero-windows-sandbox-setup.exe
-/zero-skills
-/.zero-binary-version
+/kajicode
+/kajicode.exe
+/kajicode-windows-command-runner.exe
+/kajicode-windows-sandbox-setup.exe
+/kajicode-skills
+/.kajicode-binary-version
 /snake-game.html
 
 # Superpowers skill artifacts (brainstorm mockups, specs, plans) — local only
@@ -52,9 +52,9 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 docs/superpowers/
 
 # Termux/Android build artifacts
-zero-termux-arm64
-zero-linux-sandbox
-zero-seccomp
+kajicode-termux-arm64
+kajicode-linux-sandbox
+kajicode-seccomp
 
 # Generated benchmark reports are evidence for one configuration, never tree state
 internal/perfbench/reports/*.json

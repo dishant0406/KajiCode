@@ -8,7 +8,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/background"
+	"github.com/dishant0406/KajiCode/internal/background"
 )
 
 func TestRuntimeCloseDoesNotCreateUnusedManager(t *testing.T) {
@@ -43,7 +43,7 @@ func TestRuntimeCloseKillsRunningTasksAndCleansPromptFiles(t *testing.T) {
 	if _, err := manager.Register(background.RegisterInput{TaskID: "child_task", Type: "specialist", PID: 42}); err != nil {
 		t.Fatalf("Register returned error: %v", err)
 	}
-	promptDir := filepath.Join(t.TempDir(), "zero-specialist-test")
+	promptDir := filepath.Join(t.TempDir(), "kajicode-specialist-test")
 	if err := os.MkdirAll(promptDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +83,7 @@ func TestRuntimeClosePreservesKilledTaskAfterChildExit(t *testing.T) {
 	runtime := NewRuntime(RuntimeOptions{Manager: manager})
 	var exitCallback func(int)
 	executor := Executor{
-		BinaryPath:        "/usr/local/bin/zero",
+		BinaryPath:        "/usr/local/bin/kajicode",
 		BackgroundRuntime: runtime,
 		NewSessionID:      func() (string, error) { return "child_task", nil },
 		Load: func(LoadOptions) (LoadResult, error) {

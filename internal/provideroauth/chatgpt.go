@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/oauth"
+	"github.com/dishant0406/KajiCode/internal/oauth"
 )
 
 // chatgptAccountClaim is the ID-token claim the ChatGPT backend requires as the
@@ -35,9 +35,9 @@ const chatgptCallbackPort = 1455
 // ChatGPTOptions configures the ChatGPT (Codex) login flow.
 type ChatGPTOptions struct {
 	// Env supplies env-style overrides; nil falls back to the process environment.
-	// ZERO_OAUTH_ALLOW_PRESETS must be set in the effective env (or a preset-supplied
+	// KAJICODE_OAUTH_ALLOW_PRESETS must be set in the effective env (or a preset-supplied
 	// env block) for the baked-in client_id to be used; otherwise the caller is
-	// expected to have configured ZERO_OAUTH_CHATGPT_* explicitly.
+	// expected to have configured KAJICODE_OAUTH_CHATGPT_* explicitly.
 	Env map[string]string
 	// HTTPClient performs the token exchange; nil => a client with a sane timeout.
 	HTTPClient *http.Client
@@ -74,8 +74,8 @@ func ChatGPTLogin(ctx context.Context, opts ChatGPTOptions) (oauth.Token, error)
 	defer cancel()
 
 	// Resolve the provider config from the env. The chatgpt preset is what
-	// makes this work without ZERO_OAUTH_CHATGPT_CLIENT_ID: the resolver applies
-	// it whenever ZERO_OAUTH_ALLOW_PRESETS is set, the same path every other
+	// makes this work without KAJICODE_OAUTH_CHATGPT_CLIENT_ID: the resolver applies
+	// it whenever KAJICODE_OAUTH_ALLOW_PRESETS is set, the same path every other
 	// built-in preset uses.
 	registry := oauth.NewRegistry()
 	cfg, flow, err := registry.ResolveConfig("chatgpt", opts.Env)
@@ -106,7 +106,7 @@ func ChatGPTLogin(ctx context.Context, opts ChatGPTOptions) (oauth.Token, error)
 	}
 	listener, err := oauth.NewLoopbackListenerOnPort(state, chatgptCallbackPort)
 	if err != nil {
-		return oauth.Token{}, fmt.Errorf("provideroauth: start loopback listener on port %d (close any other Zero or Codex login already running and retry): %w", chatgptCallbackPort, err)
+		return oauth.Token{}, fmt.Errorf("provideroauth: start loopback listener on port %d (close any other KajiCode or Codex login already running and retry): %w", chatgptCallbackPort, err)
 	}
 	defer listener.Close()
 

@@ -11,26 +11,26 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/Gitlawb/zero/internal/agent"
-	"github.com/Gitlawb/zero/internal/sandbox"
-	"github.com/Gitlawb/zero/internal/sessions"
-	"github.com/Gitlawb/zero/internal/tools"
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/agent"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
+	"github.com/dishant0406/KajiCode/internal/sandbox"
+	"github.com/dishant0406/KajiCode/internal/sessions"
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
 type scriptedProvider struct {
-	scripts  [][]zeroruntime.StreamEvent
-	requests []zeroruntime.CompletionRequest
+	scripts  [][]kajicoderuntime.StreamEvent
+	requests []kajicoderuntime.CompletionRequest
 	calls    int
 }
 
 func (provider *scriptedProvider) StreamCompletion(
 	ctx context.Context,
-	request zeroruntime.CompletionRequest,
-) (<-chan zeroruntime.StreamEvent, error) {
+	request kajicoderuntime.CompletionRequest,
+) (<-chan kajicoderuntime.StreamEvent, error) {
 	provider.requests = append(provider.requests, request)
 	if len(provider.scripts) == 0 {
-		ch := make(chan zeroruntime.StreamEvent)
+		ch := make(chan kajicoderuntime.StreamEvent)
 		close(ch)
 		return ch, nil
 	}
@@ -39,7 +39,7 @@ func (provider *scriptedProvider) StreamCompletion(
 	if index >= len(provider.scripts) {
 		index = len(provider.scripts) - 1
 	}
-	ch := make(chan zeroruntime.StreamEvent, len(provider.scripts[index]))
+	ch := make(chan kajicoderuntime.StreamEvent, len(provider.scripts[index]))
 	for _, event := range provider.scripts[index] {
 		ch <- event
 	}
@@ -49,10 +49,10 @@ func (provider *scriptedProvider) StreamCompletion(
 
 func TestPromptSubmitPersistsTUISessionEvents(t *testing.T) {
 	store := testSessionStore(t)
-	provider := &fakeProvider{events: []zeroruntime.StreamEvent{
-		{Type: zeroruntime.StreamEventText, Content: "saved"},
-		{Type: zeroruntime.StreamEventUsage, Usage: zeroruntime.Usage{InputTokens: 10, OutputTokens: 4}},
-		{Type: zeroruntime.StreamEventDone},
+	provider := &fakeProvider{events: []kajicoderuntime.StreamEvent{
+		{Type: kajicoderuntime.StreamEventText, Content: "saved"},
+		{Type: kajicoderuntime.StreamEventUsage, Usage: kajicoderuntime.Usage{InputTokens: 10, OutputTokens: 4}},
+		{Type: kajicoderuntime.StreamEventDone},
 	}}
 	m := newModel(context.Background(), Options{
 		Cwd:          "repo",
@@ -175,16 +175,16 @@ func TestPromptSubmitPersistsToolSessionEvents(t *testing.T) {
 	store := testSessionStore(t)
 	root := t.TempDir()
 	writeTestFile(t, root, "notes.txt", "file contents")
-	provider := &scriptedProvider{scripts: [][]zeroruntime.StreamEvent{
+	provider := &scriptedProvider{scripts: [][]kajicoderuntime.StreamEvent{
 		{
-			{Type: zeroruntime.StreamEventToolCallStart, ToolCallID: "call_1", ToolName: "read_file"},
-			{Type: zeroruntime.StreamEventToolCallDelta, ToolCallID: "call_1", ArgumentsFragment: `{"path":"notes.txt"}`},
-			{Type: zeroruntime.StreamEventToolCallEnd, ToolCallID: "call_1"},
-			{Type: zeroruntime.StreamEventDone},
+			{Type: kajicoderuntime.StreamEventToolCallStart, ToolCallID: "call_1", ToolName: "read_file"},
+			{Type: kajicoderuntime.StreamEventToolCallDelta, ToolCallID: "call_1", ArgumentsFragment: `{"path":"notes.txt"}`},
+			{Type: kajicoderuntime.StreamEventToolCallEnd, ToolCallID: "call_1"},
+			{Type: kajicoderuntime.StreamEventDone},
 		},
 		{
-			{Type: zeroruntime.StreamEventText, Content: "read complete"},
-			{Type: zeroruntime.StreamEventDone},
+			{Type: kajicoderuntime.StreamEventText, Content: "read complete"},
+			{Type: kajicoderuntime.StreamEventDone},
 		},
 	}}
 	registry := tools.NewRegistry()
@@ -238,16 +238,16 @@ func TestPromptSubmitPersistsToolSessionEvents(t *testing.T) {
 func TestPromptSubmitPersistsPermissionSessionEvents(t *testing.T) {
 	store := testSessionStore(t)
 	root := t.TempDir()
-	provider := &scriptedProvider{scripts: [][]zeroruntime.StreamEvent{
+	provider := &scriptedProvider{scripts: [][]kajicoderuntime.StreamEvent{
 		{
-			{Type: zeroruntime.StreamEventToolCallStart, ToolCallID: "call_write", ToolName: "write_file"},
-			{Type: zeroruntime.StreamEventToolCallDelta, ToolCallID: "call_write", ArgumentsFragment: `{"path":"notes.txt","content":"hello"}`},
-			{Type: zeroruntime.StreamEventToolCallEnd, ToolCallID: "call_write"},
-			{Type: zeroruntime.StreamEventDone},
+			{Type: kajicoderuntime.StreamEventToolCallStart, ToolCallID: "call_write", ToolName: "write_file"},
+			{Type: kajicoderuntime.StreamEventToolCallDelta, ToolCallID: "call_write", ArgumentsFragment: `{"path":"notes.txt","content":"hello"}`},
+			{Type: kajicoderuntime.StreamEventToolCallEnd, ToolCallID: "call_write"},
+			{Type: kajicoderuntime.StreamEventDone},
 		},
 		{
-			{Type: zeroruntime.StreamEventText, Content: "write blocked"},
-			{Type: zeroruntime.StreamEventDone},
+			{Type: kajicoderuntime.StreamEventText, Content: "write blocked"},
+			{Type: kajicoderuntime.StreamEventDone},
 		},
 	}}
 	registry := tools.NewRegistry()
@@ -361,7 +361,7 @@ func TestPromptSubmitPersistsPermissionSessionEvents(t *testing.T) {
 func TestPermissionPromptAllowWritesFileAndRecordsDecision(t *testing.T) {
 	store := testSessionStore(t)
 	root := t.TempDir()
-	provider := &scriptedProvider{scripts: [][]zeroruntime.StreamEvent{
+	provider := &scriptedProvider{scripts: [][]kajicoderuntime.StreamEvent{
 		writeFileToolScript("call_write", "notes.txt", "hello"),
 		textScript("write allowed"),
 	}}
@@ -407,7 +407,7 @@ func TestPermissionPromptAlwaysPersistsGrantAndSkipsLaterPrompt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	provider := &scriptedProvider{scripts: [][]zeroruntime.StreamEvent{
+	provider := &scriptedProvider{scripts: [][]kajicoderuntime.StreamEvent{
 		writeFileToolScript("call_first", "notes.txt", "first"),
 		textScript("first write"),
 		writeFileToolScript("call_second", "notes.txt", "second"),
@@ -518,7 +518,7 @@ func submitAndDrivePermissionRun(t *testing.T, m model, prompt string, key strin
 	return updated.(model)
 }
 
-func newPermissionTestModel(root string, provider zeroruntime.Provider, registry *tools.Registry, store *sessions.Store, grantStore *sandbox.GrantStore, runtimeMessages chan<- tea.Msg) model {
+func newPermissionTestModel(root string, provider kajicoderuntime.Provider, registry *tools.Registry, store *sessions.Store, grantStore *sandbox.GrantStore, runtimeMessages chan<- tea.Msg) model {
 	engineOptions := sandbox.EngineOptions{
 		WorkspaceRoot: root,
 		Policy:        promptWritePolicy(),
@@ -551,19 +551,19 @@ func promptWritePolicy() sandbox.Policy {
 	return policy
 }
 
-func writeFileToolScript(callID string, path string, content string) []zeroruntime.StreamEvent {
-	return []zeroruntime.StreamEvent{
-		{Type: zeroruntime.StreamEventToolCallStart, ToolCallID: callID, ToolName: "write_file"},
-		{Type: zeroruntime.StreamEventToolCallDelta, ToolCallID: callID, ArgumentsFragment: `{"path":` + jsonString(path) + `,"content":` + jsonString(content) + `,"overwrite":true}`},
-		{Type: zeroruntime.StreamEventToolCallEnd, ToolCallID: callID},
-		{Type: zeroruntime.StreamEventDone},
+func writeFileToolScript(callID string, path string, content string) []kajicoderuntime.StreamEvent {
+	return []kajicoderuntime.StreamEvent{
+		{Type: kajicoderuntime.StreamEventToolCallStart, ToolCallID: callID, ToolName: "write_file"},
+		{Type: kajicoderuntime.StreamEventToolCallDelta, ToolCallID: callID, ArgumentsFragment: `{"path":` + jsonString(path) + `,"content":` + jsonString(content) + `,"overwrite":true}`},
+		{Type: kajicoderuntime.StreamEventToolCallEnd, ToolCallID: callID},
+		{Type: kajicoderuntime.StreamEventDone},
 	}
 }
 
-func textScript(text string) []zeroruntime.StreamEvent {
-	return []zeroruntime.StreamEvent{
-		{Type: zeroruntime.StreamEventText, Content: text},
-		{Type: zeroruntime.StreamEventDone},
+func textScript(text string) []kajicoderuntime.StreamEvent {
+	return []kajicoderuntime.StreamEvent{
+		{Type: kajicoderuntime.StreamEventText, Content: text},
+		{Type: kajicoderuntime.StreamEventDone},
 	}
 }
 
@@ -621,7 +621,7 @@ func TestResumeCommandHydratesSessionTranscript(t *testing.T) {
 		t.Fatalf("Create returned error: %v", err)
 	}
 	appendTestEvent(t, store, session.SessionID, sessions.EventMessage, map[string]any{"role": "user", "content": "previous request"})
-	appendTestEvent(t, store, session.SessionID, sessions.EventToolCall, map[string]any{"id": "call_1", "name": "grep", "arguments": `{"pattern":"Zero"}`})
+	appendTestEvent(t, store, session.SessionID, sessions.EventToolCall, map[string]any{"id": "call_1", "name": "grep", "arguments": `{"pattern":"KajiCode"}`})
 	appendTestEvent(t, store, session.SessionID, sessions.EventPermissionDecision, map[string]any{
 		"toolCallId":     "call_1",
 		"name":           "grep",
@@ -646,13 +646,13 @@ func TestResumeCommandHydratesSessionTranscript(t *testing.T) {
 	if cmd != nil {
 		t.Fatal("expected /resume to hydrate synchronously")
 	}
-	for _, want := range []string{"Resumed Zero session", session.SessionID, "previous request", "tool call: grep", "permission: grep allow", "tool result: grep error matches", "previous answer", "old error"} {
+	for _, want := range []string{"Resumed KajiCode session", session.SessionID, "previous request", "tool call: grep", "permission: grep allow", "tool result: grep error matches", "previous answer", "old error"} {
 		if !transcriptContains(next.transcript, want) {
 			t.Fatalf("expected resumed transcript to contain %q, got %#v", want, next.transcript)
 		}
 	}
 	toolCall, ok := findTranscriptRow(next.transcript, rowToolCall)
-	if !ok || toolCall.tool != "grep" || toolCall.detail != "Zero" {
+	if !ok || toolCall.tool != "grep" || toolCall.detail != "KajiCode" {
 		t.Fatalf("expected hydrated tool call metadata, got ok=%v row=%#v", ok, toolCall)
 	}
 	permissionRow, ok := findTranscriptRow(next.transcript, rowPermission)
@@ -666,7 +666,7 @@ func TestResumeCommandHydratesSessionTranscript(t *testing.T) {
 	if !ok || toolResult.tool != "grep" || toolResult.status != tools.StatusError || toolResult.detail != "matches" {
 		t.Fatalf("expected hydrated tool result metadata, got ok=%v row=%#v", ok, toolResult)
 	}
-	if transcriptContains(next.transcript, "zero exec --resume") {
+	if transcriptContains(next.transcript, "kajicode exec --resume") {
 		t.Fatalf("resume should not show headless-only guidance after hydration, got %#v", next.transcript)
 	}
 }
@@ -798,9 +798,9 @@ func TestResumeLatestHydratesNewestSession(t *testing.T) {
 
 func TestEscCancelRecordsSessionError(t *testing.T) {
 	store := testSessionStore(t)
-	provider := &fakeProvider{events: []zeroruntime.StreamEvent{
-		{Type: zeroruntime.StreamEventText, Content: "ignored"},
-		{Type: zeroruntime.StreamEventDone},
+	provider := &fakeProvider{events: []kajicoderuntime.StreamEvent{
+		{Type: kajicoderuntime.StreamEventText, Content: "ignored"},
+		{Type: kajicoderuntime.StreamEventDone},
 	}}
 	m := newModel(context.Background(), Options{
 		Provider:     provider,
@@ -847,7 +847,7 @@ func TestCancelledRunFlushesCheckpointSessionEvents(t *testing.T) {
 	store := testSessionStore(t)
 	root := t.TempDir()
 	writeTestFile(t, root, "notes.txt", "before")
-	provider := &scriptedProvider{scripts: [][]zeroruntime.StreamEvent{
+	provider := &scriptedProvider{scripts: [][]kajicoderuntime.StreamEvent{
 		writeFileToolScript("call_write", "notes.txt", "after"),
 		textScript("never reached"),
 	}}
@@ -924,7 +924,7 @@ func TestCtrlCCancelsAndFlushesCheckpointSessionEvents(t *testing.T) {
 	store := testSessionStore(t)
 	root := t.TempDir()
 	writeTestFile(t, root, "notes.txt", "before")
-	provider := &scriptedProvider{scripts: [][]zeroruntime.StreamEvent{
+	provider := &scriptedProvider{scripts: [][]kajicoderuntime.StreamEvent{
 		writeFileToolScript("call_write", "notes.txt", "after"),
 		textScript("never reached"),
 	}}
@@ -1020,9 +1020,9 @@ func TestResumedPromptIncludesSessionContext(t *testing.T) {
 	}
 	appendTestEvent(t, store, session.SessionID, sessions.EventMessage, map[string]any{"role": "user", "content": "previous request"})
 	appendTestEvent(t, store, session.SessionID, sessions.EventMessage, map[string]any{"role": "assistant", "content": "previous answer"})
-	provider := &scriptedProvider{scripts: [][]zeroruntime.StreamEvent{{
-		{Type: zeroruntime.StreamEventText, Content: "continued"},
-		{Type: zeroruntime.StreamEventDone},
+	provider := &scriptedProvider{scripts: [][]kajicoderuntime.StreamEvent{{
+		{Type: kajicoderuntime.StreamEventText, Content: "continued"},
+		{Type: kajicoderuntime.StreamEventDone},
 	}}}
 	m := newModel(context.Background(), Options{
 		Provider:     provider,
@@ -1049,7 +1049,7 @@ func TestResumedPromptIncludesSessionContext(t *testing.T) {
 		t.Fatal("expected provider request to include messages")
 	}
 	prompt := messages[len(messages)-1].Content
-	for _, want := range []string{"Continuing Zero session", session.SessionID, "previous request", "previous answer", "Current user request:", "continue"} {
+	for _, want := range []string{"Continuing KajiCode session", session.SessionID, "previous request", "previous answer", "Current user request:", "continue"} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("expected resumed prompt to contain %q, got %q", want, prompt)
 		}
@@ -1063,7 +1063,7 @@ func TestResumeCommandReportsMissingSession(t *testing.T) {
 	updated, _ := m.Update(testKey(tea.KeyEnter))
 	next := updated.(model)
 
-	if !transcriptContains(next.transcript, "zero session not found: missing_session") {
+	if !transcriptContains(next.transcript, "kajicode session not found: missing_session") {
 		t.Fatalf("expected missing session error, got %#v", next.transcript)
 	}
 }

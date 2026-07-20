@@ -8,8 +8,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
-	"github.com/Gitlawb/zero/internal/config"
-	"github.com/Gitlawb/zero/internal/tools"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
 func TestMouseClickSelectsThenAppliesCommandSuggestionRow(t *testing.T) {
@@ -204,7 +204,7 @@ func TestMouseCaptureOnlyWhileInteractiveSurfaceOpen(t *testing.T) {
 	m := mouseTestModel()
 	m.transcript = appendRow(m.transcript, rowUser, "hello")
 	if !m.wantsMouseCapture() {
-		t.Fatal("chat should capture mouse for Zero-owned transcript selection")
+		t.Fatal("chat should capture mouse for KajiCode-owned transcript selection")
 	}
 
 	m = typeRunes(t, m, "/")
@@ -228,7 +228,7 @@ func TestMouseCaptureOnEmptyChatSplash(t *testing.T) {
 
 	m.transcript = appendRow(m.transcript, rowUser, "hello")
 	if !m.wantsMouseCapture() {
-		t.Fatal("chat with transcript rows should keep mouse capture for Zero-owned selection")
+		t.Fatal("chat with transcript rows should keep mouse capture for KajiCode-owned selection")
 	}
 }
 

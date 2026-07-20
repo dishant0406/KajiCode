@@ -7,8 +7,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/Gitlawb/zero/internal/agent"
-	"github.com/Gitlawb/zero/internal/skills"
+	"github.com/dishant0406/KajiCode/internal/agent"
+	"github.com/dishant0406/KajiCode/internal/skills"
 )
 
 // newSkillTestModel builds a model with an injected skills loader (and the
@@ -93,7 +93,7 @@ func TestSkillCommandNameIsCaseInsensitive(t *testing.T) {
 	}
 }
 
-// Precedence: a user command (.zero/commands) shadows a same-named skill.
+// Precedence: a user command (.kajicode/commands) shadows a same-named skill.
 func TestUserCommandShadowsSkill(t *testing.T) {
 	root := t.TempDir()
 	writeUserCommand(t, root, "greet.md", "Say hello from the user command.")

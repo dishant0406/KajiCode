@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/providers/providerio"
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
+	"github.com/dishant0406/KajiCode/internal/providers/providerio"
 )
 
 const defaultBaseURL = "https://generativelanguage.googleapis.com"
@@ -54,8 +54,8 @@ type Options struct {
 	// the OpenAI and Anthropic providers). Nil falls back to plain API-key auth.
 	OAuthResolver providerio.TokenResolver
 	// StreamIdleTimeout aborts the stream if no data arrives for this long.
-	// When unset, Zero uses providerio.ResolveStreamIdleTimeout — the
-	// ZERO_STREAM_IDLE_TIMEOUT override or providerio.DefaultStreamIdleTimeout.
+	// When unset, KajiCode uses providerio.ResolveStreamIdleTimeout — the
+	// KAJICODE_STREAM_IDLE_TIMEOUT override or providerio.DefaultStreamIdleTimeout.
 	StreamIdleTimeout time.Duration
 }
 
@@ -81,7 +81,7 @@ func New(options Options) (*Provider, error) {
 	if model == "" {
 		return nil, errors.New("gemini provider requires a model")
 	}
-	maxTokens, err := providerio.PositiveOrDefault(options.MaxTokens, defaultMaxTokens, "zero Gemini provider maxTokens")
+	maxTokens, err := providerio.PositiveOrDefault(options.MaxTokens, defaultMaxTokens, "kajicode Gemini provider maxTokens")
 	if err != nil {
 		return nil, err
 	}
@@ -108,8 +108,8 @@ func New(options Options) (*Provider, error) {
 // StreamCompletion sends one streaming Gemini GenerateContent request.
 func (provider *Provider) StreamCompletion(
 	ctx context.Context,
-	request zeroruntime.CompletionRequest,
-) (<-chan zeroruntime.StreamEvent, error) {
+	request kajicoderuntime.CompletionRequest,
+) (<-chan kajicoderuntime.StreamEvent, error) {
 	mapped, err := provider.geminiRequest(request)
 	if err != nil {
 		return nil, err
@@ -119,7 +119,7 @@ func (provider *Provider) StreamCompletion(
 		return nil, fmt.Errorf("encode Gemini request: %w", err)
 	}
 
-	events := make(chan zeroruntime.StreamEvent, 16)
+	events := make(chan kajicoderuntime.StreamEvent, 16)
 	go func() {
 		defer close(events)
 		provider.stream(ctx, body, events)
@@ -127,7 +127,7 @@ func (provider *Provider) StreamCompletion(
 	return events, nil
 }
 
-func (provider *Provider) stream(ctx context.Context, body []byte, events chan<- zeroruntime.StreamEvent) {
+func (provider *Provider) stream(ctx context.Context, body []byte, events chan<- kajicoderuntime.StreamEvent) {
 	// streamCtx lets the idle watchdog abort an in-flight body read by cancelling
 	// the request, which unblocks the SSE reader goroutine.
 	streamCtx, cancelStream := context.WithCancel(ctx)
@@ -150,7 +150,7 @@ func (provider *Provider) stream(ctx context.Context, body []byte, events chan<-
 			}
 		}, 0)
 	if err != nil {
-		providerio.SendEvent(ctx, events, zeroruntime.StreamEvent{Type: zeroruntime.StreamEventError, Error: provider.redact("provider stream error: " + err.Error())})
+		providerio.SendEvent(ctx, events, kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventError, Error: provider.redact("provider stream error: " + err.Error())})
 		return
 	}
 	defer func() {
@@ -167,18 +167,18 @@ func (provider *Provider) stream(ctx context.Context, body []byte, events chan<-
 		return provider.emitPayload(ctx, data, &state, events)
 	})
 	if errors.Is(err, providerio.ErrStreamIdle) || errors.Is(err, providerio.ErrStreamStalled) {
-		providerio.SendEvent(ctx, events, zeroruntime.StreamEvent{
-			Type:  zeroruntime.StreamEventError,
+		providerio.SendEvent(ctx, events, kajicoderuntime.StreamEvent{
+			Type:  kajicoderuntime.StreamEventError,
 			Error: provider.redact("provider stream error: " + providerio.StreamTimeoutMessage(err, provider.streamIdleTimeout)),
 		})
 		return
 	}
 	if err != nil {
-		providerio.SendEvent(ctx, events, zeroruntime.StreamEvent{Type: zeroruntime.StreamEventError, Error: provider.redact("provider stream error: " + err.Error())})
+		providerio.SendEvent(ctx, events, kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventError, Error: provider.redact("provider stream error: " + err.Error())})
 		return
 	}
 	if err := ctx.Err(); err != nil {
-		providerio.SendEvent(ctx, events, zeroruntime.StreamEvent{Type: zeroruntime.StreamEventError, Error: provider.redact("provider stream error: " + err.Error())})
+		providerio.SendEvent(ctx, events, kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventError, Error: provider.redact("provider stream error: " + err.Error())})
 		return
 	}
 	if !state.done {
@@ -186,11 +186,11 @@ func (provider *Provider) stream(ctx context.Context, body []byte, events chan<-
 	}
 }
 
-func (provider *Provider) emitPayload(ctx context.Context, data string, state *streamState, events chan<- zeroruntime.StreamEvent) bool {
+func (provider *Provider) emitPayload(ctx context.Context, data string, state *streamState, events chan<- kajicoderuntime.StreamEvent) bool {
 	var payload streamPayload
 	if err := json.Unmarshal([]byte(data), &payload); err != nil {
-		providerio.SendEvent(ctx, events, zeroruntime.StreamEvent{
-			Type:  zeroruntime.StreamEventError,
+		providerio.SendEvent(ctx, events, kajicoderuntime.StreamEvent{
+			Type:  kajicoderuntime.StreamEventError,
 			Error: provider.redact("provider stream error: malformed JSON: " + err.Error()),
 		})
 		state.done = true
@@ -202,8 +202,8 @@ func (provider *Provider) emitPayload(ctx context.Context, data string, state *s
 		if status == 0 {
 			status = http.StatusInternalServerError
 		}
-		providerio.SendEvent(ctx, events, zeroruntime.StreamEvent{
-			Type:  zeroruntime.StreamEventError,
+		providerio.SendEvent(ctx, events, kajicoderuntime.StreamEvent{
+			Type:  kajicoderuntime.StreamEventError,
 			Error: provider.classifiedError(status, message),
 		})
 		state.done = true
@@ -211,8 +211,8 @@ func (provider *Provider) emitPayload(ctx context.Context, data string, state *s
 	}
 	if payload.PromptFeedback != nil && payload.PromptFeedback.BlockReason != "" {
 		message := firstNonEmpty(payload.PromptFeedback.BlockReasonMessage, payload.PromptFeedback.BlockReason)
-		providerio.SendEvent(ctx, events, zeroruntime.StreamEvent{
-			Type:  zeroruntime.StreamEventError,
+		providerio.SendEvent(ctx, events, kajicoderuntime.StreamEvent{
+			Type:  kajicoderuntime.StreamEventError,
 			Error: provider.redact("provider error: Content blocked: " + message),
 		})
 		state.done = true
@@ -238,14 +238,14 @@ func (provider *Provider) emitPayload(ctx context.Context, data string, state *s
 				continue
 			}
 			if part.Text != "" {
-				providerio.SendEvent(ctx, events, zeroruntime.StreamEvent{Type: zeroruntime.StreamEventText, Content: part.Text})
+				providerio.SendEvent(ctx, events, kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventText, Content: part.Text})
 			}
 			if part.FunctionCall != nil {
 				if part.FunctionCall.Name == "" {
 					// A functionCall without a usable name can't be dispatched.
 					// Signal a drop once so the agent can ask the model to retry
 					// instead of silently ending the turn (mirrors OpenAI/Anthropic).
-					providerio.SendEvent(ctx, events, zeroruntime.StreamEvent{Type: zeroruntime.StreamEventToolCallDropped})
+					providerio.SendEvent(ctx, events, kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventToolCallDropped})
 					continue
 				}
 				state.syntheticToolIndex++
@@ -262,7 +262,7 @@ func (provider *Provider) emitPayload(ctx context.Context, data string, state *s
 		if functionCall.Name == "" {
 			// Nameless top-level functionCall: signal a drop once rather than
 			// silently skipping it.
-			providerio.SendEvent(ctx, events, zeroruntime.StreamEvent{Type: zeroruntime.StreamEventToolCallDropped})
+			providerio.SendEvent(ctx, events, kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventToolCallDropped})
 			continue
 		}
 		state.syntheticToolIndex++
@@ -274,44 +274,44 @@ func (provider *Provider) emitPayload(ctx context.Context, data string, state *s
 	return true
 }
 
-func (provider *Provider) emitDone(ctx context.Context, state *streamState, events chan<- zeroruntime.StreamEvent) {
+func (provider *Provider) emitDone(ctx context.Context, state *streamState, events chan<- kajicoderuntime.StreamEvent) {
 	if state.hasUsage {
-		usage, err := zeroruntime.NormalizeUsage(zeroruntime.TokenUsage{
+		usage, err := kajicoderuntime.NormalizeUsage(kajicoderuntime.TokenUsage{
 			InputTokens:       state.inputTokens,
 			OutputTokens:      state.outputTokens,
 			ReasoningTokens:   state.reasoningTokens,
 			CachedInputTokens: state.cachedTokens,
 		})
 		if err == nil {
-			providerio.SendEvent(ctx, events, zeroruntime.StreamEvent{Type: zeroruntime.StreamEventUsage, Usage: usage})
+			providerio.SendEvent(ctx, events, kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventUsage, Usage: usage})
 		}
 	}
-	providerio.SendEvent(ctx, events, zeroruntime.StreamEvent{Type: zeroruntime.StreamEventDone, FinishReason: state.finishReason})
+	providerio.SendEvent(ctx, events, kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventDone, FinishReason: state.finishReason})
 	state.done = true
 }
 
-func (provider *Provider) emitToolCall(ctx context.Context, functionCall functionCall, signature string, syntheticIndex int, events chan<- zeroruntime.StreamEvent) bool {
+func (provider *Provider) emitToolCall(ctx context.Context, functionCall functionCall, signature string, syntheticIndex int, events chan<- kajicoderuntime.StreamEvent) bool {
 	id := functionCall.ID
 	if id == "" {
 		id = fmt.Sprintf("gemini_tool_%d", syntheticIndex)
 	}
 	args, err := normalizeFunctionCallArgs(firstNonNil(functionCall.Args, functionCall.Arguments), functionCall.Name)
 	if err != nil {
-		providerio.SendEvent(ctx, events, zeroruntime.StreamEvent{Type: zeroruntime.StreamEventError, Error: provider.redact("provider error: " + err.Error())})
+		providerio.SendEvent(ctx, events, kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventError, Error: provider.redact("provider error: " + err.Error())})
 		return false
 	}
 	encoded, err := json.Marshal(args)
 	if err != nil {
-		providerio.SendEvent(ctx, events, zeroruntime.StreamEvent{Type: zeroruntime.StreamEventError, Error: provider.redact("provider error: " + err.Error())})
+		providerio.SendEvent(ctx, events, kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventError, Error: provider.redact("provider error: " + err.Error())})
 		return false
 	}
-	providerio.SendEvent(ctx, events, zeroruntime.StreamEvent{Type: zeroruntime.StreamEventToolCallStart, ToolCallID: id, ToolName: functionCall.Name, ToolCallSignature: signature})
-	providerio.SendEvent(ctx, events, zeroruntime.StreamEvent{Type: zeroruntime.StreamEventToolCallDelta, ToolCallID: id, ArgumentsFragment: string(encoded)})
-	providerio.SendEvent(ctx, events, zeroruntime.StreamEvent{Type: zeroruntime.StreamEventToolCallEnd, ToolCallID: id})
+	providerio.SendEvent(ctx, events, kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventToolCallStart, ToolCallID: id, ToolName: functionCall.Name, ToolCallSignature: signature})
+	providerio.SendEvent(ctx, events, kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventToolCallDelta, ToolCallID: id, ArgumentsFragment: string(encoded)})
+	providerio.SendEvent(ctx, events, kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventToolCallEnd, ToolCallID: id})
 	return true
 }
 
-func (provider *Provider) emitHTTPError(ctx context.Context, response *http.Response, events chan<- zeroruntime.StreamEvent) {
+func (provider *Provider) emitHTTPError(ctx context.Context, response *http.Response, events chan<- kajicoderuntime.StreamEvent) {
 	body, _ := io.ReadAll(io.LimitReader(response.Body, 64*1024))
 	message := response.Status
 	if parsed := parseErrorMessage(body); parsed != "" {
@@ -319,19 +319,19 @@ func (provider *Provider) emitHTTPError(ctx context.Context, response *http.Resp
 	} else if trimmed := strings.TrimSpace(string(body)); trimmed != "" {
 		message = trimmed
 	}
-	providerio.SendEvent(ctx, events, zeroruntime.StreamEvent{
-		Type:  zeroruntime.StreamEventError,
+	providerio.SendEvent(ctx, events, kajicoderuntime.StreamEvent{
+		Type:  kajicoderuntime.StreamEventError,
 		Error: provider.classifiedError(response.StatusCode, message),
 	})
 }
 
-func (provider *Provider) geminiRequest(request zeroruntime.CompletionRequest) (generateContentRequest, error) {
+func (provider *Provider) geminiRequest(request kajicoderuntime.CompletionRequest) (generateContentRequest, error) {
 	systemInstruction, contents, err := mapMessages(request.Messages)
 	if err != nil {
 		return generateContentRequest{}, err
 	}
 	if len(contents) == 0 {
-		return generateContentRequest{}, errors.New("zero Gemini provider requires at least one non-system message")
+		return generateContentRequest{}, errors.New("kajicode Gemini provider requires at least one non-system message")
 	}
 
 	mapped := generateContentRequest{
@@ -360,11 +360,11 @@ func (provider *Provider) geminiRequest(request zeroruntime.CompletionRequest) (
 
 // geminiSchemaFields is the subset of JSON Schema keywords Google's
 // functionDeclarations[].parameters accepts (the Generative AI Schema type).
-// Anything outside it — most notably OpenAI's `additionalProperties`, which Zero
+// Anything outside it — most notably OpenAI's `additionalProperties`, which KajiCode
 // emits on every tool's parameters and which Gemini 400s on ("Unknown name
 // \"additionalProperties\" … Cannot find field") — must be dropped before the
 // request goes out. Kept as an allowlist rather than a denylist so a schema
-// keyword Zero (or an MCP server) adds later can't silently leak an unsupported
+// keyword KajiCode (or an MCP server) adds later can't silently leak an unsupported
 // field into the Gemini payload.
 var geminiSchemaFields = map[string]bool{
 	"type": true, "format": true, "title": true, "description": true,
@@ -423,7 +423,7 @@ func sanitizeGeminiSchema(schema map[string]any) map[string]any {
 	return out
 }
 
-func mapMessages(messages []zeroruntime.Message) (*geminiContent, []geminiContent, error) {
+func mapMessages(messages []kajicoderuntime.Message) (*geminiContent, []geminiContent, error) {
 	systemParts := []geminiPart{}
 	contents := []geminiContent{}
 	toolNamesByID := make(map[string]string)
@@ -432,13 +432,13 @@ func mapMessages(messages []zeroruntime.Message) (*geminiContent, []geminiConten
 		content := message.Content
 		hasContent := strings.TrimSpace(content) != ""
 		switch message.Role {
-		case zeroruntime.MessageRoleSystem:
+		case kajicoderuntime.MessageRoleSystem:
 			if hasContent {
 				systemParts = append(systemParts, geminiPart{Text: content})
 			}
-		case zeroruntime.MessageRoleTool:
+		case kajicoderuntime.MessageRoleTool:
 			if message.ToolCallID == "" {
-				return nil, nil, errors.New("zero Gemini provider requires toolCallId on tool result messages")
+				return nil, nil, errors.New("kajicode Gemini provider requires toolCallId on tool result messages")
 			}
 			name := toolNamesByID[message.ToolCallID]
 			if name == "" {
@@ -451,7 +451,7 @@ func mapMessages(messages []zeroruntime.Message) (*geminiContent, []geminiConten
 					Response: map[string]interface{}{"result": content},
 				},
 			}})
-		case zeroruntime.MessageRoleAssistant:
+		case kajicoderuntime.MessageRoleAssistant:
 			parts := []geminiPart{}
 			if hasContent {
 				parts = append(parts, geminiPart{Text: content})
@@ -513,11 +513,11 @@ func parseToolArguments(argumentsJSON string, toolName string) (map[string]any, 
 	}
 	var parsed any
 	if err := json.Unmarshal([]byte(argumentsJSON), &parsed); err != nil {
-		return nil, fmt.Errorf("zero Gemini provider could not parse tool arguments for %s as JSON", toolName)
+		return nil, fmt.Errorf("kajicode Gemini provider could not parse tool arguments for %s as JSON", toolName)
 	}
 	object, ok := parsed.(map[string]any)
 	if !ok || object == nil {
-		return nil, fmt.Errorf("zero Gemini provider requires tool arguments for %s to be a JSON object", toolName)
+		return nil, fmt.Errorf("kajicode Gemini provider requires tool arguments for %s to be a JSON object", toolName)
 	}
 	return object, nil
 }
@@ -528,7 +528,7 @@ func normalizeFunctionCallArgs(value any, toolName string) (map[string]any, erro
 	}
 	object, ok := value.(map[string]any)
 	if !ok || object == nil {
-		return nil, fmt.Errorf("zero Gemini provider requires streamed tool arguments for %s to be a JSON object", toolName)
+		return nil, fmt.Errorf("kajicode Gemini provider requires streamed tool arguments for %s to be a JSON object", toolName)
 	}
 	return object, nil
 }
@@ -599,9 +599,9 @@ func mapFinishReason(reason string) string {
 	case "", "STOP", "FINISH_REASON_UNSPECIFIED":
 		return "" // normal completion
 	case "MAX_TOKENS":
-		return zeroruntime.FinishReasonLength
+		return kajicoderuntime.FinishReasonLength
 	case "SAFETY", "PROHIBITED_CONTENT", "BLOCKLIST", "SPII", "RECITATION", "IMAGE_SAFETY":
-		return zeroruntime.FinishReasonContentFilter
+		return kajicoderuntime.FinishReasonContentFilter
 	default:
 		// MALFORMED_FUNCTION_CALL, OTHER, LANGUAGE, UNEXPECTED_TOOL_CALL, and any
 		// future non-STOP reason: surface the raw reason so a truncated/aborted turn

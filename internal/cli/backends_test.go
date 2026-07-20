@@ -13,12 +13,12 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/config"
-	"github.com/Gitlawb/zero/internal/hooks"
-	"github.com/Gitlawb/zero/internal/mcp"
-	"github.com/Gitlawb/zero/internal/plugins"
-	"github.com/Gitlawb/zero/internal/tools"
-	"github.com/Gitlawb/zero/internal/zerocommands"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/hooks"
+	"github.com/dishant0406/KajiCode/internal/kajicodecommands"
+	"github.com/dishant0406/KajiCode/internal/mcp"
+	"github.com/dishant0406/KajiCode/internal/plugins"
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
 func TestRunBackendsJSONUsesLifecycleSnapshotWithoutConnectingMCP(t *testing.T) {
@@ -58,7 +58,7 @@ func TestRunBackendsJSONUsesLifecycleSnapshotWithoutConnectingMCP(t *testing.T) 
 				t.Fatalf("hook Cwd = %q, want %q", options.Cwd, cwd)
 			}
 			return hooks.LoadResult{Config: hooks.Config{Hooks: []hooks.Definition{{
-				ID:      "zero.preflight",
+				ID:      "kajicode.preflight",
 				Event:   hooks.EventBeforeTool,
 				Matcher: "bash",
 				Command: "sh",
@@ -71,7 +71,7 @@ func TestRunBackendsJSONUsesLifecycleSnapshotWithoutConnectingMCP(t *testing.T) 
 				t.Fatalf("plugin Cwd = %q, want %q", options.Cwd, cwd)
 			}
 			return plugins.LoadResult{Plugins: []plugins.LoadedPlugin{{
-				ID:           "zero.docs",
+				ID:           "kajicode.docs",
 				Name:         "Docs",
 				Description:  "uses " + secret,
 				Enabled:      true,
@@ -85,7 +85,7 @@ func TestRunBackendsJSONUsesLifecycleSnapshotWithoutConnectingMCP(t *testing.T) 
 			}}}, nil
 		},
 		registerMCPTools: func(context.Context, *tools.Registry, config.MCPConfig, mcp.RegisterOptions) (mcpToolRuntime, error) {
-			return nil, errors.New("zero backends must not connect to MCP servers")
+			return nil, errors.New("kajicode backends must not connect to MCP servers")
 		},
 	}
 
@@ -99,7 +99,7 @@ func TestRunBackendsJSONUsesLifecycleSnapshotWithoutConnectingMCP(t *testing.T) 
 		t.Fatalf("backend JSON leaked secret material:\n%s", stdout.String())
 	}
 
-	var snapshot zerocommands.BackendLifecycleSnapshot
+	var snapshot kajicodecommands.BackendLifecycleSnapshot
 	if err := json.Unmarshal(stdout.Bytes(), &snapshot); err != nil {
 		t.Fatalf("backend JSON failed to decode: %v\n%s", err, stdout.String())
 	}
@@ -112,10 +112,10 @@ func TestRunBackendsJSONUsesLifecycleSnapshotWithoutConnectingMCP(t *testing.T) 
 	if snapshot.MCPServers[1].HeaderCount != 1 || !strings.Contains(snapshot.MCPServers[1].URL, "mode=readonly") {
 		t.Fatalf("http MCP snapshot missing safe status data: %#v", snapshot.MCPServers[1])
 	}
-	if len(snapshot.Hooks) != 1 || snapshot.Hooks[0].ID != "zero.preflight" || strings.Contains(strings.Join(snapshot.Hooks[0].Args, " "), secret) {
+	if len(snapshot.Hooks) != 1 || snapshot.Hooks[0].ID != "kajicode.preflight" || strings.Contains(strings.Join(snapshot.Hooks[0].Args, " "), secret) {
 		t.Fatalf("unexpected hook snapshots: %#v", snapshot.Hooks)
 	}
-	if len(snapshot.Plugins) != 1 || snapshot.Plugins[0].ID != "zero.docs" || snapshot.Plugins[0].ToolCount != 1 || snapshot.Plugins[0].PromptCount != 1 || snapshot.Plugins[0].HookCount != 1 {
+	if len(snapshot.Plugins) != 1 || snapshot.Plugins[0].ID != "kajicode.docs" || snapshot.Plugins[0].ToolCount != 1 || snapshot.Plugins[0].PromptCount != 1 || snapshot.Plugins[0].HookCount != 1 {
 		t.Fatalf("unexpected plugin snapshots: %#v", snapshot.Plugins)
 	}
 }
@@ -140,7 +140,7 @@ func TestRunBackendsTextAndHelp(t *testing.T) {
 	if exitCode != exitSuccess {
 		t.Fatalf("exitCode = %d stderr=%s", exitCode, stderr.String())
 	}
-	for _, want := range []string{"Zero Backends:", "MCP servers: 0", "Hooks: 0", "Plugins: 0"} {
+	for _, want := range []string{"KajiCode Backends:", "MCP servers: 0", "Hooks: 0", "Plugins: 0"} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("backend text missing %q:\n%s", want, stdout.String())
 		}
@@ -152,7 +152,7 @@ func TestRunBackendsTextAndHelp(t *testing.T) {
 	if exitCode != exitSuccess {
 		t.Fatalf("help exitCode = %d stderr=%s", exitCode, stderr.String())
 	}
-	for _, want := range []string{"Usage:", "zero backends", "--json"} {
+	for _, want := range []string{"Usage:", "kajicode backends", "--json"} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("backend help missing %q:\n%s", want, stdout.String())
 		}
@@ -185,7 +185,7 @@ func TestRunBackendsDoctorJSONAndTextWithoutConnectingMCP(t *testing.T) {
 			return hooks.LoadResult{Diagnostics: []hooks.Diagnostic{{
 				Kind:    hooks.DiagnosticSchema,
 				Message: "schema failed " + secret,
-				HookID:  "zero.bad",
+				HookID:  "kajicode.bad",
 			}}}, nil
 		},
 		loadPlugins: func(options plugins.LoadOptions) (plugins.LoadResult, error) {
@@ -193,14 +193,14 @@ func TestRunBackendsDoctorJSONAndTextWithoutConnectingMCP(t *testing.T) {
 				t.Fatalf("plugin Cwd = %q, want %q", options.Cwd, cwd)
 			}
 			return plugins.LoadResult{Plugins: []plugins.LoadedPlugin{{
-				ID:      "zero.docs",
+				ID:      "kajicode.docs",
 				Name:    "Docs",
 				Enabled: true,
 				Source:  plugins.SourceProject,
 			}}}, nil
 		},
 		registerMCPTools: func(context.Context, *tools.Registry, config.MCPConfig, mcp.RegisterOptions) (mcpToolRuntime, error) {
-			return nil, errors.New("zero backends doctor must not connect to MCP servers")
+			return nil, errors.New("kajicode backends doctor must not connect to MCP servers")
 		},
 	}
 
@@ -213,18 +213,18 @@ func TestRunBackendsDoctorJSONAndTextWithoutConnectingMCP(t *testing.T) {
 	if strings.Contains(stdout.String(), secret) || strings.Contains(stdout.String(), "sk-proj-") {
 		t.Fatalf("backend doctor JSON leaked secret material:\n%s", stdout.String())
 	}
-	var payload zerocommands.BackendDoctorReport
+	var payload kajicodecommands.BackendDoctorReport
 	if err := json.Unmarshal(stdout.Bytes(), &payload); err != nil {
 		t.Fatalf("backend doctor JSON failed to decode: %v\n%s", err, stdout.String())
 	}
 	if payload.OK {
 		t.Fatalf("payload.OK = true, want false for invalid MCP/hook diagnostic: %#v", payload.Checks)
 	}
-	if payload.Status != zerocommands.BackendDoctorStatusFail {
-		t.Fatalf("payload.Status = %q, want %q", payload.Status, zerocommands.BackendDoctorStatusFail)
+	if payload.Status != kajicodecommands.BackendDoctorStatusFail {
+		t.Fatalf("payload.Status = %q, want %q", payload.Status, kajicodecommands.BackendDoctorStatusFail)
 	}
 	assertBackendDoctorPayloadCheck(t, payload, "backend.mcp.invalid", "broken")
-	assertBackendDoctorPayloadCheck(t, payload, "backend.hooks.diagnostic", "zero.bad")
+	assertBackendDoctorPayloadCheck(t, payload, "backend.hooks.diagnostic", "kajicode.bad")
 
 	stdout.Reset()
 	stderr.Reset()
@@ -232,7 +232,7 @@ func TestRunBackendsDoctorJSONAndTextWithoutConnectingMCP(t *testing.T) {
 	if exitCode != exitProvider {
 		t.Fatalf("text exitCode = %d, want %d stderr=%s", exitCode, exitProvider, stderr.String())
 	}
-	for _, want := range []string{"Zero backend doctor", "[fail] backend.mcp.invalid", "zero mcp add broken", "[fail] backend.hooks.diagnostic"} {
+	for _, want := range []string{"KajiCode backend doctor", "[fail] backend.mcp.invalid", "kajicode mcp add broken", "[fail] backend.hooks.diagnostic"} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("backend doctor text missing %q:\n%s", want, stdout.String())
 		}
@@ -246,7 +246,7 @@ func TestRunBackendsDoctorHelp(t *testing.T) {
 	if exitCode != exitSuccess {
 		t.Fatalf("exitCode = %d stderr=%s", exitCode, stderr.String())
 	}
-	for _, want := range []string{"Usage:", "zero backends doctor", "--json"} {
+	for _, want := range []string{"Usage:", "kajicode backends doctor", "--json"} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("backend doctor help missing %q:\n%s", want, stdout.String())
 		}
@@ -260,7 +260,7 @@ func TestRunBackendsDoctorDoesNotConnectOrExecuteConfiguredBackends(t *testing.T
 	pluginHookSentinel := filepath.Join(cwd, "plugin-hook-ran")
 	helperCommand := os.Args[0]
 	helperArgs := func(path string) []string {
-		return []string{"-test.run=TestBackendDoctorHelperProcess", "--", "--zero-backend-doctor-sentinel", path}
+		return []string{"-test.run=TestBackendDoctorHelperProcess", "--", "--kajicode-backend-doctor-sentinel", path}
 	}
 
 	var hits int32
@@ -270,20 +270,20 @@ func TestRunBackendsDoctorDoesNotConnectOrExecuteConfiguredBackends(t *testing.T
 	}))
 	defer server.Close()
 
-	hookConfigPath := filepath.Join(cwd, ".zero", "hooks.json")
+	hookConfigPath := filepath.Join(cwd, ".kajicode", "hooks.json")
 	writeBackendDoctorJSON(t, hookConfigPath, map[string]any{
 		"enabled": true,
 		"hooks": []any{map[string]any{
-			"id":      "zero.sentinel",
+			"id":      "kajicode.sentinel",
 			"event":   "sessionStart",
 			"command": helperCommand,
 			"args":    helperArgs(hookSentinel),
 		}},
 	})
-	pluginDir := filepath.Join(cwd, ".zero", "plugins", "sentinel")
+	pluginDir := filepath.Join(cwd, ".kajicode", "plugins", "sentinel")
 	writeBackendDoctorJSON(t, filepath.Join(pluginDir, "plugin.json"), map[string]any{
 		"schemaVersion": 1,
-		"id":            "zero.sentinel",
+		"id":            "kajicode.sentinel",
 		"name":          "Sentinel",
 		"version":       "1.0.0",
 		"tools": []any{map[string]any{
@@ -315,12 +315,12 @@ func TestRunBackendsDoctorDoesNotConnectOrExecuteConfiguredBackends(t *testing.T
 		},
 		loadPlugins: func(options plugins.LoadOptions) (plugins.LoadResult, error) {
 			return plugins.Load(plugins.LoadOptions{
-				Roots: []plugins.Root{{Source: plugins.SourceProject, Path: filepath.Join(cwd, ".zero", "plugins")}},
+				Roots: []plugins.Root{{Source: plugins.SourceProject, Path: filepath.Join(cwd, ".kajicode", "plugins")}},
 				Cwd:   options.Cwd,
 			})
 		},
 		registerMCPTools: func(context.Context, *tools.Registry, config.MCPConfig, mcp.RegisterOptions) (mcpToolRuntime, error) {
-			return nil, errors.New("zero backends doctor must not register MCP tools")
+			return nil, errors.New("kajicode backends doctor must not register MCP tools")
 		},
 	}
 
@@ -340,7 +340,7 @@ func TestRunBackendsDoctorDoesNotConnectOrExecuteConfiguredBackends(t *testing.T
 	}
 }
 
-func assertBackendDoctorPayloadCheck(t *testing.T, report zerocommands.BackendDoctorReport, id string, target string) {
+func assertBackendDoctorPayloadCheck(t *testing.T, report kajicodecommands.BackendDoctorReport, id string, target string) {
 	t.Helper()
 	for _, check := range report.Checks {
 		if check.ID == id && check.Target == target {
@@ -366,7 +366,7 @@ func writeBackendDoctorJSON(t *testing.T, path string, value any) {
 
 func TestBackendDoctorHelperProcess(t *testing.T) {
 	for index, arg := range os.Args {
-		if arg != "--zero-backend-doctor-sentinel" || index+1 >= len(os.Args) {
+		if arg != "--kajicode-backend-doctor-sentinel" || index+1 >= len(os.Args) {
 			continue
 		}
 		if err := os.WriteFile(os.Args[index+1], []byte("executed"), 0o600); err != nil {

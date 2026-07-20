@@ -9,11 +9,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/agent"
-	"github.com/Gitlawb/zero/internal/sandbox"
-	"github.com/Gitlawb/zero/internal/sessions"
-	"github.com/Gitlawb/zero/internal/tools"
-	"github.com/Gitlawb/zero/internal/usage"
+	"github.com/dishant0406/KajiCode/internal/agent"
+	"github.com/dishant0406/KajiCode/internal/sandbox"
+	"github.com/dishant0406/KajiCode/internal/sessions"
+	"github.com/dishant0406/KajiCode/internal/tools"
+	"github.com/dishant0406/KajiCode/internal/usage"
 )
 
 const tuiSessionTitleLimit = 80
@@ -191,7 +191,7 @@ func tuiSessionTitle(prompt string) string {
 	// a multi-byte rune and persist invalid UTF-8 into the session metadata.
 	title := cutRunes(strings.Join(strings.Fields(prompt), " "), tuiSessionTitleLimit)
 	if title == "" {
-		return "Zero TUI session"
+		return "KajiCode TUI session"
 	}
 	return title
 }
@@ -268,7 +268,7 @@ func (m model) resolveResumeSession(args string) (*sessions.Metadata, error) {
 			return nil, err
 		}
 		if latest == nil {
-			return nil, errors.New("no zero sessions available to resume")
+			return nil, errors.New("no kajicode sessions available to resume")
 		}
 		return latest, nil
 	}
@@ -278,17 +278,17 @@ func (m model) resolveResumeSession(args string) (*sessions.Metadata, error) {
 		return nil, err
 	}
 	if session == nil {
-		return nil, fmt.Errorf("zero session not found: %s", args)
+		return nil, fmt.Errorf("kajicode session not found: %s", args)
 	}
 	if !sessions.IsResumableKind(session.SessionKind) {
-		return nil, fmt.Errorf("zero session is not resumable: %s", args)
+		return nil, fmt.Errorf("kajicode session is not resumable: %s", args)
 	}
 	return session, nil
 }
 
 // resumeEvents reads a session's events for resume, preferring the rehydrated
 // (compaction-aware) view so a resumed session honors a prior /compact — matching
-// the CLI's `zero exec --resume` (readExecContextEvents) and the in-TUI /compact
+// the CLI's `kajicode exec --resume` (readExecContextEvents) and the in-TUI /compact
 // reload. Falls back to the raw log if rehydration fails.
 func (m model) resumeEvents(sessionID string) ([]sessions.Event, error) {
 	events, err := m.sessionStore.ReadRehydratedEvents(sessionID)
@@ -317,7 +317,7 @@ func (m model) formatResumeSummary(session sessions.Metadata, eventCount int) st
 		providerLine += "  (recorded: " + recorded + ")"
 	}
 	return renderCommandOutput(commandOutput{
-		Title:  "Resumed Zero session",
+		Title:  "Resumed KajiCode session",
 		Status: commandStatusOK,
 		Sections: []commandSection{{
 			Title: "Session",

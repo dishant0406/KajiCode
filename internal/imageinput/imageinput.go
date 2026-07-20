@@ -12,7 +12,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
 )
 
 // MaxImageBytes is the per-image decoded-size cap (10 MiB). Bytes above this are
@@ -23,7 +23,7 @@ const MaxImageBytes = 10 << 20
 // LoadFile reads the image at path (resolved against workspaceRoot when
 // relative), validates its type and size, and returns a raw-bytes ImageBlock.
 // Errors are plain (callers wrap them into surface-specific usage/notice text).
-func LoadFile(path string, workspaceRoot string) (zeroruntime.ImageBlock, error) {
+func LoadFile(path string, workspaceRoot string) (kajicoderuntime.ImageBlock, error) {
 	resolved := path
 	if !filepath.IsAbs(resolved) {
 		resolved = filepath.Join(workspaceRoot, resolved)
@@ -35,17 +35,17 @@ func LoadFile(path string, workspaceRoot string) (zeroruntime.ImageBlock, error)
 	// failed read.
 	info, err := os.Stat(resolved)
 	if err != nil {
-		return zeroruntime.ImageBlock{}, fmt.Errorf("image file not found: %s", path)
+		return kajicoderuntime.ImageBlock{}, fmt.Errorf("image file not found: %s", path)
 	}
 	// Reject non-regular files (directories, FIFOs, devices) up front. os.Stat
 	// follows symlinks, so a symlink to a regular file still passes. This guards
 	// against os.Open blocking forever on a writerless FIFO (an --image/ /image
 	// path pointing at a named pipe would otherwise hang the process/UI).
 	if !info.Mode().IsRegular() {
-		return zeroruntime.ImageBlock{}, fmt.Errorf("image file must be a regular file: %s", path)
+		return kajicoderuntime.ImageBlock{}, fmt.Errorf("image file must be a regular file: %s", path)
 	}
 	if info.Size() > MaxImageBytes {
-		return zeroruntime.ImageBlock{}, fmt.Errorf("image %s is larger than the 10 MiB limit", path)
+		return kajicoderuntime.ImageBlock{}, fmt.Errorf("image %s is larger than the 10 MiB limit", path)
 	}
 
 	// Bounded read: the os.Stat above is only a fast-path hint (a non-regular
@@ -57,29 +57,29 @@ func LoadFile(path string, workspaceRoot string) (zeroruntime.ImageBlock, error)
 	if err != nil {
 		// Keep the real cause: a permission or I/O failure reported as "not
 		// found" sends users hunting for a file that exists.
-		return zeroruntime.ImageBlock{}, fmt.Errorf("cannot open image %s: %w", path, err)
+		return kajicoderuntime.ImageBlock{}, fmt.Errorf("cannot open image %s: %w", path, err)
 	}
 	defer file.Close()
 
 	data, err := io.ReadAll(io.LimitReader(file, MaxImageBytes+1))
 	if err != nil {
-		return zeroruntime.ImageBlock{}, fmt.Errorf("cannot read image %s: %w", path, err)
+		return kajicoderuntime.ImageBlock{}, fmt.Errorf("cannot read image %s: %w", path, err)
 	}
 
 	// The LimitReader yields at most MaxImageBytes+1 bytes; more than the cap means
 	// the source was oversized (caught here regardless of any stat/read race).
 	if len(data) > MaxImageBytes {
-		return zeroruntime.ImageBlock{}, fmt.Errorf("image %s is larger than the 10 MiB limit", path)
+		return kajicoderuntime.ImageBlock{}, fmt.Errorf("image %s is larger than the 10 MiB limit", path)
 	}
 
 	sniffLen := len(data)
 	if sniffLen > 512 {
 		sniffLen = 512
 	}
-	mediaType := zeroruntime.NormalizeImageMediaType(http.DetectContentType(data[:sniffLen]))
+	mediaType := kajicoderuntime.NormalizeImageMediaType(http.DetectContentType(data[:sniffLen]))
 	if mediaType == "" {
-		return zeroruntime.ImageBlock{}, fmt.Errorf("unsupported image type for %s (allowed: png, jpeg, gif, webp)", path)
+		return kajicoderuntime.ImageBlock{}, fmt.Errorf("unsupported image type for %s (allowed: png, jpeg, gif, webp)", path)
 	}
 
-	return zeroruntime.ImageBlock{MediaType: mediaType, Data: data}, nil
+	return kajicoderuntime.ImageBlock{MediaType: mediaType, Data: data}, nil
 }

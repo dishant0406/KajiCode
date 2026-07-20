@@ -3,7 +3,7 @@ package tools
 import (
 	"strings"
 
-	zeroSandbox "github.com/Gitlawb/zero/internal/sandbox"
+	zeroSandbox "github.com/dishant0406/KajiCode/internal/sandbox"
 )
 
 var sandboxDeniedKeywords = []string{

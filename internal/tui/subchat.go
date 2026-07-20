@@ -1,7 +1,7 @@
 package tui
 
 import (
-	"github.com/Gitlawb/zero/internal/sessions"
+	"github.com/dishant0406/KajiCode/internal/sessions"
 )
 
 // subchatState manages the drill-in view for a specialist's child session.
@@ -57,5 +57,5 @@ func renderSubchatNavBar(title string, width int) string {
 	if title != "" {
 		nav += "  ·  " + truncateRunes(title, width-40)
 	}
-	return zeroTheme.accent.Render(nav)
+	return kajicodeTheme.accent.Render(nav)
 }

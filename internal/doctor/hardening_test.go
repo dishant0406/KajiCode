@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/config"
-	"github.com/Gitlawb/zero/internal/sandbox"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/sandbox"
 )
 
 // validProvider is a fully-formed provider profile so the report's overall OK
@@ -119,7 +119,7 @@ func TestSandboxCheckReportsWindowsNativeSetupStates(t *testing.T) {
 		t.Fatalf("expected native Windows backend in message, got %q", native.Message)
 	}
 
-	t.Setenv("ZERO_WINDOWS_SANDBOX_HOME", t.TempDir())
+	t.Setenv("KAJICODE_WINDOWS_SANDBOX_HOME", t.TempDir())
 	needsSetup := Run(Options{
 		Now:           fixedDoctorClock("2026-06-12T10:08:30Z"),
 		Runtime:       "go",
@@ -135,15 +135,15 @@ func TestSandboxCheckReportsWindowsNativeSetupStates(t *testing.T) {
 	}
 	setupStatus, _ := needsSetup.Details["setupStatus"].(string)
 	setupRemedy, _ := needsSetup.Details["remedy"].(string)
-	if setupStatus != "missing-or-out-of-date" || !strings.Contains(setupRemedy, "zero sandbox setup") {
+	if setupStatus != "missing-or-out-of-date" || !strings.Contains(setupRemedy, "kajicode sandbox setup") {
 		t.Fatalf("setup warning details = %#v, want missing/out-of-date with setup remedy", needsSetup.Details)
 	}
 
 	// With self-dispatch, the standalone helper .exe files no longer need to be
-	// on PATH for the Windows backend to be usable — the running zero binary acts
+	// on PATH for the Windows backend to be usable — the running kajicode binary acts
 	// as its own command-runner/setup helper. So a missing PATH helper no longer
 	// reports "unavailable"; the backend is available and (with no workspace to
-	// require a setup marker) the check passes. The actionable "run `zero sandbox
+	// require a setup marker) the check passes. The actionable "run `kajicode sandbox
 	// setup`" guidance is covered by the marker-missing case above.
 	noPathHelpers := Run(Options{
 		Now:              fixedDoctorClock("2026-06-12T10:09:00Z"),

@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/daemon"
+	"github.com/dishant0406/KajiCode/internal/daemon"
 )
 
 const (

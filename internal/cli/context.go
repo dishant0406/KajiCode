@@ -5,9 +5,9 @@ import (
 	"io"
 	"strings"
 
-	"github.com/Gitlawb/zero/internal/config"
-	"github.com/Gitlawb/zero/internal/contextreport"
-	"github.com/Gitlawb/zero/internal/modelregistry"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/contextreport"
+	"github.com/dishant0406/KajiCode/internal/modelregistry"
 )
 
 type contextOptions struct {
@@ -79,7 +79,7 @@ func parseContextArgs(args []string) (contextOptions, bool, error) {
 
 func writeContextHelp(w io.Writer) error {
 	_, err := fmt.Fprint(w, `Usage:
-  zero context [flags]
+  kajicode context [flags]
 
 Reports the current workspace context budget.
 

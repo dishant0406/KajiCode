@@ -1,7 +1,7 @@
-# Repository Guidelines for Zero
+# Repository Guidelines for KajiCode
 
 These instructions apply to all work in this repository. For the user-facing
-guide to extending Zero with specialists, hooks, plugins, MCP, and skills, see
+guide to extending KajiCode with specialists, hooks, plugins, MCP, and skills, see
 [docs/EXTENDING.md](docs/EXTENDING.md).
 
 ## 1. Contribution and Pull Request Rules
@@ -26,7 +26,7 @@ guide to extending Zero with specialists, hooks, plugins, MCP, and skills, see
 - Use the Go version declared in `go.mod`. Do not hardcode a different local
   toolchain version in scripts or documentation.
 - Use the repository build and release commands (`make` and
-  `go run ./cmd/zero-release ...`) instead of inventing parallel build flows.
+  `go run ./cmd/kajicode-release ...`) instead of inventing parallel build flows.
 - Keep tests beside their source files (`foo_test.go` next to `foo.go`). Add a
   regression test for behavior changes and run affected concurrent code under
   the race detector.
@@ -49,8 +49,8 @@ request, or completing an implementation task:
 2. **Vet**: `go vet ./...` (or `make vet`).
 3. **Tests**: `go test ./...`. Use `make test` for the full race-enabled suite,
    or run focused tests with `-race`, when concurrency is affected.
-4. **Build**: `go run ./cmd/zero-release build`.
-5. **Smoke test**: `go run ./cmd/zero-release smoke`.
+4. **Build**: `go run ./cmd/kajicode-release build`.
+5. **Smoke test**: `go run ./cmd/kajicode-release smoke`.
 6. **Advisory lint**:
    `go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2 run --enable-only unused,ineffassign,staticcheck ./...`.
 7. **Security**:

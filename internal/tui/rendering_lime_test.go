@@ -10,12 +10,12 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/colorprofile"
 
-	"github.com/Gitlawb/zero/internal/agent"
-	"github.com/Gitlawb/zero/internal/config"
-	"github.com/Gitlawb/zero/internal/modelregistry"
-	"github.com/Gitlawb/zero/internal/sandbox"
-	"github.com/Gitlawb/zero/internal/streamjson"
-	"github.com/Gitlawb/zero/internal/tools"
+	"github.com/dishant0406/KajiCode/internal/agent"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/modelregistry"
+	"github.com/dishant0406/KajiCode/internal/sandbox"
+	"github.com/dishant0406/KajiCode/internal/streamjson"
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
 // ansiPattern strips SGR styling and OSC sequences (hyperlinks) so
@@ -899,7 +899,7 @@ func TestRunningToolCardShowsHeadAndSpinnerSlot(t *testing.T) {
 func TestResolvedToolCallCollapsesIntoResultCard(t *testing.T) {
 	rows := []transcriptRow{
 		{kind: rowToolCall, id: "call_1", tool: "read_file", detail: "README.md"},
-		{kind: rowToolResult, id: "call_1", tool: "read_file", status: tools.StatusOK, detail: "File: README.md\n\n1: # Zero"},
+		{kind: rowToolResult, id: "call_1", tool: "read_file", status: tools.StatusOK, detail: "File: README.md\n\n1: # KajiCode"},
 	}
 	rc := buildRowContext(rows)
 	if !rc.skip(rows[0]) {
@@ -922,7 +922,7 @@ func TestDiffCardBodyRendersCountsNumbersAndCap(t *testing.T) {
 	}, "\n")
 	row := transcriptRow{kind: rowToolResult, id: "call_1", tool: "write_file", status: tools.StatusOK, detail: diff}
 	styled := m.renderRow(row, 80, buildRowContext(nil))
-	for _, want := range []string{zeroTheme.diffAdd.Render("+3"), zeroTheme.diffDel.Render("-0")} {
+	for _, want := range []string{kajicodeTheme.diffAdd.Render("+3"), kajicodeTheme.diffDel.Render("-0")} {
 		if !strings.Contains(styled, want) {
 			t.Fatalf("diff card count tag should color additions/deletions, missing styled %q in:\n%s", want, styled)
 		}
@@ -1093,10 +1093,10 @@ func TestExecCommandCardBodyShowsSessionAndExit(t *testing.T) {
 func TestLocalControlCardsUseFriendlyCompactLabels(t *testing.T) {
 	m := limeTestModel()
 
-	open := transcriptRow{kind: rowToolResult, id: "call_1", tool: "browser_open", status: tools.StatusOK, detail: "✓ ZERO - terminal agent\nhttp://localhost:8080/"}
+	open := transcriptRow{kind: rowToolResult, id: "call_1", tool: "browser_open", status: tools.StatusOK, detail: "✓ KAJICODE - terminal agent\nhttp://localhost:8080/"}
 	openRC := buildRowContext([]transcriptRow{{kind: rowToolCall, id: "call_1", tool: "browser_open", detail: "http://localhost:8080"}})
 	got := plainRender(t, m.renderRow(open, 100, openRC))
-	for _, want := range []string{"Opened", "http://localhost:8080", "ZERO - terminal agent"} {
+	for _, want := range []string{"Opened", "http://localhost:8080", "KAJICODE - terminal agent"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("browser_open card missing %q:\n%s", want, got)
 		}
@@ -1117,7 +1117,7 @@ func TestLocalControlCardsUseFriendlyCompactLabels(t *testing.T) {
 		t.Fatalf("browser_snapshot card should stay compact and friendly:\n%s", got)
 	}
 
-	artifact := transcriptRow{kind: rowToolResult, id: "call_3", tool: "capture_artifact", status: tools.StatusOK, detail: "Artifact captured: /tmp/zero-artifacts/page.png\n\nhelper wrote screenshot"}
+	artifact := transcriptRow{kind: rowToolResult, id: "call_3", tool: "capture_artifact", status: tools.StatusOK, detail: "Artifact captured: /tmp/kajicode-artifacts/page.png\n\nhelper wrote screenshot"}
 	got = plainRender(t, m.renderRow(artifact, 100, buildRowContext(nil)))
 	for _, want := range []string{"Captured", "page.png"} {
 		if !strings.Contains(got, want) {
@@ -1208,11 +1208,11 @@ func TestBashCardBodyShowsShellIssueHint(t *testing.T) {
 		"stderr:",
 		"The syntax of the command is incorrect.",
 		"exit_code: 1",
-		"[zero] shell issue: Windows cmd.exe rejected the command syntax.",
+		"[kajicode] shell issue: Windows cmd.exe rejected the command syntax.",
 		"Suggestion: Use the cwd argument instead of cd.",
 	}, "\n")
 	row := transcriptRow{kind: rowToolResult, id: "call_1", tool: "bash", status: tools.StatusError, detail: detail}
-	rc := buildRowContext([]transcriptRow{{kind: rowToolCall, id: "call_1", tool: "bash", detail: "cd /d/tmp/zero-pr-158 && ls -la"}})
+	rc := buildRowContext([]transcriptRow{{kind: rowToolCall, id: "call_1", tool: "bash", detail: "cd /d/tmp/kajicode-pr-158 && ls -la"}})
 	got := plainRender(t, m.renderRow(row, 96, rc))
 	for _, want := range []string{"shell issue", "Windows cmd.exe", "Suggestion:", "cwd"} {
 		if !strings.Contains(got, want) {
@@ -1432,15 +1432,15 @@ func TestStatusLineOmitsEffortWhenAuto(t *testing.T) {
 func TestTitleBarShowsWorkspaceAndModel(t *testing.T) {
 	m := limeTestModel()
 	m.width = 120
-	m.cwd = "/workspace/zero"
+	m.cwd = "/workspace/kajicode"
 	m.gitBranch = "main"
 	got := plainRender(t, m.titleBar(120))
-	for _, want := range []string{" main", "/workspace/zero", "test-provider/test-model"} {
+	for _, want := range []string{" main", "/workspace/kajicode", "test-provider/test-model"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("title bar = %q, missing %q", got, want)
 		}
 	}
-	for _, notWant := range []string{" 0 ", "zero /"} {
+	for _, notWant := range []string{" 0 ", "kajicode /"} {
 		if strings.Contains(got, notWant) {
 			t.Fatalf("title bar = %q, should not include old brand cluster %q", got, notWant)
 		}
@@ -1455,18 +1455,18 @@ func TestTitleBarHighlightsBranchOverWorkspace(t *testing.T) {
 	})
 
 	m := limeTestModel()
-	m.cwd = "/workspace/zero"
+	m.cwd = "/workspace/kajicode"
 	m.gitBranch = "main"
 	got := m.titleWorkspaceSegment()
 
-	highlightedBranch := zeroTheme.muted.Render("") + " " + zeroTheme.muted.Render("main")
-	recessedWorkspace := zeroTheme.faint.Render("/workspace/zero")
+	highlightedBranch := kajicodeTheme.muted.Render("") + " " + kajicodeTheme.muted.Render("main")
+	recessedWorkspace := kajicodeTheme.faint.Render("/workspace/kajicode")
 	for _, want := range []string{highlightedBranch, recessedWorkspace} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("title workspace segment = %q, missing styled segment %q", got, want)
 		}
 	}
-	if faintBranch := zeroTheme.faint.Render("") + " " + zeroTheme.faint.Render("main"); strings.Contains(got, faintBranch) {
+	if faintBranch := kajicodeTheme.faint.Render("") + " " + kajicodeTheme.faint.Render("main"); strings.Contains(got, faintBranch) {
 		t.Fatalf("title workspace segment = %q, branch should use highlighted title colour", got)
 	}
 }
@@ -1549,7 +1549,7 @@ func TestToolResultCardRendersInlineWithoutRail(t *testing.T) {
 		id:     "c",
 		tool:   "read_file",
 		status: tools.StatusOK,
-		detail: "File: README.md\n\n1: # Zero\n2: line two",
+		detail: "File: README.md\n\n1: # KajiCode\n2: line two",
 	}
 	card := plainRender(t, m.renderRow(row, 80, buildRowContext(nil)))
 	lines := strings.Split(card, "\n")
@@ -1813,10 +1813,10 @@ func TestModelPickerItemsCarryProviderTag(t *testing.T) {
 
 func TestSpecReviewCardShowsBadgePathAndKeys(t *testing.T) {
 	got := plainRender(t, renderFocusedSpecReviewPrompt(pendingSpecReviewPrompt{
-		SpecFilePath: "/repo/specs/zero-1.md",
-		RelativePath: "specs/zero-1.md",
+		SpecFilePath: "/repo/specs/kajicode-1.md",
+		RelativePath: "specs/kajicode-1.md",
 	}, 80))
-	for _, want := range []string{"SPEC REVIEW", "specs/zero-1.md", "[a] approve", "[r] reject", "[e] edit file", "[esc] cancel"} {
+	for _, want := range []string{"SPEC REVIEW", "specs/kajicode-1.md", "[a] approve", "[r] reject", "[e] edit file", "[esc] cancel"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("spec review card = %q, missing %q", got, want)
 		}

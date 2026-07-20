@@ -9,12 +9,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/agent"
-	"github.com/Gitlawb/zero/internal/config"
-	"github.com/Gitlawb/zero/internal/tools"
-	"github.com/Gitlawb/zero/internal/workspacetrust"
-	"github.com/Gitlawb/zero/internal/worktrees"
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/agent"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
+	"github.com/dishant0406/KajiCode/internal/tools"
+	"github.com/dishant0406/KajiCode/internal/workspacetrust"
+	"github.com/dishant0406/KajiCode/internal/worktrees"
 )
 
 // These tests close the end-to-end gap the chokepoint unit tests leave open:
@@ -44,31 +44,31 @@ func (markerTool) Run(context.Context, map[string]any) tools.Result {
 // result in the message history.
 type toolThenTextProvider struct{ toolName string }
 
-func (p toolThenTextProvider) StreamCompletion(_ context.Context, req zeroruntime.CompletionRequest) (<-chan zeroruntime.StreamEvent, error) {
+func (p toolThenTextProvider) StreamCompletion(_ context.Context, req kajicoderuntime.CompletionRequest) (<-chan kajicoderuntime.StreamEvent, error) {
 	toolAlreadyCalled := false
 	for _, m := range req.Messages {
-		if m.Role == zeroruntime.MessageRoleTool {
+		if m.Role == kajicoderuntime.MessageRoleTool {
 			toolAlreadyCalled = true
 			break
 		}
 	}
-	ch := make(chan zeroruntime.StreamEvent, 8)
+	ch := make(chan kajicoderuntime.StreamEvent, 8)
 	go func() {
 		defer close(ch)
 		if toolAlreadyCalled {
-			ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventText, Content: "done"}
-			ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventDone}
+			ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventText, Content: "done"}
+			ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventDone}
 			return
 		}
-		ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventToolCallStart, ToolCallID: "c1", ToolName: p.toolName}
-		ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventToolCallDelta, ToolCallID: "c1", ArgumentsFragment: `{"pattern":"*"}`}
-		ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventToolCallEnd, ToolCallID: "c1"}
-		ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventDone}
+		ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventToolCallStart, ToolCallID: "c1", ToolName: p.toolName}
+		ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventToolCallDelta, ToolCallID: "c1", ArgumentsFragment: `{"pattern":"*"}`}
+		ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventToolCallEnd, ToolCallID: "c1"}
+		ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventDone}
 	}()
 	return ch, nil
 }
 
-// writeMarkerHook writes a ./.zero/hooks.json under dir whose enabled beforeTool
+// writeMarkerHook writes a ./.kajicode/hooks.json under dir whose enabled beforeTool
 // hook touches markerPath when it fires. The hook shells out to /bin/sh, so the
 // trusted-case assertion (the marker must appear) is meaningless on Windows, where
 // that interpreter does not exist; skip there, matching writeMarkerHookScript.
@@ -77,11 +77,11 @@ func writeMarkerHook(t *testing.T, dir, markerPath string) {
 	if runtime.GOOS == "windows" {
 		t.Skip("marker hook is POSIX-shell based (/bin/sh)")
 	}
-	if err := os.MkdirAll(filepath.Join(dir, ".zero"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(dir, ".kajicode"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	body := `{"enabled":true,"hooks":[{"id":"m","event":"beforeTool","command":"/bin/sh","args":["-c","touch '` + markerPath + `'"],"enabled":true}]}`
-	if err := os.WriteFile(filepath.Join(dir, ".zero", "hooks.json"), []byte(body), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, ".kajicode", "hooks.json"), []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -192,18 +192,18 @@ func TestTrustGateFiresInDefaultAutoMode(t *testing.T) {
 // pieces work in isolation: an untrusted repo whose only project config is MCP prints
 // the notice through the real runExec wiring; trusting it silences it. resolveMCPConfig
 // is stubbed to return no servers so nothing spawns -- the notice depends only on the
-// trust verdict and the real ./.zero/config.json that projectMCPConfigExists reads.
+// trust verdict and the real ./.kajicode/config.json that projectMCPConfigExists reads.
 func TestExecSurfacesMCPTrustNotice(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("exec fake-provider harness assumes a POSIX process environment")
 	}
 	setTrustConfigRoot(t)
 	repo := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(repo, ".zero"), 0o700); err != nil {
+	if err := os.MkdirAll(filepath.Join(repo, ".kajicode"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	body := `{"mcp":{"servers":{"proj":{"type":"stdio","command":"proj-cmd"}}}}`
-	if err := os.WriteFile(filepath.Join(repo, ".zero", "config.json"), []byte(body), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(repo, ".kajicode", "config.json"), []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -212,7 +212,7 @@ func TestExecSurfacesMCPTrustNotice(t *testing.T) {
 		code := runWithDeps([]string{"exec", "--skip-permissions-unsafe", "--max-turns", "3", "go"}, &out, &errBuf, appDeps{
 			getwd:         func() (string, error) { return repo, nil },
 			resolveConfig: func(string, config.Overrides) (config.ResolvedConfig, error) { return execResolvedConfig(), nil },
-			newProvider: func(config.ProviderProfile) (zeroruntime.Provider, error) {
+			newProvider: func(config.ProviderProfile) (kajicoderuntime.Provider, error) {
 				return toolThenTextProvider{toolName: "glob"}, nil
 			},
 			resolveMCPConfig: func(string, bool) (config.MCPConfig, error) { return config.MCPConfig{}, nil },
@@ -226,7 +226,7 @@ func TestExecSurfacesMCPTrustNotice(t *testing.T) {
 	// Untrusted: the project MCP layer is dropped, so the notice must name it. The repo
 	// has no project hooks/plugins, so the MCP skip is the ONLY thing that can fire it.
 	untrusted := run()
-	if !strings.Contains(untrusted, "MCP servers") || !strings.Contains(untrusted, "zero trust") {
+	if !strings.Contains(untrusted, "MCP servers") || !strings.Contains(untrusted, "kajicode trust") {
 		t.Fatalf("untrusted exec must surface the MCP trust notice, stderr=%q", untrusted)
 	}
 
@@ -249,11 +249,11 @@ func TestExecSpecSurfacesMCPTrustNotice(t *testing.T) {
 	}
 	setTrustConfigRoot(t)
 	repo := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(repo, ".zero"), 0o700); err != nil {
+	if err := os.MkdirAll(filepath.Join(repo, ".kajicode"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	body := `{"mcp":{"servers":{"proj":{"type":"stdio","command":"proj-cmd"}}}}`
-	if err := os.WriteFile(filepath.Join(repo, ".zero", "config.json"), []byte(body), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(repo, ".kajicode", "config.json"), []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -261,12 +261,12 @@ func TestExecSpecSurfacesMCPTrustNotice(t *testing.T) {
 	_ = runWithDeps([]string{"exec", "--use-spec", "--skip-permissions-unsafe", "--max-turns", "3", "go"}, &out, &errBuf, appDeps{
 		getwd:         func() (string, error) { return repo, nil },
 		resolveConfig: func(string, config.Overrides) (config.ResolvedConfig, error) { return execResolvedConfig(), nil },
-		newProvider: func(config.ProviderProfile) (zeroruntime.Provider, error) {
+		newProvider: func(config.ProviderProfile) (kajicoderuntime.Provider, error) {
 			return toolThenTextProvider{toolName: "glob"}, nil
 		},
 		resolveMCPConfig: func(string, bool) (config.MCPConfig, error) { return config.MCPConfig{}, nil },
 	})
-	if !strings.Contains(errBuf.String(), "MCP servers") || !strings.Contains(errBuf.String(), "zero trust") {
+	if !strings.Contains(errBuf.String(), "MCP servers") || !strings.Contains(errBuf.String(), "kajicode trust") {
 		t.Fatalf("untrusted --use-spec exec must surface the MCP trust notice, stderr=%q", errBuf.String())
 	}
 }
@@ -288,7 +288,7 @@ func runExecTrust(t *testing.T, extraArgs []string, launchDir, worktreeDir strin
 		resolveConfig: func(string, config.Overrides) (config.ResolvedConfig, error) {
 			return execResolvedConfig(), nil
 		},
-		newProvider: func(config.ProviderProfile) (zeroruntime.Provider, error) {
+		newProvider: func(config.ProviderProfile) (kajicoderuntime.Provider, error) {
 			return toolThenTextProvider{toolName: "glob"}, nil
 		},
 	})
@@ -296,7 +296,7 @@ func runExecTrust(t *testing.T, extraArgs []string, launchDir, worktreeDir strin
 
 // TestExecWorktreeInheritsTrustEndToEnd closes gap #1 for the exec path: trust is
 // keyed on the ORIGINAL launch dir, not the generated worktree path. The worktree
-// checkout carries the committed .zero/hooks.json; the gate must load it only when
+// checkout carries the committed .kajicode/hooks.json; the gate must load it only when
 // the SOURCE repo (launch dir) is trusted, proving exec.go captures trustRoot
 // before the --worktree reassignment and threads it into the chokepoint.
 func TestExecWorktreeInheritsTrustEndToEnd(t *testing.T) {

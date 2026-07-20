@@ -8,14 +8,14 @@ import (
 
 func (store *Store) CreateChild(parentSessionID string, input ChildInput) (Metadata, error) {
 	if !ValidSessionID(parentSessionID) {
-		return Metadata{}, fmt.Errorf("invalid zero session id %q", parentSessionID)
+		return Metadata{}, fmt.Errorf("invalid kajicode session id %q", parentSessionID)
 	}
 	parent, err := store.Get(parentSessionID)
 	if err != nil {
 		return Metadata{}, err
 	}
 	if parent == nil {
-		return Metadata{}, fmt.Errorf("zero session not found: %s", parentSessionID)
+		return Metadata{}, fmt.Errorf("kajicode session not found: %s", parentSessionID)
 	}
 	parentEvents, err := store.ReadEvents(parent.SessionID)
 	if err != nil {
@@ -62,14 +62,14 @@ func (store *Store) CreateChild(parentSessionID string, input ChildInput) (Metad
 
 func (store *Store) ListChildren(parentSessionID string) ([]Metadata, error) {
 	if !ValidSessionID(parentSessionID) {
-		return nil, fmt.Errorf("invalid zero session id %q", parentSessionID)
+		return nil, fmt.Errorf("invalid kajicode session id %q", parentSessionID)
 	}
 	parent, err := store.Get(parentSessionID)
 	if err != nil {
 		return nil, err
 	}
 	if parent == nil {
-		return nil, fmt.Errorf("zero session not found: %s", parentSessionID)
+		return nil, fmt.Errorf("kajicode session not found: %s", parentSessionID)
 	}
 	all, err := store.List()
 	if err != nil {
@@ -98,14 +98,14 @@ func sortChildSessions(children []Metadata) {
 
 func (store *Store) Lineage(sessionID string) ([]Metadata, error) {
 	if !ValidSessionID(sessionID) {
-		return nil, fmt.Errorf("invalid zero session id %q", sessionID)
+		return nil, fmt.Errorf("invalid kajicode session id %q", sessionID)
 	}
 	lineage := []Metadata{}
 	seen := map[string]bool{}
 	currentID := sessionID
 	for currentID != "" {
 		if seen[currentID] {
-			return nil, fmt.Errorf("cycle in zero session lineage at %s", currentID)
+			return nil, fmt.Errorf("cycle in kajicode session lineage at %s", currentID)
 		}
 		seen[currentID] = true
 		session, err := store.Get(currentID)
@@ -113,7 +113,7 @@ func (store *Store) Lineage(sessionID string) ([]Metadata, error) {
 			return nil, err
 		}
 		if session == nil {
-			return nil, fmt.Errorf("zero session not found: %s", currentID)
+			return nil, fmt.Errorf("kajicode session not found: %s", currentID)
 		}
 		lineage = append(lineage, *session)
 		currentID = session.ParentSessionID
@@ -126,7 +126,7 @@ func (store *Store) Lineage(sessionID string) ([]Metadata, error) {
 
 func (store *Store) Tree(rootSessionID string) (TreeNode, error) {
 	if !ValidSessionID(rootSessionID) {
-		return TreeNode{}, fmt.Errorf("invalid zero session id %q", rootSessionID)
+		return TreeNode{}, fmt.Errorf("invalid kajicode session id %q", rootSessionID)
 	}
 	// Fetch the root directly first. store.List() silently skips sessions whose
 	// metadata cannot be read, so a corrupt/unreadable root would otherwise degrade
@@ -139,7 +139,7 @@ func (store *Store) Tree(rootSessionID string) (TreeNode, error) {
 	if root == nil {
 		// Get returns (nil, nil) for a session that does not exist; treat that as a
 		// clean not-found rather than dereferencing nil below.
-		return TreeNode{}, fmt.Errorf("zero session not found: %s", rootSessionID)
+		return TreeNode{}, fmt.Errorf("kajicode session not found: %s", rootSessionID)
 	}
 	// Snapshot every session once and index children by parent in memory. The
 	// previous recursion called ListChildren per node, and each ListChildren ran a
@@ -168,12 +168,12 @@ func (store *Store) Tree(rootSessionID string) (TreeNode, error) {
 
 func (store *Store) treeFrom(sessionID string, byID map[string]Metadata, childrenByParent map[string][]Metadata, seen map[string]bool) (TreeNode, error) {
 	if seen[sessionID] {
-		return TreeNode{}, fmt.Errorf("cycle in zero session tree at %s", sessionID)
+		return TreeNode{}, fmt.Errorf("cycle in kajicode session tree at %s", sessionID)
 	}
 	seen[sessionID] = true
 	session, ok := byID[sessionID]
 	if !ok {
-		return TreeNode{}, fmt.Errorf("zero session not found: %s", sessionID)
+		return TreeNode{}, fmt.Errorf("kajicode session not found: %s", sessionID)
 	}
 	children := childrenByParent[sessionID]
 	node := TreeNode{Session: session, Children: make([]TreeNode, 0, len(children))}
@@ -198,7 +198,7 @@ func childTitle(title string, agentName string, parentTitle string) string {
 	if trimmed := strings.TrimSpace(parentTitle); trimmed != "" {
 		return trimmed + " (child)"
 	}
-	return "Zero child session"
+	return "KajiCode child session"
 }
 
 func childLinkPayload(parent *Metadata, child Metadata, input ChildInput, lastParentEvent Event) map[string]any {

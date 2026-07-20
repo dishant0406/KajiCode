@@ -3,7 +3,7 @@ package specmode
 import (
 	"time"
 
-	"github.com/Gitlawb/zero/internal/tools"
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
 func RegisterDraftTools(registry *tools.Registry, workspaceRoot string, now func() time.Time) {

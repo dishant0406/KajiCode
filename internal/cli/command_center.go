@@ -8,9 +8,9 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/Gitlawb/zero/internal/config"
-	"github.com/Gitlawb/zero/internal/modelregistry"
-	"github.com/Gitlawb/zero/internal/zerocommands"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/kajicodecommands"
+	"github.com/dishant0406/KajiCode/internal/modelregistry"
 )
 
 type commandCenterOptions struct {
@@ -20,10 +20,10 @@ type commandCenterOptions struct {
 	includeDeprecated bool
 }
 
-type configSummary = zerocommands.ConfigSnapshot
-type providerSummary = zerocommands.ProviderSnapshot
-type modelSummary = zerocommands.ModelSnapshot
-type providerCatalogSummary = zerocommands.ProviderCatalogSnapshot
+type configSummary = kajicodecommands.ConfigSnapshot
+type providerSummary = kajicodecommands.ProviderSnapshot
+type modelSummary = kajicodecommands.ModelSnapshot
+type providerCatalogSummary = kajicodecommands.ProviderCatalogSnapshot
 
 func runConfig(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) int {
 	options, help, err := parseCommandCenterArgs(args, false, false)
@@ -251,7 +251,7 @@ func parseCommandCenterArgs(args []string, allowModelFilters bool, allowProvider
 }
 
 func summarizeConfig(resolved config.ResolvedConfig) configSummary {
-	summary := zerocommands.ConfigSnapshotFromResolved(resolved)
+	summary := kajicodecommands.ConfigSnapshotFromResolved(resolved)
 	// Mark keyless profiles that authenticate via a stored OAuth login (e.g.
 	// ChatGPT) so the list shows "oauth login" instead of "api key: not set" —
 	// the same candidate matching the runtime resolver uses.
@@ -276,7 +276,7 @@ func summarizeConfig(resolved config.ResolvedConfig) configSummary {
 }
 
 func listModelSummaries(registry modelregistry.Registry, options commandCenterOptions) ([]modelSummary, error) {
-	summaries, err := zerocommands.ModelSnapshots(registry, zerocommands.ModelSnapshotOptions{
+	summaries, err := kajicodecommands.ModelSnapshots(registry, kajicodecommands.ModelSnapshotOptions{
 		Provider:          modelregistry.ProviderKind(strings.TrimSpace(strings.ToLower(options.provider))),
 		IncludeDeprecated: options.includeDeprecated,
 	})
@@ -293,7 +293,7 @@ func listModelSummaries(registry modelregistry.Registry, options commandCenterOp
 }
 
 func listProviderCatalogSummaries(options commandCenterOptions) ([]providerCatalogSummary, error) {
-	summaries, err := zerocommands.ProviderCatalogSnapshots(zerocommands.ProviderCatalogSnapshotOptions{
+	summaries, err := kajicodecommands.ProviderCatalogSnapshots(kajicodecommands.ProviderCatalogSnapshotOptions{
 		Transport: options.transport,
 	})
 	if err != nil {
@@ -407,7 +407,7 @@ func formatProviderCatalogLine(provider providerCatalogSummary) string {
 		provider.RuntimeSupported,
 	))
 	if provider.RuntimeSupported {
-		lines = append(lines, "    setup: zero providers setup "+displayCLIValue(provider.ID, "unknown")+" --set-active")
+		lines = append(lines, "    setup: kajicode providers setup "+displayCLIValue(provider.ID, "unknown")+" --set-active")
 	} else {
 		lines = append(lines, "    unsupported: "+displayCLIValue(provider.RuntimeUnsupportedReason, "unknown"))
 	}
@@ -461,7 +461,7 @@ func formatProviderCatalogValue(value string, fallback string) string {
 
 func writeConfigHelp(w io.Writer) error {
 	_, err := fmt.Fprint(w, `Usage:
-  zero config [flags]
+  kajicode config [flags]
 
 Inspects resolved Go configuration without printing secrets.
 
@@ -474,9 +474,9 @@ Flags:
 
 func writeModelsHelp(w io.Writer) error {
 	_, err := fmt.Fprint(w, `Usage:
-  zero models list [flags]
+  kajicode models list [flags]
 
-Lists Zero model registry entries.
+Lists KajiCode model registry entries.
 
 Flags:
       --json                  Print JSON model list
@@ -489,17 +489,17 @@ Flags:
 
 func writeProvidersHelp(w io.Writer) error {
 	_, err := fmt.Fprint(w, `Usage:
-  zero providers current [flags]
-  zero providers list [flags]
-  zero providers catalog [flags]
-  zero providers add <catalog-id> [flags]
-  zero providers check [name] [flags]
-  zero providers use <name> [flags]
-  zero providers remove <name> [flags]
-  zero providers rename <old> <new> [flags]
-  zero providers setup <catalog-id> [flags]
-  zero providers detect [flags]
-  zero providers models [name] [flags]
+  kajicode providers current [flags]
+  kajicode providers list [flags]
+  kajicode providers catalog [flags]
+  kajicode providers add <catalog-id> [flags]
+  kajicode providers check [name] [flags]
+  kajicode providers use <name> [flags]
+  kajicode providers remove <name> [flags]
+  kajicode providers rename <old> <new> [flags]
+  kajicode providers setup <catalog-id> [flags]
+  kajicode providers detect [flags]
+  kajicode providers models [name] [flags]
 
 Inspects resolved provider profiles and provider catalog descriptors without printing secrets.
 Detect probes for running local runtimes (Ollama, LM Studio) and prints adopt commands plus per-provider next steps.

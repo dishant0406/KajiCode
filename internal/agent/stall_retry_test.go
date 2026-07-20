@@ -5,8 +5,8 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/tools"
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
 // stallProvider connects successfully (HTTP 200) but the stream emits a stall/idle
@@ -26,32 +26,32 @@ type stallProvider struct {
 	partialToolCall string
 }
 
-func (p *stallProvider) StreamCompletion(_ context.Context, _ zeroruntime.CompletionRequest) (<-chan zeroruntime.StreamEvent, error) {
+func (p *stallProvider) StreamCompletion(_ context.Context, _ kajicoderuntime.CompletionRequest) (<-chan kajicoderuntime.StreamEvent, error) {
 	n := atomic.AddInt32(&p.calls, 1)
-	ch := make(chan zeroruntime.StreamEvent, 5)
+	ch := make(chan kajicoderuntime.StreamEvent, 5)
 	if n <= p.stallBefore {
 		if p.partialText != "" {
-			ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventText, Content: p.partialText}
+			ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventText, Content: p.partialText}
 		}
 		if p.reasoningText != "" {
-			ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventReasoning, Content: p.reasoningText}
+			ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventReasoning, Content: p.reasoningText}
 		}
 		if p.partialToolCall != "" {
 			// A tool call that starts and streams a partial argument fragment but
 			// never gets StreamEventToolCallEnd, then the stream errors — exactly
 			// the gpt-5.x "began the big write_file then froze" shape.
-			ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventToolCallStart, ToolCallID: "tc_1", ToolName: p.partialToolCall}
-			ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventToolCallDelta, ToolCallID: "tc_1", ArgumentsFragment: `{"path":"x.html","content":"<!doctype`}
+			ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventToolCallStart, ToolCallID: "tc_1", ToolName: p.partialToolCall}
+			ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventToolCallDelta, ToolCallID: "tc_1", ArgumentsFragment: `{"path":"x.html","content":"<!doctype`}
 		}
-		ch <- zeroruntime.StreamEvent{
-			Type:  zeroruntime.StreamEventError,
+		ch <- kajicoderuntime.StreamEvent{
+			Type:  kajicoderuntime.StreamEventError,
 			Error: "provider stream error: no output for 6m (the model produced nothing)",
 		}
 		close(ch)
 		return ch, nil
 	}
-	ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventText, Content: "done"}
-	ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventDone}
+	ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventText, Content: "done"}
+	ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventDone}
 	close(ch)
 	return ch, nil
 }

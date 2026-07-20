@@ -125,23 +125,23 @@ func renderLeaderHelpLines(innerWidth int) []string {
 		if index > 0 {
 			lines = append(lines, "")
 		}
-		lines = append(lines, zeroTheme.accent.Render(group.title))
+		lines = append(lines, kajicodeTheme.accent.Render(group.title))
 		for _, binding := range group.bindings {
 			lines = append(lines, formatKeybindingLine(binding, keyColumn, innerWidth))
 		}
 	}
 	lines = append(lines, "")
-	lines = append(lines, zeroTheme.faint.Render(leaderHelpFooter))
+	lines = append(lines, kajicodeTheme.faint.Render(leaderHelpFooter))
 	return lines
 }
 
 // renderLeaderHelpOverlay frames the Ctrl+X ? chord map exactly like the
 // general ? keyboard-shortcut overlay: same width helper, border style
-// (zeroTheme.line), panel fill, and centered block.
+// (kajicodeTheme.line), panel fill, and centered block.
 func (m model) renderLeaderHelpOverlay(width int) string {
 	overlayWidth := keybindingHelpOverlayWidth(width)
 	lines := renderLeaderHelpLines(overlayWidth - 4)
-	block := styledBlockFillTitle(overlayWidth, "Ctrl+X Shortcuts", lines, zeroTheme.line, zeroTheme.panel)
+	block := styledBlockFillTitle(overlayWidth, "Ctrl+X Shortcuts", lines, kajicodeTheme.line, kajicodeTheme.panel)
 	return centerRenderedBlock(block, width)
 }
 

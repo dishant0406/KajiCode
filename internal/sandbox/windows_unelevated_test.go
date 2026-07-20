@@ -11,14 +11,14 @@ func testWindowsUnelevatedCommandConfig(t *testing.T) WindowsSandboxCommandConfi
 	t.Helper()
 	root := t.TempDir()
 	return WindowsSandboxCommandConfig{
-		SandboxHome:    filepath.Join(root, ".zero-sandbox"),
+		SandboxHome:    filepath.Join(root, ".kajicode-sandbox"),
 		CommandCWD:     root,
 		WorkspaceRoots: []string{root},
 		PermissionProfile: PermissionProfile{
 			FileSystem: FileSystemPolicy{
 				Kind:       FileSystemRestricted,
 				ReadRoots:  []string{root},
-				WriteRoots: []WritableRoot{{Root: root, ProtectedMetadataNames: []string{".git", ".zero", ".agents"}}},
+				WriteRoots: []WritableRoot{{Root: root, ProtectedMetadataNames: []string{".git", ".kajicode", ".agents"}}},
 				AllowTemp:  true,
 			},
 			Network: NetworkPolicy{Mode: NetworkDeny},
@@ -115,7 +115,7 @@ func TestWindowsUnelevatedSetupMarkerRecordAndLoad(t *testing.T) {
 }
 
 func TestWindowsUnelevatedSetupMarkerEvictsOldestPastCap(t *testing.T) {
-	home := filepath.Join(t.TempDir(), ".zero-sandbox")
+	home := filepath.Join(t.TempDir(), ".kajicode-sandbox")
 	first := WindowsUnelevatedAppliedPlan{ACLPlanHash: "hash-0", ACLPlanEntries: 1}
 	if err := recordWindowsUnelevatedAppliedPlan(home, first); err != nil {
 		t.Fatalf("record first: %v", err)
@@ -139,7 +139,7 @@ func TestWindowsUnelevatedSetupMarkerEvictsOldestPastCap(t *testing.T) {
 }
 
 func TestLoadWindowsUnelevatedSetupMarkerSelfHealsCorruptFile(t *testing.T) {
-	home := filepath.Join(t.TempDir(), ".zero-sandbox")
+	home := filepath.Join(t.TempDir(), ".kajicode-sandbox")
 	if err := os.MkdirAll(home, 0o700); err != nil {
 		t.Fatalf("mkdir sandbox home: %v", err)
 	}
@@ -171,7 +171,7 @@ func TestLoadWindowsUnelevatedSetupMarkerSelfHealsCorruptFile(t *testing.T) {
 }
 
 func TestLoadWindowsUnelevatedSetupMarkerResetsUnknownSchema(t *testing.T) {
-	home := filepath.Join(t.TempDir(), ".zero-sandbox")
+	home := filepath.Join(t.TempDir(), ".kajicode-sandbox")
 	if err := os.MkdirAll(home, 0o700); err != nil {
 		t.Fatalf("mkdir sandbox home: %v", err)
 	}

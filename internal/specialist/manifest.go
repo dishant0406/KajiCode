@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/config"
-	"github.com/Gitlawb/zero/internal/modelregistry"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/modelregistry"
 )
 
 type Location string
@@ -126,10 +126,10 @@ func DefaultPaths(workspaceRoot string) (Paths, error) {
 		return Paths{}, fmt.Errorf("resolve user config directory: %w", err)
 	}
 	paths := Paths{
-		UserDir: filepath.Join(userConfigDir, "zero", "specialists"),
+		UserDir: filepath.Join(userConfigDir, "kajicode", "specialists"),
 	}
 	if strings.TrimSpace(workspaceRoot) != "" {
-		paths.ProjectDir = filepath.Join(filepath.Clean(workspaceRoot), ".zero", "specialists")
+		paths.ProjectDir = filepath.Join(filepath.Clean(workspaceRoot), ".kajicode", "specialists")
 	}
 	return paths, nil
 }

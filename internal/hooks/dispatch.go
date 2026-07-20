@@ -74,7 +74,7 @@ type Dispatcher struct {
 	run     commandRunner
 }
 
-// NewDispatcher builds a Dispatcher. A zero/empty config yields a dispatcher that
+// NewDispatcher builds a Dispatcher. A kajicode/empty config yields a dispatcher that
 // runs nothing, so callers can always construct one unconditionally.
 func NewDispatcher(options DispatcherOptions) *Dispatcher {
 	timeout := options.Timeout

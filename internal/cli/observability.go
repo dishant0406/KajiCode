@@ -7,11 +7,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Gitlawb/zero/internal/config"
-	"github.com/Gitlawb/zero/internal/doctor"
-	"github.com/Gitlawb/zero/internal/providerhealth"
-	zsearch "github.com/Gitlawb/zero/internal/search"
-	"github.com/Gitlawb/zero/internal/sessions"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/doctor"
+	"github.com/dishant0406/KajiCode/internal/providerhealth"
+	zsearch "github.com/dishant0406/KajiCode/internal/search"
+	"github.com/dishant0406/KajiCode/internal/sessions"
 )
 
 type doctorOptions struct {
@@ -114,7 +114,7 @@ func runSearch(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) 
 		return exitSuccess
 	}
 	if strings.TrimSpace(options.query) == "" {
-		return writeExecUsageError(stderr, "search query required. Use `zero search <query>`.")
+		return writeExecUsageError(stderr, "search query required. Use `kajicode search <query>`.")
 	}
 
 	result, err := zsearch.Sessions(options.query, zsearch.Options{
@@ -265,7 +265,7 @@ func writePrettyJSON(w io.Writer, value any) error {
 
 func writeDoctorHelp(w io.Writer) error {
 	_, err := fmt.Fprint(w, `Usage:
-  zero doctor [flags]
+  kajicode doctor [flags]
 
 Runs Go backend health checks for config and provider setup.
 
@@ -279,9 +279,9 @@ Flags:
 
 func writeSearchHelp(w io.Writer) error {
 	_, err := fmt.Fprint(w, `Usage:
-  zero search [flags] <query>
+  kajicode search [flags] <query>
 
-Searches persisted local Zero session events.
+Searches persisted local KajiCode session events.
 
 Flags:
       --json                 Print JSON results

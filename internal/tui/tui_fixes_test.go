@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/agent"
+	"github.com/dishant0406/KajiCode/internal/agent"
 )
 
 // FIX 3 (safety): "!cmd" runs only in unsafe permission mode; auto/ask gate it.

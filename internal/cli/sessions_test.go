@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/sessions"
+	"github.com/dishant0406/KajiCode/internal/sessions"
 )
 
 func TestRunSessionsListsLineageAndTree(t *testing.T) {
@@ -45,7 +45,7 @@ func TestRunSessionsListsLineageAndTree(t *testing.T) {
 		t.Fatalf("sessions list exit = %d, stderr = %q", exitCode, stderr.String())
 	}
 	output := stdout.String()
-	if !strings.Contains(output, "Zero sessions") || !strings.Contains(output, root.SessionID) || !strings.Contains(output, child.SessionID) || !strings.Contains(output, "code-review") || !strings.Contains(output, "tag=specialist") || !strings.Contains(output, "depth=1") {
+	if !strings.Contains(output, "KajiCode sessions") || !strings.Contains(output, root.SessionID) || !strings.Contains(output, child.SessionID) || !strings.Contains(output, "code-review") || !strings.Contains(output, "tag=specialist") || !strings.Contains(output, "depth=1") {
 		t.Fatalf("sessions list output = %q, want root, child, and agent", output)
 	}
 
@@ -183,7 +183,7 @@ func TestRunSessionsValidatesArgs(t *testing.T) {
 	if exitCode != exitUsage {
 		t.Fatalf("sessions children exit = %d, want usage", exitCode)
 	}
-	if !strings.Contains(stderr.String(), "Zero session not found: missing") {
+	if !strings.Contains(stderr.String(), "KajiCode session not found: missing") {
 		t.Fatalf("sessions children stderr = %q, want missing-session error", stderr.String())
 	}
 

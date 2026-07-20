@@ -1,10 +1,10 @@
 [CmdletBinding()]
 param(
-  [string]$Version = $env:ZERO_VERSION,
-  [string]$Repository = $(if ($env:ZERO_REPO) { $env:ZERO_REPO } else { "Gitlawb/zero" }),
-  [string]$InstallDir = $env:ZERO_INSTALL_DIR,
-  [string]$GitHubApi = $(if ($env:ZERO_GITHUB_API) { $env:ZERO_GITHUB_API } else { "https://api.github.com" }),
-  [string]$GitHubBaseUrl = $(if ($env:ZERO_GITHUB_BASE_URL) { $env:ZERO_GITHUB_BASE_URL } else { "https://github.com" })
+  [string]$Version = $env:KAJICODE_VERSION,
+  [string]$Repository = $(if ($env:KAJICODE_REPO) { $env:KAJICODE_REPO } else { "dishant0406/KajiCode" }),
+  [string]$InstallDir = $env:KAJICODE_INSTALL_DIR,
+  [string]$GitHubApi = $(if ($env:KAJICODE_GITHUB_API) { $env:KAJICODE_GITHUB_API } else { "https://api.github.com" }),
+  [string]$GitHubBaseUrl = $(if ($env:KAJICODE_GITHUB_BASE_URL) { $env:KAJICODE_GITHUB_BASE_URL } else { "https://github.com" })
 )
 
 $ErrorActionPreference = "Stop"
@@ -14,10 +14,10 @@ if ([string]::IsNullOrWhiteSpace($Version)) {
 }
 
 if ([string]::IsNullOrWhiteSpace($InstallDir)) {
-  $InstallDir = Join-Path $env:LOCALAPPDATA "zero\bin"
+  $InstallDir = Join-Path $env:LOCALAPPDATA "kajicode\bin"
 }
 
-function Get-ZeroLatestTag {
+function Get-KajiCodeLatestTag {
   param([string]$Repository, [string]$GitHubApi)
 
   $apiBase = $GitHubApi.TrimEnd([char[]]"/")
@@ -33,7 +33,7 @@ function Get-ZeroLatestTag {
   return [string]$release.tag_name
 }
 
-function Get-ZeroArch {
+function Get-KajiCodeArch {
   $arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
 
   switch ($arch) {
@@ -43,7 +43,7 @@ function Get-ZeroArch {
   }
 }
 
-function Find-ZeroExtractedFile {
+function Find-KajiCodeExtractedFile {
   param(
     [string]$Root,
     [string]$FileName
@@ -62,7 +62,7 @@ function Find-ZeroExtractedFile {
   throw "Release archive did not contain exactly one $FileName"
 }
 
-function Test-ZeroPathContainsDir {
+function Test-KajiCodePathContainsDir {
   param(
     [string]$PathValue,
     [string]$Dir
@@ -75,7 +75,7 @@ function Test-ZeroPathContainsDir {
   return @($PathValue -split [System.IO.Path]::PathSeparator) -contains $Dir
 }
 
-function Find-ZeroOptionalExtractedDirectory {
+function Find-KajiCodeOptionalExtractedDirectory {
   param(
     [string]$Root,
     [string]$DirectoryName
@@ -105,7 +105,7 @@ function Find-ZeroOptionalExtractedDirectory {
 }
 
 if ($Version -eq "latest") {
-  $tag = Get-ZeroLatestTag -Repository $Repository -GitHubApi $GitHubApi
+  $tag = Get-KajiCodeLatestTag -Repository $Repository -GitHubApi $GitHubApi
 } elseif ($Version.StartsWith("v")) {
   $tag = $Version
 } else {
@@ -113,12 +113,12 @@ if ($Version -eq "latest") {
 }
 
 $releaseVersion = $tag -replace "^v", ""
-$arch = Get-ZeroArch
-$archiveName = "zero-v$releaseVersion-windows-$arch.zip"
+$arch = Get-KajiCodeArch
+$archiveName = "kajicode-v$releaseVersion-windows-$arch.zip"
 $checksumName = "$archiveName.sha256"
 $releaseBase = $GitHubBaseUrl.TrimEnd([char[]]"/")
 $releaseUrl = "$releaseBase/$Repository/releases/download/$tag"
-$tempDir = Join-Path ([System.IO.Path]::GetTempPath()) ("zero-install-" + [System.Guid]::NewGuid().ToString("N"))
+$tempDir = Join-Path ([System.IO.Path]::GetTempPath()) ("kajicode-install-" + [System.Guid]::NewGuid().ToString("N"))
 $extractDir = Join-Path $tempDir "extract"
 $archivePath = Join-Path $tempDir $archiveName
 $checksumPath = Join-Path $tempDir $checksumName
@@ -126,7 +126,7 @@ $checksumPath = Join-Path $tempDir $checksumName
 try {
   New-Item -ItemType Directory -Path $tempDir, $extractDir -Force | Out-Null
 
-  Write-Host "Installing Zero $tag for windows-$arch"
+  Write-Host "Installing KajiCode $tag for windows-$arch"
   Invoke-WebRequest -Uri "$releaseUrl/$archiveName" -OutFile $archivePath -UseBasicParsing -TimeoutSec 300
   Invoke-WebRequest -Uri "$releaseUrl/$checksumName" -OutFile $checksumPath -UseBasicParsing -TimeoutSec 300
 
@@ -142,15 +142,15 @@ try {
 
   New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
   $requiredFiles = @(
-    "zero.exe",
-    "zero-windows-command-runner.exe",
-    "zero-windows-sandbox-setup.exe"
+    "kajicode.exe",
+    "kajicode-windows-command-runner.exe",
+    "kajicode-windows-sandbox-setup.exe"
   )
   foreach ($fileName in $requiredFiles) {
-    $sourcePath = Find-ZeroExtractedFile -Root $extractDir -FileName $fileName
+    $sourcePath = Find-KajiCodeExtractedFile -Root $extractDir -FileName $fileName
     Copy-Item -Path $sourcePath -Destination (Join-Path $InstallDir $fileName) -Force
   }
-  $helpersPath = Find-ZeroOptionalExtractedDirectory -Root $extractDir -DirectoryName "helpers"
+  $helpersPath = Find-KajiCodeOptionalExtractedDirectory -Root $extractDir -DirectoryName "helpers"
   if ($null -ne $helpersPath) {
     $targetHelpersPath = Join-Path $InstallDir "helpers"
     if (Test-Path $targetHelpersPath) {
@@ -159,22 +159,22 @@ try {
     Copy-Item -Path $helpersPath -Destination $targetHelpersPath -Recurse -Force
   }
 
-  $targetPath = Join-Path $InstallDir "zero.exe"
+  $targetPath = Join-Path $InstallDir "kajicode.exe"
   Write-Host "Installed $targetPath"
 
   $userPath = [Environment]::GetEnvironmentVariable("PATH", "User")
-  if (-not (Test-ZeroPathContainsDir -PathValue $userPath -Dir $InstallDir)) {
+  if (-not (Test-KajiCodePathContainsDir -PathValue $userPath -Dir $InstallDir)) {
     try {
       $newUserPath = if ([string]::IsNullOrEmpty($userPath)) { $InstallDir } else { "$userPath;$InstallDir" }
       [Environment]::SetEnvironmentVariable("PATH", $newUserPath, "User")
-      Write-Host "Added $InstallDir to your user PATH. Restart your terminal to use 'zero'."
+      Write-Host "Added $InstallDir to your user PATH. Restart your terminal to use 'kajicode'."
     } catch {
       Write-Warning "Could not update your user PATH automatically: $_"
-      Write-Warning "Add $InstallDir to PATH manually to run zero from any directory."
+      Write-Warning "Add $InstallDir to PATH manually to run kajicode from any directory."
     }
   }
 
-  if (-not (Test-ZeroPathContainsDir -PathValue $env:PATH -Dir $InstallDir)) {
+  if (-not (Test-KajiCodePathContainsDir -PathValue $env:PATH -Dir $InstallDir)) {
     $env:PATH = "$env:PATH;$InstallDir"
   }
 } finally {

@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/redaction"
-	"github.com/Gitlawb/zero/internal/verify"
+	"github.com/dishant0406/KajiCode/internal/redaction"
+	"github.com/dishant0406/KajiCode/internal/verify"
 )
 
 type StopReason string

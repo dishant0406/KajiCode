@@ -3,12 +3,12 @@ package tui
 import (
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
 )
 
 func TestRemoveLastAttachment(t *testing.T) {
 	m := model{
-		pendingImages:      []zeroruntime.ImageBlock{{MediaType: "image/png"}, {MediaType: "image/png"}},
+		pendingImages:      []kajicoderuntime.ImageBlock{{MediaType: "image/png"}, {MediaType: "image/png"}},
 		pendingImageLabels: []string{"a.png", "b.png"},
 		pendingDocuments:   []pendingDocument{{label: "spec.pdf"}},
 	}

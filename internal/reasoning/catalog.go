@@ -60,7 +60,7 @@ func mustParseEmbedded() Catalog {
 // Embedded returns the catalog parsed from the bundled models.dev snapshot.
 func Embedded() Catalog { return embedded }
 
-// Lookup returns the reasoning capability for a model identified by its Zero
+// Lookup returns the reasoning capability for a model identified by its KajiCode
 // provider kind and the API model id — the provider's wire name (e.g.
 // "claude-opus-4-1-20250805"), NOT the friendly registry id ("claude-opus-4.1").
 // The match is exact: the api model id is only trimmed, not case-folded, and no
@@ -86,7 +86,7 @@ func (c Catalog) Lookup(provider, apiModel string) (Capability, bool) {
 	return Capability{}, false
 }
 
-// providerSlugs maps a Zero provider kind to the models.dev provider slug to
+// providerSlugs maps a KajiCode provider kind to the models.dev provider slug to
 // look up. Gemini and Google both resolve to "google" (AI Studio), the
 // first-party source for Gemini models.
 func providerSlugs(provider string) []string {

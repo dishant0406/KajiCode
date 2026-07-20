@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/Gitlawb/zero/internal/config"
-	zeroSandbox "github.com/Gitlawb/zero/internal/sandbox"
-	"github.com/Gitlawb/zero/internal/zerocommands"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/kajicodecommands"
+	zeroSandbox "github.com/dishant0406/KajiCode/internal/sandbox"
 )
 
 type sandboxCheckOptions struct {
@@ -19,17 +19,17 @@ type sandboxCheckOptions struct {
 	json       bool
 }
 
-// sandboxCheckReport is the combined snapshot `zero sandbox check` emits: the
+// sandboxCheckReport is the combined snapshot `kajicode sandbox check` emits: the
 // active plan (policy + backend + restrictions), the decision the engine would
 // make for the described tool action, and any persistent grant that matches the
-// tool. It is the production consumer of the zerocommands sandbox-snapshot
+// tool. It is the production consumer of the kajicodecommands sandbox-snapshot
 // contract, giving operators and CI a stable, redacted JSON view of "what would
 // the sandbox do for this action?".
 type sandboxCheckReport struct {
-	Tool     string                                 `json:"tool"`
-	Plan     zerocommands.SandboxPlanSnapshot       `json:"plan"`
-	Decision zerocommands.SandboxDecisionSnapshot   `json:"decision"`
-	Grant    zerocommands.SandboxGrantMatchSnapshot `json:"grant"`
+	Tool     string                                     `json:"tool"`
+	Plan     kajicodecommands.SandboxPlanSnapshot       `json:"plan"`
+	Decision kajicodecommands.SandboxDecisionSnapshot   `json:"decision"`
+	Grant    kajicodecommands.SandboxGrantMatchSnapshot `json:"grant"`
 }
 
 func runSandboxCheck(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) int {
@@ -44,7 +44,7 @@ func runSandboxCheck(args []string, stdout io.Writer, stderr io.Writer, deps app
 		return exitSuccess
 	}
 	if strings.TrimSpace(options.tool) == "" {
-		return writeExecUsageError(stderr, "tool name is required: zero sandbox check <tool> [flags]")
+		return writeExecUsageError(stderr, "tool name is required: kajicode sandbox check <tool> [flags]")
 	}
 
 	workspaceRoot, err := resolveWorkspaceRoot("", deps)
@@ -111,9 +111,9 @@ func runSandboxCheck(args []string, stdout io.Writer, stderr io.Writer, deps app
 
 	report := sandboxCheckReport{
 		Tool:     strings.TrimSpace(options.tool),
-		Plan:     zerocommands.SandboxPlanSnapshotFromPlan(plan),
-		Decision: zerocommands.SandboxDecisionSnapshotFromDecision(decision),
-		Grant:    zerocommands.SandboxGrantMatchSnapshotFromLookup(options.tool, lookup),
+		Plan:     kajicodecommands.SandboxPlanSnapshotFromPlan(plan),
+		Decision: kajicodecommands.SandboxDecisionSnapshotFromDecision(decision),
+		Grant:    kajicodecommands.SandboxGrantMatchSnapshotFromLookup(options.tool, lookup),
 	}
 
 	if options.json {
@@ -246,7 +246,7 @@ func formatSandboxCheckReport(report sandboxCheckReport) string {
 
 func writeSandboxCheckHelp(w io.Writer) error {
 	_, err := fmt.Fprint(w, `Usage:
-  zero sandbox check <tool> [flags]
+  kajicode sandbox check <tool> [flags]
 
 Evaluates the sandbox decision for a hypothetical tool action against the
 resolved policy, and prints the plan, the decision (allow/prompt/deny with risk

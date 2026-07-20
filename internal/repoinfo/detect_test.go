@@ -23,7 +23,7 @@ func TestLanguageForPathOverlapExtensions(t *testing.T) {
 		want string
 		ok   bool
 	}{
-		{"cmd/zero/main.go", "Go", true},
+		{"cmd/kajicode/main.go", "Go", true},
 		{"web/app.ts", "TypeScript", true},
 		{"web/component.tsx", "TypeScript", true},
 		{"web/app.js", "JavaScript", true},
@@ -35,7 +35,7 @@ func TestLanguageForPathOverlapExtensions(t *testing.T) {
 		{"scripts/install.sh", "Shell", true},
 		{"scripts/install.bash", "Shell", true},
 		{"tools/report.py", "Python", true},
-		{"crates/zero/src/lib.rs", "Rust", true},
+		{"crates/kajicode/src/lib.rs", "Rust", true},
 		{"LICENSE", "", false},
 	}
 	for _, tt := range cases {

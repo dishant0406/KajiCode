@@ -68,7 +68,7 @@ func TestClampLoopInterval(t *testing.T) {
 
 func TestClampSelfPaceDelay(t *testing.T) {
 	if got := clampSelfPaceDelay(0); got != loopSelfPaceDefault {
-		t.Errorf("zero delay = %v, want default %v", got, loopSelfPaceDefault)
+		t.Errorf("kajicode delay = %v, want default %v", got, loopSelfPaceDefault)
 	}
 	if got := clampSelfPaceDelay(10 * time.Second); got != loopSelfPaceMin {
 		t.Errorf("below-min = %v, want %v", got, loopSelfPaceMin)

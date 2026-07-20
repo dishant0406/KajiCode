@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/repoinfo"
+	"github.com/dishant0406/KajiCode/internal/repoinfo"
 )
 
 func TestParseRepoInfoArgs(t *testing.T) {

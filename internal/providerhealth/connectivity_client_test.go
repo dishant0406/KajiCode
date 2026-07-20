@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/config"
+	"github.com/dishant0406/KajiCode/internal/config"
 )
 
 func TestDialValidatedAddrsFallsBackPastDeadAddress(t *testing.T) {
@@ -164,7 +164,7 @@ func TestValidateEndpointAllowsLoopbackOnlyForLocalProvider(t *testing.T) {
 	r := staticResolver{addr: netip.MustParseAddr("127.0.0.1")}
 
 	// AUDIT-H1: a user-configured local provider base_url (loopback) must pass when
-	// allowLoopback=true, so `zero setup ollama --verify` / doctor / providers check work.
+	// allowLoopback=true, so `kajicode setup ollama --verify` / doctor / providers check work.
 	for _, ep := range []string{"http://localhost:11434/api/tags", "http://127.0.0.1:11434/v1/models", "http://[::1]:1234/v1/models"} {
 		if err := validateEndpoint(ctx, ep, r, true); err != nil {
 			t.Errorf("local provider endpoint %q should be allowed with allowLoopback=true, got %v", ep, err)

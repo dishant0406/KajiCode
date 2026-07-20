@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/cron"
+	"github.com/dishant0406/KajiCode/internal/cron"
 )
 
-// runCron is the dispatch entry for `zero cron`.
+// runCron is the dispatch entry for `kajicode cron`.
 func runCron(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) int {
 	now := time.Now
 	if deps.now != nil {
@@ -25,7 +25,7 @@ func runCron(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) in
 // cron_run.go (Task 6).
 func runCronWith(store *cron.Store, now func() time.Time, args []string, stdout io.Writer, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "Usage: zero cron <add|list|rm|pause|resume|run> ...")
+		fmt.Fprintln(stderr, "Usage: kajicode cron <add|list|rm|pause|resume|run> ...")
 		return exitUsage
 	}
 	sub, rest := args[0], args[1:]
@@ -127,7 +127,7 @@ func cronAdd(store *cron.Store, now func() time.Time, args []string, stdout io.W
 		}
 	}
 	if expr == "" {
-		fmt.Fprintln(stderr, "A cron expression is required (e.g. `zero cron add \"0 9 * * *\" --prompt ...`).")
+		fmt.Fprintln(stderr, "A cron expression is required (e.g. `kajicode cron add \"0 9 * * *\" --prompt ...`).")
 		return exitUsage
 	}
 	schedule, err := cron.Parse(expr)
@@ -284,13 +284,13 @@ func promptExcerpt(p string) string {
 }
 
 func writeCronHelp(w io.Writer) {
-	fmt.Fprint(w, `zero cron — schedule agent jobs (foreground, file-backed)
+	fmt.Fprint(w, `kajicode cron — schedule agent jobs (foreground, file-backed)
 
 Usage:
-  zero cron add <cron-expr> [--prompt P | --recipe R] [--cwd D] [--model M] [--run-now]
-  zero cron list
-  zero cron pause <id> | resume <id> | rm <id>
-  zero cron run [--once] [--catch-up] [id...]
+  kajicode cron add <cron-expr> [--prompt P | --recipe R] [--cwd D] [--model M] [--run-now]
+  kajicode cron list
+  kajicode cron pause <id> | resume <id> | rm <id>
+  kajicode cron run [--once] [--catch-up] [id...]
 
 Cron expression: standard 5 fields "minute hour day-of-month month day-of-week".
 `)

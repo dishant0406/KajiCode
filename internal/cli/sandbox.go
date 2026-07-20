@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/Gitlawb/zero/internal/config"
-	zeroSandbox "github.com/Gitlawb/zero/internal/sandbox"
+	"github.com/dishant0406/KajiCode/internal/config"
+	zeroSandbox "github.com/dishant0406/KajiCode/internal/sandbox"
 )
 
 type sandboxCommandOptions struct {
@@ -20,7 +20,7 @@ type sandboxCommandOptions struct {
 
 func runSandbox(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) int {
 	if len(args) == 0 {
-		return writeExecUsageError(stderr, "sandbox subcommand required. Use `zero sandbox policy` or `zero sandbox grants list`.")
+		return writeExecUsageError(stderr, "sandbox subcommand required. Use `kajicode sandbox policy` or `kajicode sandbox grants list`.")
 	}
 	switch args[0] {
 	case "-h", "--help", "help":
@@ -73,7 +73,7 @@ func runSandboxPolicy(args []string, stdout io.Writer, stderr io.Writer, deps ap
 		// Compute the effective write roots exactly the way the engine does:
 		// workspace root first, then the user-granted extras from the global
 		// config. A stale config entry (e.g. a directory that no longer
-		// exists) must not crash `zero sandbox policy --effective` — fall
+		// exists) must not crash `kajicode sandbox policy --effective` — fall
 		// back to the workspace root and surface the error visibly instead.
 		writeRoots := []string{workspaceRoot}
 		var writeRootsErr error
@@ -156,9 +156,9 @@ func runSandboxSetup(args []string, stdout io.Writer, stderr io.Writer, deps app
 	}
 	profile := zeroSandbox.PermissionProfileFromPolicy(workspaceRoot, policy, scope)
 	// Resolve the setup helper the same way the runner is resolved: a standalone
-	// .exe when shipped (release), else self-dispatch via the running zero binary
+	// .exe when shipped (release), else self-dispatch via the running kajicode binary
 	// (dev / plain build). This mirrors the backend's command-runner resolution
-	// so `zero sandbox setup` works in every layout, not just release.
+	// so `kajicode sandbox setup` works in every layout, not just release.
 	setupHelper := zeroSandbox.ResolveWindowsSandboxSetupHelper(nil)
 	if !setupHelper.Available() {
 		return writeAppError(stderr, "Windows sandbox setup helper is not available", exitProvider)
@@ -278,7 +278,7 @@ func runSandboxPolicyEffective(options sandboxCommandOptions, workspaceRoot stri
 
 func formatEffectiveSandboxPolicy(workspaceRoot string, policy zeroSandbox.Policy, backend zeroSandbox.Backend, plan zeroSandbox.BackendPlan, guards sandboxGuards, grantsPath string, writeRoots []string, writeRootsErr error) string {
 	lines := []string{
-		"Zero effective sandbox policy",
+		"KajiCode effective sandbox policy",
 		"root: " + workspaceRoot,
 		"mode: " + string(policy.Mode),
 		"network: " + string(policy.Network),
@@ -326,7 +326,7 @@ func enabledLabel(enabled bool) string {
 
 func runSandboxGrants(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) int {
 	if len(args) == 0 {
-		return writeExecUsageError(stderr, "sandbox grants subcommand required. Use `zero sandbox grants list`.")
+		return writeExecUsageError(stderr, "sandbox grants subcommand required. Use `kajicode sandbox grants list`.")
 	}
 	switch args[0] {
 	case "-h", "--help", "help":
@@ -393,7 +393,7 @@ func runSandboxGrantSet(command string, args []string, stdout io.Writer, stderr 
 		return exitSuccess
 	}
 	if len(positional) != 1 {
-		return writeExecUsageError(stderr, "usage: zero sandbox grants "+command+" <tool> [--path file] [--reason text] [--json]")
+		return writeExecUsageError(stderr, "usage: kajicode sandbox grants "+command+" <tool> [--path file] [--reason text] [--json]")
 	}
 	decision := zeroSandbox.GrantAllow
 	if command == "deny" {
@@ -448,7 +448,7 @@ func runSandboxGrantRevoke(args []string, stdout io.Writer, stderr io.Writer, de
 		return exitSuccess
 	}
 	if len(positional) != 1 {
-		return writeExecUsageError(stderr, "usage: zero sandbox grants revoke <tool> [--path file] [--json]")
+		return writeExecUsageError(stderr, "usage: kajicode sandbox grants revoke <tool> [--path file] [--json]")
 	}
 	store, err := deps.newSandboxStore()
 	if err != nil {
@@ -491,7 +491,7 @@ func runSandboxGrantClear(args []string, stdout io.Writer, stderr io.Writer, dep
 		return exitSuccess
 	}
 	if !options.confirm {
-		return writeExecUsageError(stderr, "zero sandbox grants clear requires --confirm")
+		return writeExecUsageError(stderr, "kajicode sandbox grants clear requires --confirm")
 	}
 	store, err := deps.newSandboxStore()
 	if err != nil {
@@ -591,7 +591,7 @@ func parseSandboxPositionalOptions(args []string) (sandboxCommandOptions, []stri
 
 func formatSandboxPolicy(workspaceRoot string, policy zeroSandbox.Policy, backend zeroSandbox.Backend, plan zeroSandbox.BackendPlan, grantsPath string) string {
 	lines := []string{
-		"Zero sandbox policy",
+		"KajiCode sandbox policy",
 		"root: " + workspaceRoot,
 		"mode: " + string(policy.Mode),
 		"network: " + string(policy.Network),
@@ -626,7 +626,7 @@ func formatSandboxPolicy(workspaceRoot string, policy zeroSandbox.Policy, backen
 
 func writeSandboxHelp(w io.Writer) error {
 	_, err := fmt.Fprint(w, `Usage:
-  zero sandbox <command>
+  kajicode sandbox <command>
 
 Commands:
   policy      Inspect active sandbox policy and platform backend
@@ -640,7 +640,7 @@ Commands:
 
 func writeSandboxPolicyHelp(w io.Writer) error {
 	_, err := fmt.Fprint(w, `Usage:
-  zero sandbox policy [flags]
+  kajicode sandbox policy [flags]
 
 Flags:
       --effective         Print the resolved effective policy (merged config + guards)
@@ -652,7 +652,7 @@ Flags:
 
 func writeSandboxSetupHelp(w io.Writer) error {
 	_, err := fmt.Fprint(w, `Usage:
-  zero sandbox setup [flags]
+  kajicode sandbox setup [flags]
 
 Runs native platform sandbox setup when the selected backend requires it.
 
@@ -665,7 +665,7 @@ Flags:
 
 func writeSandboxGrantsHelp(w io.Writer) error {
 	_, err := fmt.Fprint(w, `Usage:
-  zero sandbox grants <command>
+  kajicode sandbox grants <command>
 
 Commands:
   list        List persistent sandbox grants
@@ -679,8 +679,8 @@ Commands:
 
 func writeSandboxGrantSetHelp(w io.Writer) error {
 	_, err := fmt.Fprint(w, `Usage:
-  zero sandbox grants allow <tool> [flags]
-  zero sandbox grants deny <tool> [flags]
+  kajicode sandbox grants allow <tool> [flags]
+  kajicode sandbox grants deny <tool> [flags]
 
 Flags:
       --reason <text>     Human-readable reason for the grant
@@ -693,7 +693,7 @@ Flags:
 
 func writeSandboxGrantRevokeHelp(w io.Writer) error {
 	_, err := fmt.Fprint(w, `Usage:
-  zero sandbox grants revoke <tool> [flags]
+  kajicode sandbox grants revoke <tool> [flags]
 
 Flags:
       --path <path>       Revoke only the grant scoped to this exact file/dir
@@ -706,7 +706,7 @@ Flags:
 
 func writeSandboxGrantClearHelp(w io.Writer) error {
 	_, err := fmt.Fprint(w, `Usage:
-  zero sandbox grants clear --confirm [flags]
+  kajicode sandbox grants clear --confirm [flags]
 
 Flags:
       --confirm           Confirm removal of all sandbox grants

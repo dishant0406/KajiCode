@@ -27,7 +27,7 @@ func bashRequest() Request {
 var nativeWrappingBackend = Backend{
 	Name:            BackendLinuxBwrap,
 	Available:       true,
-	Executable:      "/usr/bin/zero-linux-sandbox",
+	Executable:      "/usr/bin/kajicode-linux-sandbox",
 	CommandWrapping: true,
 	NativeIsolation: true,
 }

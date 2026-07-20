@@ -3,10 +3,10 @@ package cli
 import (
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/config"
+	"github.com/dishant0406/KajiCode/internal/config"
 )
 
-// Regression for issue #555's follow-up: `zero providers check` must not
+// Regression for issue #555's follow-up: `kajicode providers check` must not
 // error that a no-auth custom endpoint requires an API key, matching what
 // /model and /providers already treat as usable.
 func TestValidateProviderRuntimeReadyCustomEndpoint(t *testing.T) {

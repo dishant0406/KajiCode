@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/daemon"
+	"github.com/dishant0406/KajiCode/internal/daemon"
 )
 
 // gitTimeout bounds a single git invocation (bundle create/verify, clone) so a
@@ -115,7 +115,7 @@ func (b *Bridge) receiveBundle(conn net.Conn) bundleResult {
 		return bundleResult{Message: fmt.Sprintf("invalid bundle size %d (max %d)", hdr.Size, b.maxBundleBytes)}
 	}
 
-	tmp, err := os.CreateTemp("", "zero-remote-*.bundle")
+	tmp, err := os.CreateTemp("", "kajicode-remote-*.bundle")
 	if err != nil {
 		return bundleResult{Message: "stage bundle: " + err.Error()}
 	}
@@ -211,7 +211,7 @@ func UploadRepoBundle(cfg RemoteConfig, repoDir, linkID string) (*SessionLink, e
 	}
 
 	// Reserve a unique temp name, then let git create the bundle fresh at it.
-	tmp, err := os.CreateTemp("", "zero-bundle-*.bundle")
+	tmp, err := os.CreateTemp("", "kajicode-bundle-*.bundle")
 	if err != nil {
 		return nil, fmt.Errorf("remote: stage bundle: %w", err)
 	}

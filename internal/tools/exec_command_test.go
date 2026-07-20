@@ -16,7 +16,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/Gitlawb/zero/internal/sandbox"
+	"github.com/dishant0406/KajiCode/internal/sandbox"
 )
 
 func TestIndependentExecCommandConstructorsShareDefaultManager(t *testing.T) {
@@ -137,7 +137,7 @@ func TestExecCommandRequireEscalatedBypassesNativeSandboxAfterApproval(t *testin
 		Backend: sandbox.Backend{
 			Name:            sandbox.BackendLinuxBwrap,
 			Available:       true,
-			Executable:      "/nonexistent/zero-linux-sandbox-stub",
+			Executable:      "/nonexistent/kajicode-linux-sandbox-stub",
 			CommandWrapping: true,
 			NativeIsolation: true,
 		},
@@ -260,7 +260,7 @@ func TestExecCommandForegroundServerReturnsSessionAndServesHTTP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(bytes) != "zero-server-ok" {
+	if string(bytes) != "kajicode-server-ok" {
 		t.Fatalf("server response = %q", string(bytes))
 	}
 }
@@ -403,7 +403,7 @@ func TestStartExecProcessFallsBackAfterPTYStartMutation(t *testing.T) {
 		return nil, nil, errors.New("pty start failed")
 	}
 
-	command := exec.CommandContext(context.Background(), os.Args[0], "--zero-bash-helper", "success")
+	command := exec.CommandContext(context.Background(), os.Args[0], "--kajicode-bash-helper", "success")
 	output := newExecOutputBuffer()
 	stdin, tty, cleanup, err := startExecProcess(command, output, true)
 	if err != nil {
@@ -429,7 +429,7 @@ func TestStartExecProcessPTYFallbackPreservesSysProcAttr(t *testing.T) {
 		return nil, nil, errors.New("pty start failed")
 	}
 
-	command := exec.CommandContext(context.Background(), os.Args[0], "--zero-bash-helper", "success")
+	command := exec.CommandContext(context.Background(), os.Args[0], "--kajicode-bash-helper", "success")
 	customAttr := &syscall.SysProcAttr{}
 	command.SysProcAttr = customAttr
 
@@ -453,7 +453,7 @@ func TestStartExecProcessPTYFallbackPreservesSysProcAttr(t *testing.T) {
 // TestExecOutputBufferCapsUndrainedData: a session nobody polls must not grow
 // its undrained buffer without bound — a long-lived background process that
 // keeps writing while unpolled previously ran a session's memory into the
-// tens of gigabytes and got the whole zero process OOM-killed by the OS.
+// tens of gigabytes and got the whole KajiCode process OOM-killed by the OS.
 func TestExecOutputBufferCapsUndrainedData(t *testing.T) {
 	buffer := newExecOutputBuffer()
 
@@ -604,7 +604,7 @@ func TestCollectRespectsDeadlineUnderContinuousOutput(t *testing.T) {
 // removal briefly before giving up.
 func resilientTempDir(t *testing.T) string {
 	t.Helper()
-	dir, err := os.MkdirTemp("", "zero-exec-interrupt-")
+	dir, err := os.MkdirTemp("", "kajicode-exec-interrupt-")
 	if err != nil {
 		t.Fatalf("MkdirTemp: %v", err)
 	}
@@ -945,7 +945,7 @@ func TestTruncateExecOutputPreservesUTF8(t *testing.T) {
 	if !ok {
 		t.Fatal("expected output to truncate")
 	}
-	if !strings.Contains(truncated, "[zero] output truncated") {
+	if !strings.Contains(truncated, "[kajicode] output truncated") {
 		t.Fatalf("missing truncation marker: %q", truncated)
 	}
 	if !utf8.ValidString(truncated) {

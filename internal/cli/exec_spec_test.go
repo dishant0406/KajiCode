@@ -8,12 +8,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/agent"
-	"github.com/Gitlawb/zero/internal/config"
-	"github.com/Gitlawb/zero/internal/sandbox"
-	"github.com/Gitlawb/zero/internal/sessions"
-	"github.com/Gitlawb/zero/internal/specmode"
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/agent"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
+	"github.com/dishant0406/KajiCode/internal/sandbox"
+	"github.com/dishant0406/KajiCode/internal/sessions"
+	"github.com/dishant0406/KajiCode/internal/specmode"
 )
 
 func TestRunExecUseSpecCreatesDraftSession(t *testing.T) {
@@ -54,7 +54,7 @@ func TestRunExecUseSpecCreatesDraftSession(t *testing.T) {
 		resolveMCPConfig: func(string, bool) (config.MCPConfig, error) {
 			return config.MCPConfig{}, nil
 		},
-		newProvider: func(config.ProviderProfile) (zeroruntime.Provider, error) {
+		newProvider: func(config.ProviderProfile) (kajicoderuntime.Provider, error) {
 			return provider, nil
 		},
 		newSessionStore: func() *sessions.Store {
@@ -84,7 +84,7 @@ func TestRunExecUseSpecCreatesDraftSession(t *testing.T) {
 	if draft.SessionKind != sessions.SessionKindSpecDraft || draft.SpecStatus != sessions.SpecStatusDraft {
 		t.Fatalf("unexpected draft session: %#v", draft)
 	}
-	if draft.SpecID == "" || !strings.Contains(filepath.ToSlash(draft.SpecFilePath), ".zero/specs/") {
+	if draft.SpecID == "" || !strings.Contains(filepath.ToSlash(draft.SpecFilePath), ".kajicode/specs/") {
 		t.Fatalf("draft spec metadata missing: %#v", draft)
 	}
 	if draft.SpecDraftModelID != "draft-model" || draft.ModelID != "draft-model" || draft.SpecDraftReasoning != "high" {
@@ -159,25 +159,25 @@ func TestRunExecUseSpecRejectsFiltersThatHideSubmitSpec(t *testing.T) {
 }
 
 type submitSpecExecProvider struct {
-	requests []zeroruntime.CompletionRequest
+	requests []kajicoderuntime.CompletionRequest
 }
 
-func (provider *submitSpecExecProvider) StreamCompletion(ctx context.Context, request zeroruntime.CompletionRequest) (<-chan zeroruntime.StreamEvent, error) {
+func (provider *submitSpecExecProvider) StreamCompletion(ctx context.Context, request kajicoderuntime.CompletionRequest) (<-chan kajicoderuntime.StreamEvent, error) {
 	provider.requests = append(provider.requests, request)
 	arguments, _ := json.Marshal(map[string]string{
 		"title": "Review Flow",
 		"plan":  "# Goal\n\nAdd the review flow.",
 	})
-	ch := make(chan zeroruntime.StreamEvent, 4)
+	ch := make(chan kajicoderuntime.StreamEvent, 4)
 	select {
 	case <-ctx.Done():
 		close(ch)
 		return ch, ctx.Err()
-	case ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventToolCallStart, ToolCallID: "call-1", ToolName: specmode.SubmitToolName}:
+	case ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventToolCallStart, ToolCallID: "call-1", ToolName: specmode.SubmitToolName}:
 	}
-	ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventToolCallDelta, ToolCallID: "call-1", ArgumentsFragment: string(arguments)}
-	ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventToolCallEnd, ToolCallID: "call-1"}
-	ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventDone}
+	ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventToolCallDelta, ToolCallID: "call-1", ArgumentsFragment: string(arguments)}
+	ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventToolCallEnd, ToolCallID: "call-1"}
+	ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventDone}
 	close(ch)
 	return ch, nil
 }

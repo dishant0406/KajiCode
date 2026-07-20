@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/sessions"
-	"github.com/Gitlawb/zero/internal/zerogit"
+	"github.com/dishant0406/KajiCode/internal/kajicodegit"
+	"github.com/dishant0406/KajiCode/internal/sessions"
 )
 
 func seedUsageStore(t *testing.T) *sessions.Store {
@@ -30,9 +30,9 @@ func seedUsageStore(t *testing.T) *sessions.Store {
 	return store
 }
 
-func stubInspectChanges(stat string) func(context.Context, zerogit.InspectOptions) (zerogit.ChangeSummary, error) {
-	return func(context.Context, zerogit.InspectOptions) (zerogit.ChangeSummary, error) {
-		return zerogit.ChangeSummary{Root: "/repo", DiffStat: stat}, nil
+func stubInspectChanges(stat string) func(context.Context, kajicodegit.InspectOptions) (kajicodegit.ChangeSummary, error) {
+	return func(context.Context, kajicodegit.InspectOptions) (kajicodegit.ChangeSummary, error) {
+		return kajicodegit.ChangeSummary{Root: "/repo", DiffStat: stat}, nil
 	}
 }
 
@@ -138,7 +138,7 @@ func TestRunUsageHelp(t *testing.T) {
 	if exitCode != exitSuccess {
 		t.Fatalf("expected exit %d, got %d: %s", exitSuccess, exitCode, stderr.String())
 	}
-	for _, want := range []string{"zero usage report", "--json", "--days", "--since", "--session"} {
+	for _, want := range []string{"kajicode usage report", "--json", "--days", "--since", "--session"} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("usage help missing %q in:\n%s", want, stdout.String())
 		}

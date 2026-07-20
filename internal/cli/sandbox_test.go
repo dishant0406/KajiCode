@@ -12,8 +12,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/config"
-	"github.com/Gitlawb/zero/internal/sandbox"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/sandbox"
 )
 
 func TestRunSandboxGrantsAllowListDenyRevokeAndClear(t *testing.T) {
@@ -317,7 +317,7 @@ func TestRunSandboxPolicyInspectTextAndJSON(t *testing.T) {
 			} else {
 				output := stdout.String()
 				for _, want := range []string{
-					"Zero sandbox policy",
+					"KajiCode sandbox policy",
 					"backend: unavailable",
 					"target_backend: windows-restricted-token",
 					"support_level: unavailable",
@@ -404,7 +404,7 @@ func TestRunSandboxSetupRunsWindowsHelper(t *testing.T) {
 		t.Fatalf("setup exit = %d, stderr %q", exitCode, stderr.String())
 	}
 	// The setup helper is now resolved independently of backend.Executable: an
-	// adjacent zero-windows-sandbox-setup.exe in release, else self-dispatch via
+	// adjacent kajicode-windows-sandbox-setup.exe in release, else self-dispatch via
 	// the running binary. Under `go test` no sibling helper exists, so it
 	// self-dispatches: path is the running binary and the first arg is the hidden
 	// setup subcommand, followed by the real setup args.
@@ -684,7 +684,7 @@ func TestRunSandboxPolicyEffectiveTextAndJSON(t *testing.T) {
 		}
 		output := stdout.String()
 		for _, want := range []string{
-			"Zero effective sandbox policy",
+			"KajiCode effective sandbox policy",
 			"mode: enforce",
 			"network: deny",
 			"enforce_workspace: true",

@@ -411,7 +411,7 @@ type EngineComponents struct {
 
 // DownloadOptions configures EnsureLocalEngine.
 type DownloadOptions struct {
-	// DestRoot is where extracted engines/models live (e.g. ~/.config/zero/stt).
+	// DestRoot is where extracted engines/models live (e.g. ~/.config/kajicode/stt).
 	DestRoot string
 	// EngineVersion selects the sherpa-onnx release tag ("" → DefaultSherpaVersion;
 	// "latest" and any tag also work).

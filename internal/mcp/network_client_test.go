@@ -116,7 +116,7 @@ func TestOAuthRoundTripperRefreshFailureSurfacesActionableError(t *testing.T) {
 	if err == nil {
 		t.Fatal("Get() error = nil, want actionable refresh failure")
 	}
-	if !strings.Contains(err.Error(), "zero mcp oauth login demo") {
+	if !strings.Contains(err.Error(), "kajicode mcp oauth login demo") {
 		t.Fatalf("error = %q, want actionable re-login message", err.Error())
 	}
 }

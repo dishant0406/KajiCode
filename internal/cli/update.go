@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/update"
+	"github.com/dishant0406/KajiCode/internal/update"
 )
 
 type updateOptions struct {
@@ -28,10 +28,10 @@ func runUpgrade(args []string, stdout io.Writer, stderr io.Writer, deps appDeps)
 	return runUpdateCommand(args, stdout, stderr, deps, true)
 }
 
-// runUpdateCommand backs both `zero update` and `zero upgrade`. defaultApply
-// makes `--apply` the implicit behavior for `zero upgrade` when neither
-// `--check` nor `--apply` is passed explicitly; `zero update` keeps requiring
-// one of the two so existing scripts around `zero update --check` don't change.
+// runUpdateCommand backs both `kajicode update` and `kajicode upgrade`. defaultApply
+// makes `--apply` the implicit behavior for `kajicode upgrade` when neither
+// `--check` nor `--apply` is passed explicitly; `kajicode update` keeps requiring
+// one of the two so existing scripts around `kajicode update --check` don't change.
 func runUpdateCommand(args []string, stdout io.Writer, stderr io.Writer, deps appDeps, defaultApply bool) int {
 	options, help, err := parseUpdateArgs(args)
 	if err != nil {
@@ -48,7 +48,7 @@ func runUpdateCommand(args []string, stdout io.Writer, stderr io.Writer, deps ap
 	}
 	if !options.check && !options.apply {
 		if !defaultApply {
-			return writeUsageError(stderr, "Pass --check to check for updates or --apply to install one (or use `zero upgrade`).")
+			return writeUsageError(stderr, "Pass --check to check for updates or --apply to install one (or use `kajicode upgrade`).")
 		}
 		options.apply = true
 	}
@@ -194,9 +194,9 @@ func parseUpdateTarget(value string) (string, error) {
 
 func writeUpdateHelp(w io.Writer) error {
 	_, err := fmt.Fprint(w, `Usage:
-  zero update --check [flags]
-  zero update --apply [flags]
-  zero upgrade [flags]
+  kajicode update --check [flags]
+  kajicode update --apply [flags]
+  kajicode upgrade [flags]
 
 Flags:
       --check                 Check the latest GitHub release without installing

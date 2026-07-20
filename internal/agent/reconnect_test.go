@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
 )
 
 // flakyProvider fails the first failBefore connect attempts with failErr, then
@@ -18,20 +18,20 @@ type flakyProvider struct {
 	failErr    error
 }
 
-func (p *flakyProvider) StreamCompletion(_ context.Context, _ zeroruntime.CompletionRequest) (<-chan zeroruntime.StreamEvent, error) {
+func (p *flakyProvider) StreamCompletion(_ context.Context, _ kajicoderuntime.CompletionRequest) (<-chan kajicoderuntime.StreamEvent, error) {
 	n := atomic.AddInt32(&p.calls, 1)
 	if n <= p.failBefore {
 		return nil, p.failErr
 	}
-	ch := make(chan zeroruntime.StreamEvent, 1)
-	ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventDone}
+	ch := make(chan kajicoderuntime.StreamEvent, 1)
+	ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventDone}
 	close(ch)
 	return ch, nil
 }
 
 func TestStreamWithReconnectRecoversFromTransientDisconnect(t *testing.T) {
 	p := &flakyProvider{failBefore: 1, failErr: errors.New("unexpected EOF")}
-	stream, err := streamWithReconnect(context.Background(), p, zeroruntime.CompletionRequest{}, nil)
+	stream, err := streamWithReconnect(context.Background(), p, kajicoderuntime.CompletionRequest{}, nil)
 	if err != nil {
 		t.Fatalf("expected reconnect to recover, got %v", err)
 	}
@@ -50,7 +50,7 @@ func TestStreamWithReconnectGivesUpAfterMax(t *testing.T) {
 	streamReconnectBase = time.Millisecond
 	// Always fails with a disconnect error → exhausts retries and returns it.
 	p := &flakyProvider{failBefore: 99, failErr: errors.New("connection reset by peer")}
-	_, err := streamWithReconnect(context.Background(), p, zeroruntime.CompletionRequest{}, nil)
+	_, err := streamWithReconnect(context.Background(), p, kajicoderuntime.CompletionRequest{}, nil)
 	if err == nil {
 		t.Fatal("expected an error after exhausting reconnects")
 	}
@@ -64,7 +64,7 @@ func TestStreamWithReconnectDoesNotRetryNonDisconnect(t *testing.T) {
 	// A context-limit error is the compactor's job, not the reconnect's — return
 	// immediately without retrying.
 	p := &flakyProvider{failBefore: 99, failErr: errors.New("context length exceeded")}
-	_, err := streamWithReconnect(context.Background(), p, zeroruntime.CompletionRequest{}, nil)
+	_, err := streamWithReconnect(context.Background(), p, kajicoderuntime.CompletionRequest{}, nil)
 	if err == nil {
 		t.Fatal("expected the original error")
 	}
@@ -77,7 +77,7 @@ func TestStreamWithReconnectStopsOnContextCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	p := &flakyProvider{failBefore: 99, failErr: errors.New("i/o timeout")}
-	_, err := streamWithReconnect(ctx, p, zeroruntime.CompletionRequest{}, nil)
+	_, err := streamWithReconnect(ctx, p, kajicoderuntime.CompletionRequest{}, nil)
 	if err == nil {
 		t.Fatal("expected an error")
 	}

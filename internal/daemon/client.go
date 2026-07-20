@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// Client is a control-socket client used by the `zero daemon run|attach|status|
+// Client is a control-socket client used by the `kajicode daemon run|attach|status|
 // stop` subcommands. It performs the version handshake on Dial.
 type Client struct {
 	conn net.Conn

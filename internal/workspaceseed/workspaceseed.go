@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Gitlawb/zero/internal/workspaceindex"
+	"github.com/dishant0406/KajiCode/internal/workspaceindex"
 )
 
 const (
@@ -248,7 +248,7 @@ func detectedProjectFiles(paths []string) []string {
 
 func memoryFiles(paths []string) []string {
 	out := []string{}
-	for _, candidate := range []string{"AGENTS.md", "ZERO.md"} {
+	for _, candidate := range []string{"AGENTS.md", "KAJICODE.md"} {
 		for _, rel := range paths {
 			if rel == candidate {
 				out = append(out, candidate)

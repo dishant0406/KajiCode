@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/trace"
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
+	"github.com/dishant0406/KajiCode/internal/trace"
 )
 
 // keepAliveClient returns a client whose transport retains idle connections on
@@ -44,7 +44,7 @@ func waitPrewarmDone(t *testing.T, session *turnSession) {
 
 func openOptimizedSession(t *testing.T, provider *Provider) *turnSession {
 	t.Helper()
-	session, err := NewTurnSessionProvider(provider, zeroruntime.ProviderCapabilities{}).OpenTurnSession(context.Background())
+	session, err := NewTurnSessionProvider(provider, kajicoderuntime.ProviderCapabilities{}).OpenTurnSession(context.Background())
 	if err != nil {
 		t.Fatalf("OpenTurnSession: %v", err)
 	}
@@ -140,11 +140,11 @@ func TestTurnSessionStreamDelegatesToProvider(t *testing.T) {
 	viaSession := newTestProvider(t, handler)
 	session := openOptimizedSession(t, viaSession)
 
-	request := zeroruntime.CompletionRequest{
-		Messages: []zeroruntime.Message{{Role: zeroruntime.MessageRoleUser, Content: "hi"}},
+	request := kajicoderuntime.CompletionRequest{
+		Messages: []kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleUser, Content: "hi"}},
 	}
-	collect := func(stream <-chan zeroruntime.StreamEvent) []zeroruntime.StreamEvent {
-		var events []zeroruntime.StreamEvent
+	collect := func(stream <-chan kajicoderuntime.StreamEvent) []kajicoderuntime.StreamEvent {
+		var events []kajicoderuntime.StreamEvent
 		for event := range stream {
 			events = append(events, event)
 		}
@@ -176,17 +176,17 @@ func TestTurnSessionFingerprintIgnoresMessages(t *testing.T) {
 	provider := newTestProvider(t, func(http.ResponseWriter, *http.Request) {})
 	session := openOptimizedSession(t, provider)
 
-	tools := []zeroruntime.ToolDefinition{{Name: "read_file", Parameters: map[string]any{"type": "object"}}}
-	base := session.computeFingerprint(zeroruntime.CompletionRequest{
-		Messages:       []zeroruntime.Message{{Role: zeroruntime.MessageRoleUser, Content: "turn one"}},
+	tools := []kajicoderuntime.ToolDefinition{{Name: "read_file", Parameters: map[string]any{"type": "object"}}}
+	base := session.computeFingerprint(kajicoderuntime.CompletionRequest{
+		Messages:       []kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleUser, Content: "turn one"}},
 		Tools:          tools,
 		PromptCacheKey: "session-a",
 	})
-	grown := session.computeFingerprint(zeroruntime.CompletionRequest{
-		Messages: []zeroruntime.Message{
-			{Role: zeroruntime.MessageRoleUser, Content: "turn one"},
-			{Role: zeroruntime.MessageRoleAssistant, Content: "reply"},
-			{Role: zeroruntime.MessageRoleUser, Content: "turn two"},
+	grown := session.computeFingerprint(kajicoderuntime.CompletionRequest{
+		Messages: []kajicoderuntime.Message{
+			{Role: kajicoderuntime.MessageRoleUser, Content: "turn one"},
+			{Role: kajicoderuntime.MessageRoleAssistant, Content: "reply"},
+			{Role: kajicoderuntime.MessageRoleUser, Content: "turn two"},
 		},
 		Tools:          tools,
 		PromptCacheKey: "session-a",
@@ -200,9 +200,9 @@ func TestTurnSessionFingerprintDriftOnCacheKey(t *testing.T) {
 	provider := newTestProvider(t, func(http.ResponseWriter, *http.Request) {})
 	session := openOptimizedSession(t, provider)
 
-	tools := []zeroruntime.ToolDefinition{{Name: "read_file", Parameters: map[string]any{"type": "object"}}}
-	base := session.computeFingerprint(zeroruntime.CompletionRequest{Tools: tools, PromptCacheKey: "session-a"})
-	changed := session.computeFingerprint(zeroruntime.CompletionRequest{Tools: tools, PromptCacheKey: "session-b"})
+	tools := []kajicoderuntime.ToolDefinition{{Name: "read_file", Parameters: map[string]any{"type": "object"}}}
+	base := session.computeFingerprint(kajicoderuntime.CompletionRequest{Tools: tools, PromptCacheKey: "session-a"})
+	changed := session.computeFingerprint(kajicoderuntime.CompletionRequest{Tools: tools, PromptCacheKey: "session-b"})
 	if base == changed {
 		t.Fatal("fingerprint did not drift on a changed prompt-cache key — it is a serialized request field")
 	}
@@ -212,25 +212,25 @@ func TestTurnSessionFingerprintDriftOnToolsAndEffort(t *testing.T) {
 	provider := newTestProvider(t, func(http.ResponseWriter, *http.Request) {})
 	session := openOptimizedSession(t, provider)
 
-	base := session.computeFingerprint(zeroruntime.CompletionRequest{
-		Tools: []zeroruntime.ToolDefinition{{Name: "read_file", Parameters: map[string]any{"type": "object"}}},
+	base := session.computeFingerprint(kajicoderuntime.CompletionRequest{
+		Tools: []kajicoderuntime.ToolDefinition{{Name: "read_file", Parameters: map[string]any{"type": "object"}}},
 	})
-	changedTools := session.computeFingerprint(zeroruntime.CompletionRequest{
-		Tools: []zeroruntime.ToolDefinition{{Name: "write_file", Parameters: map[string]any{"type": "object"}}},
+	changedTools := session.computeFingerprint(kajicoderuntime.CompletionRequest{
+		Tools: []kajicoderuntime.ToolDefinition{{Name: "write_file", Parameters: map[string]any{"type": "object"}}},
 	})
 	if base == changedTools {
 		t.Fatal("fingerprint did not drift on a changed tool set")
 	}
-	changedEffort := session.computeFingerprint(zeroruntime.CompletionRequest{
-		Tools:           []zeroruntime.ToolDefinition{{Name: "read_file", Parameters: map[string]any{"type": "object"}}},
+	changedEffort := session.computeFingerprint(kajicoderuntime.CompletionRequest{
+		Tools:           []kajicoderuntime.ToolDefinition{{Name: "read_file", Parameters: map[string]any{"type": "object"}}},
 		ReasoningEffort: "high",
 	})
 	if base == changedEffort {
 		t.Fatal("fingerprint did not drift on a changed reasoning effort")
 	}
 	// Unrecognized efforts normalize to omitted — same as empty.
-	droppedEffort := session.computeFingerprint(zeroruntime.CompletionRequest{
-		Tools:           []zeroruntime.ToolDefinition{{Name: "read_file", Parameters: map[string]any{"type": "object"}}},
+	droppedEffort := session.computeFingerprint(kajicoderuntime.CompletionRequest{
+		Tools:           []kajicoderuntime.ToolDefinition{{Name: "read_file", Parameters: map[string]any{"type": "object"}}},
 		ReasoningEffort: "xhigh",
 	})
 	if base != droppedEffort {
@@ -242,11 +242,11 @@ func TestTurnSessionFingerprintDriftOnToolDescription(t *testing.T) {
 	provider := newTestProvider(t, func(http.ResponseWriter, *http.Request) {})
 	session := openOptimizedSession(t, provider)
 
-	base := session.computeFingerprint(zeroruntime.CompletionRequest{
-		Tools: []zeroruntime.ToolDefinition{{Name: "read_file", Description: "Reads a file.", Parameters: map[string]any{"type": "object"}}},
+	base := session.computeFingerprint(kajicoderuntime.CompletionRequest{
+		Tools: []kajicoderuntime.ToolDefinition{{Name: "read_file", Description: "Reads a file.", Parameters: map[string]any{"type": "object"}}},
 	})
-	changedDescription := session.computeFingerprint(zeroruntime.CompletionRequest{
-		Tools: []zeroruntime.ToolDefinition{{Name: "read_file", Description: "Reads a file, now with ranges.", Parameters: map[string]any{"type": "object"}}},
+	changedDescription := session.computeFingerprint(kajicoderuntime.CompletionRequest{
+		Tools: []kajicoderuntime.ToolDefinition{{Name: "read_file", Description: "Reads a file, now with ranges.", Parameters: map[string]any{"type": "object"}}},
 	})
 	if base == changedDescription {
 		t.Fatal("fingerprint did not drift on a description-only tool change — descriptions are model-visible request bytes")
@@ -257,11 +257,11 @@ func TestTurnSessionFingerprintDriftOnToolReorder(t *testing.T) {
 	provider := newTestProvider(t, func(http.ResponseWriter, *http.Request) {})
 	session := openOptimizedSession(t, provider)
 
-	forward := session.computeFingerprint(zeroruntime.CompletionRequest{Tools: []zeroruntime.ToolDefinition{
+	forward := session.computeFingerprint(kajicoderuntime.CompletionRequest{Tools: []kajicoderuntime.ToolDefinition{
 		{Name: "alpha", Parameters: map[string]any{"type": "object"}},
 		{Name: "beta", Parameters: map[string]any{"type": "object"}},
 	}})
-	reversed := session.computeFingerprint(zeroruntime.CompletionRequest{Tools: []zeroruntime.ToolDefinition{
+	reversed := session.computeFingerprint(kajicoderuntime.CompletionRequest{Tools: []kajicoderuntime.ToolDefinition{
 		{Name: "beta", Parameters: map[string]any{"type": "object"}},
 		{Name: "alpha", Parameters: map[string]any{"type": "object"}},
 	}})
@@ -349,8 +349,8 @@ func TestTurnSessionPrefixCounters(t *testing.T) {
 	recorder.Start()
 	ctx := trace.WithContext(context.Background(), recorder)
 
-	stable := zeroruntime.CompletionRequest{Tools: []zeroruntime.ToolDefinition{{Name: "read_file", Parameters: map[string]any{"type": "object"}}}}
-	drain := func(request zeroruntime.CompletionRequest) {
+	stable := kajicoderuntime.CompletionRequest{Tools: []kajicoderuntime.ToolDefinition{{Name: "read_file", Parameters: map[string]any{"type": "object"}}}}
+	drain := func(request kajicoderuntime.CompletionRequest) {
 		stream, err := session.Stream(ctx, request)
 		if err != nil {
 			t.Fatalf("Stream: %v", err)
@@ -359,9 +359,9 @@ func TestTurnSessionPrefixCounters(t *testing.T) {
 		}
 	}
 
-	drain(stable)                                                                                                                                 // seeds — neither stable nor drift
-	drain(stable)                                                                                                                                 // stable
-	drain(zeroruntime.CompletionRequest{Tools: []zeroruntime.ToolDefinition{{Name: "write_file", Parameters: map[string]any{"type": "object"}}}}) // drift
+	drain(stable)                                                                                                                                         // seeds — neither stable nor drift
+	drain(stable)                                                                                                                                         // stable
+	drain(kajicoderuntime.CompletionRequest{Tools: []kajicoderuntime.ToolDefinition{{Name: "write_file", Parameters: map[string]any{"type": "object"}}}}) // drift
 
 	tr := recorder.Finish()
 	if got := tr.Counter(trace.CounterPrefixStable); got != 1 {
@@ -381,7 +381,7 @@ func TestTurnSessionCloseIdempotentAndCompactUnsupported(t *testing.T) {
 	if err := session.Close(); err != nil {
 		t.Fatalf("second Close: %v", err)
 	}
-	if _, err := session.Compact(context.Background(), zeroruntime.CompletionRequest{}); !errors.Is(err, zeroruntime.ErrCompactionUnsupported) {
+	if _, err := session.Compact(context.Background(), kajicoderuntime.CompletionRequest{}); !errors.Is(err, kajicoderuntime.ErrCompactionUnsupported) {
 		t.Fatalf("Compact error = %v, want ErrCompactionUnsupported", err)
 	}
 }

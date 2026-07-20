@@ -13,7 +13,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	zeroSandbox "github.com/Gitlawb/zero/internal/sandbox"
+	zeroSandbox "github.com/dishant0406/KajiCode/internal/sandbox"
 )
 
 const (
@@ -33,12 +33,12 @@ const (
 	// again (e.g. a dev server left running after its initiating run was
 	// cancelled) grows this buffer forever as long as the process keeps writing
 	// output, with no ceiling — this previously ran a session's memory into the
-	// tens of gigabytes over several hours and got the whole zero process
+	// tens of gigabytes over several hours and got the whole KajiCode process
 	// OOM-killed by the OS.
 	maxExecOutputBufferBytes         = 2 * 1024 * 1024
 	execSessionStopTimeout           = 3 * time.Second
-	execSessionEvictedMessage        = "[zero] session evicted: too many background terminals\n"
-	execOutputBufferTruncatedMessage = "[zero] output buffer truncated: undrained output exceeded 2MiB, oldest output dropped"
+	execSessionEvictedMessage        = "[kajicode] session evicted: too many background terminals\n"
+	execOutputBufferTruncatedMessage = "[kajicode] output buffer truncated: undrained output exceeded 2MiB, oldest output dropped"
 )
 
 type execSessionManager struct {
@@ -976,9 +976,9 @@ func truncateExecOutputSpill(output string, maxOutputTokens int, toolName string
 	if len(output) <= maxBytes {
 		return output, false
 	}
-	notice := "\n[zero] output truncated\n"
+	notice := "\n[kajicode] output truncated\n"
 	if spillPath := spillTruncatedOutput(toolName, output); spillPath != "" {
-		notice = "\n[zero] output truncated — full output saved to " + spillPath + " (grep or read_file it instead of re-running)\n"
+		notice = "\n[kajicode] output truncated — full output saved to " + spillPath + " (grep or read_file it instead of re-running)\n"
 	}
 	head := maxBytes / 2
 	tail := maxBytes - head

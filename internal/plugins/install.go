@@ -266,7 +266,7 @@ func fetchSource(ctx context.Context, source string, runner GitRunner) (string, 
 	if runner == nil {
 		runner = defaultGitRunner
 	}
-	temp, err := os.MkdirTemp("", "zero-plugin-fetch-")
+	temp, err := os.MkdirTemp("", "kajicode-plugin-fetch-")
 	if err != nil {
 		return "", func() {}, fmt.Errorf("create temp dir: %w", err)
 	}

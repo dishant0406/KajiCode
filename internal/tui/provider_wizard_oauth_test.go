@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/config"
-	"github.com/Gitlawb/zero/internal/providercatalog"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/providercatalog"
 )
 
 // wizardModelAt builds a model whose provider wizard is at step with providerID
@@ -148,7 +148,7 @@ func TestProviderStepSurfacesOAuthError(t *testing.T) {
 	if !found {
 		t.Fatal("huggingface should be an OAuth-capable provider")
 	}
-	wizard.oauthErr = `oauth: provider "huggingface" is not configured; set ZERO_OAUTH_HUGGINGFACE_CLIENT_ID`
+	wizard.oauthErr = `oauth: provider "huggingface" is not configured; set KAJICODE_OAUTH_HUGGINGFACE_CLIENT_ID`
 
 	view := strings.Join(wizard.renderProviderStep(72), "\n")
 	if !strings.Contains(view, "OAuth login failed") {

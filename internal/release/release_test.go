@@ -17,8 +17,8 @@ import (
 
 func TestSHA256FileHashesArchiveBytes(t *testing.T) {
 	dir := t.TempDir()
-	archivePath := filepath.Join(dir, "zero-v0.1.0-linux-x64.tar.gz")
-	archiveBytes := []byte("zero archive bytes")
+	archivePath := filepath.Join(dir, "kajicode-v0.1.0-linux-x64.tar.gz")
+	archiveBytes := []byte("kajicode archive bytes")
 	if err := os.WriteFile(archivePath, archiveBytes, 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
@@ -36,9 +36,9 @@ func TestSHA256FileHashesArchiveBytes(t *testing.T) {
 
 func TestWriteAndVerifyReleaseChecksums(t *testing.T) {
 	dir := t.TempDir()
-	archiveName := "zero-v0.1.0-linux-x64.tar.gz"
+	archiveName := "kajicode-v0.1.0-linux-x64.tar.gz"
 	archivePath := filepath.Join(dir, archiveName)
-	if err := os.WriteFile(archivePath, []byte("zero archive bytes"), 0o644); err != nil {
+	if err := os.WriteFile(archivePath, []byte("kajicode archive bytes"), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
@@ -75,20 +75,20 @@ func TestChecksumParsingRejectsMalformedAndUnsafeNames(t *testing.T) {
 	if _, err := ParseSHA256Checksum("not a checksum"); err == nil || !strings.Contains(err.Error(), "checksum file must contain") {
 		t.Fatalf("ParseSHA256Checksum malformed error = %v", err)
 	}
-	if _, err := FormatSHA256Checksum("abc", "zero.tar.gz"); err == nil || !strings.Contains(err.Error(), "64 hexadecimal") {
+	if _, err := FormatSHA256Checksum("abc", "kajicode.tar.gz"); err == nil || !strings.Contains(err.Error(), "64 hexadecimal") {
 		t.Fatalf("FormatSHA256Checksum invalid checksum error = %v", err)
 	}
-	if _, err := ParseSHA256Checksum(strings.Repeat("a", 64) + "  ../zero.tar.gz\n"); err == nil || !strings.Contains(err.Error(), "same-directory") {
+	if _, err := ParseSHA256Checksum(strings.Repeat("a", 64) + "  ../kajicode.tar.gz\n"); err == nil || !strings.Contains(err.Error(), "same-directory") {
 		t.Fatalf("ParseSHA256Checksum unsafe path error = %v", err)
 	}
-	if _, err := ParseSHA256Checksum(strings.Repeat("a", 64) + "  zero.tar.gz\n" + strings.Repeat("b", 64) + "  other.tar.gz\n"); err == nil || !strings.Contains(err.Error(), "exactly one checksum line") {
+	if _, err := ParseSHA256Checksum(strings.Repeat("a", 64) + "  kajicode.tar.gz\n" + strings.Repeat("b", 64) + "  other.tar.gz\n"); err == nil || !strings.Contains(err.Error(), "exactly one checksum line") {
 		t.Fatalf("ParseSHA256Checksum multi-line error = %v", err)
 	}
 }
 
 func TestVerifyChecksumDetectsArchiveChanges(t *testing.T) {
 	dir := t.TempDir()
-	archivePath := filepath.Join(dir, "zero-v0.1.0-linux-x64.tar.gz")
+	archivePath := filepath.Join(dir, "kajicode-v0.1.0-linux-x64.tar.gz")
 	if err := os.WriteFile(archivePath, []byte("original bytes"), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
@@ -108,7 +108,7 @@ func TestVerifyChecksumDetectsArchiveChanges(t *testing.T) {
 
 func TestVerifyReleaseChecksumsRequiresMatchingFiles(t *testing.T) {
 	dir := t.TempDir()
-	archivePath := filepath.Join(dir, "zero-v0.1.0-linux-x64.tar.gz")
+	archivePath := filepath.Join(dir, "kajicode-v0.1.0-linux-x64.tar.gz")
 	if err := os.WriteFile(archivePath, []byte("archive bytes"), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
@@ -121,8 +121,8 @@ func TestVerifyReleaseChecksumsRequiresMatchingFiles(t *testing.T) {
 	if _, err := WriteSHA256Checksum(archivePath); err != nil {
 		t.Fatalf("WriteSHA256Checksum returned error: %v", err)
 	}
-	strayChecksum := filepath.Join(dir, "zero-v0.1.0-macos-arm64.tar.gz.sha256")
-	if err := os.WriteFile(strayChecksum, []byte(strings.Repeat("a", 64)+"  zero-v0.1.0-macos-arm64.tar.gz\n"), 0o644); err != nil {
+	strayChecksum := filepath.Join(dir, "kajicode-v0.1.0-macos-arm64.tar.gz.sha256")
+	if err := os.WriteFile(strayChecksum, []byte(strings.Repeat("a", 64)+"  kajicode-v0.1.0-macos-arm64.tar.gz\n"), 0o644); err != nil {
 		t.Fatalf("WriteFile stray checksum: %v", err)
 	}
 
@@ -153,24 +153,24 @@ func TestReleaseArchiveNamesMatchInstallerContracts(t *testing.T) {
 			version:     "0.1.0",
 			goos:        "linux",
 			goarch:      "amd64",
-			packageName: "zero-v0.1.0-linux-x64",
-			archiveName: "zero-v0.1.0-linux-x64.tar.gz",
+			packageName: "kajicode-v0.1.0-linux-x64",
+			archiveName: "kajicode-v0.1.0-linux-x64.tar.gz",
 		},
 		{
 			name:        "macos arm64",
 			version:     "0.1.0",
 			goos:        "darwin",
 			goarch:      "arm64",
-			packageName: "zero-v0.1.0-macos-arm64",
-			archiveName: "zero-v0.1.0-macos-arm64.tar.gz",
+			packageName: "kajicode-v0.1.0-macos-arm64",
+			archiveName: "kajicode-v0.1.0-macos-arm64.tar.gz",
 		},
 		{
 			name:        "windows amd64",
 			version:     "0.1.0",
 			goos:        "windows",
 			goarch:      "amd64",
-			packageName: "zero-v0.1.0-windows-x64",
-			archiveName: "zero-v0.1.0-windows-x64.zip",
+			packageName: "kajicode-v0.1.0-windows-x64",
+			archiveName: "kajicode-v0.1.0-windows-x64.zip",
 		},
 	}
 	for _, tt := range tests {
@@ -201,19 +201,19 @@ func TestBuildHelpersMatchScriptContracts(t *testing.T) {
 	if version != "0.1.0" {
 		t.Fatalf("PackageVersion = %q, want 0.1.0", version)
 	}
-	if got := DefaultBuildOutput(root, "windows"); got != filepath.Join(root, "zero.exe") {
+	if got := DefaultBuildOutput(root, "windows"); got != filepath.Join(root, "kajicode.exe") {
 		t.Fatalf("DefaultBuildOutput(windows) = %q", got)
 	}
-	if got := DefaultBuildOutput(root, "linux"); got != filepath.Join(root, "zero") {
+	if got := DefaultBuildOutput(root, "linux"); got != filepath.Join(root, "kajicode") {
 		t.Fatalf("DefaultBuildOutput(linux) = %q", got)
 	}
-	if got := WindowsSandboxCommandRunnerArtifactName("windows"); got != "zero-windows-command-runner.exe" {
+	if got := WindowsSandboxCommandRunnerArtifactName("windows"); got != "kajicode-windows-command-runner.exe" {
 		t.Fatalf("WindowsSandboxCommandRunnerArtifactName(windows) = %q", got)
 	}
-	if got := WindowsSandboxSetupArtifactName("windows"); got != "zero-windows-sandbox-setup.exe" {
+	if got := WindowsSandboxSetupArtifactName("windows"); got != "kajicode-windows-sandbox-setup.exe" {
 		t.Fatalf("WindowsSandboxSetupArtifactName(windows) = %q", got)
 	}
-	if got := BuildLdflags(version); !strings.Contains(got, "-X github.com/Gitlawb/zero/internal/cli.version=0.1.0") {
+	if got := BuildLdflags(version); !strings.Contains(got, "-X github.com/dishant0406/KajiCode/internal/cli.version=0.1.0") {
 		t.Fatalf("BuildLdflags = %q", got)
 	}
 }
@@ -223,7 +223,7 @@ func TestSmokeRejectsMissingDefaultArtifact(t *testing.T) {
 	mustWriteFile(t, filepath.Join(root, "package.json"), `{"version":"0.1.0"}`)
 
 	_, err := Smoke(context.Background(), SmokeOptions{RootDir: root, GOOS: "linux"})
-	if err == nil || !strings.Contains(err.Error(), "build artifact not found: zero") {
+	if err == nil || !strings.Contains(err.Error(), "build artifact not found: kajicode") {
 		t.Fatalf("Smoke error = %v, want missing artifact", err)
 	}
 }
@@ -329,13 +329,13 @@ func TestResolvePackageDirsAcceptsDistSubdirs(t *testing.T) {
 
 func TestCreateArchivesWithRootPackageFiles(t *testing.T) {
 	t.Run("tar gz", func(t *testing.T) {
-		stagingDir := packageStagingFixture(t, "zero")
-		archivePath := filepath.Join(t.TempDir(), "zero-v0.1.0-linux-x64.tar.gz")
+		stagingDir := packageStagingFixture(t, "kajicode")
+		archivePath := filepath.Join(t.TempDir(), "kajicode-v0.1.0-linux-x64.tar.gz")
 		if err := createArchive(stagingDir, archivePath, "linux"); err != nil {
 			t.Fatalf("createArchive returned error: %v", err)
 		}
 		names := tarArchiveNames(t, archivePath)
-		for _, want := range []string{"zero", "README.md", "bin/zero.js", "VERSION"} {
+		for _, want := range []string{"kajicode", "README.md", "bin/kajicode.js", "VERSION"} {
 			if !names[want] {
 				t.Fatalf("tar archive missing %s: %#v", want, names)
 			}
@@ -343,13 +343,13 @@ func TestCreateArchivesWithRootPackageFiles(t *testing.T) {
 	})
 
 	t.Run("zip", func(t *testing.T) {
-		stagingDir := packageStagingFixture(t, "zero.exe")
-		archivePath := filepath.Join(t.TempDir(), "zero-v0.1.0-windows-x64.zip")
+		stagingDir := packageStagingFixture(t, "kajicode.exe")
+		archivePath := filepath.Join(t.TempDir(), "kajicode-v0.1.0-windows-x64.zip")
 		if err := createArchive(stagingDir, archivePath, "windows"); err != nil {
 			t.Fatalf("createArchive returned error: %v", err)
 		}
 		names := zipArchiveNames(t, archivePath)
-		for _, want := range []string{"zero.exe", "README.md", "bin/zero.js", "VERSION"} {
+		for _, want := range []string{"kajicode.exe", "README.md", "bin/kajicode.js", "VERSION"} {
 			if !names[want] {
 				t.Fatalf("zip archive missing %s: %#v", want, names)
 			}
@@ -361,7 +361,7 @@ func TestCreateTarArchivePreservesSymlinkTargets(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Unix symlink archive behavior")
 	}
-	stagingDir := packageStagingFixture(t, "zero")
+	stagingDir := packageStagingFixture(t, "kajicode")
 	linkPath := filepath.Join(stagingDir, "helpers", "node_modules", ".bin", "agent-browser")
 	if err := os.MkdirAll(filepath.Dir(linkPath), 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
@@ -370,7 +370,7 @@ func TestCreateTarArchivePreservesSymlinkTargets(t *testing.T) {
 	if err := os.Symlink(linkTarget, linkPath); err != nil {
 		t.Fatalf("Symlink: %v", err)
 	}
-	archivePath := filepath.Join(t.TempDir(), "zero-v0.1.0-linux-x64.tar.gz")
+	archivePath := filepath.Join(t.TempDir(), "kajicode-v0.1.0-linux-x64.tar.gz")
 	if err := createArchive(stagingDir, archivePath, "linux"); err != nil {
 		t.Fatalf("createArchive returned error: %v", err)
 	}
@@ -386,29 +386,29 @@ func TestCreateTarArchivePreservesSymlinkTargets(t *testing.T) {
 func TestCopyPackageFilesStagesLinuxSandboxHelper(t *testing.T) {
 	root := t.TempDir()
 	staging := t.TempDir()
-	artifact := filepath.Join(root, "zero")
-	helper := filepath.Join(root, "zero-linux-sandbox")
-	seccomp := filepath.Join(root, "zero-seccomp")
+	artifact := filepath.Join(root, "kajicode")
+	helper := filepath.Join(root, "kajicode-linux-sandbox")
+	seccomp := filepath.Join(root, "kajicode-seccomp")
 	for path, content := range map[string]string{
-		artifact:                              "zero",
-		helper:                                "helper",
-		seccomp:                               "seccomp",
-		filepath.Join(root, "README.md"):      "readme",
-		filepath.Join(root, "package.json"):   `{"version":"0.1.0"}`,
-		filepath.Join(root, "bin", "zero.js"): "wrapper",
+		artifact:                            "kajicode",
+		helper:                              "helper",
+		seccomp:                             "seccomp",
+		filepath.Join(root, "README.md"):    "readme",
+		filepath.Join(root, "package.json"): `{"version":"0.1.0"}`,
+		filepath.Join(root, "bin", "kajicode.js"): "wrapper",
 	} {
 		mustWriteFile(t, path, content)
 	}
-	if err := copyPackageFiles(root, staging, artifact, filepath.Join(staging, "zero"), "linux", "0.1.0", map[string]string{
-		"zero-linux-sandbox": helper,
-		"zero-seccomp":       seccomp,
+	if err := copyPackageFiles(root, staging, artifact, filepath.Join(staging, "kajicode"), "linux", "0.1.0", map[string]string{
+		"kajicode-linux-sandbox": helper,
+		"kajicode-seccomp":       seccomp,
 	}); err != nil {
 		t.Fatalf("copyPackageFiles: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(staging, "zero-linux-sandbox")); err != nil {
+	if _, err := os.Stat(filepath.Join(staging, "kajicode-linux-sandbox")); err != nil {
 		t.Fatalf("staged helper missing: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(staging, "zero-seccomp")); err != nil {
+	if _, err := os.Stat(filepath.Join(staging, "kajicode-seccomp")); err != nil {
 		t.Fatalf("staged seccomp compatibility helper missing: %v", err)
 	}
 }
@@ -416,29 +416,29 @@ func TestCopyPackageFilesStagesLinuxSandboxHelper(t *testing.T) {
 func TestCopyPackageFilesStagesWindowsSandboxHelpers(t *testing.T) {
 	root := t.TempDir()
 	staging := t.TempDir()
-	artifact := filepath.Join(root, "zero.exe")
-	runner := filepath.Join(root, "zero-windows-command-runner.exe")
-	setup := filepath.Join(root, "zero-windows-sandbox-setup.exe")
+	artifact := filepath.Join(root, "kajicode.exe")
+	runner := filepath.Join(root, "kajicode-windows-command-runner.exe")
+	setup := filepath.Join(root, "kajicode-windows-sandbox-setup.exe")
 	for path, content := range map[string]string{
-		artifact:                              "zero",
-		runner:                                "runner",
-		setup:                                 "setup",
-		filepath.Join(root, "README.md"):      "readme",
-		filepath.Join(root, "package.json"):   `{"version":"0.1.0"}`,
-		filepath.Join(root, "bin", "zero.js"): "wrapper",
+		artifact:                            "kajicode",
+		runner:                              "runner",
+		setup:                               "setup",
+		filepath.Join(root, "README.md"):    "readme",
+		filepath.Join(root, "package.json"): `{"version":"0.1.0"}`,
+		filepath.Join(root, "bin", "kajicode.js"): "wrapper",
 	} {
 		mustWriteFile(t, path, content)
 	}
-	if err := copyPackageFiles(root, staging, artifact, filepath.Join(staging, "zero.exe"), "windows", "0.1.0", map[string]string{
-		"zero-windows-command-runner.exe": runner,
-		"zero-windows-sandbox-setup.exe":  setup,
+	if err := copyPackageFiles(root, staging, artifact, filepath.Join(staging, "kajicode.exe"), "windows", "0.1.0", map[string]string{
+		"kajicode-windows-command-runner.exe": runner,
+		"kajicode-windows-sandbox-setup.exe":  setup,
 	}); err != nil {
 		t.Fatalf("copyPackageFiles: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(staging, "zero-windows-command-runner.exe")); err != nil {
+	if _, err := os.Stat(filepath.Join(staging, "kajicode-windows-command-runner.exe")); err != nil {
 		t.Fatalf("staged runner missing: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(staging, "zero-windows-sandbox-setup.exe")); err != nil {
+	if _, err := os.Stat(filepath.Join(staging, "kajicode-windows-sandbox-setup.exe")); err != nil {
 		t.Fatalf("staged setup helper missing: %v", err)
 	}
 }
@@ -536,10 +536,10 @@ func packageStagingFixture(t *testing.T, binaryName string) string {
 	t.Helper()
 	dir := t.TempDir()
 	files := map[string]string{
-		binaryName:    "binary",
-		"README.md":   "readme",
-		"bin/zero.js": "wrapper",
-		"VERSION":     "0.1.0\n",
+		binaryName:        "binary",
+		"README.md":       "readme",
+		"bin/kajicode.js": "wrapper",
+		"VERSION":         "0.1.0\n",
 	}
 	for name, content := range files {
 		path := filepath.Join(dir, name)

@@ -21,7 +21,7 @@ func TestCreateKeySendsAuthenticatedRequestAndDecodesKey(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Fatal(err)
 		}
-		if body["name"] != "Zero CLI" {
+		if body["name"] != "KajiCode CLI" {
 			t.Fatalf("name = %q", body["name"])
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -30,7 +30,7 @@ func TestCreateKeySendsAuthenticatedRequestAndDecodesKey(t *testing.T) {
 	defer server.Close()
 
 	client := NewClient(Endpoints{AppBaseURL: server.URL}, server.Client())
-	key, err := client.CreateKey(context.Background(), " session-token ", " Zero CLI ")
+	key, err := client.CreateKey(context.Background(), " session-token ", " KajiCode CLI ")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +47,7 @@ func TestCreateKeyRejectsEmptyKeyResponse(t *testing.T) {
 	defer server.Close()
 
 	client := NewClient(Endpoints{AppBaseURL: server.URL}, server.Client())
-	if _, err := client.CreateKey(context.Background(), "session-token", "Zero"); err == nil {
+	if _, err := client.CreateKey(context.Background(), "session-token", "KajiCode"); err == nil {
 		t.Fatal("CreateKey accepted a response without an API key")
 	}
 }

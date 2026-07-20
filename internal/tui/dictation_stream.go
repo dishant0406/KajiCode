@@ -6,7 +6,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/Gitlawb/zero/internal/dictation"
+	"github.com/dishant0406/KajiCode/internal/dictation"
 )
 
 // sttPartialMsg carries an incremental streaming transcript into the TUI. It is

@@ -26,7 +26,7 @@ func TestDaemonUsage(t *testing.T) {
 		t.Fatalf("no-args exit = %d, want exitUsage", code)
 	}
 	code, out, _ := runDaemonCLI(t, "--help")
-	if code != exitSuccess || !strings.Contains(out, "Usage: zero daemon") {
+	if code != exitSuccess || !strings.Contains(out, "Usage: kajicode daemon") {
 		t.Fatalf("--help exit=%d out=%q", code, out)
 	}
 }

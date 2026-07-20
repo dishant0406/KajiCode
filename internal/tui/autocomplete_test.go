@@ -9,7 +9,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/Gitlawb/zero/internal/agent"
+	"github.com/dishant0406/KajiCode/internal/agent"
 )
 
 // typeRunes feeds each rune of s through Update as an individual key press,
@@ -262,7 +262,7 @@ func TestEscWithoutSuggestionsClearsInputAsBefore(t *testing.T) {
 
 func TestEnterWithNoSuggestionStillSubmits(t *testing.T) {
 	m := newModel(context.Background(), Options{})
-	m.input.SetValue("hello zero") // plain prompt, no suggestions
+	m.input.SetValue("hello KajiCode") // plain prompt, no suggestions
 
 	updated, _ := m.Update(testKey(tea.KeyEnter))
 	next := updated.(model)
@@ -270,7 +270,7 @@ func TestEnterWithNoSuggestionStillSubmits(t *testing.T) {
 	if next.input.Value() != "" {
 		t.Fatal("Enter should submit (and clear) a plain prompt")
 	}
-	if !transcriptContains(next.transcript, "hello zero") {
+	if !transcriptContains(next.transcript, "hello KajiCode") {
 		t.Fatal("submitted prompt should appear in the transcript")
 	}
 }
@@ -293,7 +293,7 @@ func TestSuggestionsSuppressedDuringModals(t *testing.T) {
 func TestSuggestionsSuppressedDuringSpecReview(t *testing.T) {
 	m := newModel(context.Background(), Options{})
 	m.suggestions = []commandSuggestion{{Name: "/model", Desc: "Pick a model."}}
-	m.pendingSpecReview = &pendingSpecReviewPrompt{SpecID: "spec-1", SpecFilePath: ".zero/specs/spec-1.md"}
+	m.pendingSpecReview = &pendingSpecReviewPrompt{SpecID: "spec-1", SpecFilePath: ".kajicode/specs/spec-1.md"}
 
 	if m.suggestionsActive() {
 		t.Fatal("stale suggestions must stay suppressed while spec review is active")

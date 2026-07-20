@@ -14,9 +14,9 @@ import (
 // read back after Stop — audio never lingers on disk.
 
 func audioSpillRoot() string {
-	name := "zero-dictation"
+	name := "kajicode-dictation"
 	if uid := os.Getuid(); uid >= 0 {
-		name = fmt.Sprintf("zero-dictation-%d", uid)
+		name = fmt.Sprintf("kajicode-dictation-%d", uid)
 	}
 	return filepath.Join(os.TempDir(), name)
 }

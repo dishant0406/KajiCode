@@ -84,7 +84,7 @@ func TestBrowserRunUsesHelperManifest(t *testing.T) {
 	if err := os.WriteFile(helper, []byte("#!/bin/sh\n"), 0o755); err != nil {
 		t.Fatalf("write helper: %v", err)
 	}
-	t.Setenv(EnvHelperManifest, `{"version":1,"helpers":{"agent-browser":{"command":`+quoteJSON(helper)+`,"pathPrepend":[`+quoteJSON(binDir)+`],"env":{"ZERO_HELPER_TEST":"1"}}}}`)
+	t.Setenv(EnvHelperManifest, `{"version":1,"helpers":{"agent-browser":{"command":`+quoteJSON(helper)+`,"pathPrepend":[`+quoteJSON(binDir)+`],"env":{"KAJICODE_HELPER_TEST":"1"}}}}`)
 
 	runner := &fakeCommandRunner{}
 	browser := NewBrowser(BrowserOptions{
@@ -98,8 +98,8 @@ func TestBrowserRunUsesHelperManifest(t *testing.T) {
 	if runner.path != helper {
 		t.Fatalf("runner path = %q, want manifest helper %q", runner.path, helper)
 	}
-	if !envContains(runner.env, "ZERO_HELPER_TEST=1") {
-		t.Fatalf("env = %#v, want ZERO_HELPER_TEST", runner.env)
+	if !envContains(runner.env, "KAJICODE_HELPER_TEST=1") {
+		t.Fatalf("env = %#v, want KAJICODE_HELPER_TEST", runner.env)
 	}
 	pathValue := envValue(runner.env, "PATH")
 	if !strings.HasPrefix(pathValue, binDir+string(os.PathListSeparator)) && pathValue != binDir {
@@ -109,7 +109,7 @@ func TestBrowserRunUsesHelperManifest(t *testing.T) {
 
 func TestBrowserRunUsesManifestPrefixArgs(t *testing.T) {
 	runner := &fakeCommandRunner{}
-	t.Setenv(EnvHelperManifest, `{"version":1,"helpers":{"agent-browser":{"command":"cmd.exe","prefixArgs":["/d","/s","/c","C:\\zero\\agent-browser.cmd"]}}}`)
+	t.Setenv(EnvHelperManifest, `{"version":1,"helpers":{"agent-browser":{"command":"cmd.exe","prefixArgs":["/d","/s","/c","C:\\kajicode\\agent-browser.cmd"]}}}`)
 	browser := NewBrowser(BrowserOptions{
 		Enabled: true,
 		Runner:  runner,
@@ -121,7 +121,7 @@ func TestBrowserRunUsesManifestPrefixArgs(t *testing.T) {
 	if runner.path != "cmd.exe" {
 		t.Fatalf("runner path = %q, want cmd.exe", runner.path)
 	}
-	want := []string{"/d", "/s", "/c", `C:\zero\agent-browser.cmd`, "open", "https://example.com"}
+	want := []string{"/d", "/s", "/c", `C:\kajicode\agent-browser.cmd`, "open", "https://example.com"}
 	if !reflect.DeepEqual(runner.args, want) {
 		t.Fatalf("runner args = %#v, want %#v", runner.args, want)
 	}
@@ -131,7 +131,7 @@ func TestMergeEnvReplacesPathCaseInsensitivelyOnWindows(t *testing.T) {
 	if runtime.GOOS != "windows" {
 		t.Skip("Windows env keys are case-insensitive")
 	}
-	env := mergeEnv([]string{`Path=C:\Windows`, "ZERO=1"}, []string{`PATH=C:\Zero`})
+	env := mergeEnv([]string{`Path=C:\Windows`, "KAJICODE=1"}, []string{`PATH=C:\KajiCode`})
 	pathCount := 0
 	for _, item := range env {
 		key, value, ok := strings.Cut(item, "=")
@@ -139,8 +139,8 @@ func TestMergeEnvReplacesPathCaseInsensitivelyOnWindows(t *testing.T) {
 			continue
 		}
 		pathCount++
-		if value != `C:\Zero` {
-			t.Fatalf("PATH value = %q, want C:\\Zero", value)
+		if value != `C:\KajiCode` {
+			t.Fatalf("PATH value = %q, want C:\\KajiCode", value)
 		}
 	}
 	if pathCount != 1 {
@@ -150,7 +150,7 @@ func TestMergeEnvReplacesPathCaseInsensitivelyOnWindows(t *testing.T) {
 
 func TestBrowserRunUsesAdjacentPackagedHelper(t *testing.T) {
 	root := t.TempDir()
-	native := filepath.Join(root, "zero")
+	native := filepath.Join(root, "kajicode")
 	if err := os.WriteFile(native, []byte("#!/bin/sh\n"), 0o755); err != nil {
 		t.Fatalf("write native: %v", err)
 	}
@@ -181,7 +181,7 @@ func TestBrowserRunUsesAdjacentPackagedHelper(t *testing.T) {
 
 func TestBrowserRunUsesAdjacentPackagedNodeBinHelper(t *testing.T) {
 	root := t.TempDir()
-	native := filepath.Join(root, "zero")
+	native := filepath.Join(root, "kajicode")
 	if err := os.WriteFile(native, []byte("#!/bin/sh\n"), 0o755); err != nil {
 		t.Fatalf("write native: %v", err)
 	}

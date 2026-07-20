@@ -19,7 +19,7 @@ func TestPrServiceDetectsGitHubPRAndDiffStats(t *testing.T) {
 			output: "42\t7\tinternal/tui/view.go\n",
 		},
 	}}
-	service := NewPrService("/workspace/zero")
+	service := NewPrService("/workspace/kajicode")
 	service.run = runner.Run
 
 	state := service.detect(context.Background())
@@ -53,7 +53,7 @@ func TestPrServiceFallsBackToGitLabMR(t *testing.T) {
 			output: "4\t5\ta.go\n5\t6\tb.go\n",
 		},
 	}}
-	service := NewPrService("/workspace/zero")
+	service := NewPrService("/workspace/kajicode")
 	service.run = runner.Run
 
 	state := service.detect(context.Background())
@@ -76,7 +76,7 @@ func TestGetLocalDiffStatsFallsBackToOriginBase(t *testing.T) {
 		},
 	}}
 
-	additions, deletions, err := getLocalDiffStats(context.Background(), "/workspace/zero", "main", runner.Run)
+	additions, deletions, err := getLocalDiffStats(context.Background(), "/workspace/kajicode", "main", runner.Run)
 	if err != nil {
 		t.Fatalf("getLocalDiffStats returned error: %v", err)
 	}
@@ -116,7 +116,7 @@ func TestBuildPRSegments(t *testing.T) {
 
 func TestTitleBarShowsPRDiffStatsBesideBranch(t *testing.T) {
 	m := limeTestModel()
-	m.cwd = "/workspace/zero"
+	m.cwd = "/workspace/kajicode"
 	m.gitBranch = "feat/title-polish"
 	m.prState = PrState{
 		Status:    PrFound,
@@ -128,7 +128,7 @@ func TestTitleBarShowsPRDiffStatsBesideBranch(t *testing.T) {
 
 	rendered := m.titleBar(120)
 	plain := plainRender(t, rendered)
-	for _, want := range []string{" feat/title-polish", "+144", "-32", "#219", "/workspace/zero"} {
+	for _, want := range []string{" feat/title-polish", "+144", "-32", "#219", "/workspace/kajicode"} {
 		if !strings.Contains(plain, want) {
 			t.Fatalf("title bar = %q, missing %q", plain, want)
 		}

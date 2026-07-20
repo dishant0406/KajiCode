@@ -50,7 +50,7 @@ type promptMessageTemplate struct {
 	text string
 }
 
-// curatedPrompts is ZERO's published prompt catalogue. These mirror ZERO's own
+// curatedPrompts is KAJICODE's published prompt catalogue. These mirror KAJICODE's own
 // slash-command / spec-mode workflows (code review, spec drafting, workspace
 // explanation) as reusable templates other agents can pull; internal system
 // prompts are deliberately not exposed.

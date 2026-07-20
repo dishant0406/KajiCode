@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/Gitlawb/zero/internal/skills"
+	"github.com/dishant0406/KajiCode/internal/skills"
 )
 
 // skillTool lets the model pull a reusable instruction "skill" into context on
@@ -27,7 +27,7 @@ func NewSkillTool(dir string) *skillTool {
 		dir: dir,
 		baseTool: baseTool{
 			name: "skill",
-			description: "Load a named Zero skill and return its instructions as the tool output. " +
+			description: "Load a named KajiCode skill and return its instructions as the tool output. " +
 				"Skills are reusable, on-demand instruction sets (e.g. project conventions or confirmation policies). " +
 				"Call this when a relevant skill exists; an unknown name returns the list of available skills.",
 			parameters: Schema{

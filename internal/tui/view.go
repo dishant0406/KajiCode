@@ -11,7 +11,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 
-	"github.com/Gitlawb/zero/internal/agent"
+	"github.com/dishant0406/KajiCode/internal/agent"
 )
 
 const (
@@ -60,7 +60,7 @@ func (m model) titleBar(width int) string {
 	workspace := m.titleWorkspaceSegment()
 	workspaceShort := m.titleWorkspaceSegmentShort()
 	branchOnly := m.titleBranchSegment()
-	cwdOnly := zeroTheme.faint.Render(shortenPath(m.cwd))
+	cwdOnly := kajicodeTheme.faint.Render(shortenPath(m.cwd))
 	compactLeft := cwdOnly
 	if branchOnly != "" {
 		compactLeft = branchOnly
@@ -68,7 +68,7 @@ func (m model) titleBar(width int) string {
 	model := m.titleModelSegment()
 	ctx := ""
 	if window := m.modelContextWindow(m.modelName); window > 0 {
-		ctx = zeroTheme.faint.Render(" · " + formatContextWindow(window))
+		ctx = kajicodeTheme.faint.Render(" · " + formatContextWindow(window))
 	}
 
 	var candidates []headerCandidate
@@ -102,12 +102,12 @@ func (m model) titleBar(width int) string {
 	}
 
 	line := startupHeaderLine(width, candidates)
-	rule := zeroTheme.line.Render(strings.Repeat("─", width))
+	rule := kajicodeTheme.line.Render(strings.Repeat("─", width))
 	return line + "\n" + rule
 }
 
 func (m model) titleWorkspaceSegment() string {
-	cwd := zeroTheme.faint.Render(shortenPath(m.cwd))
+	cwd := kajicodeTheme.faint.Render(shortenPath(m.cwd))
 	parts := []string{}
 	if branch := m.titleBranchSegment(); branch != "" {
 		parts = append(parts, branch)
@@ -122,12 +122,12 @@ func (m model) titleWorkspaceSegment() string {
 }
 
 func (m model) titleWorkspaceSegmentShort() string {
-	cwd := zeroTheme.faint.Render(shortenPath(m.cwd))
+	cwd := kajicodeTheme.faint.Render(shortenPath(m.cwd))
 	parts := []string{}
 	branch := strings.TrimSpace(m.gitBranch)
 	if branch != "" {
-		icon := zeroTheme.muted.Render("")
-		parts = append(parts, icon+" "+zeroTheme.muted.Render(middleTruncate(branch, 22)))
+		icon := kajicodeTheme.muted.Render("")
+		parts = append(parts, icon+" "+kajicodeTheme.muted.Render(middleTruncate(branch, 22)))
 	}
 	if pr := m.titlePRSegment(); pr != "" {
 		parts = append(parts, pr)
@@ -143,7 +143,7 @@ func (m model) titleBranchSegment() string {
 	if branch == "" {
 		return ""
 	}
-	return zeroTheme.muted.Render("") + " " + zeroTheme.muted.Render(branch)
+	return kajicodeTheme.muted.Render("") + " " + kajicodeTheme.muted.Render(branch)
 }
 
 func (m model) titlePRSegment() string {
@@ -155,13 +155,13 @@ func (m model) titleModelSegment() string {
 	model := strings.TrimSpace(m.modelName)
 	switch {
 	case provider == "" && model == "":
-		return zeroTheme.muted.Render("no provider")
+		return kajicodeTheme.muted.Render("no provider")
 	case model == "":
-		return zeroTheme.ink.Render(provider)
+		return kajicodeTheme.ink.Render(provider)
 	case provider == "":
-		return zeroTheme.ink.Render(model)
+		return kajicodeTheme.ink.Render(model)
 	default:
-		return zeroTheme.ink.Render(provider + "/" + model)
+		return kajicodeTheme.ink.Render(provider + "/" + model)
 	}
 }
 
@@ -170,16 +170,16 @@ func (m model) composerDividerLine(width int) string {
 	// The composer rule is a quiet model reminder above the input. Permission mode
 	// and reasoning effort now live in the persistent status line (the conventional
 	// footer for run-state), so they're not duplicated on this rule.
-	meta := zeroTheme.muted.Render(model)
+	meta := kajicodeTheme.muted.Render(model)
 	metaWidth := lipgloss.Width(meta)
 	if width < 8 {
-		return zeroTheme.lineStrong.Render(strings.Repeat("─", width))
+		return kajicodeTheme.lineStrong.Render(strings.Repeat("─", width))
 	}
 	if width < metaWidth+4 {
-		return zeroTheme.lineStrong.Render("╰" + strings.Repeat("─", width-2) + "╯")
+		return kajicodeTheme.lineStrong.Render("╰" + strings.Repeat("─", width-2) + "╯")
 	}
 	rule := strings.Repeat("─", width-metaWidth-4)
-	return zeroTheme.lineStrong.Render("╰"+rule+" ") + meta + zeroTheme.lineStrong.Render(" ╯")
+	return kajicodeTheme.lineStrong.Render("╰"+rule+" ") + meta + kajicodeTheme.lineStrong.Render(" ╯")
 }
 
 // statusLine renders the bottom readout as ` │ `-separated groups: the run-state
@@ -188,7 +188,7 @@ func (m model) composerDividerLine(width int) string {
 // title bar and is NOT duplicated here. Groups drop with the width tier.
 func (m model) statusLine(width int) string {
 	tier := widthTier(width)
-	separator := zeroTheme.line.Render(" │ ")
+	separator := kajicodeTheme.line.Render(" │ ")
 	prefix := "  "
 
 	// Left chip: the safety-relevant run-state — permission mode (auto/ask/unsafe)
@@ -197,16 +197,16 @@ func (m model) statusLine(width int) string {
 	modeText, modeStyle := m.modeLabel()
 	btwChip := ""
 	if m.btw.active {
-		btwChip = zeroTheme.amber.Render("BTW") + zeroTheme.muted.Render(" · ")
+		btwChip = kajicodeTheme.amber.Render("BTW") + kajicodeTheme.muted.Render(" · ")
 	}
-	left := prefix + btwChip + zeroTheme.accent.Render("●") + " " + modeStyle.Render(modeText)
+	left := prefix + btwChip + kajicodeTheme.accent.Render("●") + " " + modeStyle.Render(modeText)
 
 	if tier == tierTiny {
 		if m.exitConfirmActive {
-			return fitStyledLine(prefix+btwChip+zeroTheme.amber.Render("●")+" "+zeroTheme.amber.Render(ctrlCExitConfirmText), width)
+			return fitStyledLine(prefix+btwChip+kajicodeTheme.amber.Render("●")+" "+kajicodeTheme.amber.Render(ctrlCExitConfirmText), width)
 		}
 		if m.cancelConfirmActive {
-			return fitStyledLine(prefix+btwChip+zeroTheme.amber.Render("●")+" "+zeroTheme.amber.Render(escCancelConfirmText), width)
+			return fitStyledLine(prefix+btwChip+kajicodeTheme.amber.Render("●")+" "+kajicodeTheme.amber.Render(escCancelConfirmText), width)
 		}
 		if dictation := m.dictationStatusChip(); dictation != "" {
 			return fitStyledLine(prefix+btwChip+dictation, width)
@@ -216,32 +216,32 @@ func (m model) statusLine(width int) string {
 
 	// Non-tiny: append the active reasoning effort (brand lime, omitted on auto).
 	if m.reasoningEffort != "" {
-		left += zeroTheme.muted.Render(" · ") + zeroTheme.accent.Render(string(m.reasoningEffort))
+		left += kajicodeTheme.muted.Render(" · ") + kajicodeTheme.accent.Render(string(m.reasoningEffort))
 	}
 	if m.exitConfirmActive {
-		left = prefix + btwChip + zeroTheme.amber.Render("●") + " " + zeroTheme.amber.Render(ctrlCExitConfirmText)
+		left = prefix + btwChip + kajicodeTheme.amber.Render("●") + " " + kajicodeTheme.amber.Render(ctrlCExitConfirmText)
 	} else if m.cancelConfirmActive {
-		left = prefix + btwChip + zeroTheme.amber.Render("●") + " " + zeroTheme.amber.Render(escCancelConfirmText)
+		left = prefix + btwChip + kajicodeTheme.amber.Render("●") + " " + kajicodeTheme.amber.Render(escCancelConfirmText)
 	} else if m.dictation.downloading && m.dictation.downloadStatus != "" {
 		// A model download in progress takes over the left chip with a live percentage.
-		left = prefix + btwChip + zeroTheme.accent.Render("⬇ ") + zeroTheme.muted.Render(m.dictation.downloadStatus)
+		left = prefix + btwChip + kajicodeTheme.accent.Render("⬇ ") + kajicodeTheme.muted.Render(m.dictation.downloadStatus)
 	} else if dictation := m.dictationStatusChip(); dictation != "" && m.dictation.active() {
 		// An active recording/transcription takes over the left chip — it is the
 		// most time-sensitive thing on screen (the mic is live).
 		left = prefix + btwChip + dictation
 	} else {
 		if voice := m.voiceModeIndicator(); voice != "" {
-			left += zeroTheme.muted.Render(" · ") + voice
+			left += kajicodeTheme.muted.Render(" · ") + voice
 		}
 		if summary := m.backgroundTerminalSummary(); summary != "" {
-			left += separator + zeroTheme.muted.Render(summary)
+			left += separator + kajicodeTheme.muted.Render(summary)
 		}
 	}
 	// Active loops surface a persistent "↻ N loops · next 3:05pm" segment so a
 	// running loop is always visible (hidden during an exit/cancel confirm above).
 	if !m.exitConfirmActive && !m.cancelConfirmActive {
 		if loopSummary := m.loopFooterSummary(); loopSummary != "" {
-			left += separator + zeroTheme.accent.Render("↻ ") + zeroTheme.muted.Render(loopSummary)
+			left += separator + kajicodeTheme.accent.Render("↻ ") + kajicodeTheme.muted.Render(loopSummary)
 		}
 	}
 
@@ -265,7 +265,7 @@ func (m model) statusLine(width int) string {
 		usage = m.usageCostSegment()
 	}
 	if usage != "" {
-		rightGroups = append(rightGroups, zeroTheme.muted.Render(usage))
+		rightGroups = append(rightGroups, kajicodeTheme.muted.Render(usage))
 	}
 	right := strings.Join(rightGroups, separator)
 
@@ -322,17 +322,17 @@ func nextPermissionMode(mode agent.PermissionMode) agent.PermissionMode {
 func (m model) modeLabel() (string, lipgloss.Style) {
 	switch m.permissionMode {
 	case agent.PermissionModeAuto:
-		return "auto-approve", zeroTheme.modeAuto
+		return "auto-approve", kajicodeTheme.modeAuto
 	case agent.PermissionModeAsk:
-		return "ask", zeroTheme.modeAsk
+		return "ask", kajicodeTheme.modeAsk
 	case agent.PermissionModeUnsafe:
-		return "unsafe", zeroTheme.modeUnsafe
+		return "unsafe", kajicodeTheme.modeUnsafe
 	default:
 		mode := strings.TrimSpace(string(m.permissionMode))
 		if mode == "" {
-			return "auto-approve", zeroTheme.modeAuto
+			return "auto-approve", kajicodeTheme.modeAuto
 		}
-		return mode, zeroTheme.muted
+		return mode, kajicodeTheme.muted
 	}
 }
 
@@ -391,12 +391,12 @@ func (m model) contextFillPercent() (pct, used, window int, style lipgloss.Style
 	if ratio > 1 {
 		ratio = 1
 	}
-	style = zeroTheme.green
+	style = kajicodeTheme.green
 	switch {
 	case ratio >= 0.90:
-		style = zeroTheme.red
+		style = kajicodeTheme.red
 	case ratio >= 0.75:
-		style = zeroTheme.amber
+		style = kajicodeTheme.amber
 	}
 	return int(ratio*100 + 0.5), used, window, style, true
 }
@@ -581,27 +581,27 @@ func renderSuggestionPalette(items []selectableListItem, selected, width int, ti
 
 	lines := make([]string, 0, len(visible)+5)
 	searchInset := lipgloss.Width("❯ ")
-	searchPrefix := transparentSurface(zeroTheme.ink).Render(strings.Repeat(" ", searchInset))
+	searchPrefix := transparentSurface(kajicodeTheme.ink).Render(strings.Repeat(" ", searchInset))
 	lines = append(lines, fillPaletteLine(searchPrefix+renderSuggestionSearchLine(query, maxInt(1, innerWidth-searchInset)), innerWidth, transparentSurface))
-	lines = append(lines, zeroTheme.line.Render(strings.Repeat("─", innerWidth)))
+	lines = append(lines, kajicodeTheme.line.Render(strings.Repeat("─", innerWidth)))
 
 	for index, item := range visible {
 		absoluteIndex := start + index
 		surface := transparentSurface
-		marker := surface(zeroTheme.faintest).Render("  ")
+		marker := surface(kajicodeTheme.faintest).Render("  ")
 		if absoluteIndex == selected {
-			surface = zeroTheme.onSel
-			marker = surface(zeroTheme.accent).Render("❯ ")
+			surface = kajicodeTheme.onSel
+			marker = surface(kajicodeTheme.accent).Render("❯ ")
 		}
 
 		labelText := truncateRunes(item.Label, labelWidth)
-		label := surface(zeroTheme.ink).Render(labelText)
-		pad := surface(zeroTheme.ink).Render(strings.Repeat(" ", maxInt(0, labelWidth-lipgloss.Width(labelText))))
+		label := surface(kajicodeTheme.ink).Render(labelText)
+		pad := surface(kajicodeTheme.ink).Render(strings.Repeat(" ", maxInt(0, labelWidth-lipgloss.Width(labelText))))
 		line := marker + label + pad
 		if desc := strings.TrimSpace(item.Description); desc != "" {
 			descWidth := innerWidth - lipgloss.Width(marker) - labelWidth - 2
 			if truncated := truncateRunes(desc, maxInt(0, descWidth)); truncated != "" {
-				line += surface(zeroTheme.faint).Render("  " + truncated)
+				line += surface(kajicodeTheme.faint).Render("  " + truncated)
 			}
 		}
 		lines = append(lines, fillPaletteLine(line, innerWidth, surface))
@@ -611,19 +611,19 @@ func renderSuggestionPalette(items []selectableListItem, selected, width int, ti
 		if strings.EqualFold(strings.TrimSpace(title), "Files") {
 			message = "no matching files"
 		}
-		lines = append(lines, fillPaletteLine(searchPrefix+zeroTheme.faint.Render(message), innerWidth, transparentSurface))
+		lines = append(lines, fillPaletteLine(searchPrefix+kajicodeTheme.faint.Render(message), innerWidth, transparentSurface))
 	}
 
 	if footer = strings.TrimSpace(footer); footer != "" {
-		lines = append(lines, zeroTheme.line.Render(strings.Repeat("─", innerWidth)))
-		line := zeroTheme.faint.Render(footer)
+		lines = append(lines, kajicodeTheme.line.Render(strings.Repeat("─", innerWidth)))
+		line := kajicodeTheme.faint.Render(footer)
 		lines = append(lines, fillPaletteLine(line, innerWidth, transparentSurface))
 	}
-	return styledBlockFillTitle(paletteWidth, strings.TrimSpace(title), lines, zeroTheme.lineStrong, lipgloss.NewStyle())
+	return styledBlockFillTitle(paletteWidth, strings.TrimSpace(title), lines, kajicodeTheme.lineStrong, lipgloss.NewStyle())
 }
 
 func styledBlockFillTitle(width int, title string, lines []string, borderStyle lipgloss.Style, fill lipgloss.Style) string {
-	return styledBlockFillTitleStyled(width, title, lines, borderStyle, fill, zeroTheme.ink.Bold(true))
+	return styledBlockFillTitleStyled(width, title, lines, borderStyle, fill, kajicodeTheme.ink.Bold(true))
 }
 
 // styledBlockFillTitleStyled is styledBlockFillTitle with a caller-supplied style
@@ -662,9 +662,9 @@ func styledBlockFillTitleStyled(width int, title string, lines []string, borderS
 
 func renderSuggestionSearchLine(query string, width int) string {
 	query = strings.TrimSpace(query)
-	label := zeroTheme.userPrompt.Render("search > ")
+	label := kajicodeTheme.userPrompt.Render("search > ")
 	valueWidth := maxInt(1, width-lipgloss.Width(label))
-	value := zeroTheme.ink.Render(truncateRunes(query, valueWidth))
+	value := kajicodeTheme.ink.Render(truncateRunes(query, valueWidth))
 	return fitStyledLine(label+value, width)
 }
 
@@ -676,7 +676,7 @@ func fillPaletteLine(line string, width int, surface func(lipgloss.Style) lipglo
 	line = fitStyledLine(line, width)
 	pad := maxInt(0, width-lipgloss.Width(line))
 	if pad > 0 {
-		line += surface(zeroTheme.ink).Render(strings.Repeat(" ", pad))
+		line += surface(kajicodeTheme.ink).Render(strings.Repeat(" ", pad))
 	}
 	return line
 }
@@ -762,53 +762,53 @@ func (m model) pickerOverlay(width int) string {
 	// A visible "search > …" line so typing to filter shows what you've typed,
 	// matching the /model picker. Followed by a separator, then the rows.
 	lines = append(lines, renderPickerSearchLine(m.picker.query, "type to filter…", innerWidth))
-	lines = append(lines, zeroTheme.line.Render(strings.Repeat("─", innerWidth)))
+	lines = append(lines, kajicodeTheme.line.Render(strings.Repeat("─", innerWidth)))
 	lastGroup := ""
 	for index, item := range visible {
 		absoluteIndex := start + index
 		if item.Group != "" && item.Group != lastGroup {
-			lines = append(lines, zeroTheme.accent.Render(item.Group))
+			lines = append(lines, kajicodeTheme.accent.Render(item.Group))
 			lastGroup = item.Group
 		}
 		surface := transparentSurface
-		marker := surface(zeroTheme.faintest).Render("  ")
+		marker := surface(kajicodeTheme.faintest).Render("  ")
 		if absoluteIndex == m.picker.selected {
-			surface = zeroTheme.onSel
-			marker = surface(zeroTheme.accent).Render("❯ ")
+			surface = kajicodeTheme.onSel
+			marker = surface(kajicodeTheme.accent).Render("❯ ")
 		}
 		left := marker
 		switch {
 		case item.Local:
-			left += surface(zeroTheme.blue).Render("● ")
+			left += surface(kajicodeTheme.blue).Render("● ")
 		case item.Remote:
-			left += surface(zeroTheme.accent).Render("● ")
+			left += surface(kajicodeTheme.accent).Render("● ")
 		}
 		if item.Favorite {
-			left += surface(zeroTheme.accent).Render("* ")
+			left += surface(kajicodeTheme.accent).Render("* ")
 		}
-		left += surface(zeroTheme.ink).Render(item.Label)
+		left += surface(kajicodeTheme.ink).Render(item.Label)
 		right := ""
 		if item.Meta != "" {
-			right = surface(zeroTheme.faintest).Render(item.Meta)
+			right = surface(kajicodeTheme.faintest).Render(item.Meta)
 		}
 		// Paint the gap on the row surface so selected rows read as one solid
 		// band; joinHeaderLine would pad with bare (untinted) spaces.
 		gap := innerWidth - lipgloss.Width(left) - lipgloss.Width(right)
-		line := left + surface(zeroTheme.ink).Render(strings.Repeat(" ", maxInt(1, gap))) + right
+		line := left + surface(kajicodeTheme.ink).Render(strings.Repeat(" ", maxInt(1, gap))) + right
 		lines = append(lines, fitStyledLine(line, innerWidth))
 	}
 	if len(visible) == 0 {
 		if m.picker.loading {
-			lines = append(lines, zeroTheme.faint.Render("Fetching available models…"))
+			lines = append(lines, kajicodeTheme.faint.Render("Fetching available models…"))
 		} else {
-			lines = append(lines, zeroTheme.faint.Render("  no matching items"))
+			lines = append(lines, kajicodeTheme.faint.Render("  no matching items"))
 		}
 	}
 	// Hints live in the footer (a separator + faint keys), matching the /model
 	// picker and the other bordered boxes.
-	lines = append(lines, zeroTheme.line.Render(strings.Repeat("─", innerWidth)))
-	lines = append(lines, zeroTheme.faint.Render("↑/↓ move   Enter select   Esc close"))
-	return centerRenderedBlock(styledBlockFillTitle(overlayWidth, title, lines, zeroTheme.lineStrong, lipgloss.NewStyle()), width)
+	lines = append(lines, kajicodeTheme.line.Render(strings.Repeat("─", innerWidth)))
+	lines = append(lines, kajicodeTheme.faint.Render("↑/↓ move   Enter select   Esc close"))
+	return centerRenderedBlock(styledBlockFillTitle(overlayWidth, title, lines, kajicodeTheme.lineStrong, lipgloss.NewStyle()), width)
 }
 
 func (m model) modelPickerOverlay(width int) string {
@@ -831,53 +831,53 @@ func (m model) modelPickerOverlay(width int) string {
 
 	lines := make([]string, 0, len(visible)+6)
 	searchInset := lipgloss.Width("❯ ")
-	searchPrefix := transparentSurface(zeroTheme.ink).Render(strings.Repeat(" ", searchInset))
+	searchPrefix := transparentSurface(kajicodeTheme.ink).Render(strings.Repeat(" ", searchInset))
 	lines = append(lines, fillPaletteLine(searchPrefix+renderModelPickerSearchLine(m.picker.query, maxInt(1, innerWidth-searchInset)), innerWidth, transparentSurface))
 	if status := strings.TrimSpace(m.modelPickerLoadError); status != "" {
-		lines = append(lines, fillPaletteLine(searchPrefix+zeroTheme.faint.Render(status), innerWidth, transparentSurface))
+		lines = append(lines, fillPaletteLine(searchPrefix+kajicodeTheme.faint.Render(status), innerWidth, transparentSurface))
 	}
-	lines = append(lines, zeroTheme.line.Render(strings.Repeat("─", innerWidth)))
+	lines = append(lines, kajicodeTheme.line.Render(strings.Repeat("─", innerWidth)))
 	lastGroup := ""
 	for index, item := range visible {
 		if item.Group != "" && item.Group != lastGroup {
-			lines = append(lines, fillPaletteLine(zeroTheme.accent.Bold(true).Render(item.Group), innerWidth, transparentSurface))
+			lines = append(lines, fillPaletteLine(kajicodeTheme.accent.Bold(true).Render(item.Group), innerWidth, transparentSurface))
 			lastGroup = item.Group
 		}
 		lines = append(lines, renderModelPickerRow(innerWidth, start+index == m.picker.selected, item))
 	}
 	if len(visible) == 0 {
-		lines = append(lines, fillPaletteLine(searchPrefix+zeroTheme.faint.Render("no matching models"), innerWidth, transparentSurface))
+		lines = append(lines, fillPaletteLine(searchPrefix+kajicodeTheme.faint.Render("no matching models"), innerWidth, transparentSurface))
 	}
 	if item, ok := m.picker.current(); ok {
 		if detail := modelPickerItemDetail(item); detail != "" {
-			lines = append(lines, zeroTheme.line.Render(strings.Repeat("─", innerWidth)))
-			lines = append(lines, fillPaletteLine(searchPrefix+zeroTheme.faint.Render(detail), innerWidth, transparentSurface))
+			lines = append(lines, kajicodeTheme.line.Render(strings.Repeat("─", innerWidth)))
+			lines = append(lines, fillPaletteLine(searchPrefix+kajicodeTheme.faint.Render(detail), innerWidth, transparentSurface))
 		}
 	}
-	lines = append(lines, zeroTheme.line.Render(strings.Repeat("─", innerWidth)))
+	lines = append(lines, kajicodeTheme.line.Render(strings.Repeat("─", innerWidth)))
 	footer := "↑/↓ move   Enter select   Ctrl+F favorite   Esc close"
-	lines = append(lines, fillPaletteLine(zeroTheme.faint.Render(footer), innerWidth, transparentSurface))
+	lines = append(lines, fillPaletteLine(kajicodeTheme.faint.Render(footer), innerWidth, transparentSurface))
 	title := strings.TrimSpace(m.picker.title)
 	if title == "" {
 		title = "Choose a model"
 	}
-	return centerRenderedBlock(styledBlockFillTitle(overlayWidth, title, lines, zeroTheme.lineStrong, lipgloss.NewStyle()), width)
+	return centerRenderedBlock(styledBlockFillTitle(overlayWidth, title, lines, kajicodeTheme.lineStrong, lipgloss.NewStyle()), width)
 }
 
 func (m model) modelPickerLoadingOverlay(width int) string {
 	overlayWidth := modelPickerLoadingOverlayWidth(width)
 	innerWidth := maxInt(1, overlayWidth-4)
 	lines := []string{
-		fillPaletteLine(zeroTheme.faint.Render("Checking available models..."), innerWidth, transparentSurface),
-		fillPaletteLine(zeroTheme.faint.Render("Built-in models will be used if discovery fails."), innerWidth, transparentSurface),
-		zeroTheme.line.Render(strings.Repeat("─", innerWidth)),
-		fillPaletteLine(zeroTheme.faint.Render("Esc close"), innerWidth, transparentSurface),
+		fillPaletteLine(kajicodeTheme.faint.Render("Checking available models..."), innerWidth, transparentSurface),
+		fillPaletteLine(kajicodeTheme.faint.Render("Built-in models will be used if discovery fails."), innerWidth, transparentSurface),
+		kajicodeTheme.line.Render(strings.Repeat("─", innerWidth)),
+		fillPaletteLine(kajicodeTheme.faint.Render("Esc close"), innerWidth, transparentSurface),
 	}
 	title := strings.TrimSpace(m.picker.title)
 	if title == "" {
 		title = "Choose a model"
 	}
-	return centerRenderedBlock(styledBlockFillTitle(overlayWidth, title, lines, zeroTheme.lineStrong, lipgloss.NewStyle()), width)
+	return centerRenderedBlock(styledBlockFillTitle(overlayWidth, title, lines, kajicodeTheme.lineStrong, lipgloss.NewStyle()), width)
 }
 
 func modelPickerLoadingOverlayWidth(terminalWidth int) int {
@@ -932,20 +932,20 @@ func renderModelPickerSearchLine(query string, width int) string {
 // is the faint hint shown when the query is empty.
 func renderPickerSearchLine(query, placeholder string, width int) string {
 	query = strings.TrimSpace(query)
-	prompt := zeroTheme.userPrompt.Render("search > ")
-	cursor := zeroTheme.accent.Render("▌")
+	prompt := kajicodeTheme.userPrompt.Render("search > ")
+	cursor := kajicodeTheme.accent.Render("▌")
 	if query == "" {
-		return fitStyledLine(prompt+cursor+zeroTheme.faint.Render(placeholder), width)
+		return fitStyledLine(prompt+cursor+kajicodeTheme.faint.Render(placeholder), width)
 	}
-	return fitStyledLine(prompt+zeroTheme.ink.Render(query)+cursor, width)
+	return fitStyledLine(prompt+kajicodeTheme.ink.Render(query)+cursor, width)
 }
 
 func renderModelPickerRow(width int, selected bool, item pickerItem) string {
 	surface := transparentSurface
-	marker := surface(zeroTheme.faintest).Render("  ")
+	marker := surface(kajicodeTheme.faintest).Render("  ")
 	if selected {
-		surface = zeroTheme.onSel
-		marker = surface(zeroTheme.accent).Render("❯ ")
+		surface = kajicodeTheme.onSel
+		marker = surface(kajicodeTheme.accent).Render("❯ ")
 	}
 	label := strings.TrimSpace(item.Label)
 	if label == "" {
@@ -955,7 +955,7 @@ func renderModelPickerRow(width int, selected bool, item pickerItem) string {
 	if item.Favorite {
 		prefix = "* "
 	}
-	left := marker + surface(zeroTheme.ink).Render(prefix+label)
+	left := marker + surface(kajicodeTheme.ink).Render(prefix+label)
 	// The provider is shown as a section header above each group, so rows no longer
 	// repeat it as a right-aligned tag (matches a grouped provider+model list).
 	return fillPaletteLine(left, width, surface)

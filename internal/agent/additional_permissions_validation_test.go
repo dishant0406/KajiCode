@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/tools"
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
 // A shell call that sets sandbox_permissions: with_additional_permissions but

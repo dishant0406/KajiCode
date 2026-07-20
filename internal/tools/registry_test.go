@@ -8,12 +8,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/sandbox"
+	"github.com/dishant0406/KajiCode/internal/sandbox"
 )
 
 func tempDirOutsideDefaultTemp(t *testing.T) string {
 	t.Helper()
-	dir, err := os.MkdirTemp(".", ".zero-sandbox-outside-")
+	dir, err := os.MkdirTemp(".", ".kajicode-sandbox-outside-")
 	if err != nil {
 		t.Fatalf("MkdirTemp outside default temp: %v", err)
 	}
@@ -92,7 +92,7 @@ func TestRegistryAllReturnsToolsSortedByName(t *testing.T) {
 
 func TestCoreNetworkToolsExposeSafetyMetadata(t *testing.T) {
 	// web_search is only registered when a backend is configured.
-	t.Setenv("ZERO_WEBSEARCH_BASE_URL", "https://search.example/api")
+	t.Setenv("KAJICODE_WEBSEARCH_BASE_URL", "https://search.example/api")
 	byName := map[string]Tool{}
 	for _, tool := range CoreNetworkTools() {
 		byName[tool.Name()] = tool
@@ -130,7 +130,7 @@ func TestCoreNetworkToolsExposeSafetyMetadata(t *testing.T) {
 func TestCoreNetworkToolsOmitWebSearchWhenUnconfigured(t *testing.T) {
 	// No backend configured → don't offer web_search (it could only error, which
 	// makes the model waste calls + prompts before falling back to an MCP search).
-	t.Setenv("ZERO_WEBSEARCH_BASE_URL", "")
+	t.Setenv("KAJICODE_WEBSEARCH_BASE_URL", "")
 	names := map[string]bool{}
 	for _, tool := range CoreNetworkTools() {
 		names[tool.Name()] = true

@@ -9,13 +9,13 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/Gitlawb/zero/internal/agent"
-	"github.com/Gitlawb/zero/internal/config"
-	"github.com/Gitlawb/zero/internal/execprofile"
-	"github.com/Gitlawb/zero/internal/modelregistry"
-	"github.com/Gitlawb/zero/internal/sessions"
-	"github.com/Gitlawb/zero/internal/usage"
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/agent"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/execprofile"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
+	"github.com/dishant0406/KajiCode/internal/modelregistry"
+	"github.com/dishant0406/KajiCode/internal/sessions"
+	"github.com/dishant0406/KajiCode/internal/usage"
 )
 
 var responseStyles = []string{"balanced", "concise", "explanatory", "review"}
@@ -371,7 +371,7 @@ func (m model) handleSelfCorrectCommand(args string) (model, string) {
 
 // maxTurnsCeiling caps the per-session /turns budget so a typo (e.g. /turns 99999)
 // can't set an absurd ceiling; real multi-step tasks fit comfortably under it. Shared
-// with config so applyEnv enforces the same bound on an inherited ZERO_MAX_TURNS.
+// with config so applyEnv enforces the same bound on an inherited KAJICODE_MAX_TURNS.
 const maxTurnsCeiling = config.MaxTurnsCeiling
 
 func (m model) handleTurnsCommand(args string) (model, string) {
@@ -475,7 +475,7 @@ func (m model) revertExecProfile() model {
 		if m.execProfileDisplacedMaxTurns > 0 {
 			config.SetMaxTurnsEnv(m.execProfileDisplacedMaxTurns)
 		} else {
-			// The profile's apply exported its budget to ZERO_MAX_TURNS (for
+			// The profile's apply exported its budget to KAJICODE_MAX_TURNS (for
 			// sub-agents), and SetMaxTurnsEnv ignores zero — so restoring a
 			// zero displaced budget must clear the env explicitly or spawned
 			// children would keep the removed profile's budget.
@@ -893,16 +893,16 @@ func (m model) summarizeCompactionPlan(plan sessions.CompactionPlan) (string, er
 	if m.provider == nil {
 		return deterministicCompactionSummary(plan), nil
 	}
-	stream, err := m.provider.StreamCompletion(m.ctx, zeroruntime.CompletionRequest{
-		Messages: []zeroruntime.Message{
-			{Role: zeroruntime.MessageRoleSystem, Content: "Summarize compacted Zero session events for future coding context. Preserve user goals, decisions, files, tool outcomes, blockers, and exact next steps. Omit secrets and do not invent details."},
-			{Role: zeroruntime.MessageRoleUser, Content: plan.SummaryPrompt},
+	stream, err := m.provider.StreamCompletion(m.ctx, kajicoderuntime.CompletionRequest{
+		Messages: []kajicoderuntime.Message{
+			{Role: kajicoderuntime.MessageRoleSystem, Content: "Summarize compacted KajiCode session events for future coding context. Preserve user goals, decisions, files, tool outcomes, blockers, and exact next steps. Omit secrets and do not invent details."},
+			{Role: kajicoderuntime.MessageRoleUser, Content: plan.SummaryPrompt},
 		},
 	})
 	if err != nil {
 		return "", fmt.Errorf("summarize compacted session: %w", err)
 	}
-	collected := zeroruntime.CollectStream(m.ctx, stream)
+	collected := kajicoderuntime.CollectStream(m.ctx, stream)
 	if collected.Error != "" {
 		return "", fmt.Errorf("summarize compacted session: %s", collected.Error)
 	}
@@ -983,7 +983,7 @@ func (m model) setCompactStatusRow(text string) model {
 	return m
 }
 
-func (m model) recordUsageEvent(modelID string, event zeroruntime.Usage) (model, []transcriptRow) {
+func (m model) recordUsageEvent(modelID string, event kajicoderuntime.Usage) (model, []transcriptRow) {
 	if m.usageTracker == nil || strings.TrimSpace(modelID) == "" {
 		return m, nil
 	}
@@ -1024,7 +1024,7 @@ func isUnpricedUsageError(err error) bool {
 	}
 	message := strings.ToLower(err.Error())
 	for _, marker := range []string{
-		"unknown zero model",
+		"unknown kajicode model",
 		"missing model input pricing rate",
 		"missing model output pricing rate",
 		"invalid model cached input pricing rate",

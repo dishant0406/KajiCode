@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
 )
 
 func TestRegistryEstimatesCostFromNormalizedUsage(t *testing.T) {
@@ -13,7 +13,7 @@ func TestRegistryEstimatesCostFromNormalizedUsage(t *testing.T) {
 		t.Fatalf("DefaultRegistry returned error: %v", err)
 	}
 
-	cost, err := registry.EstimateCost("gpt-4.1", zeroruntime.Usage{
+	cost, err := registry.EstimateCost("gpt-4.1", kajicoderuntime.Usage{
 		InputTokens:       1_000_000,
 		CachedInputTokens: 100_000,
 		OutputTokens:      500_000,
@@ -37,7 +37,7 @@ func TestRegistryCostSupportsAliasesAndFullyCachedInput(t *testing.T) {
 		t.Fatalf("DefaultRegistry returned error: %v", err)
 	}
 
-	cost, err := registry.EstimateCost("openai:gpt-4.1-mini", zeroruntime.Usage{
+	cost, err := registry.EstimateCost("openai:gpt-4.1-mini", kajicoderuntime.Usage{
 		InputTokens:       1_000_000,
 		CachedInputTokens: 1_000_000,
 	})
@@ -58,7 +58,7 @@ func TestRegistryCostUsesPromptAndCompletionAliases(t *testing.T) {
 		t.Fatalf("DefaultRegistry returned error: %v", err)
 	}
 
-	cost, err := registry.EstimateCost("haiku-3.5", zeroruntime.Usage{
+	cost, err := registry.EstimateCost("haiku-3.5", kajicoderuntime.Usage{
 		PromptTokens:     2_000,
 		CompletionTokens: 1_000,
 	})
@@ -78,7 +78,7 @@ func TestRegistryCostIgnoresCachedInputWithoutCachePricing(t *testing.T) {
 		t.Fatalf("DefaultRegistry returned error: %v", err)
 	}
 
-	cost, err := registry.EstimateCost("gpt-4-turbo", zeroruntime.Usage{
+	cost, err := registry.EstimateCost("gpt-4-turbo", kajicoderuntime.Usage{
 		InputTokens:       1_000,
 		CachedInputTokens: 1_000,
 		OutputTokens:      1_000,
@@ -100,7 +100,7 @@ func TestRegistryCostTreatsReasoningAsOutputBreakdown(t *testing.T) {
 		t.Fatalf("DefaultRegistry returned error: %v", err)
 	}
 
-	withReasoning, err := registry.EstimateCost("gpt-4.1", zeroruntime.Usage{
+	withReasoning, err := registry.EstimateCost("gpt-4.1", kajicoderuntime.Usage{
 		InputTokens:     1_000,
 		OutputTokens:    1_000,
 		ReasoningTokens: 400,
@@ -108,7 +108,7 @@ func TestRegistryCostTreatsReasoningAsOutputBreakdown(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EstimateCost(withReasoning) returned error: %v", err)
 	}
-	plain, err := registry.EstimateCost("gpt-4.1", zeroruntime.Usage{
+	plain, err := registry.EstimateCost("gpt-4.1", kajicoderuntime.Usage{
 		InputTokens:  1_000,
 		OutputTokens: 1_000,
 	})
@@ -127,14 +127,14 @@ func TestRegistryCostSelectsTierForLongContextPricing(t *testing.T) {
 		t.Fatalf("DefaultRegistry returned error: %v", err)
 	}
 
-	shortPrompt, err := registry.EstimateCost("gemini-2.5-pro", zeroruntime.Usage{
+	shortPrompt, err := registry.EstimateCost("gemini-2.5-pro", kajicoderuntime.Usage{
 		InputTokens:  200_000,
 		OutputTokens: 1_000,
 	})
 	if err != nil {
 		t.Fatalf("EstimateCost(shortPrompt) returned error: %v", err)
 	}
-	longPrompt, err := registry.EstimateCost("gemini-2.5-pro", zeroruntime.Usage{
+	longPrompt, err := registry.EstimateCost("gemini-2.5-pro", kajicoderuntime.Usage{
 		InputTokens:  200_001,
 		OutputTokens: 1_000,
 	})
@@ -176,7 +176,7 @@ func TestCostFormattingAndValidation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DefaultRegistry returned error: %v", err)
 	}
-	_, err = registry.EstimateCost("gpt-4.1", zeroruntime.Usage{InputTokens: -1})
+	_, err = registry.EstimateCost("gpt-4.1", kajicoderuntime.Usage{InputTokens: -1})
 	if err == nil {
 		t.Fatal("EstimateCost should reject negative usage")
 	}

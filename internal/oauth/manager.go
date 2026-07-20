@@ -49,11 +49,11 @@ type ManagerOptions struct {
 	HTTPClient *http.Client
 	Env        map[string]string
 	// AllowPresets opts this manager into the baked-in OAuth presets without the
-	// operator exporting ZERO_OAUTH_ALLOW_PRESETS — used by the interactive wizard
+	// operator exporting KAJICODE_OAUTH_ALLOW_PRESETS — used by the interactive wizard
 	// and CLI login (and the runtime token refresh) for a provider the user chose
 	// to sign into, whose preset client identity is public (e.g. xAI). It layers the
 	// flag onto Env (or the process environment when Env is nil), preserving any
-	// ZERO_OAUTH_<NAME>_* overrides. Leave false for hermetic tests.
+	// KAJICODE_OAUTH_<NAME>_* overrides. Leave false for hermetic tests.
 	AllowPresets  bool
 	Now           func() time.Time
 	RefreshBuffer time.Duration
@@ -402,7 +402,7 @@ func (m *Manager) resolveConfigForKey(ctx context.Context, key string) (Config, 
 		return Config{}, err
 	}
 	// Fill any missing token/authorize/device endpoints from issuer discovery so a
-	// provider configured with only ZERO_OAUTH_<NAME>_ISSUER_URL can still refresh
+	// provider configured with only KAJICODE_OAUTH_<NAME>_ISSUER_URL can still refresh
 	// (refreshAndSave requires the token endpoint).
 	cfg, err = m.resolveEndpoints(ctx, cfg)
 	if err != nil {

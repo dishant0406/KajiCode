@@ -152,7 +152,7 @@ func TestAgeDimLineMidRangeReturnsIntermediate(t *testing.T) {
 	// At t = 600ms (halfway through the 1.2s window), the bucket
 	// index is int(600 * 12 / 1200) = 6, which is one of the
 	// intermediate buckets (not palette[0] = accent, not
-	// zeroTheme.ink). The output must be non-empty and contain the
+	// kajicodeTheme.ink). The output must be non-empty and contain the
 	// input.
 	now := time.Unix(0, 0)
 	base := lipgloss.NewStyle().Foreground(lipgloss.Color(darkPalette.ink))
@@ -342,7 +342,7 @@ func TestStyleStreamingLineFallsBackWhenFadeInactive(t *testing.T) {
 	m := model{}
 	m.fadeActive = false
 	out := m.styleStreamingLine("hello", 0, 1)
-	want := zeroTheme.ink.Render("hello")
+	want := kajicodeTheme.ink.Render("hello")
 	if out != want {
 		t.Errorf("styleStreamingLine with fadeActive=false = %q, want %q (base render)", out, want)
 	}
@@ -357,7 +357,7 @@ func TestStyleStreamingLineFallsBackWhenLineAgesNil(t *testing.T) {
 	m.fadeActive = true
 	m.lineAges = nil
 	out := m.styleStreamingLine("hello", 0, 1)
-	want := zeroTheme.ink.Render("hello")
+	want := kajicodeTheme.ink.Render("hello")
 	if out != want {
 		t.Errorf("styleStreamingLine with nil lineAges = %q, want %q (base render)", out, want)
 	}
@@ -367,7 +367,7 @@ func TestStyleStreamingLinePreservesHighlightedLines(t *testing.T) {
 	m := model{}
 	m.fadeActive = true
 	m.lineAges = []time.Time{time.Now()}
-	line := zeroTheme.accent.Render("func") + " main()"
+	line := kajicodeTheme.accent.Render("func") + " main()"
 	if out := m.styleStreamingLine(line, 0, 1); out != line {
 		t.Errorf("highlighted streaming line should be preserved, got %q want %q", out, line)
 	}

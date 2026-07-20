@@ -8,15 +8,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/cron"
-	"github.com/Gitlawb/zero/internal/streamjson"
+	"github.com/dishant0406/KajiCode/internal/cron"
+	"github.com/dishant0406/KajiCode/internal/streamjson"
 )
 
-// execRunner runs a `zero exec ...` invocation and returns its exit code. The
+// execRunner runs a `kajicode exec ...` invocation and returns its exit code. The
 // default is cli.Run; tests inject a fake.
 type execRunner func(args []string, stdout, stderr io.Writer) int
 
-// cronRun implements `zero cron run [--once] [--catch-up] [id...]`.
+// cronRun implements `kajicode cron run [--once] [--catch-up] [id...]`.
 func cronRun(store *cron.Store, now func() time.Time, args []string, stdout io.Writer, stderr io.Writer, exec execRunner) int {
 	once, catchUp := false, false
 	var ids []string

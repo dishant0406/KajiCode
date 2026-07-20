@@ -9,9 +9,9 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/Gitlawb/zero/internal/agent"
-	"github.com/Gitlawb/zero/internal/sessions"
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/agent"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
+	"github.com/dishant0406/KajiCode/internal/sessions"
 )
 
 const (
@@ -139,24 +139,24 @@ func cleanGeneratedTitle(raw string) string {
 // generateSessionTitle asks the provider for a concise title for digest and
 // returns the cleaned result. It is provider-shaped exactly like the one-shot
 // summarization call: system instructions + a single user turn, no tools.
-func generateSessionTitle(ctx context.Context, provider zeroruntime.Provider, digest string) (string, error) {
+func generateSessionTitle(ctx context.Context, provider kajicoderuntime.Provider, digest string) (string, error) {
 	if provider == nil {
 		return "", errors.New("no provider configured")
 	}
 	if strings.TrimSpace(digest) == "" {
 		return "", errSessionTitleNoContent
 	}
-	request := zeroruntime.CompletionRequest{
-		Messages: []zeroruntime.Message{
-			{Role: zeroruntime.MessageRoleSystem, Content: sessionTitleSystemPrompt},
-			{Role: zeroruntime.MessageRoleUser, Content: "Conversation:\n\n" + digest + "\n\nTitle:"},
+	request := kajicoderuntime.CompletionRequest{
+		Messages: []kajicoderuntime.Message{
+			{Role: kajicoderuntime.MessageRoleSystem, Content: sessionTitleSystemPrompt},
+			{Role: kajicoderuntime.MessageRoleUser, Content: "Conversation:\n\n" + digest + "\n\nTitle:"},
 		},
 	}
 	stream, err := provider.StreamCompletion(ctx, request)
 	if err != nil {
 		return "", err
 	}
-	collected := zeroruntime.CollectStreamWithOptions(ctx, stream, zeroruntime.CollectOptions{})
+	collected := kajicoderuntime.CollectStreamWithOptions(ctx, stream, kajicoderuntime.CollectOptions{})
 	if collected.Error != "" {
 		return "", errors.New(collected.Error)
 	}

@@ -185,10 +185,10 @@ func Scaffold(options ScaffoldOptions) (ScaffoldResult, error) {
 
 func shellStub(name string, description string) string {
 	return `#!/bin/sh
-# ` + name + ` — Zero plugin tool entry point.
+# ` + name + ` — KajiCode plugin tool entry point.
 # ` + description + `
 #
-# Zero invokes this script with the tool-call arguments as a single JSON object
+# KajiCode invokes this script with the tool-call arguments as a single JSON object
 # on stdin and expects the tool result on stdout.
 #
 # TODO: read the JSON arguments from stdin, do the work, and print a result.
@@ -200,10 +200,10 @@ echo "TODO: implement ${0##*/}. Received arguments: ${input}"
 }
 
 func nodeStub(name string, description string) string {
-	return `// ` + name + ` — Zero plugin tool entry point.
+	return `// ` + name + ` — KajiCode plugin tool entry point.
 // ` + description + `
 //
-// Zero invokes this script with the tool-call arguments as a single JSON object
+// KajiCode invokes this script with the tool-call arguments as a single JSON object
 // on stdin and expects the tool result on stdout.
 
 import process from "node:process";
@@ -222,11 +222,11 @@ process.stdin.on("end", () => {
 
 func pythonStub(name string, description string) string {
 	return `#!/usr/bin/env python3
-"""` + name + ` — Zero plugin tool entry point.
+"""` + name + ` — KajiCode plugin tool entry point.
 
 ` + description + `
 
-Zero invokes this script with the tool-call arguments as a single JSON object on
+KajiCode invokes this script with the tool-call arguments as a single JSON object on
 stdin and expects the tool result on stdout.
 """
 import json

@@ -47,7 +47,7 @@ func TestThemeChoicePersistsAcrossRestart(t *testing.T) {
 	}
 }
 
-// resolveThemeMode precedence: flag > ZERO_THEME > persisted config > auto.
+// resolveThemeMode precedence: flag > KAJICODE_THEME > persisted config > auto.
 func TestResolveThemeModeConfigFallback(t *testing.T) {
 	if got := resolveThemeMode("", "", "nord"); got != themeMode("nord") {
 		t.Errorf("saved-only = %q, want nord", got)
@@ -85,7 +85,7 @@ func assertPreviewMatchesSelection(t *testing.T, m model) {
 	if !ok {
 		return
 	}
-	if r, _, _, _ := zeroTheme.inkColor.RGBA(); r != mustR(t, entry.Palette.ink) {
+	if r, _, _, _ := kajicodeTheme.inkColor.RGBA(); r != mustR(t, entry.Palette.ink) {
 		t.Errorf("preview of %q did not apply its palette (ink mismatch)", sel.Value)
 	}
 }
@@ -137,7 +137,7 @@ func TestThemeArgSkipsPicker(t *testing.T) {
 	}
 }
 
-// Moving the cursor live-previews each palette: the global zeroTheme swaps as the
+// Moving the cursor live-previews each palette: the global kajicodeTheme swaps as the
 // selection changes, so the whole UI (and the overlay) repaints in the hovered
 // theme without committing the preference.
 func TestThemePickerPreviewsOnMove(t *testing.T) {
@@ -191,7 +191,7 @@ func TestThemePickerCommitAppliesAndRecords(t *testing.T) {
 	if m.themeMode != themeMode("dracula") {
 		t.Fatalf("committed mode = %q, want dracula", m.themeMode)
 	}
-	if r, _, _, _ := zeroTheme.inkColor.RGBA(); r != mustR(t, draculaPalette.ink) {
+	if r, _, _, _ := kajicodeTheme.inkColor.RGBA(); r != mustR(t, draculaPalette.ink) {
 		t.Error("commit did not leave the dracula palette applied")
 	}
 	if !transcriptContains(m.transcript, "active theme") {
@@ -247,7 +247,7 @@ func TestThemePickerFilterRePreviews(t *testing.T) {
 	if got := m.picker.items[m.picker.selected].Value; got != string(themeLight) {
 		t.Fatalf("filter 'li' should highlight light, got %q", got)
 	}
-	if r, _, _, _ := zeroTheme.inkColor.RGBA(); r != mustR(t, lightPalette.ink) {
+	if r, _, _, _ := kajicodeTheme.inkColor.RGBA(); r != mustR(t, lightPalette.ink) {
 		t.Error("filtering to light did not keep the light palette previewed")
 	}
 
@@ -261,7 +261,7 @@ func TestThemePickerFilterRePreviews(t *testing.T) {
 	if got := m.picker.items[m.picker.selected].Value; got != string(themeDark) {
 		t.Fatalf("filter 'd' should highlight dark, got %q", got)
 	}
-	if r, _, _, _ := zeroTheme.inkColor.RGBA(); r != mustR(t, darkPalette.ink) {
+	if r, _, _, _ := kajicodeTheme.inkColor.RGBA(); r != mustR(t, darkPalette.ink) {
 		t.Error("filtering to dark did not re-preview the dark palette")
 	}
 }
@@ -288,7 +288,7 @@ func TestThemePickerEmptyFilterRestoresCommitted(t *testing.T) {
 	if len(m.picker.items) != 0 {
 		t.Fatalf("filter 'q' should match no theme, got %d items", len(m.picker.items))
 	}
-	if r, _, _, _ := zeroTheme.inkColor.RGBA(); r != mustR(t, darkPalette.ink) {
+	if r, _, _, _ := kajicodeTheme.inkColor.RGBA(); r != mustR(t, darkPalette.ink) {
 		t.Error("an empty filter should restore the committed dark palette, not keep the preview")
 	}
 
@@ -302,7 +302,7 @@ func TestThemePickerEmptyFilterRestoresCommitted(t *testing.T) {
 	if m.themeMode != themeDark {
 		t.Fatalf("empty-list commit must not change the mode, got %q", m.themeMode)
 	}
-	if r, _, _, _ := zeroTheme.inkColor.RGBA(); r != mustR(t, darkPalette.ink) {
+	if r, _, _, _ := kajicodeTheme.inkColor.RGBA(); r != mustR(t, darkPalette.ink) {
 		t.Error("after an empty-list commit the palette must match the committed dark mode")
 	}
 }
@@ -323,7 +323,7 @@ func TestThemePickerEscRestoresCommittedTheme(t *testing.T) {
 	updated, _ = m.Update(testKey(tea.KeyDown))
 	m = updated.(model)
 	assertPreviewMatchesSelection(t, m)
-	if r, _, _, _ := zeroTheme.inkColor.RGBA(); r == mustR(t, darkPalette.ink) {
+	if r, _, _, _ := kajicodeTheme.inkColor.RGBA(); r == mustR(t, darkPalette.ink) {
 		t.Fatal("expected a non-dark preview to be applied before Esc")
 	}
 	updated, _ = m.Update(testKey(tea.KeyEsc))
@@ -334,7 +334,7 @@ func TestThemePickerEscRestoresCommittedTheme(t *testing.T) {
 	if m.themeMode != themeDark {
 		t.Fatalf("Esc must not change the committed mode, got %q", m.themeMode)
 	}
-	if r, _, _, _ := zeroTheme.inkColor.RGBA(); r != mustR(t, darkPalette.ink) {
+	if r, _, _, _ := kajicodeTheme.inkColor.RGBA(); r != mustR(t, darkPalette.ink) {
 		t.Error("Esc did not restore the committed dark palette")
 	}
 }

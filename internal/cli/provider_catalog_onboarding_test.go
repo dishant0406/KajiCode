@@ -34,7 +34,7 @@ func TestProviderCatalogRuntimeProvidersShowOnboardingSetupHints(t *testing.T) {
 				nameLine,
 				"transport=" + tt.transport,
 				"defaultModel=" + tt.defaultModel,
-				"setup: zero providers setup " + tt.id + " --set-active",
+				"setup: kajicode providers setup " + tt.id + " --set-active",
 			} {
 				if !strings.Contains(block, want) {
 					t.Fatalf("expected %s catalog block to contain %q, got:\n%s", tt.id, want, block)
@@ -54,7 +54,7 @@ func TestProviderCatalogLongCatRequiresAPIKey(t *testing.T) {
 	for _, want := range []string{
 		"requiresAuth=true",
 		"authEnvVars=LONGCAT_API_KEY",
-		"setup: zero providers setup longcat --set-active",
+		"setup: kajicode providers setup longcat --set-active",
 	} {
 		if !strings.Contains(block, want) {
 			t.Fatalf("expected LongCat catalog block to contain %q, got:\n%s", want, block)
@@ -69,7 +69,7 @@ func TestProviderCatalogOllamaCloudRequiresAPIKey(t *testing.T) {
 	for _, want := range []string{
 		"requiresAuth=true",
 		"authEnvVars=OLLAMA_API_KEY",
-		"setup: zero providers setup ollama-cloud --set-active",
+		"setup: kajicode providers setup ollama-cloud --set-active",
 	} {
 		if !strings.Contains(block, want) {
 			t.Fatalf("expected ollama-cloud catalog block to contain %q, got:\n%s", want, block)
@@ -98,7 +98,7 @@ func TestProviderCatalogUnsupportedProvidersShowOnboardingReason(t *testing.T) {
 			if !strings.Contains(block, "unsupported: native adapter not implemented yet") {
 				t.Fatalf("expected %s catalog block to show unsupported reason, got:\n%s", id, block)
 			}
-			if strings.Contains(block, "setup: zero providers setup") {
+			if strings.Contains(block, "setup: kajicode providers setup") {
 				t.Fatalf("unsupported provider %s should not show setup hint, got:\n%s", id, block)
 			}
 		})

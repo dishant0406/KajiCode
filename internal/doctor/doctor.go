@@ -12,11 +12,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/config"
-	"github.com/Gitlawb/zero/internal/modelregistry"
-	"github.com/Gitlawb/zero/internal/oauth"
-	"github.com/Gitlawb/zero/internal/providerhealth"
-	"github.com/Gitlawb/zero/internal/redaction"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/modelregistry"
+	"github.com/dishant0406/KajiCode/internal/oauth"
+	"github.com/dishant0406/KajiCode/internal/providerhealth"
+	"github.com/dishant0406/KajiCode/internal/redaction"
 )
 
 type Status string
@@ -103,7 +103,7 @@ func (report Report) Check(id string) *Check {
 
 func Format(report Report) string {
 	lines := []string{
-		fmt.Sprintf("Zero doctor report (%s)", redaction.RedactString(report.GeneratedAt, redaction.Options{})),
+		fmt.Sprintf("KajiCode doctor report (%s)", redaction.RedactString(report.GeneratedAt, redaction.Options{})),
 		fmt.Sprintf("Overall: %s", passFail(report.OK)),
 	}
 	for _, check := range report.Checks {
@@ -120,7 +120,7 @@ func runtimeCheck(runtime string) Check {
 	if runtime == "" {
 		runtime = "go"
 	}
-	return check("runtime.go", "Go runtime", StatusPass, fmt.Sprintf("Zero Go runtime is available (%s).", runtime), map[string]any{"runtime": runtime})
+	return check("runtime.go", "Go runtime", StatusPass, fmt.Sprintf("KajiCode Go runtime is available (%s).", runtime), map[string]any{"runtime": runtime})
 }
 
 func configFilesCheck(userPath string, projectPath string) Check {
@@ -132,9 +132,9 @@ func configFilesCheck(userPath string, projectPath string) Check {
 		details["projectConfigPath"] = projectPath
 	}
 	if len(details) == 0 {
-		return check("config.files", "Config files", StatusWarn, "No explicit Zero config files were inspected.", nil)
+		return check("config.files", "Config files", StatusWarn, "No explicit KajiCode config files were inspected.", nil)
 	}
-	return check("config.files", "Config files", StatusPass, "Zero config file inputs are available for inspection.", details)
+	return check("config.files", "Config files", StatusPass, "KajiCode config file inputs are available for inspection.", details)
 }
 
 func providerConfigCheck(profile config.ProviderProfile) Check {
@@ -147,7 +147,7 @@ func providerConfigCheck(profile config.ProviderProfile) Check {
 	// set" invisible. HasConfiguredCredential is the shared definition of
 	// "key-authed" (inline key, raw auth header, or a key in the encrypted
 	// credential store), matching ProviderSnapshot.APIKeySet — checking only the
-	// inline fields made doctor and `zero providers list` disagree about the
+	// inline fields made doctor and `kajicode providers list` disagree about the
 	// same stored-key profile. A stored OAuth login counts too: a keyless
 	// token-login provider (e.g. ChatGPT) is fully able to make requests and
 	// must not fail the one tool meant to verify setup.
@@ -171,7 +171,7 @@ func providerConfigCheck(profile config.ProviderProfile) Check {
 	// Ollama/LM Studio) legitimately need no key, so they stay a pass. (AUDIT-H9)
 	if credential == "not set" && !localProviderBaseURL(profile.BaseURL) {
 		return check("provider.config", "Provider config", StatusFail,
-			fmt.Sprintf("No API key configured for %s. Run `zero auth` or `zero setup`, or set the provider's API key environment variable.", providerName(profile)),
+			fmt.Sprintf("No API key configured for %s. Run `kajicode auth` or `kajicode setup`, or set the provider's API key environment variable.", providerName(profile)),
 			details)
 	}
 	return check("provider.config", "Provider config", StatusPass, fmt.Sprintf("Provider config loaded for %s.", providerName(profile)), details)
@@ -226,7 +226,7 @@ func providerModelCheck(profile config.ProviderProfile) Check {
 	model, err := registry.Require(profile.Model)
 	if err != nil {
 		if profile.ProviderKind == config.ProviderKindOpenAICompatible || profile.ProviderKind == config.ProviderKindAnthropicCompat {
-			return check("provider.model", "Provider model", StatusWarn, fmt.Sprintf("Custom %s model was not found in the Zero registry; runtime will pass it through to the configured provider. Run `zero doctor --connectivity` to validate the endpoint and auth.", profile.ProviderKind), map[string]any{"model": profile.Model, "provider": providerName(profile)})
+			return check("provider.model", "Provider model", StatusWarn, fmt.Sprintf("Custom %s model was not found in the KajiCode registry; runtime will pass it through to the configured provider. Run `kajicode doctor --connectivity` to validate the endpoint and auth.", profile.ProviderKind), map[string]any{"model": profile.Model, "provider": providerName(profile)})
 		}
 		return check("provider.model", "Provider model", StatusFail, "Provider model is invalid: "+err.Error(), map[string]any{"model": profile.Model})
 	}
@@ -246,7 +246,7 @@ func connectivityCheck(profile config.ProviderProfile, enabled bool, modelStatus
 		if emptyProviderProfile(profile) || modelStatus == StatusFail {
 			return check("provider.connectivity", "Provider connectivity", StatusWarn, "Connectivity check was skipped because provider runtime did not resolve.", nil)
 		}
-		return check("provider.connectivity", "Provider connectivity", StatusWarn, "Connectivity probe skipped. Run `zero doctor --connectivity` to probe the provider endpoint.", map[string]any{"baseURL": profile.BaseURL})
+		return check("provider.connectivity", "Provider connectivity", StatusWarn, "Connectivity probe skipped. Run `kajicode doctor --connectivity` to probe the provider endpoint.", map[string]any{"baseURL": profile.BaseURL})
 	}
 	if health != nil {
 		if providerCheck := health.PrimaryCheck(); providerCheck != nil {
@@ -376,7 +376,7 @@ func configValidationCheck(userPath string, projectPath string) Check {
 		}
 	}
 	if len(paths) == 0 {
-		return check("config.validation", "Config validation", StatusWarn, "No Zero config files were available to validate.", nil)
+		return check("config.validation", "Config validation", StatusWarn, "No KajiCode config files were available to validate.", nil)
 	}
 
 	status := StatusPass
@@ -423,9 +423,9 @@ func configValidationCheck(userPath string, projectPath string) Check {
 	}
 
 	if status == StatusPass {
-		return check("config.validation", "Config validation", StatusPass, "Zero config files parsed and validated successfully.", nil)
+		return check("config.validation", "Config validation", StatusPass, "KajiCode config files parsed and validated successfully.", nil)
 	}
-	return check("config.validation", "Config validation", StatusFail, fmt.Sprintf("Zero config validation found %d issue(s).", issueCount), details)
+	return check("config.validation", "Config validation", StatusFail, fmt.Sprintf("KajiCode config validation found %d issue(s).", issueCount), details)
 }
 
 // jsonParsePosition reports whether data fails to parse as JSON and, if so, the

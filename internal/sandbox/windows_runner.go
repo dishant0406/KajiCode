@@ -11,11 +11,11 @@ import (
 	"strings"
 )
 
-const WindowsSandboxCommandRunnerName = "zero-windows-command-runner.exe"
+const WindowsSandboxCommandRunnerName = "kajicode-windows-command-runner.exe"
 
 const windowsCapabilitySIDSchemaVersion = 2
 
-// Hidden subcommands the main zero binary answers to when it acts as its own
+// Hidden subcommands the main kajicode binary answers to when it acts as its own
 // Windows sandbox helper (self-dispatch). The "__" prefix can never collide with
 // a real user subcommand; internal/cli/app.go routes these before normal CLI
 // parsing.
@@ -27,7 +27,7 @@ const (
 // WindowsSandboxHelper locates a Windows sandbox helper to launch. Name is the
 // executable; ArgsPrefix is prepended to the helper's own arguments. For a
 // standalone helper .exe (the release layout) ArgsPrefix is empty; for
-// self-dispatch — the running zero binary acting as its own helper — Name is
+// self-dispatch — the running kajicode binary acting as its own helper — Name is
 // os.Executable() and ArgsPrefix carries the hidden subcommand token.
 type WindowsSandboxHelper struct {
 	Name       string
@@ -64,7 +64,7 @@ var osExecutable = os.Executable
 // resolveWindowsSandboxHelper resolves a helper in three tiers, mirroring the
 // Linux helper resolution (linux_helper.go): (1) a standalone .exe adjacent to
 // the running binary — the release layout, kept first so a packaged helper still
-// wins; (2) the same name on PATH; (3) SELF-DISPATCH — the running zero binary
+// wins; (2) the same name on PATH; (3) SELF-DISPATCH — the running kajicode binary
 // itself, invoked with the hidden subcommand. Tier 3 is what makes the sandbox
 // reachable under `go run`/plain `go build` (no separate helper shipped),
 // fixing the dev-only "command runner is not available" failure that hard-failed
@@ -347,8 +347,8 @@ func windowsRestrictedTokenCommandPlan(execRequest SandboxExecutionRequest, poli
 		return CommandPlan{}, err
 	}
 	// Prepend the helper's args prefix: for self-dispatch this is the hidden
-	// subcommand token (Name is the running zero binary), so the launched command
-	// is `zero __windows-command-runner <sandbox args>`. Empty for a standalone
+	// subcommand token (Name is the running kajicode binary), so the launched command
+	// is `kajicode __windows-command-runner <sandbox args>`. Empty for a standalone
 	// helper .exe, where args are passed unchanged.
 	fullArgs := append(append([]string{}, execRequest.Backend.ExecutableArgsPrefix...), args...)
 	return withSandboxExecutionMetadata(CommandPlan{
@@ -444,7 +444,7 @@ type WindowsCapabilitySIDs struct {
 }
 
 func ResolveWindowsSandboxHome(env map[string]string) (string, error) {
-	if override := strings.TrimSpace(envValue(env, "ZERO_WINDOWS_SANDBOX_HOME")); override != "" {
+	if override := strings.TrimSpace(envValue(env, "KAJICODE_WINDOWS_SANDBOX_HOME")); override != "" {
 		if filepath.IsAbs(override) {
 			return filepath.Clean(override), nil
 		}

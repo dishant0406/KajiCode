@@ -64,7 +64,7 @@ func (tool applyPatchTool) RunWithOptions(ctx context.Context, args map[string]a
 		return errorResult("Error applying patch: " + err.Error())
 	}
 
-	tempFile, err := os.CreateTemp("", "zero-patch-*.patch")
+	tempFile, err := os.CreateTemp("", "kajicode-patch-*.patch")
 	if err != nil {
 		return errorResult("Error applying patch: " + err.Error())
 	}

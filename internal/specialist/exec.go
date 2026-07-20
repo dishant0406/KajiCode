@@ -16,10 +16,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Gitlawb/zero/internal/background"
-	"github.com/Gitlawb/zero/internal/sessions"
-	"github.com/Gitlawb/zero/internal/streamjson"
-	"github.com/Gitlawb/zero/internal/tools"
+	"github.com/dishant0406/KajiCode/internal/background"
+	"github.com/dishant0406/KajiCode/internal/sessions"
+	"github.com/dishant0406/KajiCode/internal/streamjson"
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
 const (
@@ -638,7 +638,7 @@ func (executor Executor) binaryPath() (string, error) {
 	}
 	path, err := os.Executable()
 	if err != nil {
-		return "", fmt.Errorf("resolve zero executable: %w", err)
+		return "", fmt.Errorf("resolve kajicode executable: %w", err)
 	}
 	return path, nil
 }
@@ -750,7 +750,7 @@ func (executor Executor) writePromptFile(prompt string) (string, error) {
 }
 
 func writePromptFile(prompt string) (string, error) {
-	tmpDir, err := os.MkdirTemp("", "zero-specialist-")
+	tmpDir, err := os.MkdirTemp("", "kajicode-specialist-")
 	if err != nil {
 		return "", fmt.Errorf("create specialist prompt temp dir: %w", err)
 	}
@@ -769,7 +769,7 @@ func cleanupPromptFile(promptFile string) {
 		return
 	}
 	dir := filepath.Dir(promptFile)
-	if strings.HasPrefix(filepath.Base(dir), "zero-specialist-") {
+	if strings.HasPrefix(filepath.Base(dir), "kajicode-specialist-") {
 		_ = os.RemoveAll(dir)
 		return
 	}

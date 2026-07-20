@@ -174,7 +174,7 @@ func TestRunnerSelectsRequestedTask(t *testing.T) {
 			return CommandResult{ID: command.ID, ExitCode: 0}
 		},
 		ChangedFiles: func(context.Context, string) ([]string, error) {
-			return []string{"cmd/zero/main.go"}, nil
+			return []string{"cmd/kajicode/main.go"}, nil
 		},
 	}
 
@@ -288,7 +288,7 @@ func runnerSuite() Suite {
 					Name:    "Other tests",
 					Command: []string{"go", "test", "./internal/cli"},
 				}},
-				ExpectedChangedFiles: []string{"cmd/zero/main.go"},
+				ExpectedChangedFiles: []string{"cmd/kajicode/main.go"},
 			},
 		},
 	}

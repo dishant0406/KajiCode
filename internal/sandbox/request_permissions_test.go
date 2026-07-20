@@ -71,7 +71,7 @@ func TestGrantRequestPermissionsNetworkOverlaysPolicyForTurn(t *testing.T) {
 		Backend: Backend{
 			Name:            BackendLinuxBwrap,
 			Available:       true,
-			Executable:      "/usr/bin/zero-linux-sandbox",
+			Executable:      "/usr/bin/kajicode-linux-sandbox",
 			CommandWrapping: true,
 			NativeIsolation: true,
 		},

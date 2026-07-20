@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/config"
-	"github.com/Gitlawb/zero/internal/providerhealth"
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
+	"github.com/dishant0406/KajiCode/internal/providerhealth"
 )
 
 func TestRunProvidersCheckMissingKeyPrintsNextAction(t *testing.T) {
@@ -19,7 +19,7 @@ func TestRunProvidersCheckMissingKeyPrintsNextAction(t *testing.T) {
 		profile := providerCheckGuidanceProfile()
 		return config.ResolvedConfig{ActiveProvider: "groq", Provider: profile, Providers: []config.ProviderProfile{profile}, MaxTurns: 7}, nil
 	}
-	deps.newProvider = func(config.ProviderProfile) (zeroruntime.Provider, error) {
+	deps.newProvider = func(config.ProviderProfile) (kajicoderuntime.Provider, error) {
 		t.Fatal("newProvider should not run with a missing API key")
 		return nil, nil
 	}
@@ -36,7 +36,7 @@ func TestRunProvidersCheckMissingKeyPrintsNextAction(t *testing.T) {
 	if !strings.Contains(output, "provider groq requires API key; set GROQ_API_KEY") {
 		t.Fatalf("missing key error did not name env var: %q", output)
 	}
-	if !strings.Contains(output, "next: set GROQ_API_KEY and rerun zero providers check groq") {
+	if !strings.Contains(output, "next: set GROQ_API_KEY and rerun kajicode providers check groq") {
 		t.Fatalf("missing next action: %q", output)
 	}
 }
@@ -80,7 +80,7 @@ func TestRunProvidersCheckConnectivitySkippedPrintsNextAction(t *testing.T) {
 		t.Fatalf("exit code = %d, want %d: %s", exitCode, exitSuccess, stderr.String())
 	}
 	output := stdout.String()
-	if !strings.Contains(output, "next: run zero providers check work --connectivity") {
+	if !strings.Contains(output, "next: run kajicode providers check work --connectivity") {
 		t.Fatalf("missing connectivity next action: %q", output)
 	}
 	if stderr.Len() != 0 {
@@ -120,7 +120,7 @@ func TestRunProvidersCheckConnectivityFailurePrintsGuidance(t *testing.T) {
 	if !strings.Contains(output, "provider.connectivity: Provider endpoint returned 401: invalid API key") {
 		t.Fatalf("missing primary health check message: %q", output)
 	}
-	if !strings.Contains(output, "next: verify the API key, base URL, and model, then rerun zero providers check local --connectivity") {
+	if !strings.Contains(output, "next: verify the API key, base URL, and model, then rerun kajicode providers check local --connectivity") {
 		t.Fatalf("missing connectivity failure next action: %q", output)
 	}
 	if strings.Contains(output, "sk-test-secret") {
@@ -147,7 +147,7 @@ func TestRunProvidersCheckConnectivityOKPrintsExecNextAction(t *testing.T) {
 		t.Fatalf("exit code = %d, want %d: %s", exitCode, exitSuccess, stderr.String())
 	}
 	output := stdout.String()
-	if !strings.Contains(output, `next: run zero exec "hello" --model gpt-4.1`) {
+	if !strings.Contains(output, `next: run kajicode exec "hello" --model gpt-4.1`) {
 		t.Fatalf("missing ready next action: %q", output)
 	}
 }

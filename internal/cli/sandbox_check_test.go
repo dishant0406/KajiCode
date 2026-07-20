@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/config"
-	"github.com/Gitlawb/zero/internal/sandbox"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/sandbox"
 )
 
 func sandboxCheckDeps(t *testing.T) (appDeps, string) {

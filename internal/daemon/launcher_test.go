@@ -6,14 +6,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/sandbox"
+	"github.com/dishant0406/KajiCode/internal/sandbox"
 )
 
 func TestScrubWorkerEnvRemovesReentrancyMarkers(t *testing.T) {
 	in := []string{
 		"PATH=/bin",
 		sandbox.EnvSandboxed + "=1",
-		"ZERO_USER_SETTING=1",
+		"KAJICODE_USER_SETTING=1",
 		sandbox.EnvSandboxBackend + "=bubblewrap",
 		"HOME=/home/u",
 	}
@@ -24,7 +24,7 @@ func TestScrubWorkerEnvRemovesReentrancyMarkers(t *testing.T) {
 			t.Fatalf("re-entrancy marker not scrubbed: %q", kv)
 		}
 	}
-	want := map[string]bool{"PATH=/bin": true, "ZERO_USER_SETTING=1": true, "HOME=/home/u": true}
+	want := map[string]bool{"PATH=/bin": true, "KAJICODE_USER_SETTING=1": true, "HOME=/home/u": true}
 	got := map[string]bool{}
 	for _, kv := range out {
 		got[kv] = true

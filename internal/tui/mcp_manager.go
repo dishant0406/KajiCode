@@ -273,9 +273,9 @@ func (m model) mcpManagerItems() []mcpManagerItem {
 		}
 	}
 	for _, item := range []mcpManagerItem{
-		{Kind: mcpManagerItemAddRemote, Name: "custom-remote", Label: "Add MCP server", Meta: "zero mcp add <name> --url <url>", Detail: "custom remote http sse url"},
-		{Kind: mcpManagerItemAddStdio, Name: "custom-stdio", Label: "Add local stdio MCP", Meta: "zero mcp add <name> -- <command> [args...]", Detail: "custom local stdio command"},
-		{Kind: mcpManagerItemList, Name: "list", Label: "List configured", Meta: "zero mcp list", Detail: "configured installed servers"},
+		{Kind: mcpManagerItemAddRemote, Name: "custom-remote", Label: "Add MCP server", Meta: "kajicode mcp add <name> --url <url>", Detail: "custom remote http sse url"},
+		{Kind: mcpManagerItemAddStdio, Name: "custom-stdio", Label: "Add local stdio MCP", Meta: "kajicode mcp add <name> -- <command> [args...]", Detail: "custom local stdio command"},
+		{Kind: mcpManagerItemList, Name: "list", Label: "List configured", Meta: "kajicode mcp list", Detail: "configured installed servers"},
 	} {
 		if mcpManagerItemMatches(item, query) {
 			items = append(items, item)
@@ -345,36 +345,36 @@ func (m model) mcpManagerOverlay(width int) string {
 
 	state := m.mcpViewState()
 	lines := []string{
-		fillPaletteLine(zeroTheme.ink.Bold(true).Render(pluralCount(len(state.Servers), "server")), innerWidth, transparentSurface),
+		fillPaletteLine(kajicodeTheme.ink.Bold(true).Render(pluralCount(len(state.Servers), "server")), innerWidth, transparentSurface),
 		fillPaletteLine(renderMCPManagerSearchLine(m.mcpManager.query, innerWidth), innerWidth, transparentSurface),
-		zeroTheme.accent.Bold(true).Render("User MCPs"),
+		kajicodeTheme.accent.Bold(true).Render("User MCPs"),
 	}
 	if len(state.Servers) == 0 {
-		lines = append(lines, zeroTheme.faint.Render("  No MCP servers configured."))
+		lines = append(lines, kajicodeTheme.faint.Render("  No MCP servers configured."))
 	}
 	itemLines, _ := m.renderMCPManagerItemLines(innerWidth, items)
 	lines = append(lines, itemLines...)
 	if detail := m.mcpManagerSelectionDetail(innerWidth); len(detail) > 0 {
-		lines = append(lines, zeroTheme.line.Render(strings.Repeat("─", innerWidth)))
+		lines = append(lines, kajicodeTheme.line.Render(strings.Repeat("─", innerWidth)))
 		lines = append(lines, detail...)
 	}
-	lines = append(lines, zeroTheme.line.Render(strings.Repeat("─", innerWidth)))
-	lines = append(lines, fillPaletteLine(zeroTheme.faint.Render("type search   up/down navigate   Enter action   Alt+d disable   Esc close"), innerWidth, transparentSurface))
-	return centerRenderedBlock(styledBlockFillTitle(overlayWidth, "Manage MCP servers", lines, zeroTheme.lineStrong, lipgloss.NewStyle()), width)
+	lines = append(lines, kajicodeTheme.line.Render(strings.Repeat("─", innerWidth)))
+	lines = append(lines, fillPaletteLine(kajicodeTheme.faint.Render("type search   up/down navigate   Enter action   Alt+d disable   Esc close"), innerWidth, transparentSurface))
+	return centerRenderedBlock(styledBlockFillTitle(overlayWidth, "Manage MCP servers", lines, kajicodeTheme.lineStrong, lipgloss.NewStyle()), width)
 }
 
 func renderMCPManagerSearchLine(query string, width int) string {
 	query = strings.TrimSpace(query)
-	prompt := zeroTheme.userPrompt.Render("search > ")
+	prompt := kajicodeTheme.userPrompt.Render("search > ")
 	if query == "" {
-		return fitStyledLine(prompt+zeroTheme.faint.Render("MCP servers, tools, docs..."), width)
+		return fitStyledLine(prompt+kajicodeTheme.faint.Render("MCP servers, tools, docs..."), width)
 	}
-	return fitStyledLine(prompt+zeroTheme.ink.Render(query), width)
+	return fitStyledLine(prompt+kajicodeTheme.ink.Render(query), width)
 }
 
 func (m model) renderMCPManagerItemLines(width int, items []mcpManagerItem) ([]string, []int) {
 	if len(items) == 0 {
-		return []string{fillPaletteLine(zeroTheme.faint.Render("  no MCP actions"), width, transparentSurface)}, []int{-1}
+		return []string{fillPaletteLine(kajicodeTheme.faint.Render("  no MCP actions"), width, transparentSurface)}, []int{-1}
 	}
 	maxVisible := minInt(mcpManagerMaxVisible, len(items))
 	start := selectableListStart(len(items), maxVisible, m.mcpManager.selected)
@@ -385,23 +385,23 @@ func (m model) renderMCPManagerItemLines(width int, items []mcpManagerItem) ([]s
 	for offset, item := range visible {
 		index := start + offset
 		if group := mcpManagerItemGroup(item.Kind); group != "" && group != lastGroup {
-			lines = append(lines, zeroTheme.accent.Bold(true).Render(group))
+			lines = append(lines, kajicodeTheme.accent.Bold(true).Render(group))
 			itemRows = append(itemRows, -1)
 			lastGroup = group
 		}
 		surface := transparentSurface
-		marker := surface(zeroTheme.faintest).Render("  ")
+		marker := surface(kajicodeTheme.faintest).Render("  ")
 		if index == m.mcpManager.selected {
-			surface = zeroTheme.onSel
-			marker = surface(zeroTheme.accent).Render("› ")
+			surface = kajicodeTheme.onSel
+			marker = surface(kajicodeTheme.accent).Render("› ")
 		}
-		left := marker + surface(zeroTheme.ink).Render(item.Label)
+		left := marker + surface(kajicodeTheme.ink).Render(item.Label)
 		right := ""
 		if item.Meta != "" {
-			right = surface(zeroTheme.faint).Render(item.Meta)
+			right = surface(kajicodeTheme.faint).Render(item.Meta)
 		}
 		gap := width - lipgloss.Width(left) - lipgloss.Width(right)
-		line := left + surface(zeroTheme.ink).Render(strings.Repeat(" ", maxInt(1, gap))) + right
+		line := left + surface(kajicodeTheme.ink).Render(strings.Repeat(" ", maxInt(1, gap))) + right
 		lines = append(lines, fillPaletteLine(line, width, surface))
 		itemRows = append(itemRows, index)
 	}
@@ -431,32 +431,32 @@ func (m model) mcpManagerSelectionDetail(width int) []string {
 			return nil
 		}
 		lines := []string{
-			fillPaletteLine(zeroTheme.ink.Bold(true).Render(server.Name)+" "+zeroTheme.faint.Render(server.Transport+" · "+server.State), width, transparentSurface),
+			fillPaletteLine(kajicodeTheme.ink.Bold(true).Render(server.Name)+" "+kajicodeTheme.faint.Render(server.Transport+" · "+server.State), width, transparentSurface),
 		}
 		if target := strings.TrimSpace(server.Target); target != "" {
-			lines = append(lines, fitStyledLine(zeroTheme.faint.Render(target), width))
+			lines = append(lines, fitStyledLine(kajicodeTheme.faint.Render(target), width))
 		}
 		action := "Alt+d disable"
 		if strings.EqualFold(strings.TrimSpace(server.State), "disabled") {
 			action = "Alt+e enable"
 		}
-		lines = append(lines, fillPaletteLine(zeroTheme.faint.Render("Enter check   Alt+c check   "+action+"   Alt+r remove"), width, transparentSurface))
+		lines = append(lines, fillPaletteLine(kajicodeTheme.faint.Render("Enter check   Alt+c check   "+action+"   Alt+r remove"), width, transparentSurface))
 		return lines
 	case mcpManagerItemMarketplace:
 		lines := []string{
-			fillPaletteLine(zeroTheme.ink.Bold(true).Render(item.Label)+" "+zeroTheme.faint.Render(item.Meta), width, transparentSurface),
+			fillPaletteLine(kajicodeTheme.ink.Bold(true).Render(item.Label)+" "+kajicodeTheme.faint.Render(item.Meta), width, transparentSurface),
 		}
 		if detail := firstMCPMarketplaceDetailLine(item); detail != "" {
-			lines = append(lines, fitStyledLine(zeroTheme.faint.Render(detail), width))
+			lines = append(lines, fitStyledLine(kajicodeTheme.faint.Render(detail), width))
 		}
-		lines = append(lines, fillPaletteLine(zeroTheme.faint.Render("Enter fills composer: "+item.InstallCommand), width, transparentSurface))
+		lines = append(lines, fillPaletteLine(kajicodeTheme.faint.Render("Enter fills composer: "+item.InstallCommand), width, transparentSurface))
 		return lines
 	case mcpManagerItemAddRemote:
-		return []string{fillPaletteLine(zeroTheme.faint.Render("Enter fills composer: /mcp add <name> --url <url>"), width, transparentSurface)}
+		return []string{fillPaletteLine(kajicodeTheme.faint.Render("Enter fills composer: /mcp add <name> --url <url>"), width, transparentSurface)}
 	case mcpManagerItemAddStdio:
-		return []string{fillPaletteLine(zeroTheme.faint.Render("Enter fills composer: /mcp add <name> -- <command> [args...]"), width, transparentSurface)}
+		return []string{fillPaletteLine(kajicodeTheme.faint.Render("Enter fills composer: /mcp add <name> -- <command> [args...]"), width, transparentSurface)}
 	case mcpManagerItemList:
-		return []string{fillPaletteLine(zeroTheme.faint.Render("Enter runs zero mcp list and refreshes this manager."), width, transparentSurface)}
+		return []string{fillPaletteLine(kajicodeTheme.faint.Render("Enter runs kajicode mcp list and refreshes this manager."), width, transparentSurface)}
 	default:
 		return nil
 	}

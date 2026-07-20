@@ -17,8 +17,8 @@ reviews:
     - "!out/**"
     - "!coverage/**"
     - "!*.tgz"
-    - "!/zero"
-    - "!/zero.exe"
+    - "!/kajicode"
+    - "!/kajicode.exe"
   path_instructions:
     - path: "src/**/*.ts"
       instructions: |

@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/Gitlawb/zero/internal/fsutil"
+	"github.com/dishant0406/KajiCode/internal/fsutil"
 )
 
 const windowsUnelevatedSetupMarkerSchemaVersion = 1

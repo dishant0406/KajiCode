@@ -14,7 +14,7 @@ import (
 )
 
 func TestSetActiveProviderSwitchesConfiguredProvider(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "zero.json")
+	path := filepath.Join(t.TempDir(), "kajicode.json")
 	writeConfigFixture(t, path, FileConfig{
 		ActiveProvider: "OpenAI",
 		Providers: []ProviderProfile{
@@ -47,7 +47,7 @@ func TestSetActiveProviderSwitchesConfiguredProvider(t *testing.T) {
 }
 
 func TestSetActiveProviderRejectsUnknownProviderWithoutRewriting(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "zero.json")
+	path := filepath.Join(t.TempDir(), "kajicode.json")
 	before := writeConfigFixture(t, path, FileConfig{
 		ActiveProvider: "openai",
 		Providers: []ProviderProfile{
@@ -76,7 +76,7 @@ func TestSetActiveProviderRejectsUnknownProviderWithoutRewriting(t *testing.T) {
 }
 
 func TestSetActiveProviderRejectsEmptyProviderName(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "zero.json")
+	path := filepath.Join(t.TempDir(), "kajicode.json")
 	before := writeConfigFixture(t, path, FileConfig{
 		ActiveProvider: "openai",
 		Providers: []ProviderProfile{
@@ -112,7 +112,7 @@ func TestSetActiveProviderRejectsEmptyConfigPath(t *testing.T) {
 }
 
 func TestSetActiveProviderRejectsMissingConfig(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "zero.json")
+	path := filepath.Join(t.TempDir(), "kajicode.json")
 
 	_, err := SetActiveProvider(path, "openai")
 	if err == nil {
@@ -128,7 +128,7 @@ func TestSetActiveProviderTightensExistingConfigFilePermissions(t *testing.T) {
 		t.Skip("Windows does not expose POSIX mode bits reliably")
 	}
 
-	path := filepath.Join(t.TempDir(), "zero.json")
+	path := filepath.Join(t.TempDir(), "kajicode.json")
 	writeConfigFixture(t, path, FileConfig{
 		ActiveProvider: "openai",
 		Providers: []ProviderProfile{
@@ -152,7 +152,7 @@ func TestSetActiveProviderTightensExistingConfigFilePermissions(t *testing.T) {
 }
 
 func TestSetProviderModelUpdatesConfiguredProvider(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "zero.json")
+	path := filepath.Join(t.TempDir(), "kajicode.json")
 	writeConfigFixture(t, path, FileConfig{
 		ActiveProvider: "openai",
 		Providers: []ProviderProfile{
@@ -195,7 +195,7 @@ func TestSetProviderModelUpdatesConfiguredProvider(t *testing.T) {
 }
 
 func TestSetProviderModelRejectsUnknownProviderWithoutRewriting(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "zero.json")
+	path := filepath.Join(t.TempDir(), "kajicode.json")
 	before := writeConfigFixture(t, path, FileConfig{
 		ActiveProvider: "openai",
 		Providers: []ProviderProfile{
@@ -222,7 +222,7 @@ func TestUpsertProviderTightensExistingConfigFilePermissions(t *testing.T) {
 		t.Skip("Windows does not expose POSIX mode bits reliably")
 	}
 
-	path := filepath.Join(t.TempDir(), "zero.json")
+	path := filepath.Join(t.TempDir(), "kajicode.json")
 	if err := os.WriteFile(path, []byte(`{"providers":[]}`), 0o644); err != nil {
 		t.Fatalf("write existing config: %v", err)
 	}
@@ -247,7 +247,7 @@ func TestUpsertProviderTightensExistingConfigFilePermissions(t *testing.T) {
 }
 
 func TestSetFavoriteModelsPersistsUserPreferences(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "zero.json")
+	path := filepath.Join(t.TempDir(), "kajicode.json")
 	writeConfigFixture(t, path, FileConfig{
 		ActiveProvider: "openai",
 		Providers: []ProviderProfile{
@@ -274,7 +274,7 @@ func TestSetFavoriteModelsPersistsUserPreferences(t *testing.T) {
 }
 
 func TestSetRecentModelsPersistsOrderDedupesAndCaps(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "zero.json")
+	path := filepath.Join(t.TempDir(), "kajicode.json")
 	writeConfigFixture(t, path, FileConfig{
 		ActiveProvider: "openai",
 		Providers: []ProviderProfile{
@@ -318,7 +318,7 @@ func TestSetRecentModelsPersistsOrderDedupesAndCaps(t *testing.T) {
 // Two providers offering the same model id must both survive normalization —
 // recent history de-duplicates by provider+model pair, not model id alone.
 func TestSetRecentModelsDedupesByProviderAndModelPair(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "zero.json")
+	path := filepath.Join(t.TempDir(), "kajicode.json")
 
 	cfg, err := SetRecentModels(path, []RecentModelEntry{
 		{Provider: "provider-a", Model: "shared-model"},
@@ -337,7 +337,7 @@ func TestSetRecentModelsDedupesByProviderAndModelPair(t *testing.T) {
 }
 
 func TestSetThemePersistsUserPreference(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "zero.json")
+	path := filepath.Join(t.TempDir(), "kajicode.json")
 	writeConfigFixture(t, path, FileConfig{
 		ActiveProvider: "openai",
 		Providers: []ProviderProfile{
@@ -375,7 +375,7 @@ func TestRecapsPreferenceRoundTrips(t *testing.T) {
 		t.Error("unset recaps should default to ON")
 	}
 
-	path := filepath.Join(t.TempDir(), "zero.json")
+	path := filepath.Join(t.TempDir(), "kajicode.json")
 	writeConfigFixture(t, path, FileConfig{ActiveProvider: "openai"}, 0o600)
 
 	// Persist OFF, then read it back.
@@ -408,7 +408,7 @@ func TestRecapsPreferenceRoundTrips(t *testing.T) {
 }
 
 func TestSetFavoriteModelsCreatesMissingConfig(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "zero", "config.json")
+	path := filepath.Join(t.TempDir(), "kajicode", "config.json")
 
 	cfg, err := SetFavoriteModels(path, []string{"glm-5.1"})
 	if err != nil {
@@ -451,7 +451,7 @@ func readConfigFixture(t *testing.T, path string) FileConfig {
 }
 
 func TestEnsureCatalogProviderCreatesProfileWithoutStealingActive(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "zero.json")
+	path := filepath.Join(t.TempDir(), "kajicode.json")
 	writeConfigFixture(t, path, FileConfig{
 		ActiveProvider: "opengateway",
 		Providers: []ProviderProfile{
@@ -499,7 +499,7 @@ func TestEnsureCatalogProviderCreatesProfileWithoutStealingActive(t *testing.T) 
 }
 
 func TestEnsureCatalogProviderLeavesExistingProfileUntouched(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "zero.json")
+	path := filepath.Join(t.TempDir(), "kajicode.json")
 	original := FileConfig{
 		ActiveProvider: "opengateway",
 		Providers: []ProviderProfile{
@@ -530,7 +530,7 @@ func TestEnsureCatalogProviderLeavesExistingProfileUntouched(t *testing.T) {
 }
 
 func TestEnsureCatalogProviderActivatesOnEmptyConfig(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "zero.json")
+	path := filepath.Join(t.TempDir(), "kajicode.json")
 
 	ensured, err := EnsureCatalogProvider(path, "chatgpt")
 	if err != nil {
@@ -545,7 +545,7 @@ func TestEnsureCatalogProviderActivatesOnEmptyConfig(t *testing.T) {
 }
 
 func TestEnsureCatalogProviderRejectsUnknownCatalogID(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "zero.json")
+	path := filepath.Join(t.TempDir(), "kajicode.json")
 	if _, err := EnsureCatalogProvider(path, "no-such-provider"); err == nil {
 		t.Fatalf("expected unknown catalog id to error")
 	}
@@ -555,7 +555,7 @@ func TestEnsureCatalogProviderRejectsUnknownCatalogID(t *testing.T) {
 }
 
 func TestMarkProviderAPIKeyStoredClearsInlineAndEnvKey(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "zero.json")
+	path := filepath.Join(t.TempDir(), "kajicode.json")
 	writeConfigFixture(t, path, FileConfig{
 		ActiveProvider: "openrouter",
 		Providers: []ProviderProfile{{
@@ -585,7 +585,7 @@ func TestMarkProviderAPIKeyStoredClearsInlineAndEnvKey(t *testing.T) {
 }
 
 func TestRemoveProviderDeletesAndHandsOffActive(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "zero.json")
+	path := filepath.Join(t.TempDir(), "kajicode.json")
 	writeConfigFixture(t, path, FileConfig{
 		ActiveProvider: "beta",
 		Providers: []ProviderProfile{
@@ -621,7 +621,7 @@ func TestRemoveProviderDeletesAndHandsOffActive(t *testing.T) {
 }
 
 func TestRemoveProviderKeepsActiveWhenOtherRemoved(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "zero.json")
+	path := filepath.Join(t.TempDir(), "kajicode.json")
 	writeConfigFixture(t, path, FileConfig{
 		ActiveProvider: "alpha",
 		Providers: []ProviderProfile{
@@ -640,7 +640,7 @@ func TestRemoveProviderKeepsActiveWhenOtherRemoved(t *testing.T) {
 }
 
 func TestRemoveProviderRejectsUnknownWithoutRewriting(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "zero.json")
+	path := filepath.Join(t.TempDir(), "kajicode.json")
 	before := writeConfigFixture(t, path, FileConfig{
 		ActiveProvider: "alpha",
 		Providers:      []ProviderProfile{{Name: "alpha", ProviderKind: ProviderKindOpenAICompatible, BaseURL: "https://a.example.com/v1", Model: "m1"}},
@@ -662,7 +662,7 @@ func TestRenameProviderFollowsActiveAndMigratesStoredKey(t *testing.T) {
 	dir := t.TempDir()
 	// Force the file credential backend so the test never touches the real OS
 	// keyring regardless of platform.
-	t.Setenv("ZERO_CRED_STORAGE", "encrypted-file")
+	t.Setenv("KAJICODE_CRED_STORAGE", "encrypted-file")
 	path := filepath.Join(dir, "config.json")
 	writeConfigFixture(t, path, FileConfig{
 		ActiveProvider: "oldname",
@@ -703,7 +703,7 @@ func TestRenameProviderFollowsActiveAndMigratesStoredKey(t *testing.T) {
 }
 
 func TestRenameProviderRejectsCollisionAndUnknown(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "zero.json")
+	path := filepath.Join(t.TempDir(), "kajicode.json")
 	before := writeConfigFixture(t, path, FileConfig{
 		ActiveProvider: "alpha",
 		Providers: []ProviderProfile{
@@ -728,7 +728,7 @@ func TestRenameProviderRejectsCollisionAndUnknown(t *testing.T) {
 }
 
 func TestUpsertProviderPreservesStoredKeyMarkerOnExistingProfile(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "zero.json")
+	path := filepath.Join(t.TempDir(), "kajicode.json")
 	// An env-keyed profile with NO stored-key marker — the shape a provider has
 	// before its key is captured into the credential store.
 	writeConfigFixture(t, path, FileConfig{
@@ -757,7 +757,7 @@ func TestUpsertProviderPreservesStoredKeyMarkerOnExistingProfile(t *testing.T) {
 }
 
 func TestSetProviderDescriptionSetsAndClears(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "zero.json")
+	path := filepath.Join(t.TempDir(), "kajicode.json")
 	writeConfigFixture(t, path, FileConfig{
 		ActiveProvider: "alpha",
 		Providers: []ProviderProfile{
@@ -797,7 +797,7 @@ func TestRenameProviderRollsBackKeyMigrationWhenConfigWriteFails(t *testing.T) {
 		t.Skip("uses chflags uchg to force the config write to fail; macOS only")
 	}
 	dir := t.TempDir()
-	t.Setenv("ZERO_CRED_STORAGE", "encrypted-file")
+	t.Setenv("KAJICODE_CRED_STORAGE", "encrypted-file")
 	path := filepath.Join(dir, "config.json")
 	writeConfigFixture(t, path, FileConfig{
 		ActiveProvider: "oldname",
@@ -839,7 +839,7 @@ func TestRenameProviderRollsBackKeyMigrationWhenConfigWriteFails(t *testing.T) {
 // migrating would Set and then Delete the same key, losing it (PR #560 review).
 func TestRenameProviderCaseOnlyKeepsStoredKey(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("ZERO_CRED_STORAGE", "encrypted-file")
+	t.Setenv("KAJICODE_CRED_STORAGE", "encrypted-file")
 	path := filepath.Join(dir, "config.json")
 	writeConfigFixture(t, path, FileConfig{
 		ActiveProvider: "groq",
@@ -871,7 +871,7 @@ func TestRenameProviderCaseOnlyKeepsStoredKey(t *testing.T) {
 
 func TestEditProviderAppliesRenameFieldsAndDescriptionAtomically(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("ZERO_CRED_STORAGE", "encrypted-file")
+	t.Setenv("KAJICODE_CRED_STORAGE", "encrypted-file")
 	path := filepath.Join(dir, "config.json")
 	writeConfigFixture(t, path, FileConfig{
 		ActiveProvider: "groq",
@@ -922,7 +922,7 @@ func TestEditProviderAppliesRenameFieldsAndDescriptionAtomically(t *testing.T) {
 // entry (case-normalized) survives.
 func TestEditProviderCaseOnlyRenameUpdatesInPlace(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("ZERO_CRED_STORAGE", "encrypted-file")
+	t.Setenv("KAJICODE_CRED_STORAGE", "encrypted-file")
 	path := filepath.Join(dir, "config.json")
 	writeConfigFixture(t, path, FileConfig{
 		ActiveProvider: "groq",
@@ -964,7 +964,7 @@ func TestEditProviderCaseOnlyRenameUpdatesInPlace(t *testing.T) {
 // rename migration moves it, so the new key lands under the new name.
 func TestEditProviderRenameMigratesFreshlyCapturedKey(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("ZERO_CRED_STORAGE", "encrypted-file")
+	t.Setenv("KAJICODE_CRED_STORAGE", "encrypted-file")
 	path := filepath.Join(dir, "config.json")
 	writeConfigFixture(t, path, FileConfig{
 		ActiveProvider: "gw",

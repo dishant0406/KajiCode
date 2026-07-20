@@ -5,9 +5,9 @@ import (
 	"math"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/modelregistry"
-	"github.com/Gitlawb/zero/internal/sessions"
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
+	"github.com/dishant0406/KajiCode/internal/modelregistry"
+	"github.com/dishant0406/KajiCode/internal/sessions"
 )
 
 // The persistence round-trip is LOSSLESS for cost: a cache-heavy + reasoning turn
@@ -23,7 +23,7 @@ func TestEventUsageRoundTripPreservesCacheAndReasoningCost(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Require: %v", err)
 	}
-	live := zeroruntime.Usage{
+	live := kajicoderuntime.Usage{
 		InputTokens:       500_000,
 		CachedInputTokens: 400_000,
 		CacheWriteTokens:  50_000,
@@ -55,7 +55,7 @@ func TestEventUsageRoundTripPreservesCacheAndReasoningCost(t *testing.T) {
 
 	// Regression guard: the old lossy reconstruction (prompt/completion only) bills
 	// all 500k input at the full rate — strictly MORE than the true cost.
-	lossy, err := modelregistry.CalculateCost(model, zeroruntime.Usage{InputTokens: 500_000, OutputTokens: 20_000})
+	lossy, err := modelregistry.CalculateCost(model, kajicoderuntime.Usage{InputTokens: 500_000, OutputTokens: 20_000})
 	if err != nil {
 		t.Fatalf("CalculateCost(lossy): %v", err)
 	}
@@ -64,10 +64,10 @@ func TestEventUsageRoundTripPreservesCacheAndReasoningCost(t *testing.T) {
 	}
 }
 
-// Zero cache/reasoning fields are omitted so non-cache turns stay compact and
+// KajiCode cache/reasoning fields are omitted so non-cache turns stay compact and
 // decode identically to the pre-feature payload.
 func TestEventUsagePayloadOmitsZeroFields(t *testing.T) {
-	p := EventUsagePayload(zeroruntime.Usage{InputTokens: 1000, OutputTokens: 200})
+	p := EventUsagePayload(kajicoderuntime.Usage{InputTokens: 1000, OutputTokens: 200})
 	for _, k := range []string{"cachedInputTokens", "cacheWriteTokens", "reasoningTokens"} {
 		if _, ok := p[k]; ok {
 			t.Errorf("expected %q omitted when zero", k)

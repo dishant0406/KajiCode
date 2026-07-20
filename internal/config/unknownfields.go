@@ -17,7 +17,7 @@ import (
 // allowed because FileConfig.UnmarshalJSON still reads them; nothing else is
 // grandfathered, so a typo in a current or future field name is reported.
 // Detection only inspects the documented JSON schema (struct json tags), so a
-// config written by a newer Zero that carries genuinely new fields is still
+// config written by a newer KajiCode that carries genuinely new fields is still
 // loaded and merged normally — only validate/doctor call this, and they
 // surface the unknown keys as issues rather than rejecting the file.
 func unknownFieldIssues(data []byte) []Issue {

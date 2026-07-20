@@ -15,34 +15,34 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/agent"
-	"github.com/Gitlawb/zero/internal/config"
-	"github.com/Gitlawb/zero/internal/hooks"
-	"github.com/Gitlawb/zero/internal/localcontrol"
-	"github.com/Gitlawb/zero/internal/mcp"
-	"github.com/Gitlawb/zero/internal/modelregistry"
-	"github.com/Gitlawb/zero/internal/observability"
-	"github.com/Gitlawb/zero/internal/plugins"
-	"github.com/Gitlawb/zero/internal/providerhealth"
-	"github.com/Gitlawb/zero/internal/providermodeldiscovery"
-	"github.com/Gitlawb/zero/internal/provideroauth"
-	"github.com/Gitlawb/zero/internal/provideronboarding"
-	"github.com/Gitlawb/zero/internal/providers"
-	"github.com/Gitlawb/zero/internal/redaction"
-	"github.com/Gitlawb/zero/internal/sandbox"
-	"github.com/Gitlawb/zero/internal/selfverify"
-	"github.com/Gitlawb/zero/internal/sessions"
-	"github.com/Gitlawb/zero/internal/skills"
-	"github.com/Gitlawb/zero/internal/specialist"
-	"github.com/Gitlawb/zero/internal/swarm"
-	"github.com/Gitlawb/zero/internal/tools"
-	"github.com/Gitlawb/zero/internal/tui"
-	"github.com/Gitlawb/zero/internal/update"
-	"github.com/Gitlawb/zero/internal/verify"
-	"github.com/Gitlawb/zero/internal/worktrees"
-	"github.com/Gitlawb/zero/internal/zerogit"
-	"github.com/Gitlawb/zero/internal/zeroruntime"
 	"github.com/charmbracelet/x/term"
+	"github.com/dishant0406/KajiCode/internal/agent"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/hooks"
+	"github.com/dishant0406/KajiCode/internal/kajicodegit"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
+	"github.com/dishant0406/KajiCode/internal/localcontrol"
+	"github.com/dishant0406/KajiCode/internal/mcp"
+	"github.com/dishant0406/KajiCode/internal/modelregistry"
+	"github.com/dishant0406/KajiCode/internal/observability"
+	"github.com/dishant0406/KajiCode/internal/plugins"
+	"github.com/dishant0406/KajiCode/internal/providerhealth"
+	"github.com/dishant0406/KajiCode/internal/providermodeldiscovery"
+	"github.com/dishant0406/KajiCode/internal/provideroauth"
+	"github.com/dishant0406/KajiCode/internal/provideronboarding"
+	"github.com/dishant0406/KajiCode/internal/providers"
+	"github.com/dishant0406/KajiCode/internal/redaction"
+	"github.com/dishant0406/KajiCode/internal/sandbox"
+	"github.com/dishant0406/KajiCode/internal/selfverify"
+	"github.com/dishant0406/KajiCode/internal/sessions"
+	"github.com/dishant0406/KajiCode/internal/skills"
+	"github.com/dishant0406/KajiCode/internal/specialist"
+	"github.com/dishant0406/KajiCode/internal/swarm"
+	"github.com/dishant0406/KajiCode/internal/tools"
+	"github.com/dishant0406/KajiCode/internal/tui"
+	"github.com/dishant0406/KajiCode/internal/update"
+	"github.com/dishant0406/KajiCode/internal/verify"
+	"github.com/dishant0406/KajiCode/internal/worktrees"
 )
 
 var version = "dev"
@@ -53,7 +53,7 @@ type appDeps struct {
 	userConfigPath   func() (string, error)
 	resolveConfig    func(workspaceRoot string, overrides config.Overrides) (config.ResolvedConfig, error)
 	resolveMCPConfig func(workspaceRoot string, excludeProject bool) (config.MCPConfig, error)
-	newProvider      func(config.ProviderProfile) (zeroruntime.Provider, error)
+	newProvider      func(config.ProviderProfile) (kajicoderuntime.Provider, error)
 	// exportActiveProvider pins spawned children to the run's provider (production:
 	// config.SetActiveProviderEnv, set in defaultAppDeps — deliberately NOT filled
 	// by fillAppDeps, so tests never mutate the process environment unless they
@@ -80,10 +80,10 @@ type appDeps struct {
 	runVerify              func(context.Context, verify.Plan, verify.RunOptions) verify.Report
 	runSelfVerify          func(context.Context, verify.Plan, selfverify.Options) selfverify.Report
 	runAgentEval           func(context.Context, agentEvalOptions) (agentEvalReport, error)
-	inspectChanges         func(context.Context, zerogit.InspectOptions) (zerogit.ChangeSummary, error)
-	commitChanges          func(context.Context, zerogit.CommitOptions) (zerogit.CommitResult, error)
-	pushChanges            func(context.Context, zerogit.PushOptions) (zerogit.PushResult, error)
-	createPR               func(context.Context, zerogit.PROptions) (zerogit.PRResult, error)
+	inspectChanges         func(context.Context, kajicodegit.InspectOptions) (kajicodegit.ChangeSummary, error)
+	commitChanges          func(context.Context, kajicodegit.CommitOptions) (kajicodegit.CommitResult, error)
+	pushChanges            func(context.Context, kajicodegit.PushOptions) (kajicodegit.PushResult, error)
+	createPR               func(context.Context, kajicodegit.PROptions) (kajicodegit.PRResult, error)
 	runTUI                 func(context.Context, tui.Options) int
 	runEditor              func(string) error
 	checkUpdate            func(context.Context, update.Options) (update.Result, error)
@@ -134,7 +134,7 @@ func defaultAppDeps() appDeps {
 			options.ExcludeProject = excludeProject
 			return config.ResolveMCP(options)
 		},
-		newProvider: func(profile config.ProviderProfile) (zeroruntime.Provider, error) {
+		newProvider: func(profile config.ProviderProfile) (kajicoderuntime.Provider, error) {
 			// Resolve the OAuth login ONCE: the bearer resolver and the login key it
 			// bound must describe the same login (the key is passed on to the Codex
 			// account-header resolver so it never re-selects independently).
@@ -185,10 +185,10 @@ func defaultAppDeps() appDeps {
 		runVerify:        verify.Run,
 		runSelfVerify:    selfverify.Run,
 		runAgentEval:     defaultRunAgentEval,
-		inspectChanges:   zerogit.Inspect,
-		commitChanges:    zerogit.Commit,
-		pushChanges:      zerogit.Push,
-		createPR:         zerogit.CreatePR,
+		inspectChanges:   kajicodegit.Inspect,
+		commitChanges:    kajicodegit.Commit,
+		pushChanges:      kajicodegit.Push,
+		createPR:         kajicodegit.CreatePR,
 		runTUI:           tui.Run,
 		runEditor:        openEditor,
 		checkUpdate:      update.Check,
@@ -198,11 +198,11 @@ func defaultAppDeps() appDeps {
 }
 
 func userAgent() string {
-	return "zero/" + version
+	return "kajicode/" + version
 }
 
 // defaultUserPluginsDir resolves the user-scoped plugins root
-// ($XDG_CONFIG_HOME/zero/plugins) used as the install target for `plugin add`
+// ($XDG_CONFIG_HOME/kajicode/plugins) used as the install target for `plugin add`
 // and the toolbox for `tools make`. It is the SourceUser root from
 // plugins.ResolveRoots; an empty string is returned only if it cannot be
 // resolved, which the command layer surfaces as an error.
@@ -221,7 +221,7 @@ func defaultUserPluginsDir() string {
 
 func runWithDeps(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) (exitCode int) {
 	// Self-dispatch as the Windows sandbox helper. When no standalone helper .exe
-	// is shipped (dev / plain `go build`), the sandbox launches the running zero
+	// is shipped (dev / plain `go build`), the sandbox launches the running KajiCode
 	// binary with one of these hidden subcommands instead of a separate
 	// executable (see resolveWindowsSandboxHelper). Routed before crash-recover,
 	// dep-fill, and --add-dir splitting so it can never collide with a real
@@ -252,7 +252,7 @@ func runWithDeps(args []string, stdout io.Writer, stderr io.Writer, deps appDeps
 	}
 	// --theme <name> selects the TUI palette non-interactively (auto or any registered
 	// theme; populates tui.Options.Theme, which resolveThemeMode prefers over
-	// ZERO_THEME). Re-split --add-dir afterward so it may appear on either side of --theme.
+	// KAJICODE_THEME). Re-split --add-dir afterward so it may appear on either side of --theme.
 	theme, args, err := splitLeadingThemeFlag(args)
 	if err != nil {
 		return writeAppError(stderr, err.Error(), 1)
@@ -318,11 +318,11 @@ func runWithDeps(args []string, stdout io.Writer, stderr io.Writer, deps appDeps
 		}
 		// This path launches the interactive TUI, which takes no positional prompt or
 		// subcommand. Reject any remaining trailing arg loudly instead of silently
-		// dropping it, so `zero --skip-permissions-unsafe "fix bug"` doesn't appear to
+		// dropping it, so `kajicode --skip-permissions-unsafe "fix bug"` doesn't appear to
 		// hang in the TUI with the prompt discarded. (AUDIT-L3)
 		for _, arg := range rest {
 			if strings.TrimSpace(arg) != "" {
-				return writeAppError(stderr, "--skip-permissions-unsafe launches the interactive TUI and takes no prompt or subcommand; for a one-shot unsafe run use `zero exec --skip-permissions-unsafe -p \"...\"`", 1)
+				return writeAppError(stderr, "--skip-permissions-unsafe launches the interactive TUI and takes no prompt or subcommand; for a one-shot unsafe run use `kajicode exec --skip-permissions-unsafe -p \"...\"`", 1)
 			}
 		}
 		return runInteractiveTUI(stderr, deps, agent.PermissionModeUnsafe, append(append([]string{}, addDirs...), moreDirs...), skipTheme)
@@ -334,23 +334,23 @@ func runWithDeps(args []string, stdout io.Writer, stderr io.Writer, deps appDeps
 	case "-v", "--version", "version":
 		for _, a := range args[1:] {
 			if a == "-h" || a == "--help" {
-				if _, err := fmt.Fprintln(stdout, "Usage: zero version\n\nPrint the Zero CLI version. Takes no flags."); err != nil {
+				if _, err := fmt.Fprintln(stdout, "Usage: kajicode version\n\nPrint the KajiCode CLI version. Takes no flags."); err != nil {
 					return 1
 				}
 				return 0
 			}
 		}
 		// Pipes and redirects keep the machine-readable contract exactly as it
-		// was: a single "zero <version>" line. Scripts, command substitutions,
+		// was: a single "kajicode <version>" line. Scripts, command substitutions,
 		// and the NPM wrapper smoke check all parse that record, so the banner
 		// is strictly a TTY affordance.
 		if !stdoutIsTerminal(stdout) {
-			if _, err := fmt.Fprintf(stdout, "zero %s\n", version); err != nil {
+			if _, err := fmt.Fprintf(stdout, "kajicode %s\n", version); err != nil {
 				return 1
 			}
 			return 0
 		}
-		if _, err := fmt.Fprintf(stdout, "%s\n\nzero %s\n", tui.Wordmark(), version); err != nil {
+		if _, err := fmt.Fprintf(stdout, "%s\n\nkajicode %s\n", tui.Wordmark(), version); err != nil {
 			return 1
 		}
 		return 0
@@ -360,7 +360,7 @@ func runWithDeps(args []string, stdout io.Writer, stderr io.Writer, deps appDeps
 		}
 		// Forward leading --add-dir occurrences so exec's own parser collects them.
 		// Use the inline --prompt=<value> form so a prompt whose first character is a
-		// dash (e.g. `zero -p "-foo"`) is taken verbatim instead of being mistaken for
+		// dash (e.g. `kajicode -p "-foo"`) is taken verbatim instead of being mistaken for
 		// a flag and rejected with "--prompt requires a value" (matches the cron path).
 		execArgs := append(addDirFlagArgs(addDirs), "--prompt="+args[1])
 		execArgs = append(execArgs, args[2:]...)
@@ -438,15 +438,15 @@ func runWithDeps(args []string, stdout io.Writer, stderr io.Writer, deps appDeps
 		if _, err := fmt.Fprintf(stderr, "unknown command %q\n", args[0]); err != nil {
 			return 1
 		}
-		// First-run users reach for `zero login`/`zero logout` (reported in the
+		// First-run users reach for `kajicode login`/`kajicode logout` (reported in the
 		// wild); point them at the real command instead of a bare usage pointer.
 		switch strings.ToLower(args[0]) {
 		case "login", "logout":
-			if _, err := fmt.Fprintf(stderr, "did you mean %q?\n", "zero auth "+strings.ToLower(args[0])); err != nil {
+			if _, err := fmt.Fprintf(stderr, "did you mean %q?\n", "kajicode auth "+strings.ToLower(args[0])); err != nil {
 				return 1
 			}
 		}
-		if _, err := fmt.Fprintln(stderr, "Run zero --help for usage."); err != nil {
+		if _, err := fmt.Fprintln(stderr, "Run kajicode --help for usage."); err != nil {
 			return 1
 		}
 		return 2
@@ -571,7 +571,7 @@ func fillAppDeps(deps appDeps) appDeps {
 	// safe and idempotent for every profile kind and every injected newProvider.
 	baseNewProvider := deps.newProvider
 	userConfigPath := deps.userConfigPath
-	deps.newProvider = func(profile config.ProviderProfile) (zeroruntime.Provider, error) {
+	deps.newProvider = func(profile config.ProviderProfile) (kajicoderuntime.Provider, error) {
 		return baseNewProvider(applyStoredProviderKeyAt(profile, userConfigPath))
 	}
 	baseProbeProviderHealth := deps.probeProviderHealth
@@ -604,10 +604,10 @@ func runInteractiveTUIWithSetup(stderr io.Writer, deps appDeps, permissionMode a
 		// can onboard/repair, instead of exiting with an error they can only fix
 		// by hand-editing config.json. That covers a missing/unresolvable active
 		// provider and an active provider without a model (custom endpoints have
-		// no catalog default) — previously the second shape bricked bare `zero`
-		// and `zero setup`, the exact commands that could have fixed it. Any
+		// no catalog default) — previously the second shape bricked bare `kajicode`
+		// and `kajicode setup`, the exact commands that could have fixed it. Any
 		// other error (malformed JSON, directory conflict, etc.) is still fatal,
-		// and headless commands (zero config / zero exec) still fail with the
+		// and headless commands (kajicode config / kajicode exec) still fail with the
 		// actionable message.
 		if !errors.Is(err, config.ErrNoActiveProvider) && !errors.Is(err, config.ErrProviderRequiresModel) {
 			return writeAppError(stderr, err.Error(), 1)
@@ -649,7 +649,7 @@ func runInteractiveTUIWithSetup(stderr io.Writer, deps appDeps, permissionMode a
 		// The active provider lacks a usable credential, but if another saved
 		// provider already has one, fall back to it instead of forcing onboarding
 		// again. Saved logins persist across launches; switch the active provider
-		// any time with `zero provider use <name>`. Onboarding only runs when no
+		// any time with `kajicode provider use <name>`. Onboarding only runs when no
 		// configured provider is usable (a genuinely fresh setup).
 		if usable, ok := firstUsableProvider(resolved.Providers); ok {
 			resolved.Provider = usable
@@ -685,7 +685,7 @@ func runInteractiveTUIWithSetup(stderr io.Writer, deps appDeps, permissionMode a
 	defer closeSpecialistRuntime(stderr, specialistRuntime)
 	// The TUI has no --worktree reassignment, so trustRoot == workspaceRoot here.
 	// Gate the project MCP layer behind the workspace-trust check (fail-closed): an
-	// untrusted workspace must not spawn its ./.zero/config.json stdio MCP servers.
+	// untrusted workspace must not spawn its ./.kajicode/config.json stdio MCP servers.
 	// Keep the store-read error so the notice below can distinguish a fail-closed
 	// store error from a clean untrusted verdict.
 	mcpExcludeProject, mcpTrustErrored := resolveTrust(workspaceRoot)
@@ -703,7 +703,7 @@ func runInteractiveTUIWithSetup(stderr io.Writer, deps appDeps, permissionMode a
 	}
 	mcpTokenStore, err := deps.newMCPTokenStore()
 	if err != nil {
-		_, _ = fmt.Fprintf(stderr, "[zero] warning: failed to initialize MCP OAuth tokens: %s\n", err)
+		_, _ = fmt.Fprintf(stderr, "[kajicode] warning: failed to initialize MCP OAuth tokens: %s\n", err)
 		mcpTokenStore = nil
 		err = nil
 	}
@@ -779,9 +779,9 @@ func runInteractiveTUIWithSetup(stderr io.Writer, deps appDeps, permissionMode a
 	sttServerManager := newDictationServerManager(resolved.STT)
 	// Keep STT downloads in the SAME config tree the rest of the TUI uses. Deriving
 	// from userConfigPath (rather than config.UserConfigDir()) matters when the config
-	// root is overridden — e.g. in tests or a custom ZERO config dir — so the two
-	// don't diverge. userConfigPath points at .../zero/config.json, so its dir is the
-	// zero config dir.
+	// root is overridden — e.g. in tests or a custom KAJICODE config dir — so the two
+	// don't diverge. userConfigPath points at .../kajicode/config.json, so its dir is the
+	// kajicode config dir.
 	sttDownloadRoot := ""
 	if userConfigPath != "" {
 		sttDownloadRoot = filepath.Join(filepath.Dir(userConfigPath), "stt")
@@ -900,7 +900,7 @@ func tuiSandboxSetupCommand(backend sandbox.Backend, deps appDeps) func(context.
 // buildProvider constructs the run's provider at STARTUP — it is called only from
 // the two launch paths (interactive TUI and headless exec), never from mid-run
 // rebuilds (escalation, wizard, ACP go through deps.newProvider directly).
-func buildProvider(resolved config.ResolvedConfig, deps appDeps) (zeroruntime.Provider, error) {
+func buildProvider(resolved config.ResolvedConfig, deps appDeps) (kajicoderuntime.Provider, error) {
 	if !config.HasProviderProfile(resolved.Provider) {
 		return nil, nil
 	}
@@ -913,7 +913,7 @@ func buildProvider(resolved config.ResolvedConfig, deps appDeps) (zeroruntime.Pr
 	// Pin spawned children (sub-agents / swarm members inherit the environment) to
 	// THIS run's provider from launch, not only after an in-session switch. Without
 	// the launch-time export a child re-resolves config.json at spawn time, so a
-	// provider switch persisted by ANOTHER zero process mid-session would silently
+	// provider switch persisted by ANOTHER KajiCode process mid-session would silently
 	// move new children onto a different provider (and different credentials) than
 	// the parent is running. Runtime switches (/model, /provider, wizard,
 	// onboarding) re-export on commit, keeping the pin current. Injected via deps
@@ -1009,7 +1009,7 @@ func localTerminalOptionsFromConfig(cfg config.LocalControlConfig) localcontrol.
 func localArtifactsDirFromConfig(workspaceRoot string, cfg config.LocalControlConfig) string {
 	dir := strings.TrimSpace(cfg.ArtifactsDir)
 	if dir == "" {
-		dir = filepath.Join(".zero", "artifacts")
+		dir = filepath.Join(".kajicode", "artifacts")
 	}
 	if filepath.IsAbs(dir) {
 		return dir
@@ -1053,7 +1053,7 @@ func registerSpecialistTools(registry *tools.Registry, workspaceRoot string, max
 	// lives under the workspace so its files fall within the sandbox write rules.
 	// MaxTeamSize (0 => the swarm's default of 8) caps concurrent members per team.
 	sw, err := swarm.New(swarm.Options{
-		BaseDir:     filepath.Join(workspaceRoot, ".zero", "swarm"),
+		BaseDir:     filepath.Join(workspaceRoot, ".kajicode", "swarm"),
 		Launcher:    swarm.NewSpecialistLauncher(executor),
 		MaxTeamSize: maxTeamSize,
 	})
@@ -1109,7 +1109,7 @@ func closeMCPRuntime(stderr io.Writer, runtime mcpToolRuntime) {
 		return
 	}
 	if err := runtime.Close(); err != nil {
-		_, _ = fmt.Fprintf(stderr, "[zero] mcp_close_error: %s\n", err)
+		_, _ = fmt.Fprintf(stderr, "[kajicode] mcp_close_error: %s\n", err)
 	}
 }
 
@@ -1122,7 +1122,7 @@ func closeSpecialistRuntime(stderr io.Writer, runtime *agentToolRuntime) {
 	}
 	if runtime.specialist != nil {
 		if err := runtime.specialist.Close(); err != nil {
-			_, _ = fmt.Fprintf(stderr, "[zero] specialist_cleanup_error: %s\n", err)
+			_, _ = fmt.Fprintf(stderr, "[kajicode] specialist_cleanup_error: %s\n", err)
 		}
 	}
 }
@@ -1139,7 +1139,7 @@ func stdoutIsTerminal(w io.Writer) bool {
 }
 
 func writeAppError(stderr io.Writer, message string, exitCode int) int {
-	if _, err := fmt.Fprintf(stderr, "[zero] %s\n", message); err != nil {
+	if _, err := fmt.Fprintf(stderr, "[kajicode] %s\n", message); err != nil {
 		return 1
 	}
 	return exitCode
@@ -1150,35 +1150,35 @@ func writeUsageError(stderr io.Writer, message string) int {
 }
 
 func writeHelp(w io.Writer) error {
-	_, err := fmt.Fprint(w, `ZERO terminal coding agent
+	_, err := fmt.Fprint(w, `KAJICODE terminal coding agent
 
 Usage:
-  zero [command]
+  kajicode [command]
 
 Commands:
   exec       Run a one-shot prompt through the Go agent runtime
   daemon     Manage the local background worker daemon (start/stop/status/run/attach)
   setup      Guide first-run provider setup
   config     Inspect resolved Go configuration without leaking secrets
-  models     List Zero model registry entries
+  models     List KajiCode model registry entries
   providers  Inspect resolved provider profiles
   doctor     Run backend health checks for config and provider setup
   context    Report workspace context budget usage
   repo-map   Build a deterministic repository map for agent context
-  search     Search persisted local Zero session events
+  search     Search persisted local KajiCode session events
   find       Alias for search
-  sessions   Inspect local Zero session lineage
+  sessions   Inspect local KajiCode session lineage
   spec       Review and approve saved spec-mode drafts
-  specialist Manage local Zero specialist profiles
-  plugins    Inspect, install, and remove local Zero plugins
+  specialist Manage local KajiCode specialist profiles
+  plugins    Inspect, install, and remove local KajiCode plugins
   backends   Inspect MCP, hook, and plugin backend lifecycle state
-  skills     Inspect, install, and remove local Zero skills
-  tools      Scaffold and list local Zero plugin-tools
-  hooks      Inspect Zero hook configuration
+  skills     Inspect, install, and remove local KajiCode skills
+  tools      Scaffold and list local KajiCode plugin-tools
+  hooks      Inspect KajiCode hook configuration
   mcp        Manage MCP backend settings
   auth       Log in to model providers via OAuth
   sandbox    Inspect sandbox policy and persistent grants
-  update     Check for Zero CLI updates
+  update     Check for KajiCode CLI updates
   worktrees  Prepare isolated git worktrees
   verify     Detect and run local verification checks
   eval       Validate offline agent eval suites
@@ -1186,7 +1186,7 @@ Commands:
   usage      Summarize token usage and estimated cost
   cron       Schedule agent jobs (foreground, file-backed)
   repo-info  Characterize the current repository (local git only)
-  serve      Run Zero protocol servers
+  serve      Run KajiCode protocol servers
   acp        Serve the Agent Client Protocol over stdio (editor backend)
   help       Show this help
   version    Print version
@@ -1213,7 +1213,7 @@ func addDirFlagArgs(addDirs []string) []string {
 }
 
 // splitLeadingAddDirFlags strips leading --add-dir flags from the root
-// argument list (zero --add-dir <path> [--add-dir <path>] [subcommand …]).
+// argument list (kajicode --add-dir <path> [--add-dir <path>] [subcommand …]).
 // Subcommands like exec parse their own --add-dir occurrences.
 func splitLeadingAddDirFlags(args []string) ([]string, []string, error) {
 	addDirs := []string{}
@@ -1318,7 +1318,7 @@ func baseURLIsLoopback(baseURL string) bool {
 }
 
 func writePromptRequired(stderr io.Writer) int {
-	if _, err := fmt.Fprintln(stderr, "[zero] Prompt required. Use `zero exec \"prompt\"` or `zero exec --file prompt.txt`."); err != nil {
+	if _, err := fmt.Fprintln(stderr, "[kajicode] Prompt required. Use `kajicode exec \"prompt\"` or `kajicode exec --file prompt.txt`."); err != nil {
 		return 1
 	}
 	return 2
@@ -1326,7 +1326,7 @@ func writePromptRequired(stderr io.Writer) int {
 
 func writeExecHelp(w io.Writer) error {
 	_, err := fmt.Fprint(w, `Usage:
-  zero exec [flags] [prompt]
+  kajicode exec [flags] [prompt]
 
 Runs a one-shot prompt through the Go agent runtime.
 

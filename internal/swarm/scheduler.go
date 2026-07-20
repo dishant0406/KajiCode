@@ -25,9 +25,9 @@ const minScheduleInterval = time.Second
 type Schedule struct {
 	// Every is the interval between fires. Required, must be >= minScheduleInterval.
 	Every time.Duration
-	// FirstDelay delays the first fire. Zero => the first fire happens after Every.
+	// FirstDelay delays the first fire. KajiCode => the first fire happens after Every.
 	FirstDelay time.Duration
-	// MaxRuns bounds successful spawns. Zero => unbounded (until cancelled).
+	// MaxRuns bounds successful spawns. KajiCode => unbounded (until cancelled).
 	MaxRuns int
 	// Daily, when set, recomputes each fire as the next local Hour:Minute rather
 	// than adding a fixed Every, so a wall-clock daily time does not drift across

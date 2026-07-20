@@ -1,8 +1,8 @@
 package tools
 
-import "github.com/Gitlawb/zero/internal/localcontrol"
+import "github.com/dishant0406/KajiCode/internal/localcontrol"
 
-// BuiltinCatalog returns every built-in tool that Zero can expose to the model
+// BuiltinCatalog returns every built-in tool that KajiCode can expose to the model
 // from this package (core + control + optional local-control helpers).
 //
 // It is the source of truth for metadata coverage tests: every tool returned

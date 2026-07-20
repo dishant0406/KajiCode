@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/agenteval"
+	"github.com/dishant0406/KajiCode/internal/agenteval"
 )
 
 func TestRecorderSpanAccumulates(t *testing.T) {

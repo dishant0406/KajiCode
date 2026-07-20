@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/tools"
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
 // TestOptionsModelSwitcherFieldExists asserts the escalation hook is an
@@ -41,8 +41,8 @@ func TestToolResultRequestedModelFieldExists(t *testing.T) {
 	if result.RequestedModel != "claude-opus-4.1" {
 		t.Fatalf("expected RequestedModel to round-trip, got %q", result.RequestedModel)
 	}
-	// Keep the zeroruntime import load-bearing so the file compiles standalone.
-	_ = zeroruntime.MessageRoleAssistant
+	// Keep the kajicoderuntime import load-bearing so the file compiles standalone.
+	_ = kajicoderuntime.MessageRoleAssistant
 }
 
 // escalatingTool is a registered fake tool that returns the escalation signal
@@ -112,16 +112,16 @@ func TestExecuteToolCallNoEscalationMetaLeavesRequestedModelEmpty(t *testing.T) 
 
 // escalateThenAnswerTurns builds a two-turn provider script: turn 1 calls the
 // escalate tool, turn 2 returns a final answer. Reused by the switch tests.
-func escalateThenAnswerTurns(answer string) [][]zeroruntime.StreamEvent {
-	return [][]zeroruntime.StreamEvent{
+func escalateThenAnswerTurns(answer string) [][]kajicoderuntime.StreamEvent {
+	return [][]kajicoderuntime.StreamEvent{
 		{
-			{Type: zeroruntime.StreamEventToolCallStart, ToolCallID: "c1", ToolName: "escalate"},
-			{Type: zeroruntime.StreamEventToolCallEnd, ToolCallID: "c1"},
-			{Type: zeroruntime.StreamEventDone},
+			{Type: kajicoderuntime.StreamEventToolCallStart, ToolCallID: "c1", ToolName: "escalate"},
+			{Type: kajicoderuntime.StreamEventToolCallEnd, ToolCallID: "c1"},
+			{Type: kajicoderuntime.StreamEventDone},
 		},
 		{
-			{Type: zeroruntime.StreamEventText, Content: answer},
-			{Type: zeroruntime.StreamEventDone},
+			{Type: kajicoderuntime.StreamEventText, Content: answer},
+			{Type: kajicoderuntime.StreamEventDone},
 		},
 	}
 }
@@ -134,10 +134,10 @@ func TestRunSwitchesProviderOnEscalationRequest(t *testing.T) {
 	registry.Register(escalatingTool{target: "claude-opus-4.1"})
 
 	firstProvider := &mockProvider{turns: escalateThenAnswerTurns("done")}
-	secondProvider := &mockProvider{turns: [][]zeroruntime.StreamEvent{
+	secondProvider := &mockProvider{turns: [][]kajicoderuntime.StreamEvent{
 		{
-			{Type: zeroruntime.StreamEventText, Content: "answered on the upgraded model"},
-			{Type: zeroruntime.StreamEventDone},
+			{Type: kajicoderuntime.StreamEventText, Content: "answered on the upgraded model"},
+			{Type: kajicoderuntime.StreamEventDone},
 		},
 	}}
 
@@ -231,7 +231,7 @@ func TestRunEscalationSwitcherErrorIsNonFatal(t *testing.T) {
 	// A brief note about the failed switch must reach the model on the next turn.
 	var sawNote bool
 	for _, m := range provider.requests[1].Messages {
-		if m.Role == zeroruntime.MessageRoleUser && strings.Contains(strings.ToLower(m.Content), "could not switch") {
+		if m.Role == kajicoderuntime.MessageRoleUser && strings.Contains(strings.ToLower(m.Content), "could not switch") {
 			sawNote = true
 		}
 	}
@@ -284,19 +284,19 @@ func TestRunSwitchesAtMostOncePerTurn(t *testing.T) {
 	registry := tools.NewRegistry()
 	registry.Register(escalatingTool{target: "claude-opus-4.1"})
 
-	firstProvider := &mockProvider{turns: [][]zeroruntime.StreamEvent{
+	firstProvider := &mockProvider{turns: [][]kajicoderuntime.StreamEvent{
 		{
-			{Type: zeroruntime.StreamEventToolCallStart, ToolCallID: "c1", ToolName: "escalate"},
-			{Type: zeroruntime.StreamEventToolCallEnd, ToolCallID: "c1"},
-			{Type: zeroruntime.StreamEventToolCallStart, ToolCallID: "c2", ToolName: "escalate"},
-			{Type: zeroruntime.StreamEventToolCallEnd, ToolCallID: "c2"},
-			{Type: zeroruntime.StreamEventDone},
+			{Type: kajicoderuntime.StreamEventToolCallStart, ToolCallID: "c1", ToolName: "escalate"},
+			{Type: kajicoderuntime.StreamEventToolCallEnd, ToolCallID: "c1"},
+			{Type: kajicoderuntime.StreamEventToolCallStart, ToolCallID: "c2", ToolName: "escalate"},
+			{Type: kajicoderuntime.StreamEventToolCallEnd, ToolCallID: "c2"},
+			{Type: kajicoderuntime.StreamEventDone},
 		},
 	}}
-	secondProvider := &mockProvider{turns: [][]zeroruntime.StreamEvent{
+	secondProvider := &mockProvider{turns: [][]kajicoderuntime.StreamEvent{
 		{
-			{Type: zeroruntime.StreamEventText, Content: "done"},
-			{Type: zeroruntime.StreamEventDone},
+			{Type: kajicoderuntime.StreamEventText, Content: "done"},
+			{Type: kajicoderuntime.StreamEventDone},
 		},
 	}}
 

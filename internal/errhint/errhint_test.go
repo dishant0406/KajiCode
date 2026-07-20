@@ -13,7 +13,7 @@ func TestClassify(t *testing.T) {
 		want Category
 	}{
 		{"nil-ish empty", "", Unknown},
-		{"providerio auth prefix", "auth error: your API key is missing or invalid — run `zero auth`", Auth},
+		{"providerio auth prefix", "auth error: your API key is missing or invalid — run `kajicode auth`", Auth},
 		{"raw 401", "provider request error: 401 Unauthorized", Auth},
 		{"invalid api key", "provider request error: invalid_api_key: incorrect key provided", Auth},
 		{"rate limit prefix", "rate limit error: 429 too many requests", RateLimit},

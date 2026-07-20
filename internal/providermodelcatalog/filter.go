@@ -3,7 +3,7 @@ package providermodelcatalog
 import (
 	"strings"
 
-	"github.com/Gitlawb/zero/internal/providercatalog"
+	"github.com/dishant0406/KajiCode/internal/providercatalog"
 )
 
 // ModelIDAllowedForProvider reports whether a model ID is permitted for the

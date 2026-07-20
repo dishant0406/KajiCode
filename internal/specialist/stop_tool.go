@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/Gitlawb/zero/internal/background"
-	"github.com/Gitlawb/zero/internal/tools"
+	"github.com/dishant0406/KajiCode/internal/background"
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
 type StopTool struct {
@@ -31,7 +31,7 @@ func (tool *StopTool) Name() string {
 }
 
 func (tool *StopTool) Description() string {
-	return "Stop a running background Zero specialist task."
+	return "Stop a running background KajiCode specialist task."
 }
 
 func (tool *StopTool) Parameters() tools.Schema {

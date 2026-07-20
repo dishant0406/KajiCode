@@ -8,11 +8,11 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/Gitlawb/zero/internal/config"
-	"github.com/Gitlawb/zero/internal/providercatalog"
-	"github.com/Gitlawb/zero/internal/sandbox"
-	"github.com/Gitlawb/zero/internal/tools"
-	"github.com/Gitlawb/zero/internal/zerocommands"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/kajicodecommands"
+	"github.com/dishant0406/KajiCode/internal/providercatalog"
+	"github.com/dishant0406/KajiCode/internal/sandbox"
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
 func (m model) toolsText() string {
@@ -194,7 +194,7 @@ func (m model) applyMCPCommandResult(args string, result MCPCommandResult) (mode
 	}
 	output := strings.TrimSpace(result.Output)
 	if output == "" {
-		output = "zero mcp " + args
+		output = "kajicode mcp " + args
 	}
 	return m, strings.Join([]string{
 		"MCP action complete",
@@ -331,7 +331,7 @@ func (m model) permissionsTextWithStore(store grantLister) string {
 		}
 	}
 
-	snapshots := zerocommands.SandboxGrantSnapshots(grants)
+	snapshots := kajicodecommands.SandboxGrantSnapshots(grants)
 	grantRows := []commandRow{}
 	if len(snapshots) == 0 && len(prefixes) == 0 {
 		grantRows = append(grantRows, commandRow{Text: "none"})
@@ -410,18 +410,18 @@ func (m model) providerText() string {
 			Sections: []commandSection{
 				{Title: "Active", Lines: profileLines},
 				{Title: "Next actions", Lines: []string{
-					"zero providers catalog",
-					"zero providers setup openai --set-active",
-					"zero providers add openai --api-key-env OPENAI_API_KEY --set-active",
+					"kajicode providers catalog",
+					"kajicode providers setup openai --set-active",
+					"kajicode providers add openai --api-key-env OPENAI_API_KEY --set-active",
 				}},
 			},
 		})
 	}
 
-	snapshot := zerocommands.ProviderSnapshotFromProfile(m.providerProfile, true)
+	snapshot := kajicodecommands.ProviderSnapshotFromProfile(m.providerProfile, true)
 	// A keyless profile backed by a stored OAuth login (e.g. ChatGPT) is fully
 	// authenticated — without this, /provider status showed a WORKING provider
-	// as "api key: not set" with a warning, unlike `zero providers list` which
+	// as "api key: not set" with a warning, unlike `kajicode providers list` which
 	// already fills OAuthLogin.
 	if !snapshot.APIKeySet {
 		snapshot.OAuthLogin = oauthLoginAvailable(m.providerProfile)
@@ -456,7 +456,7 @@ func (m model) providerText() string {
 	})
 }
 
-func providerNextActionLines(profile config.ProviderProfile, snapshot zerocommands.ProviderSnapshot, activeName string) []string {
+func providerNextActionLines(profile config.ProviderProfile, snapshot kajicodecommands.ProviderSnapshot, activeName string) []string {
 	providerName := firstProviderDisplayValue(snapshot.Name, activeName, profile.Name, providerSetupCatalogID(profile, snapshot.ProviderKind), "openai")
 	setupID := providerSetupCatalogID(profile, snapshot.ProviderKind)
 	lines := []string{}
@@ -464,16 +464,16 @@ func providerNextActionLines(profile config.ProviderProfile, snapshot zerocomman
 		if envName := providerCredentialEnvName(profile, snapshot.ProviderKind); envName != "" {
 			lines = append(lines,
 				"set "+envName+" in your environment",
-				"zero providers add "+setupID+" --api-key-env "+envName+" --set-active",
+				"kajicode providers add "+setupID+" --api-key-env "+envName+" --set-active",
 			)
 		} else {
 			lines = append(lines, "set provider credentials in your environment")
 		}
 	}
 	return append(lines,
-		"zero providers check "+providerName+" --connectivity",
-		"zero providers catalog",
-		"zero providers setup "+setupID+" --set-active",
+		"kajicode providers check "+providerName+" --connectivity",
+		"kajicode providers catalog",
+		"kajicode providers setup "+setupID+" --set-active",
 	)
 }
 
@@ -729,7 +729,7 @@ func (m model) skillsText() string {
 			Lines: []string{"No skills installed."},
 		}},
 		Hints: []string{
-			"install one: create <skills-dir>/<name>/SKILL.md (see `zero skills`)",
+			"install one: create <skills-dir>/<name>/SKILL.md (see `kajicode skills`)",
 		},
 	})
 }

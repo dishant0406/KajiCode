@@ -9,23 +9,23 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/Gitlawb/zero/internal/agent"
-	"github.com/Gitlawb/zero/internal/config"
-	"github.com/Gitlawb/zero/internal/sandbox"
-	"github.com/Gitlawb/zero/internal/sessions"
-	"github.com/Gitlawb/zero/internal/tools"
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/agent"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
+	"github.com/dishant0406/KajiCode/internal/sandbox"
+	"github.com/dishant0406/KajiCode/internal/sessions"
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
-// Deps are the ZERO capabilities the ACP Agent drives. The CLI fills these with
+// Deps are the KAJICODE capabilities the ACP Agent drives. The CLI fills these with
 // real implementations; tests inject fakes (e.g. a canned provider) to drive the
 // full ACP flow without a live model. Keeping auth/model/keys behind these deps
-// means the editor only hosts the thread — ZERO owns BYOK and telemetry-free
+// means the editor only hosts the thread — KAJICODE owns BYOK and telemetry-free
 // operation.
 type Deps struct {
 	ResolveConfig func(workspaceRoot string, overrides config.Overrides) (config.ResolvedConfig, error)
-	NewProvider   func(profile config.ProviderProfile) (zeroruntime.Provider, error)
-	RunAgent      func(ctx context.Context, prompt string, provider zeroruntime.Provider, opts agent.Options) (agent.Result, error)
+	NewProvider   func(profile config.ProviderProfile) (kajicoderuntime.Provider, error)
+	RunAgent      func(ctx context.Context, prompt string, provider kajicoderuntime.Provider, opts agent.Options) (agent.Result, error)
 	// BuildWorkspace builds the SCOPED tool registry and the sandbox engine for a
 	// validated workspace root, so ACP shell tools (bash/exec_command) are confined
 	// exactly like the exec surface — never run unconfined on the host.
@@ -78,7 +78,7 @@ func NewAgent(conn *Conn, deps Deps) *Agent {
 	conn.Handle(MethodSessionPrompt, a.handleSessionPrompt)
 	conn.Handle(MethodSessionSetMode, a.handleSetMode)
 	conn.Handle(MethodSessionSetConfigOption, a.handleSetConfigOption)
-	conn.Handle(MethodZeroSetModel, a.handleZeroSetModel)
+	conn.Handle(MethodKajiCodeSetModel, a.handleKajiCodeSetModel)
 	conn.HandleNotify(MethodSessionCancel, a.handleCancel)
 	return a
 }
@@ -106,14 +106,14 @@ func (a *Agent) handleInitialize(_ context.Context, params json.RawMessage) (any
 	return InitializeResult{
 		ProtocolVersion: negotiated,
 		AgentCapabilities: AgentCapabilities{
-			// Only advertise what ZERO actually implements: session/load (loadSession)
+			// Only advertise what KajiCode actually implements: session/load (loadSession)
 			// and image prompts. session/resume + the session-capability sub-object
 			// are intentionally omitted since there is no resume handler yet.
 			LoadSession:        true,
 			PromptCapabilities: PromptCapabilities{Image: true},
 		},
 		AgentInfo: &info,
-		// ZERO owns credentials (BYOK) and does not delegate auth to the editor.
+		// KAJICODE owns credentials (BYOK) and does not delegate auth to the editor.
 		AuthMethods: []AuthMethod{},
 	}, nil
 }
@@ -208,7 +208,7 @@ func (a *Agent) handleSessionPrompt(ctx context.Context, params json.RawMessage)
 	return PromptResult{StopReason: reason}, nil
 }
 
-func (a *Agent) runTurn(ctx context.Context, sess *acpSession, userText string, images []zeroruntime.ImageBlock) (string, error) {
+func (a *Agent) runTurn(ctx context.Context, sess *acpSession, userText string, images []kajicoderuntime.ImageBlock) (string, error) {
 	overrides := config.Overrides{}
 	if model := sess.currentModel(); model != "" {
 		overrides.Provider.Model = model
@@ -287,7 +287,7 @@ func stopReasonFor(result agent.Result, err error) (string, error) {
 	return StopEndTurn, nil
 }
 
-// requestPermission forwards a ZERO permission prompt to the client as an ACP
+// requestPermission forwards a KAJICODE permission prompt to the client as an ACP
 // session/request_permission request and maps the outcome back. Failure to reach
 // the client fails closed to deny.
 func (a *Agent) requestPermission(ctx context.Context, sessionID string, req agent.PermissionRequest) (agent.PermissionDecision, error) {
@@ -361,17 +361,17 @@ func (a *Agent) handleSetConfigOption(_ context.Context, params json.RawMessage)
 	return SetSessionConfigOptionResult{}, nil
 }
 
-func (a *Agent) handleZeroSetModel(_ context.Context, params json.RawMessage) (any, error) {
-	var p ZeroSetModelParams
+func (a *Agent) handleKajiCodeSetModel(_ context.Context, params json.RawMessage) (any, error) {
+	var p KajiCodeSetModelParams
 	if err := json.Unmarshal(params, &p); err != nil {
-		return nil, RPCError(codeInvalidParams, "invalid _zero/set_model params")
+		return nil, RPCError(codeInvalidParams, "invalid _kajicode/set_model params")
 	}
 	sess := a.session(p.SessionID)
 	if sess == nil {
 		return nil, RPCError(codeInvalidParams, "unknown session: "+p.SessionID)
 	}
 	sess.setModel(p.Model)
-	return ZeroSetModelResult{Model: p.Model}, nil
+	return KajiCodeSetModelResult{Model: p.Model}, nil
 }
 
 func (a *Agent) handleCancel(_ context.Context, params json.RawMessage) {
@@ -474,9 +474,9 @@ func (a *Agent) warnPersistence(note *notifier, action string, message string, e
 	if note != nil {
 		sessionID = note.sessionID
 	}
-	log.Printf("zero acp: failed to %s for session %s: %v", action, sessionID, err)
+	log.Printf("kajicode acp: failed to %s for session %s: %v", action, sessionID, err)
 	if note != nil {
-		note.text("\n\n[zero warning] " + message + "\n")
+		note.text("\n\n[kajicode warning] " + message + "\n")
 	}
 }
 
@@ -503,8 +503,8 @@ func buildPrompt(history []turnRecord, userText string) string {
 	return b.String()
 }
 
-func promptImages(blocks []ContentBlock) []zeroruntime.ImageBlock {
-	var images []zeroruntime.ImageBlock
+func promptImages(blocks []ContentBlock) []kajicoderuntime.ImageBlock {
+	var images []kajicoderuntime.ImageBlock
 	for _, blk := range blocks {
 		if blk.Type != "image" || blk.Data == "" {
 			continue
@@ -513,7 +513,7 @@ func promptImages(blocks []ContentBlock) []zeroruntime.ImageBlock {
 		if err != nil {
 			continue
 		}
-		images = append(images, zeroruntime.ImageBlock{MediaType: blk.MimeType, Data: data})
+		images = append(images, kajicoderuntime.ImageBlock{MediaType: blk.MimeType, Data: data})
 	}
 	return images
 }

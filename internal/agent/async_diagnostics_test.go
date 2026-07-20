@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/tools"
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
 func TestAsyncDiagnosticsNilCollectorNoOps(t *testing.T) {
@@ -163,16 +163,16 @@ func TestRunDeliversAsyncDiagnosticsNudgeNextTurn(t *testing.T) {
 	registry := tools.NewRegistry()
 	registry.Register(changedFilesTool{})
 	provider := &mockProvider{
-		turns: [][]zeroruntime.StreamEvent{
+		turns: [][]kajicoderuntime.StreamEvent{
 			{
-				{Type: zeroruntime.StreamEventToolCallStart, ToolCallID: "call-1", ToolName: "fake_edit"},
-				{Type: zeroruntime.StreamEventToolCallDelta, ToolCallID: "call-1", ArgumentsFragment: `{}`},
-				{Type: zeroruntime.StreamEventToolCallEnd, ToolCallID: "call-1"},
-				{Type: zeroruntime.StreamEventDone},
+				{Type: kajicoderuntime.StreamEventToolCallStart, ToolCallID: "call-1", ToolName: "fake_edit"},
+				{Type: kajicoderuntime.StreamEventToolCallDelta, ToolCallID: "call-1", ArgumentsFragment: `{}`},
+				{Type: kajicoderuntime.StreamEventToolCallEnd, ToolCallID: "call-1"},
+				{Type: kajicoderuntime.StreamEventDone},
 			},
 			{
-				{Type: zeroruntime.StreamEventText, Content: "done"},
-				{Type: zeroruntime.StreamEventDone},
+				{Type: kajicoderuntime.StreamEventText, Content: "done"},
+				{Type: kajicoderuntime.StreamEventDone},
 			},
 		},
 	}
@@ -202,14 +202,14 @@ func TestRunDeliversAsyncDiagnosticsNudgeNextTurn(t *testing.T) {
 
 	// The tool result itself must NOT block on / embed diagnostics.
 	for _, message := range provider.requests[1].Messages {
-		if message.Role == zeroruntime.MessageRoleTool && strings.Contains(message.Content, "boom") {
+		if message.Role == kajicoderuntime.MessageRoleTool && strings.Contains(message.Content, "boom") {
 			t.Fatalf("diagnostics leaked into the tool result: %q", message.Content)
 		}
 	}
 	// The nudge must be present in the second request as a user message.
 	found := false
 	for _, message := range provider.requests[1].Messages {
-		if message.Role == zeroruntime.MessageRoleUser && strings.HasPrefix(message.Content, asyncDiagnosticsNudge) {
+		if message.Role == kajicoderuntime.MessageRoleUser && strings.HasPrefix(message.Content, asyncDiagnosticsNudge) {
 			if !strings.Contains(message.Content, "boom") {
 				t.Fatalf("nudge missing diagnostics: %q", message.Content)
 			}
@@ -233,16 +233,16 @@ func TestRunDrainsAsyncDiagnosticsBeforeMaxTurnsFinalAnswer(t *testing.T) {
 	registry := tools.NewRegistry()
 	registry.Register(changedFilesTool{})
 	provider := &mockProvider{
-		turns: [][]zeroruntime.StreamEvent{
+		turns: [][]kajicoderuntime.StreamEvent{
 			{
-				{Type: zeroruntime.StreamEventToolCallStart, ToolCallID: "call-1", ToolName: "fake_edit"},
-				{Type: zeroruntime.StreamEventToolCallDelta, ToolCallID: "call-1", ArgumentsFragment: `{}`},
-				{Type: zeroruntime.StreamEventToolCallEnd, ToolCallID: "call-1"},
-				{Type: zeroruntime.StreamEventDone},
+				{Type: kajicoderuntime.StreamEventToolCallStart, ToolCallID: "call-1", ToolName: "fake_edit"},
+				{Type: kajicoderuntime.StreamEventToolCallDelta, ToolCallID: "call-1", ArgumentsFragment: `{}`},
+				{Type: kajicoderuntime.StreamEventToolCallEnd, ToolCallID: "call-1"},
+				{Type: kajicoderuntime.StreamEventDone},
 			},
 			{
-				{Type: zeroruntime.StreamEventText, Content: "summary"},
-				{Type: zeroruntime.StreamEventDone},
+				{Type: kajicoderuntime.StreamEventText, Content: "summary"},
+				{Type: kajicoderuntime.StreamEventDone},
 			},
 		},
 	}
@@ -266,7 +266,7 @@ func TestRunDrainsAsyncDiagnosticsBeforeMaxTurnsFinalAnswer(t *testing.T) {
 	}
 	found := false
 	for _, message := range provider.requests[1].Messages {
-		if message.Role == zeroruntime.MessageRoleUser && strings.HasPrefix(message.Content, asyncDiagnosticsNudge) {
+		if message.Role == kajicoderuntime.MessageRoleUser && strings.HasPrefix(message.Content, asyncDiagnosticsNudge) {
 			found = true
 		}
 	}
@@ -286,20 +286,20 @@ func TestRunFinalizationGateDeliversLateDiagnostics(t *testing.T) {
 	registry := tools.NewRegistry()
 	registry.Register(changedFilesTool{})
 	provider := &mockProvider{
-		turns: [][]zeroruntime.StreamEvent{
+		turns: [][]kajicoderuntime.StreamEvent{
 			{
-				{Type: zeroruntime.StreamEventToolCallStart, ToolCallID: "call-1", ToolName: "fake_edit"},
-				{Type: zeroruntime.StreamEventToolCallDelta, ToolCallID: "call-1", ArgumentsFragment: `{}`},
-				{Type: zeroruntime.StreamEventToolCallEnd, ToolCallID: "call-1"},
-				{Type: zeroruntime.StreamEventDone},
+				{Type: kajicoderuntime.StreamEventToolCallStart, ToolCallID: "call-1", ToolName: "fake_edit"},
+				{Type: kajicoderuntime.StreamEventToolCallDelta, ToolCallID: "call-1", ArgumentsFragment: `{}`},
+				{Type: kajicoderuntime.StreamEventToolCallEnd, ToolCallID: "call-1"},
+				{Type: kajicoderuntime.StreamEventDone},
 			},
 			{
-				{Type: zeroruntime.StreamEventText, Content: "done"},
-				{Type: zeroruntime.StreamEventDone},
+				{Type: kajicoderuntime.StreamEventText, Content: "done"},
+				{Type: kajicoderuntime.StreamEventDone},
 			},
 			{
-				{Type: zeroruntime.StreamEventText, Content: "done after fix"},
-				{Type: zeroruntime.StreamEventDone},
+				{Type: kajicoderuntime.StreamEventText, Content: "done after fix"},
+				{Type: kajicoderuntime.StreamEventDone},
 			},
 		},
 	}
@@ -325,7 +325,7 @@ func TestRunFinalizationGateDeliversLateDiagnostics(t *testing.T) {
 	}
 	found := false
 	for _, message := range provider.requests[2].Messages {
-		if message.Role == zeroruntime.MessageRoleUser && strings.HasPrefix(message.Content, asyncDiagnosticsNudge) {
+		if message.Role == kajicoderuntime.MessageRoleUser && strings.HasPrefix(message.Content, asyncDiagnosticsNudge) {
 			if !strings.Contains(message.Content, "boom") {
 				t.Fatalf("nudge missing diagnostics: %q", message.Content)
 			}

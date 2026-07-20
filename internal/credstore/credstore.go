@@ -2,8 +2,8 @@
 // not written to disk in cleartext. It resolves one backend at construction: the OS
 // keyring on macOS (the `security` keychain), otherwise an AES-256-GCM encrypted file
 // (the Linux secret-tool keyring needs a running secret service that is absent on
-// headless/CI machines, so it is opt-in via ZERO_CRED_STORAGE=keyring). A plaintext
-// file is available only as an explicit ZERO_CRED_STORAGE=file opt-out. OAuth tokens
+// headless/CI machines, so it is opt-in via KAJICODE_CRED_STORAGE=keyring). A plaintext
+// file is available only as an explicit KAJICODE_CRED_STORAGE=file opt-out. OAuth tokens
 // stay in internal/oauth; this store is for raw API keys.
 package credstore
 
@@ -16,12 +16,12 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Gitlawb/zero/internal/keyring"
-	"github.com/Gitlawb/zero/internal/securefile"
+	"github.com/dishant0406/KajiCode/internal/keyring"
+	"github.com/dishant0406/KajiCode/internal/securefile"
 )
 
 const (
-	keyringService = "zero"
+	keyringService = "kajicode"
 	keyringPrefix  = "apikey:" // keyring account = "apikey:<provider>"
 
 	encryptedFileName = "credentials.enc"
@@ -42,11 +42,11 @@ type Options struct {
 	// Dir is the per-user data directory for the file backends.
 	Dir string
 	// Storage selects the backend: "" (auto), "keyring", "encrypted-file", or "file"
-	// (plaintext opt-out). When empty it falls back to ZERO_CRED_STORAGE, then auto:
+	// (plaintext opt-out). When empty it falls back to KAJICODE_CRED_STORAGE, then auto:
 	// keyring on macOS (the `security` keychain is reliable and needs no daemon),
 	// encrypted-file everywhere else (Linux `secret-tool` needs a running secret
 	// service that is absent on headless/CI boxes and would block/error). Linux/other
-	// users can still opt into the keyring with ZERO_CRED_STORAGE=keyring.
+	// users can still opt into the keyring with KAJICODE_CRED_STORAGE=keyring.
 	Storage string
 	// Keyring is the keyring client; nil => keyring.New().
 	Keyring KeyringClient
@@ -82,12 +82,12 @@ func New(options Options) (*Store, error) {
 	}
 	storage := strings.TrimSpace(options.Storage)
 	if storage == "" {
-		storage = strings.TrimSpace(env("ZERO_CRED_STORAGE"))
+		storage = strings.TrimSpace(env("KAJICODE_CRED_STORAGE"))
 	}
 	if storage == "" {
 		// Keyring is the default only on macOS, where `security` is reliable and needs
 		// no running daemon. Elsewhere (Linux secret-tool, headless/CI) default to the
-		// encrypted file; keyring stays available via an explicit ZERO_CRED_STORAGE.
+		// encrypted file; keyring stays available via an explicit KAJICODE_CRED_STORAGE.
 		if goos == "darwin" && kr.Available() {
 			storage = "keyring"
 		} else {

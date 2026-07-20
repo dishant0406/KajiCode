@@ -13,7 +13,7 @@ type scratchFileBaseline map[string]bool
 
 // scratchFileSnapshot records the untracked scratch-like files that already
 // existed before a run starts. Completion warnings compare against this baseline
-// so Zero only reports files newly left behind by the run, including files made
+// so KajiCode only reports files newly left behind by the run, including files made
 // by shell commands that bypass the file tools.
 func scratchFileSnapshot(workspaceRoot string) scratchFileBaseline {
 	untracked, ok := gitUntrackedFiles(workspaceRoot)

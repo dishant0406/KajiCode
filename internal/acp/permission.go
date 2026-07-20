@@ -3,21 +3,21 @@ package acp
 import (
 	"encoding/json"
 
-	"github.com/Gitlawb/zero/internal/agent"
+	"github.com/dishant0406/KajiCode/internal/agent"
 )
 
-// permission.go maps ZERO's permission prompt model onto ACP's
+// permission.go maps KAJICODE's permission prompt model onto ACP's
 // session/request_permission request/option/outcome model. The option id on the
-// wire carries the ZERO decision action verbatim, so mapping the client's
-// selection back to a ZERO decision is exact and lossless.
+// wire carries the KAJICODE decision action verbatim, so mapping the client's
+// selection back to a KAJICODE decision is exact and lossless.
 
-// buildPermissionOptions turns the decisions ZERO offers for a tool call into ACP
-// PermissionOptions. Only the actions ZERO actually presented (AvailableDecisions)
-// are surfaced; the optionId is the ZERO action string for a clean round-trip.
+// buildPermissionOptions turns the decisions KajiCode offers for a tool call into ACP
+// PermissionOptions. Only the actions KajiCode actually presented (AvailableDecisions)
+// are surfaced; the optionId is the KAJICODE action string for a clean round-trip.
 func buildPermissionOptions(req agent.PermissionRequest) []PermissionOption {
 	actions := req.AvailableDecisions
 	if len(actions) == 0 {
-		// Sensible default if ZERO didn't enumerate: allow once / reject.
+		// Sensible default if KAJICODE didn't enumerate: allow once / reject.
 		actions = []agent.PermissionDecisionAction{
 			agent.PermissionDecisionAllow,
 			agent.PermissionDecisionDeny,
@@ -38,7 +38,7 @@ func buildPermissionOptions(req agent.PermissionRequest) []PermissionOption {
 	return options
 }
 
-// optionKindFor maps a ZERO decision action to an ACP PermissionOptionKind and a
+// optionKindFor maps a KAJICODE decision action to an ACP PermissionOptionKind and a
 // human label. Returns an empty kind for actions that ACP expresses through the
 // outcome rather than an option (cancel).
 func optionKindFor(action agent.PermissionDecisionAction) (kind, name string) {
@@ -62,8 +62,8 @@ func optionKindFor(action agent.PermissionDecisionAction) (kind, name string) {
 	}
 }
 
-// decisionFromOutcome maps the client's permission outcome back to a ZERO
-// decision. A cancelled outcome cancels the run; a selected option id is the ZERO
+// decisionFromOutcome maps the client's permission outcome back to a KAJICODE
+// decision. A cancelled outcome cancels the run; a selected option id is the KAJICODE
 // action verbatim (validated against what was offered); anything unrecognized
 // fails closed to deny.
 func decisionFromOutcome(outcome RequestPermissionOutcome, offered []agent.PermissionDecisionAction) agent.PermissionDecision {
@@ -94,7 +94,7 @@ func actionOffered(action agent.PermissionDecisionAction, offered []agent.Permis
 }
 
 // permissionToolCall builds the ToolCall descriptor embedded in a
-// session/request_permission request from a ZERO permission request.
+// session/request_permission request from a KAJICODE permission request.
 func permissionToolCall(req agent.PermissionRequest) ToolCallUpdate {
 	args := marshalArgs(req.Args)
 	return ToolCallUpdate{

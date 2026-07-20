@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-// postinstall: fetch the prebuilt `zero` binary for this platform from the
-// matching GitHub Release and place it next to bin/zero.js, which execs it.
+// postinstall: fetch the prebuilt `kajicode` binary for this platform from the
+// matching GitHub Release and place it next to bin/kajicode.js, which execs it.
 //
 // Mirrors scripts/install.sh and scripts/install.ps1. The asset-name scheme is
 // the source of truth in internal/release/release.go:
-//   zero-v{version}-{linux|macos|windows}-{x64|arm64}.{tar.gz|zip}  (+ .sha256)
+//   kajicode-v{version}-{linux|macos|windows}-{x64|arm64}.{tar.gz|zip}  (+ .sha256)
 //
 // Safety: HTTPS-only download from the pinned repo, SHA-256 verification against
 // the release's own .sha256, and extraction that never trusts archive paths —
@@ -12,12 +12,12 @@
 // crafted archive cannot write outside the package (no zip-slip).
 //
 // Env overrides (testing / mirrors / locked-down installs):
-//   ZERO_SKIP_DOWNLOAD=1      skip entirely, exit 0 (wrapper will guide if run)
-//   ZERO_INSTALL_DRY_RUN=1    print the resolved plan as JSON, no network, exit 0
-//   ZERO_INSTALL_PLATFORM=…   override process.platform (linux|darwin|win32|android)
-//   ZERO_INSTALL_ARCH=…       override process.arch (x64|arm64)
-//   ZERO_REPO=owner/name      override the GitHub repo (default Gitlawb/zero)
-//   ZERO_GITHUB_BASE_URL=…    override the download host (default https://github.com)
+//   KAJICODE_SKIP_DOWNLOAD=1      skip entirely, exit 0 (wrapper will guide if run)
+//   KAJICODE_INSTALL_DRY_RUN=1    print the resolved plan as JSON, no network, exit 0
+//   KAJICODE_INSTALL_PLATFORM=…   override process.platform (linux|darwin|win32|android)
+//   KAJICODE_INSTALL_ARCH=…       override process.arch (x64|arm64)
+//   KAJICODE_REPO=owner/name      override the GitHub repo (default dishant0406/KajiCode)
+//   KAJICODE_GITHUB_BASE_URL=…    override the download host (default https://github.com)
 
 import {
   chmodSync,
@@ -41,23 +41,23 @@ const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const pkg = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8'));
 const VERSION = pkg.version;
 
-const REPO = process.env.ZERO_REPO || 'Gitlawb/zero';
-const BASE = (process.env.ZERO_GITHUB_BASE_URL || 'https://github.com').replace(/\/+$/, '');
+const REPO = process.env.KAJICODE_REPO || 'dishant0406/KajiCode';
+const BASE = (process.env.KAJICODE_GITHUB_BASE_URL || 'https://github.com').replace(/\/+$/, '');
 // The .sha256 is fetched from the same origin as the archive, so TLS authenticity
 // is the only real integrity control — require https unless explicitly overridden
 // for local testing (e.g. a localhost mirror in tests).
-const ALLOW_INSECURE = process.env.ZERO_ALLOW_INSECURE_DOWNLOAD === '1';
+const ALLOW_INSECURE = process.env.KAJICODE_ALLOW_INSECURE_DOWNLOAD === '1';
 const MAX_DOWNLOAD_BYTES = 512 * 1024 * 1024;
 
 function fail(message) {
-  console.error(`[zero] ${message}`);
+  console.error(`[kajicode] ${message}`);
   process.exit(1);
 }
 
 function warnSkip(message) {
   // Exit 0 so an unsupported platform or an opt-out does not break `npm install`;
-  // bin/zero.js reports a clear "no native binary" message if the user runs zero.
-  console.error(`[zero] ${message}`);
+  // bin/kajicode.js reports a clear "no native binary" message if the user runs kajicode.
+  console.error(`[kajicode] ${message}`);
   process.exit(0);
 }
 
@@ -87,19 +87,19 @@ function resolveArch(a) {
   }
 }
 
-if (process.env.ZERO_SKIP_DOWNLOAD === '1') {
-  warnSkip('ZERO_SKIP_DOWNLOAD=1 set — skipping native binary download.');
+if (process.env.KAJICODE_SKIP_DOWNLOAD === '1') {
+  warnSkip('KAJICODE_SKIP_DOWNLOAD=1 set — skipping native binary download.');
 }
 
-const rawPlatform = process.env.ZERO_INSTALL_PLATFORM || process.platform;
-const rawArch = process.env.ZERO_INSTALL_ARCH || process.arch;
+const rawPlatform = process.env.KAJICODE_INSTALL_PLATFORM || process.platform;
+const rawArch = process.env.KAJICODE_INSTALL_ARCH || process.arch;
 const platform = resolvePlatform(rawPlatform);
 const arch = resolveArch(rawArch);
 
 if (!platform || !arch) {
   warnSkip(
     `no prebuilt binary for ${rawPlatform}/${rawArch}. Build from source: ` +
-      `https://github.com/${REPO} (go run ./cmd/zero).`,
+      `https://github.com/${REPO} (go run ./cmd/kajicode).`,
   );
 }
 
@@ -112,14 +112,14 @@ if (platform === 'windows' && arch === 'arm64') {
   warnSkip(
     `no prebuilt binary for windows-arm64 (the windows-x64 build runs under ` +
       `emulation on Windows on ARM). Build from source or install the x64 package: ` +
-      `https://github.com/${REPO} (go run ./cmd/zero).`,
+      `https://github.com/${REPO} (go run ./cmd/kajicode).`,
   );
 }
 
 const ext = platform === 'windows' ? 'zip' : 'tar.gz';
-const binaryName = platform === 'windows' ? 'zero.exe' : 'zero';
+const binaryName = platform === 'windows' ? 'kajicode.exe' : 'kajicode';
 const tag = `v${VERSION}`;
-const assetName = `zero-v${VERSION}-${platform}-${arch}.${ext}`;
+const assetName = `kajicode-v${VERSION}-${platform}-${arch}.${ext}`;
 const assetUrl = `${BASE}/${REPO}/releases/download/${tag}/${assetName}`;
 const checksumUrl = `${assetUrl}.sha256`;
 
@@ -127,12 +127,12 @@ const checksumUrl = `${assetUrl}.sha256`;
 // sandbox finds its adjacent helpers (tier-1 discovery), but never required.
 const optionalBinaries =
   platform === 'windows'
-    ? ['zero-windows-command-runner.exe', 'zero-windows-sandbox-setup.exe']
+    ? ['kajicode-windows-command-runner.exe', 'kajicode-windows-sandbox-setup.exe']
     : platform === 'linux'
-      ? ['zero-linux-sandbox', 'zero-seccomp']
+      ? ['kajicode-linux-sandbox', 'kajicode-seccomp']
       : [];
 
-if (process.env.ZERO_INSTALL_DRY_RUN === '1') {
+if (process.env.KAJICODE_INSTALL_DRY_RUN === '1') {
   process.stdout.write(
     JSON.stringify({
       version: VERSION,
@@ -150,7 +150,7 @@ if (process.env.ZERO_INSTALL_DRY_RUN === '1') {
 }
 
 // Idempotent: skip if the binary for this exact version is already in place.
-const markerPath = join(packageRoot, '.zero-binary-version');
+const markerPath = join(packageRoot, '.kajicode-binary-version');
 const installedBinary = join(packageRoot, binaryName);
 if (
   existsSync(installedBinary) &&
@@ -164,7 +164,7 @@ async function download(url) {
   if (!ALLOW_INSECURE && !url.startsWith('https://')) {
     fail(
       `refusing insecure download origin for ${url}: only https:// is allowed ` +
-        `(set ZERO_ALLOW_INSECURE_DOWNLOAD=1 to override for local testing).`,
+        `(set KAJICODE_ALLOW_INSECURE_DOWNLOAD=1 to override for local testing).`,
     );
   }
   let response;
@@ -182,7 +182,7 @@ async function download(url) {
     fail(
       `download failed (HTTP ${response.status}) for ${url} (release tag ${tag}). ` +
         `If no release exists yet, or the tag and package.json version disagree, ` +
-        `build from source: https://github.com/${REPO} (go run ./cmd/zero).`,
+        `build from source: https://github.com/${REPO} (go run ./cmd/kajicode).`,
     );
   }
   const declared = Number(response.headers.get('content-length') || 0);
@@ -266,7 +266,7 @@ async function main() {
     fail(`checksum mismatch for ${assetName}: expected ${expected}, got ${actual}`);
   }
 
-  const tempDir = mkdtempSync(join(tmpdir(), 'zero-install-'));
+    const tempDir = mkdtempSync(join(tmpdir(), 'kajicode-install-'));
   try {
     const archivePath = join(tempDir, assetName);
     writeFileSync(archivePath, archiveBuffer);
@@ -285,7 +285,7 @@ async function main() {
       const source = findByBasename(extractDir, name);
       if (!source) {
         console.error(
-          `[zero] note: optional helper ${name} was not in ${assetName}; ` +
+          `[kajicode] note: optional helper ${name} was not in ${assetName}; ` +
             `the sandbox may run with reduced isolation.`,
         );
         continue;
@@ -297,7 +297,7 @@ async function main() {
 
     writeFileSync(markerPath, VERSION + '\n');
     const sizeKb = Math.round(statSync(installedBinary).size / 1024);
-    console.error(`[zero] installed ${binaryName} ${VERSION} (${platform}-${arch}, ${sizeKb} KB).`);
+    console.error(`[kajicode] installed ${binaryName} ${VERSION} (${platform}-${arch}, ${sizeKb} KB).`);
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }

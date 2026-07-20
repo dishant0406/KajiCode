@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/release"
+	"github.com/dishant0406/KajiCode/internal/release"
 )
 
 func TestApplyReturnsNoopWhenUpToDate(t *testing.T) {
@@ -31,16 +31,16 @@ func TestApplyReturnsNoopWhenUpToDate(t *testing.T) {
 }
 
 func TestApplyStandaloneUpdateReplacesBinary(t *testing.T) {
-	binaryName := "zero"
+	binaryName := "kajicode"
 	// macOS ships no optional helper binaries (matching scripts/postinstall.mjs),
 	// so there's nothing to refresh there; only linux/windows have one to check.
 	optionalName := ""
 	switch runtime.GOOS {
 	case "windows":
-		binaryName = "zero.exe"
-		optionalName = "zero-windows-command-runner.exe"
+		binaryName = "kajicode.exe"
+		optionalName = "kajicode-windows-command-runner.exe"
 	case "linux":
-		optionalName = "zero-seccomp"
+		optionalName = "kajicode-seccomp"
 	}
 
 	installDir := t.TempDir()
@@ -58,14 +58,14 @@ func TestApplyStandaloneUpdateReplacesBinary(t *testing.T) {
 		}
 	}
 
-	archiveName := "zero-v0.2.0-linux-x64.tar.gz"
+	archiveName := "kajicode-v0.2.0-linux-x64.tar.gz"
 	archiveDir := t.TempDir()
 	archivePath := filepath.Join(archiveDir, archiveName)
 	writeTestTarGz(t, archivePath, map[string]string{
-		"zero":                            "new-binary",
-		"zero.exe":                        "new-binary-exe",
-		"zero-seccomp":                    "new-helper",
-		"zero-windows-command-runner.exe": "new-helper-exe",
+		"kajicode":                            "new-binary",
+		"kajicode.exe":                        "new-binary-exe",
+		"kajicode-seccomp":                    "new-helper",
+		"kajicode-windows-command-runner.exe": "new-helper-exe",
 	})
 	checksum, err := release.SHA256File(archivePath)
 	if err != nil {
@@ -149,11 +149,11 @@ func TestApplyStandaloneUpdateReplacesBinary(t *testing.T) {
 }
 
 func TestApplyStandaloneUpdateWarnsWhenHelperRefreshFails(t *testing.T) {
-	binaryName := "zero"
-	optionalName := "zero-seccomp"
+	binaryName := "kajicode"
+	optionalName := "kajicode-seccomp"
 	if runtime.GOOS == "windows" {
-		binaryName = "zero.exe"
-		optionalName = "zero-windows-command-runner.exe"
+		binaryName = "kajicode.exe"
+		optionalName = "kajicode-windows-command-runner.exe"
 	} else if runtime.GOOS == "darwin" {
 		t.Skip("macOS ships no optional helper binaries to refresh")
 	}
@@ -174,14 +174,14 @@ func TestApplyStandaloneUpdateWarnsWhenHelperRefreshFails(t *testing.T) {
 		t.Fatalf("MkdirAll staged path: %v", err)
 	}
 
-	archiveName := "zero-v0.2.0-linux-x64.tar.gz"
+	archiveName := "kajicode-v0.2.0-linux-x64.tar.gz"
 	archiveDir := t.TempDir()
 	archivePath := filepath.Join(archiveDir, archiveName)
 	writeTestTarGz(t, archivePath, map[string]string{
-		"zero":                            "new-binary",
-		"zero.exe":                        "new-binary-exe",
-		"zero-seccomp":                    "new-helper",
-		"zero-windows-command-runner.exe": "new-helper-exe",
+		"kajicode":                            "new-binary",
+		"kajicode.exe":                        "new-binary-exe",
+		"kajicode-seccomp":                    "new-helper",
+		"kajicode-windows-command-runner.exe": "new-helper-exe",
 	})
 	checksum, err := release.SHA256File(archivePath)
 	if err != nil {
@@ -241,9 +241,9 @@ func TestApplyStandaloneUpdateWarnsWhenHelperRefreshFails(t *testing.T) {
 }
 
 func TestApplyStandaloneUpdateRejectsChecksumMismatch(t *testing.T) {
-	binaryName := "zero"
+	binaryName := "kajicode"
 	if runtime.GOOS == "windows" {
-		binaryName = "zero.exe"
+		binaryName = "kajicode.exe"
 	}
 
 	installDir := t.TempDir()
@@ -252,10 +252,10 @@ func TestApplyStandaloneUpdateRejectsChecksumMismatch(t *testing.T) {
 		t.Fatalf("WriteFile executable: %v", err)
 	}
 
-	archiveName := "zero-v0.2.0-linux-x64.tar.gz"
+	archiveName := "kajicode-v0.2.0-linux-x64.tar.gz"
 	archiveDir := t.TempDir()
 	archivePath := filepath.Join(archiveDir, archiveName)
-	writeTestTarGz(t, archivePath, map[string]string{"zero": "new-binary", "zero.exe": "new-binary-exe"})
+	writeTestTarGz(t, archivePath, map[string]string{"kajicode": "new-binary", "kajicode.exe": "new-binary-exe"})
 
 	badChecksumText, err := release.FormatSHA256Checksum("0000000000000000000000000000000000000000000000000000000000000000"[:64], archiveName)
 	if err != nil {

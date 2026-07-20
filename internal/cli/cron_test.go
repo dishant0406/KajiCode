@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/cron"
+	"github.com/dishant0406/KajiCode/internal/cron"
 )
 
 func testCronStore(t *testing.T) *cron.Store {

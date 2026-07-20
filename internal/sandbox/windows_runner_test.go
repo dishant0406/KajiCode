@@ -114,7 +114,7 @@ func TestWindowsCapabilitySIDsForConfigSelectsWritableRootSIDs(t *testing.T) {
 
 func TestResolveWindowsSandboxHomeHonorsOverride(t *testing.T) {
 	root := t.TempDir()
-	home, err := ResolveWindowsSandboxHome(map[string]string{"ZERO_WINDOWS_SANDBOX_HOME": filepath.Join(root, "sandbox")})
+	home, err := ResolveWindowsSandboxHome(map[string]string{"KAJICODE_WINDOWS_SANDBOX_HOME": filepath.Join(root, "sandbox")})
 	if err != nil {
 		t.Fatalf("ResolveWindowsSandboxHome: %v", err)
 	}

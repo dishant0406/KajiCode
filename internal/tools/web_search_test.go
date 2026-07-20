@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	zeroSandbox "github.com/Gitlawb/zero/internal/sandbox"
+	zeroSandbox "github.com/dishant0406/KajiCode/internal/sandbox"
 )
 
 type fakeSearchBackend struct {
@@ -104,7 +104,7 @@ func TestWebSearchRedactsBackendError(t *testing.T) {
 
 func TestWebSearchRegisteredInCoreNetworkTools(t *testing.T) {
 	// web_search is registered only when a backend is configured.
-	t.Setenv("ZERO_WEBSEARCH_BASE_URL", "https://search.example/api")
+	t.Setenv("KAJICODE_WEBSEARCH_BASE_URL", "https://search.example/api")
 	found := false
 	for _, tool := range CoreNetworkTools() {
 		if tool.Name() == "web_search" {
@@ -184,7 +184,7 @@ func TestHTTPSearchBackendSendsProviderAndParsesResults(t *testing.T) {
 	}
 	// The configured provider and query must reach the backend.
 	if gotBody["provider"] != "exa" {
-		t.Fatalf("ZERO_WEBSEARCH_PROVIDER not forwarded: %#v", gotBody)
+		t.Fatalf("KAJICODE_WEBSEARCH_PROVIDER not forwarded: %#v", gotBody)
 	}
 	if gotBody["query"] != "q" {
 		t.Fatalf("query not forwarded: %#v", gotBody)
@@ -388,7 +388,7 @@ func TestWebSearchRendersScoreWhenPresent(t *testing.T) {
 	}
 	// The zero-score row must NOT render "score 0.00" — that would be noisy.
 	if strings.Contains(res.Output, "score 0.00") {
-		t.Errorf("zero score must not be rendered, got: %s", res.Output)
+		t.Errorf("kajicode score must not be rendered, got: %s", res.Output)
 	}
 }
 

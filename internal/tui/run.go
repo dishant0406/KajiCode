@@ -10,16 +10,16 @@ import (
 	"github.com/charmbracelet/x/term"
 )
 
-// Run starts the Zero Bubble Tea shell and returns a process-style exit code.
+// Run starts the KajiCode Bubble Tea shell and returns a process-style exit code.
 func Run(ctx context.Context, options Options) int {
 	// The interactive shell needs a real terminal on stdin: with piped or
 	// redirected input Bubble Tea blocks forever waiting for events that never
-	// arrive (e.g. `echo "" | zero`). Fail fast with guidance toward the headless
+	// arrive (e.g. `echo "" | kajicode`). Fail fast with guidance toward the headless
 	// path instead of hanging. term.IsTerminal is a true TTY check (it rejects
 	// pipes, regular files, and non-terminal char devices like /dev/null) and
 	// fails closed — anything that is not a verified terminal blocks the shell.
 	if !term.IsTerminal(os.Stdin.Fd()) {
-		fmt.Fprintln(os.Stderr, "zero: the interactive shell needs a terminal (stdin is not a TTY). For non-interactive use, run: zero exec \"<prompt>\"")
+		fmt.Fprintln(os.Stderr, "kajicode: the interactive shell needs a terminal (stdin is not a TTY). For non-interactive use, run: kajicode exec \"<prompt>\"")
 		return 2
 	}
 
@@ -61,7 +61,7 @@ func Run(ctx context.Context, options Options) int {
 	if _, err := program.Run(); err != nil {
 		// Surface the failure: exiting 1 with zero diagnostics left users
 		// guessing why the default chat surface died.
-		fmt.Fprintln(os.Stderr, "zero: tui error:", err)
+		fmt.Fprintln(os.Stderr, "kajicode: tui error:", err)
 		return 1
 	}
 	return 0

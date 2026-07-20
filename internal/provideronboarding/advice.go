@@ -5,8 +5,8 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/Gitlawb/zero/internal/config"
-	"github.com/Gitlawb/zero/internal/providercatalog"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/providercatalog"
 )
 
 type Action struct {
@@ -25,7 +25,7 @@ func (state ProviderState) Actions() []Action {
 }
 
 func SetupCommand(descriptor providercatalog.Descriptor, name string, setActive bool) string {
-	parts := []string{"zero", "providers", "add", strings.TrimSpace(descriptor.ID)}
+	parts := []string{"kajicode", "providers", "add", strings.TrimSpace(descriptor.ID)}
 	if name = strings.TrimSpace(name); name != "" {
 		parts = append(parts, "--name", name)
 	}
@@ -41,7 +41,7 @@ func SetupCommand(descriptor providercatalog.Descriptor, name string, setActive 
 }
 
 func UseCommand(name string) string {
-	parts := []string{"zero", "providers", "use"}
+	parts := []string{"kajicode", "providers", "use"}
 	if name = strings.TrimSpace(name); name != "" {
 		parts = append(parts, name)
 	}
@@ -49,7 +49,7 @@ func UseCommand(name string) string {
 }
 
 func CheckCommand(name string, connectivity bool) string {
-	parts := []string{"zero", "providers", "check"}
+	parts := []string{"kajicode", "providers", "check"}
 	if name = strings.TrimSpace(name); name != "" {
 		parts = append(parts, name)
 	}

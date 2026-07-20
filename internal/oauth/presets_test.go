@@ -20,9 +20,9 @@ func TestScopesOrPresetReturnsACopy(t *testing.T) {
 
 func TestResolveConfigUsesXAIPreset(t *testing.T) {
 	r := NewRegistry()
-	// Presets are opt-in; with ZERO_OAUTH_ALLOW_PRESETS set and no other env vars
+	// Presets are opt-in; with KAJICODE_OAUTH_ALLOW_PRESETS set and no other env vars
 	// the preset supplies everything.
-	cfg, flow, err := r.ResolveConfig("xai", map[string]string{"ZERO_OAUTH_ALLOW_PRESETS": "1"})
+	cfg, flow, err := r.ResolveConfig("xai", map[string]string{"KAJICODE_OAUTH_ALLOW_PRESETS": "1"})
 	if err != nil {
 		t.Fatalf("ResolveConfig(xai): %v", err)
 	}
@@ -47,7 +47,7 @@ func TestResolveConfigUsesXAIPreset(t *testing.T) {
 }
 
 // envWithPresetsAllowed lets a caller (the wizard / CLI login / runtime refresh)
-// opt into the preset without exporting ZERO_OAUTH_ALLOW_PRESETS: an otherwise-inert
+// opt into the preset without exporting KAJICODE_OAUTH_ALLOW_PRESETS: an otherwise-inert
 // xAI config now resolves from the baked-in preset.
 func TestEnvWithPresetsAllowedEnablesPreset(t *testing.T) {
 	r := NewRegistry()
@@ -65,16 +65,16 @@ func TestEnvWithPresetsAllowedEnablesPreset(t *testing.T) {
 	}
 }
 
-// The helper copies the base map (never mutating it) and keeps ZERO_OAUTH_<NAME>_*
+// The helper copies the base map (never mutating it) and keeps KAJICODE_OAUTH_<NAME>_*
 // overrides — critical because envValue treats a non-nil map as hermetic, so a
 // partial map would silently drop them.
 func TestEnvWithPresetsAllowedPreservesOverrides(t *testing.T) {
-	base := map[string]string{"ZERO_OAUTH_XAI_CLIENT_ID": "custom-id"}
+	base := map[string]string{"KAJICODE_OAUTH_XAI_CLIENT_ID": "custom-id"}
 	env := envWithPresetsAllowed(base)
-	if env["ZERO_OAUTH_ALLOW_PRESETS"] != "1" {
+	if env["KAJICODE_OAUTH_ALLOW_PRESETS"] != "1" {
 		t.Fatalf("opt-in flag not set: %v", env)
 	}
-	if _, mutated := base["ZERO_OAUTH_ALLOW_PRESETS"]; mutated {
+	if _, mutated := base["KAJICODE_OAUTH_ALLOW_PRESETS"]; mutated {
 		t.Fatal("envWithPresetsAllowed mutated the caller's base map")
 	}
 	cfg, _, err := NewRegistry().ResolveConfig("xai", env)
@@ -89,10 +89,10 @@ func TestEnvWithPresetsAllowedPreservesOverrides(t *testing.T) {
 func TestResolveConfigEnvOverridesPreset(t *testing.T) {
 	r := NewRegistry()
 	env := map[string]string{
-		"ZERO_OAUTH_ALLOW_PRESETS": "1",
-		"ZERO_OAUTH_XAI_CLIENT_ID": "custom-id",
-		"ZERO_OAUTH_XAI_SCOPES":    "alpha beta",
-		"ZERO_OAUTH_XAI_FLOW":      "device",
+		"KAJICODE_OAUTH_ALLOW_PRESETS": "1",
+		"KAJICODE_OAUTH_XAI_CLIENT_ID": "custom-id",
+		"KAJICODE_OAUTH_XAI_SCOPES":    "alpha beta",
+		"KAJICODE_OAUTH_XAI_FLOW":      "device",
 	}
 	cfg, flow, err := r.ResolveConfig("xai", env)
 	if err != nil {
@@ -127,9 +127,9 @@ func TestResolveConfigPresetInertWithoutOptIn(t *testing.T) {
 	r := NewRegistry()
 	_, _, err := r.ResolveConfig("xai", map[string]string{})
 	if err == nil {
-		t.Fatal("xai must not resolve from the preset unless ZERO_OAUTH_ALLOW_PRESETS is set")
+		t.Fatal("xai must not resolve from the preset unless KAJICODE_OAUTH_ALLOW_PRESETS is set")
 	}
-	if !strings.Contains(err.Error(), "ZERO_OAUTH_ALLOW_PRESETS") {
+	if !strings.Contains(err.Error(), "KAJICODE_OAUTH_ALLOW_PRESETS") {
 		t.Fatalf("error should point at the opt-in, got: %v", err)
 	}
 }
@@ -140,11 +140,11 @@ func TestResolveConfigPresetInertWithoutOptIn(t *testing.T) {
 // though endpoints, issuer, and scopes are pre-filled.
 func TestResolveConfigHuggingFaceRequiresClientID(t *testing.T) {
 	r := NewRegistry()
-	_, _, err := r.ResolveConfig("huggingface", map[string]string{"ZERO_OAUTH_ALLOW_PRESETS": "1"})
+	_, _, err := r.ResolveConfig("huggingface", map[string]string{"KAJICODE_OAUTH_ALLOW_PRESETS": "1"})
 	if err == nil {
 		t.Fatal("huggingface must not resolve from the preset alone (no baked-in client_id)")
 	}
-	if !strings.Contains(err.Error(), "ZERO_OAUTH_HUGGINGFACE_CLIENT_ID") {
+	if !strings.Contains(err.Error(), "KAJICODE_OAUTH_HUGGINGFACE_CLIENT_ID") {
 		t.Fatalf("error should point at the env var, got: %v", err)
 	}
 }
@@ -154,9 +154,9 @@ func TestResolveConfigHuggingFaceRequiresClientID(t *testing.T) {
 func TestResolveConfigHuggingFaceWithEnvClientID(t *testing.T) {
 	r := NewRegistry()
 	env := map[string]string{
-		"ZERO_OAUTH_ALLOW_PRESETS":         "1",
-		"ZERO_OAUTH_HUGGINGFACE_CLIENT_ID": "test-client-id-value",
-		"ZERO_OAUTH_HUGGINGFACE_SCOPES":    "openid inference-api",
+		"KAJICODE_OAUTH_ALLOW_PRESETS":         "1",
+		"KAJICODE_OAUTH_HUGGINGFACE_CLIENT_ID": "test-client-id-value",
+		"KAJICODE_OAUTH_HUGGINGFACE_SCOPES":    "openid inference-api",
 	}
 	cfg, flow, err := r.ResolveConfig("huggingface", env)
 	if err != nil {
@@ -184,7 +184,7 @@ func TestResolveConfigHuggingFaceWithEnvClientID(t *testing.T) {
 // backend requires a browser; there is no device-code path.
 func TestResolveConfigChatGPTPreset(t *testing.T) {
 	r := NewRegistry()
-	cfg, flow, err := r.ResolveConfig("chatgpt", map[string]string{"ZERO_OAUTH_ALLOW_PRESETS": "1"})
+	cfg, flow, err := r.ResolveConfig("chatgpt", map[string]string{"KAJICODE_OAUTH_ALLOW_PRESETS": "1"})
 	if err != nil {
 		t.Fatalf("ResolveConfig(chatgpt): %v", err)
 	}

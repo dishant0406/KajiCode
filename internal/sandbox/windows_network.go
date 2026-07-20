@@ -51,7 +51,7 @@ func ValidateWindowsNetworkPolicy(network NetworkPolicy) error {
 }
 
 // BuildWindowsNetworkInfraPlan returns the mode-INDEPENDENT network
-// infrastructure that `zero sandbox setup` installs: the persistent outbound
+// infrastructure that `kajicode sandbox setup` installs: the persistent outbound
 // block filters scoped to the sandbox home's offline-marker SID. It is identical
 // for allow and deny command configs — the per-command mode is enforced at
 // runtime by whether the restricted token carries the offline-marker SID, not by

@@ -3,7 +3,7 @@ package tools
 import (
 	"context"
 
-	"github.com/Gitlawb/zero/internal/sandbox"
+	"github.com/dishant0406/KajiCode/internal/sandbox"
 )
 
 type SideEffect string
@@ -112,7 +112,7 @@ type Display struct {
 	Kind    string // e.g. file, diff, search, shell
 	// Preview is a multi-line, card-only body (e.g. a unified diff or file head)
 	// for the TUI. It is NEVER sent to the model — Output stays the short summary
-	// the model sees — so a rich code preview costs zero model tokens.
+	// the model sees — so a rich code preview costs kajicode model tokens.
 	Preview string
 }
 

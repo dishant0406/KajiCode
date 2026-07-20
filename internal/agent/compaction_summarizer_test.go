@@ -8,7 +8,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
 )
 
 var markerPattern = regexp.MustCompile(`msg-\d+`)
@@ -22,18 +22,18 @@ type sizeLimitedSummarizer struct {
 	calls      int32
 }
 
-func (p *sizeLimitedSummarizer) StreamCompletion(_ context.Context, request zeroruntime.CompletionRequest) (<-chan zeroruntime.StreamEvent, error) {
+func (p *sizeLimitedSummarizer) StreamCompletion(_ context.Context, request kajicoderuntime.CompletionRequest) (<-chan kajicoderuntime.StreamEvent, error) {
 	atomic.AddInt32(&p.calls, 1)
 	text := request.Messages[len(request.Messages)-1].Content
 	markers := markerPattern.FindAllString(text, -1)
-	ch := make(chan zeroruntime.StreamEvent, 2)
+	ch := make(chan kajicoderuntime.StreamEvent, 2)
 	if len(markers) > p.maxMarkers {
-		ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventError, Error: "context length exceeded"}
+		ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventError, Error: "context length exceeded"}
 		close(ch)
 		return ch, nil
 	}
-	ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventText, Content: strings.Join(markers, " ")}
-	ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventDone}
+	ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventText, Content: strings.Join(markers, " ")}
+	ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventDone}
 	close(ch)
 	return ch, nil
 }
@@ -43,10 +43,10 @@ type errorSummarizer struct {
 	calls   int32
 }
 
-func (p *errorSummarizer) StreamCompletion(_ context.Context, _ zeroruntime.CompletionRequest) (<-chan zeroruntime.StreamEvent, error) {
+func (p *errorSummarizer) StreamCompletion(_ context.Context, _ kajicoderuntime.CompletionRequest) (<-chan kajicoderuntime.StreamEvent, error) {
 	atomic.AddInt32(&p.calls, 1)
-	ch := make(chan zeroruntime.StreamEvent, 1)
-	ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventError, Error: p.message}
+	ch := make(chan kajicoderuntime.StreamEvent, 1)
+	ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventError, Error: p.message}
 	close(ch)
 	return ch, nil
 }
@@ -59,25 +59,25 @@ type compressingSummarizer struct {
 	calls      int32
 }
 
-func (p *compressingSummarizer) StreamCompletion(_ context.Context, request zeroruntime.CompletionRequest) (<-chan zeroruntime.StreamEvent, error) {
+func (p *compressingSummarizer) StreamCompletion(_ context.Context, request kajicoderuntime.CompletionRequest) (<-chan kajicoderuntime.StreamEvent, error) {
 	atomic.AddInt32(&p.calls, 1)
 	text := request.Messages[len(request.Messages)-1].Content
-	ch := make(chan zeroruntime.StreamEvent, 2)
+	ch := make(chan kajicoderuntime.StreamEvent, 2)
 	if len(markerPattern.FindAllString(text, -1)) > p.maxMarkers {
-		ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventError, Error: "context length exceeded"}
+		ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventError, Error: "context length exceeded"}
 		close(ch)
 		return ch, nil
 	}
-	ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventText, Content: "S"}
-	ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventDone}
+	ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventText, Content: "S"}
+	ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventDone}
 	close(ch)
 	return ch, nil
 }
 
 func TestSummarizeWithFallbackReSummarizesPartialsIntoOne(t *testing.T) {
-	messages := make([]zeroruntime.Message, 4)
+	messages := make([]kajicoderuntime.Message, 4)
 	for i := range messages {
-		messages[i] = zeroruntime.Message{Role: zeroruntime.MessageRoleUser, Content: fmt.Sprintf("msg-%d body", i)}
+		messages[i] = kajicoderuntime.Message{Role: kajicoderuntime.MessageRoleUser, Content: fmt.Sprintf("msg-%d body", i)}
 	}
 	provider := &compressingSummarizer{maxMarkers: 2}
 
@@ -97,9 +97,9 @@ func TestSummarizeWithFallbackReSummarizesPartialsIntoOne(t *testing.T) {
 
 func TestSummarizeWithFallbackChunksOnContextLimit(t *testing.T) {
 	const n = 8
-	messages := make([]zeroruntime.Message, n)
+	messages := make([]kajicoderuntime.Message, n)
 	for i := range messages {
-		messages[i] = zeroruntime.Message{Role: zeroruntime.MessageRoleUser, Content: fmt.Sprintf("msg-%d some content", i)}
+		messages[i] = kajicoderuntime.Message{Role: kajicoderuntime.MessageRoleUser, Content: fmt.Sprintf("msg-%d some content", i)}
 	}
 	// The summarizer can only handle 2 messages per call, so the 8-message slice
 	// must be split recursively until each chunk fits.
@@ -121,9 +121,9 @@ func TestSummarizeWithFallbackChunksOnContextLimit(t *testing.T) {
 
 func TestSummarizeWithFallbackPropagatesNonContextErrors(t *testing.T) {
 	provider := &errorSummarizer{message: "auth error: invalid key"}
-	_, err := summarizeWithFallback(context.Background(), provider, []zeroruntime.Message{
-		{Role: zeroruntime.MessageRoleUser, Content: "msg-0"},
-		{Role: zeroruntime.MessageRoleUser, Content: "msg-1"},
+	_, err := summarizeWithFallback(context.Background(), provider, []kajicoderuntime.Message{
+		{Role: kajicoderuntime.MessageRoleUser, Content: "msg-0"},
+		{Role: kajicoderuntime.MessageRoleUser, Content: "msg-1"},
 	}, nil)
 	if err == nil {
 		t.Fatal("expected a non-context-limit error to propagate")
@@ -136,8 +136,8 @@ func TestSummarizeWithFallbackPropagatesNonContextErrors(t *testing.T) {
 func TestSummarizeWithFallbackSingleMessageContextLimitSurfaces(t *testing.T) {
 	// A single message that still won't fit can't be split further → error surfaces.
 	provider := &sizeLimitedSummarizer{maxMarkers: 0}
-	_, err := summarizeWithFallback(context.Background(), provider, []zeroruntime.Message{
-		{Role: zeroruntime.MessageRoleUser, Content: "msg-0 too big"},
+	_, err := summarizeWithFallback(context.Background(), provider, []kajicoderuntime.Message{
+		{Role: kajicoderuntime.MessageRoleUser, Content: "msg-0 too big"},
 	}, nil)
 	if err == nil {
 		t.Fatal("expected the context-limit error to surface for an unsplittable single message")
@@ -148,22 +148,22 @@ func TestSummarizeWithFallbackSingleMessageContextLimitSurfaces(t *testing.T) {
 // summarizer's token cost is forwarded to OnUsage.
 type usageReportingSummarizer struct{}
 
-func (usageReportingSummarizer) StreamCompletion(_ context.Context, _ zeroruntime.CompletionRequest) (<-chan zeroruntime.StreamEvent, error) {
-	ch := make(chan zeroruntime.StreamEvent, 3)
-	ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventText, Content: "summary"}
-	ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventUsage, Usage: zeroruntime.Usage{PromptTokens: 100, CompletionTokens: 20}}
-	ch <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventDone}
+func (usageReportingSummarizer) StreamCompletion(_ context.Context, _ kajicoderuntime.CompletionRequest) (<-chan kajicoderuntime.StreamEvent, error) {
+	ch := make(chan kajicoderuntime.StreamEvent, 3)
+	ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventText, Content: "summary"}
+	ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventUsage, Usage: kajicoderuntime.Usage{PromptTokens: 100, CompletionTokens: 20}}
+	ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventDone}
 	return ch, nil
 }
 
 func TestSummarizeForwardsUsageButNotText(t *testing.T) {
 	// Compaction must stay invisible to the user (no OnText), but its token cost
 	// MUST be counted, so OnUsage has to fire for the summarizer call.
-	var got zeroruntime.Usage
+	var got kajicoderuntime.Usage
 	var calls int
-	summary, err := summarizeWithFallback(context.Background(), usageReportingSummarizer{}, []zeroruntime.Message{
-		{Role: zeroruntime.MessageRoleUser, Content: "hello"},
-	}, func(u zeroruntime.Usage) { calls++; got = u })
+	summary, err := summarizeWithFallback(context.Background(), usageReportingSummarizer{}, []kajicoderuntime.Message{
+		{Role: kajicoderuntime.MessageRoleUser, Content: "hello"},
+	}, func(u kajicoderuntime.Usage) { calls++; got = u })
 	if err != nil {
 		t.Fatalf("summarize failed: %v", err)
 	}

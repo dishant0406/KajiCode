@@ -13,7 +13,7 @@ import (
 // edit_file/write_file runs the language's standard formatter on the file it
 // just wrote, so the model's output always lands in project-canonical style
 // and never fails a CI format check it cannot see. Off by default (set
-// ZERO_FORMAT_ON_WRITE=1): auto-reformatting changes bytes the model did not
+// KAJICODE_FORMAT_ON_WRITE=1): auto-reformatting changes bytes the model did not
 // write, which strict workflows may not want.
 //
 // Ordering matters: formatting runs BEFORE the FileTracker re-baseline, and
@@ -61,7 +61,7 @@ var formatterCommands = map[string][]string{
 
 // formatOnWriteEnabled reports whether the opt-in env toggle is set.
 func formatOnWriteEnabled() bool {
-	value := strings.TrimSpace(os.Getenv("ZERO_FORMAT_ON_WRITE"))
+	value := strings.TrimSpace(os.Getenv("KAJICODE_FORMAT_ON_WRITE"))
 	return value != "" && value != "0" && !strings.EqualFold(value, "false")
 }
 

@@ -7,10 +7,10 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/Gitlawb/zero/internal/agent"
-	"github.com/Gitlawb/zero/internal/sessions"
-	"github.com/Gitlawb/zero/internal/specmode"
-	"github.com/Gitlawb/zero/internal/tools"
+	"github.com/dishant0406/KajiCode/internal/agent"
+	"github.com/dishant0406/KajiCode/internal/sessions"
+	"github.com/dishant0406/KajiCode/internal/specmode"
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
 func (m model) handleSpecCommand(task string) (tea.Model, tea.Cmd) {
@@ -258,18 +258,18 @@ func cloneToolRegistry(registry *tools.Registry) *tools.Registry {
 // language (badge + body + key chips) with line borders. Key handling lives
 // in handleSpecReviewKey, unchanged.
 func renderFocusedSpecReviewPrompt(review pendingSpecReviewPrompt, width int) string {
-	fill := zeroTheme.onPanel
-	actions := zeroTheme.badge.Render(" [a] approve ") +
-		fill(zeroTheme.ink).Render(" ") +
-		fill(zeroTheme.red).Render("[r]") + fill(zeroTheme.ink).Render(" reject ") +
-		fill(zeroTheme.accent).Render("[e]") + fill(zeroTheme.ink).Render(" edit file ") +
-		fill(zeroTheme.faint).Render("[esc] cancel")
+	fill := kajicodeTheme.onPanel
+	actions := kajicodeTheme.badge.Render(" [a] approve ") +
+		fill(kajicodeTheme.ink).Render(" ") +
+		fill(kajicodeTheme.red).Render("[r]") + fill(kajicodeTheme.ink).Render(" reject ") +
+		fill(kajicodeTheme.accent).Render("[e]") + fill(kajicodeTheme.ink).Render(" edit file ") +
+		fill(kajicodeTheme.faint).Render("[esc] cancel")
 	lines := []string{
-		zeroTheme.badge.Render(" SPEC REVIEW "),
-		fill(zeroTheme.faint).Render("path: ") + fill(zeroTheme.ink).Render(reviewDisplayPath(review)),
+		kajicodeTheme.badge.Render(" SPEC REVIEW "),
+		fill(kajicodeTheme.faint).Render("path: ") + fill(kajicodeTheme.ink).Render(reviewDisplayPath(review)),
 		actions,
 	}
-	return styledBlockFill(width, lines, zeroTheme.line, zeroTheme.panel)
+	return styledBlockFill(width, lines, kajicodeTheme.line, kajicodeTheme.panel)
 }
 
 func specReviewSummary(review pendingSpecReviewPrompt) string {

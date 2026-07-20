@@ -37,7 +37,7 @@ func TestEditFileRefusesAfterFileChangedOnDisk(t *testing.T) {
 	if res := registry.RunWithOptions(context.Background(), "read_file", map[string]any{"path": "f.txt"}, grantedOpts(tracker)); res.Status != StatusOK {
 		t.Fatalf("read_file failed: %s", res.Output)
 	}
-	// Something outside Zero rewrites the file.
+	// Something outside KajiCode rewrites the file.
 	if err := os.WriteFile(path, []byte("alpha changed externally\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}

@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/config"
-	"github.com/Gitlawb/zero/internal/oauth"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/oauth"
 )
 
 func TestFirstUsableProviderPrefersRemoteKeyed(t *testing.T) {

@@ -1,6 +1,6 @@
 package specialist
 
-import "github.com/Gitlawb/zero/internal/tools"
+import "github.com/dishant0406/KajiCode/internal/tools"
 
 func RegisterTools(registry *tools.Registry, executor Executor) (*Runtime, error) {
 	runtime := executor.BackgroundRuntime

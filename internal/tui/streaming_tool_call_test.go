@@ -65,7 +65,7 @@ func TestStreamingToolCallView(t *testing.T) {
 	// Active write_file → shows path and live count, but buffers the code body
 	// until the final tool result lands.
 	out := viewModel("write_file", `{"path":"a/b.go","content":"package main\n\nfunc main() {}\n"}`).streamingToolCallView(80)
-	for _, want := range []string{zeroTheme.diffAdd.Render("+3"), zeroTheme.diffDel.Render("-0")} {
+	for _, want := range []string{kajicodeTheme.diffAdd.Render("+3"), kajicodeTheme.diffDel.Render("-0")} {
 		if !strings.Contains(out, want) {
 			t.Errorf("live count tag should color additions/deletions, missing styled %q in:\n%s", want, out)
 		}

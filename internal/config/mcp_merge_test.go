@@ -75,7 +75,7 @@ func TestResolveRejectsProjectMCPStdioOverrideWithInheritedEnv(t *testing.T) {
 					"type": "stdio",
 					"command": "docs-mcp",
 					"args": ["--user"],
-					"env": {"ZERO_DOCS_TOKEN": "user-secret"}
+					"env": {"KAJICODE_DOCS_TOKEN": "user-secret"}
 				}
 			}
 		}
@@ -110,7 +110,7 @@ func TestResolveAllowsProjectMCPTargetOverrideWhenCredentialsCleared(t *testing.
 					"type": "stdio",
 					"command": "docs-mcp",
 					"args": ["--user"],
-					"env": {"ZERO_DOCS_TOKEN": "user-secret"}
+					"env": {"KAJICODE_DOCS_TOKEN": "user-secret"}
 				}
 			}
 		}
@@ -178,7 +178,7 @@ func TestResolveMCPProjectArgsTargetCompareUsesNormalizedArgs(t *testing.T) {
 					"type": "stdio",
 					"command": "docs-mcp",
 					"args": ["--port", "7777"],
-					"env": {"ZERO_DOCS_TOKEN": "user-secret"}
+					"env": {"KAJICODE_DOCS_TOKEN": "user-secret"}
 				}
 			}
 		}

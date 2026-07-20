@@ -1,6 +1,6 @@
-# Zero Stream-JSON Protocol
+# KajiCode Stream-JSON Protocol
 
-Zero stream-json is a line-delimited protocol for headless clients such as
+KajiCode stream-json is a line-delimited protocol for headless clients such as
 editor extensions and automation wrappers.
 
 Every line is one JSON object. Empty input lines are ignored. Output events are
@@ -20,7 +20,7 @@ Output events also include `runId`.
 
 ## Input Events
 
-`zero exec --input-format stream-json` accepts these JSONL events from stdin or
+`kajicode exec --input-format stream-json` accepts these JSONL events from stdin or
 `--file`.
 
 ```json
@@ -28,7 +28,7 @@ Output events also include `runId`.
 { "schemaVersion": 2, "type": "prompt", "content": "Return only blockers." }
 ```
 
-Zero combines accepted input event content in order, separated by blank lines.
+KajiCode combines accepted input event content in order, separated by blank lines.
 Unknown fields are rejected so protocol clients catch drift early.
 
 Schema version `2` renamed sandbox permission metadata from `violation` to
@@ -37,10 +37,10 @@ events when present.
 
 ## Output Events
 
-`zero exec --output-format stream-json` emits schema-versioned JSONL events.
+`kajicode exec --output-format stream-json` emits schema-versioned JSONL events.
 
 ```json
-{ "schemaVersion": 2, "type": "run_start", "runId": "run_20260603_abc123", "sessionId": "zero_20260603100000_abc123", "cwd": "/repo", "provider": "openai", "model": "gpt-4.1", "apiModel": "gpt-4.1" }
+{ "schemaVersion": 2, "type": "run_start", "runId": "run_20260603_abc123", "sessionId": "kajicode_20260603100000_abc123", "cwd": "/repo", "provider": "openai", "model": "gpt-4.1", "apiModel": "gpt-4.1" }
 { "schemaVersion": 2, "type": "reasoning", "runId": "run_20260603_abc123", "delta": "Thinking..." }
 { "schemaVersion": 2, "type": "text", "runId": "run_20260603_abc123", "delta": "..." }
 { "schemaVersion": 2, "type": "tool_call", "runId": "run_20260603_abc123", "id": "call_1", "name": "read_file", "args": { "path": "README.md" }, "sideEffect": "read" }
@@ -65,7 +65,7 @@ Permission events may include structured sandbox metadata:
 Errors are part of the protocol and are followed by `run_end`.
 
 Headless `exec` has no interactive permission responder. If a prompt-gated tool
-is not pre-approved, Zero may emit `permission_request` followed by a denied
+is not pre-approved, KajiCode may emit `permission_request` followed by a denied
 `tool_result`; interactive surfaces emit `permission_decision` when the user
 allows, denies, or always-allows the request.
 

@@ -14,7 +14,7 @@ func runWindowsSandboxSetup(config WindowsSandboxSetupConfig, stderr io.Writer) 
 	// rights; without them WFP fails deep inside with a raw ACCESS_DENIED (0x5).
 	// Check up front and return an actionable message instead.
 	if !windowsProcessIsElevated() {
-		fmt.Fprintln(stderr, WindowsSandboxSetupName+": Administrator rights are required. Re-run `zero sandbox setup` from an elevated (Run as administrator) terminal.")
+		fmt.Fprintln(stderr, WindowsSandboxSetupName+": Administrator rights are required. Re-run `kajicode sandbox setup` from an elevated (Run as administrator) terminal.")
 		return 1
 	}
 	plan, err := BuildWindowsACLPlan(config.commandConfig())

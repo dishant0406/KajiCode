@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/providercatalog"
+	"github.com/dishant0406/KajiCode/internal/providercatalog"
 )
 
 func TestModelsAreProviderScoped(t *testing.T) {

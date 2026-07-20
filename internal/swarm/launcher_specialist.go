@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 
-	"github.com/Gitlawb/zero/internal/specialist"
-	"github.com/Gitlawb/zero/internal/tools"
+	"github.com/dishant0406/KajiCode/internal/specialist"
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
 // NewSpecialistLauncher adapts internal/specialist.Executor into a

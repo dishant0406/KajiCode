@@ -10,9 +10,9 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/Gitlawb/zero/internal/config"
-	"github.com/Gitlawb/zero/internal/oauth"
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
+	"github.com/dishant0406/KajiCode/internal/oauth"
 )
 
 // managerTestModel builds a model with two saved providers, a seeded config
@@ -24,8 +24,8 @@ func managerTestModel(t *testing.T) model {
 	// and the file backend keeps the OS keychain out of tests entirely.
 	home := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", home)
-	t.Setenv("ZERO_OAUTH_TOKENS_PATH", filepath.Join(home, "oauth-tokens.json"))
-	t.Setenv("ZERO_CRED_STORAGE", "encrypted-file")
+	t.Setenv("KAJICODE_OAUTH_TOKENS_PATH", filepath.Join(home, "oauth-tokens.json"))
+	t.Setenv("KAJICODE_CRED_STORAGE", "encrypted-file")
 	configPath := filepath.Join(t.TempDir(), "config.json")
 	seed := config.FileConfig{
 		ActiveProvider: "opengateway",
@@ -48,7 +48,7 @@ func managerTestModel(t *testing.T) model {
 		ProviderProfile: seed.Providers[0],
 		SavedProviders:  seed.Providers,
 		UserConfigPath:  configPath,
-		NewProvider: func(config.ProviderProfile) (zeroruntime.Provider, error) {
+		NewProvider: func(config.ProviderProfile) (kajicoderuntime.Provider, error) {
 			return &fakeProvider{}, nil
 		},
 	})
@@ -370,7 +370,7 @@ func TestProviderManagerDescriptionClearPersists(t *testing.T) {
 
 // TestProviderManagerDeleteHintNamesActualOAuthLogin: after a rename the token
 // lives under the catalog id, not the profile name — the cleanup hint must name
-// the entry `zero auth logout` would actually delete (PR #560 review, P3).
+// the entry `kajicode auth logout` would actually delete (PR #560 review, P3).
 func TestProviderManagerDeleteHintNamesActualOAuthLogin(t *testing.T) {
 	m := managerTestModel(t)
 	// Reshape "backup" into a renamed OAuth catalog profile: keyless, named
@@ -406,7 +406,7 @@ func TestProviderManagerDeleteHintNamesActualOAuthLogin(t *testing.T) {
 	// goroutine; drain it into the model like the runtime would.
 	next = drainProviderManagerCmds(t, next, cmd)
 	status := next.providerWizard.manageStatus
-	if !strings.Contains(status, "zero auth logout chatgpt") {
+	if !strings.Contains(status, "kajicode auth logout chatgpt") {
 		t.Fatalf("hint must name the stored login (chatgpt), got %q", status)
 	}
 	if strings.Contains(status, "logout codex") {
@@ -457,7 +457,7 @@ func TestProviderManagerReadsStoredKeyBesideConfig(t *testing.T) {
 
 	// And the switch path must load the key instead of rejecting the provider.
 	var built config.ProviderProfile
-	m.newProvider = func(profile config.ProviderProfile) (zeroruntime.Provider, error) {
+	m.newProvider = func(profile config.ProviderProfile) (kajicoderuntime.Provider, error) {
 		built = profile
 		return &fakeProvider{}, nil
 	}

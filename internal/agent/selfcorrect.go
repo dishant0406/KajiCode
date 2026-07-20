@@ -7,10 +7,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/Gitlawb/zero/internal/lsp"
-	"github.com/Gitlawb/zero/internal/redaction"
-	"github.com/Gitlawb/zero/internal/trace"
-	"github.com/Gitlawb/zero/internal/verify"
+	"github.com/dishant0406/KajiCode/internal/lsp"
+	"github.com/dishant0406/KajiCode/internal/redaction"
+	"github.com/dishant0406/KajiCode/internal/trace"
+	"github.com/dishant0406/KajiCode/internal/verify"
 )
 
 // defaultSelfCorrectMaxAttempts bounds how many corrective rounds a single run

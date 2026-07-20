@@ -9,7 +9,7 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/Gitlawb/zero/internal/lockutil"
+	"github.com/dishant0406/KajiCode/internal/lockutil"
 )
 
 // Single-instance lock. Mirrors reference-daemon-code-agent-js/supervisor.js's

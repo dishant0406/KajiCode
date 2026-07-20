@@ -8,8 +8,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/Gitlawb/zero/internal/config"
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
 )
 
 const (
@@ -46,7 +46,7 @@ func cleanGeneratedRecap(raw string) string {
 // generateRecap asks the provider for a one-sentence recap of the turn's final
 // answer. Provider-shaped exactly like generateSessionTitle: system + a single
 // user turn, no tools.
-func generateRecap(ctx context.Context, provider zeroruntime.Provider, answer string) (string, error) {
+func generateRecap(ctx context.Context, provider kajicoderuntime.Provider, answer string) (string, error) {
 	if provider == nil {
 		return "", errors.New("no provider configured")
 	}
@@ -54,17 +54,17 @@ func generateRecap(ctx context.Context, provider zeroruntime.Provider, answer st
 	if answer == "" {
 		return "", errors.New("no answer to recap")
 	}
-	request := zeroruntime.CompletionRequest{
-		Messages: []zeroruntime.Message{
-			{Role: zeroruntime.MessageRoleSystem, Content: recapSystemPrompt},
-			{Role: zeroruntime.MessageRoleUser, Content: "Assistant's final answer:\n\n" + cutRunes(answer, recapMaxAnswerChars) + "\n\nOne-sentence recap:"},
+	request := kajicoderuntime.CompletionRequest{
+		Messages: []kajicoderuntime.Message{
+			{Role: kajicoderuntime.MessageRoleSystem, Content: recapSystemPrompt},
+			{Role: kajicoderuntime.MessageRoleUser, Content: "Assistant's final answer:\n\n" + cutRunes(answer, recapMaxAnswerChars) + "\n\nOne-sentence recap:"},
 		},
 	}
 	stream, err := provider.StreamCompletion(ctx, request)
 	if err != nil {
 		return "", err
 	}
-	collected := zeroruntime.CollectStreamWithOptions(ctx, stream, zeroruntime.CollectOptions{})
+	collected := kajicoderuntime.CollectStreamWithOptions(ctx, stream, kajicoderuntime.CollectOptions{})
 	if collected.Error != "" {
 		return "", errors.New(collected.Error)
 	}

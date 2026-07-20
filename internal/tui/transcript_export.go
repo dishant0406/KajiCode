@@ -38,7 +38,7 @@ func (m model) plainTranscriptText() string {
 		case rowUser:
 			prefix = "you: "
 		case rowAssistant:
-			prefix = "zero: "
+			prefix = "kajicode: "
 		case rowSystem:
 			prefix = "· "
 		case rowError:
@@ -69,7 +69,7 @@ func (m model) handleExportCommand(args string) string {
 	path := strings.TrimSpace(args)
 	if path == "" {
 		stamp := m.now().Format("20060102-150405")
-		path = fmt.Sprintf("zero-transcript-%s.txt", stamp)
+		path = fmt.Sprintf("kajicode-transcript-%s.txt", stamp)
 	}
 	if !filepath.IsAbs(path) && m.cwd != "" {
 		path = filepath.Join(m.cwd, path)

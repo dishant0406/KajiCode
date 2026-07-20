@@ -3,7 +3,7 @@ package providermodelcatalog
 import (
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/providercatalog"
+	"github.com/dishant0406/KajiCode/internal/providercatalog"
 )
 
 func TestModelIDAllowedForProvider(t *testing.T) {

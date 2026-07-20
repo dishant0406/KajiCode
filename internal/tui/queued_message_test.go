@@ -8,8 +8,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/Gitlawb/zero/internal/tools"
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
 func TestEnterWhilePendingQueuesPromptWithoutStartingRun(t *testing.T) {
@@ -88,9 +88,9 @@ func TestQueuedPromptPreviewSitsAboveComposer(t *testing.T) {
 }
 
 func TestAgentResponseLaunchesQueuedPrompt(t *testing.T) {
-	provider := &scriptedProvider{scripts: [][]zeroruntime.StreamEvent{{
-		{Type: zeroruntime.StreamEventText, Content: "queued answer"},
-		{Type: zeroruntime.StreamEventDone},
+	provider := &scriptedProvider{scripts: [][]kajicoderuntime.StreamEvent{{
+		{Type: kajicoderuntime.StreamEventText, Content: "queued answer"},
+		{Type: kajicoderuntime.StreamEventDone},
 	}}}
 	m := newQueuedMessageTestModel(t)
 	m.provider = provider
@@ -178,9 +178,9 @@ func TestEnterWhileExitingDoesNotQueuePrompt(t *testing.T) {
 }
 
 func TestAgentResponseLaunchesQueuedPromptAfterError(t *testing.T) {
-	provider := &scriptedProvider{scripts: [][]zeroruntime.StreamEvent{{
-		{Type: zeroruntime.StreamEventText, Content: "queued answer"},
-		{Type: zeroruntime.StreamEventDone},
+	provider := &scriptedProvider{scripts: [][]kajicoderuntime.StreamEvent{{
+		{Type: kajicoderuntime.StreamEventText, Content: "queued answer"},
+		{Type: kajicoderuntime.StreamEventDone},
 	}}}
 	m := newQueuedMessageTestModel(t)
 	m.provider = provider
@@ -297,8 +297,8 @@ func newQueuedMessageTestModel(t *testing.T) model {
 	return newModel(context.Background(), Options{
 		ProviderName: "openai",
 		ModelName:    "gpt-4.1",
-		Provider: &fakeProvider{events: []zeroruntime.StreamEvent{
-			{Type: zeroruntime.StreamEventDone},
+		Provider: &fakeProvider{events: []kajicoderuntime.StreamEvent{
+			{Type: kajicoderuntime.StreamEventDone},
 		}},
 		Registry:     tools.NewRegistry(),
 		SessionStore: testSessionStore(t),

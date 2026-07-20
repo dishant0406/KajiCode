@@ -9,18 +9,18 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/config"
-	"github.com/Gitlawb/zero/internal/providers/openai"
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
+	"github.com/dishant0406/KajiCode/internal/providers/openai"
 )
 
 // TestRunExecOptimizedSessionUnderGate proves the end-to-end wiring: with
-// ZERO_OPENAI_TURN_SESSION on and a real official-OpenAI provider, a headless
+// KAJICODE_OPENAI_TURN_SESSION on and a real official-OpenAI provider, a headless
 // run streams through the optimized session — the server sees the prewarm HEAD
 // probe in addition to the turn's POST.
 func TestRunExecOptimizedSessionUnderGate(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
-	t.Setenv("ZERO_OPENAI_TURN_SESSION", "1")
+	t.Setenv("KAJICODE_OPENAI_TURN_SESSION", "1")
 	cwd := t.TempDir()
 
 	var heads, posts atomic.Int64
@@ -55,7 +55,7 @@ func TestRunExecOptimizedSessionUnderGate(t *testing.T) {
 				},
 			}, nil
 		},
-		newProvider: func(profile config.ProviderProfile) (zeroruntime.Provider, error) {
+		newProvider: func(profile config.ProviderProfile) (kajicoderuntime.Provider, error) {
 			// Pin a keep-alive transport so the probe fires on every platform:
 			// the shared default transport disables keep-alives on macOS, where
 			// the session correctly skips the prewarm.
@@ -93,7 +93,7 @@ func TestRunExecOptimizedSessionUnderGate(t *testing.T) {
 // proceeds on the default path exactly as today.
 func TestRunExecGateOnFallsBackForFakeProvider(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
-	t.Setenv("ZERO_OPENAI_TURN_SESSION", "1")
+	t.Setenv("KAJICODE_OPENAI_TURN_SESSION", "1")
 	cwd := t.TempDir()
 
 	var builds int
@@ -111,7 +111,7 @@ func TestRunExecGateOnFallsBackForFakeProvider(t *testing.T) {
 			cfg.MaxTurns = 3
 			return cfg, nil
 		},
-		newProvider: func(config.ProviderProfile) (zeroruntime.Provider, error) {
+		newProvider: func(config.ProviderProfile) (kajicoderuntime.Provider, error) {
 			builds++
 			return &escalatingExecProvider{}, nil
 		},

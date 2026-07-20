@@ -1,6 +1,6 @@
 # Offline Agent Evals
 
-Zero agent evals are maintainer fixtures for checking coding-agent behavior
+KajiCode agent evals are maintainer fixtures for checking coding-agent behavior
 without calling a live model. They describe a task, the files the agent is
 expected to change, the commands that should verify the result, and the scoring
 rules an offline harness can apply to a captured run.
@@ -65,24 +65,24 @@ Example richer task rubric:
 
 ### Validate Mode
 
-`zero eval` defaults to `validate` mode. In validate mode, the command performs
+`kajicode eval` defaults to `validate` mode. In validate mode, the command performs
 schema and contract checks only: it parses the suite, rejects invalid task
 definitions, and reports the number of tasks and checks. It does not copy
 fixtures, invoke an agent, score a workspace, or execute verification commands.
 
 ```bash
-go run ./cmd/zero eval --suite internal/agenteval/testdata/sample_suite.json
+go run ./cmd/kajicode eval --suite internal/agenteval/testdata/sample_suite.json
 ```
 
 Use JSON output when another local tool needs the validation summary:
 
 ```bash
-go run ./cmd/zero eval --suite internal/agenteval/testdata/sample_suite.json --json
+go run ./cmd/kajicode eval --suite internal/agenteval/testdata/sample_suite.json --json
 ```
 
 ### Run Mode
 
-`zero eval run` scores one already-mutated Git workspace. It does not copy
+`kajicode eval run` scores one already-mutated Git workspace. It does not copy
 fixtures or invoke an agent; point it at a Git worktree where a fixture has
 already been copied, initialized, and attempted by an agent or deterministic
 local script. The runner executes each `verificationCommands` entry, collects
@@ -92,26 +92,26 @@ worktree, never the current directory, so the suite's verification commands
 (`go test`, `git`, ...) don't run against your real repo.
 
 ```bash
-go run ./cmd/zero eval run \
+go run ./cmd/kajicode eval run \
   --suite internal/agenteval/testdata/sample_suite.json \
   --task document-stream-json-verify-events \
-  --workspace /tmp/zero-eval-workspace
+  --workspace /tmp/kajicode-eval-workspace
 ```
 
 Persist the report for comparison between prompt or model changes:
 
 ```bash
-go run ./cmd/zero eval run \
+go run ./cmd/kajicode eval run \
   --suite internal/agenteval/testdata/sample_suite.json \
   --task document-stream-json-verify-events \
-  --workspace /tmp/zero-eval-workspace \
-  --report-dir /tmp/zero-eval-report \
+  --workspace /tmp/kajicode-eval-workspace \
+  --report-dir /tmp/kajicode-eval-report \
   --json
 ```
 
 ### Bench Mode
 
-`zero eval bench` runs the full benchmark harness for one task or a suite. Bench
+`kajicode eval bench` runs the full benchmark harness for one task or a suite. Bench
 mode copies each task fixture into `--work-root`, initializes a clean Git
 baseline, runs the supplied `--agent-command` in that workspace, then scores the
 result with the same scorer used by run mode.
@@ -131,32 +131,32 @@ the previous single-run behavior and `{model}` expands to an empty string.
 Example using a real local agent command:
 
 ```bash
-go run ./cmd/zero eval bench \
+go run ./cmd/kajicode eval bench \
   --suite internal/agenteval/testdata/sample_suite.json \
   --task document-stream-json-verify-events \
-  --work-root /tmp/zero-evals \
-  --agent-command zero exec --cwd {workspace} {prompt}
+  --work-root /tmp/kajicode-evals \
+  --agent-command kajicode exec --cwd {workspace} {prompt}
 ```
 
 Example with model selection:
 
 ```bash
-go run ./cmd/zero eval bench \
+go run ./cmd/kajicode eval bench \
   --suite internal/agenteval/testdata/sample_suite.json \
   --task document-stream-json-verify-events \
-  --work-root /tmp/zero-evals \
+  --work-root /tmp/kajicode-evals \
   --model gpt-5 \
-  --agent-command zero exec --model {model} --cwd {workspace} {prompt}
+  --agent-command kajicode exec --model {model} --cwd {workspace} {prompt}
 ```
 
 Include `{task_id}` when the agent wrapper needs stable per-task logging,
 branching, or fixture-specific behavior:
 
 ```bash
-go run ./cmd/zero eval bench \
+go run ./cmd/kajicode eval bench \
   --suite internal/agenteval/testdata/sample_suite.json \
-  --work-root /tmp/zero-evals \
-  --agent-command zero-agent-wrapper --task {task_id} --workspace {workspace} --prompt {prompt}
+  --work-root /tmp/kajicode-evals \
+  --agent-command kajicode-agent-wrapper --task {task_id} --workspace {workspace} --prompt {prompt}
 ```
 
 The same wrapper can emit JSONL trace events to stdout for future trace scoring:
@@ -173,10 +173,10 @@ For deterministic offline testing, point `--agent-command` at a local script
 that edits the copied workspace without calling a model:
 
 ```bash
-go run ./cmd/zero eval bench \
+go run ./cmd/kajicode eval bench \
   --suite internal/agenteval/testdata/sample_suite.json \
   --task document-stream-json-verify-events \
-  --work-root /tmp/zero-evals \
+  --work-root /tmp/kajicode-evals \
   --agent-command ./scripts/fake-agent --workspace {workspace} --task {task_id} --prompt {prompt}
 ```
 
@@ -185,10 +185,10 @@ interactive agent cannot block the harness forever. The timeout applies per
 task and cancels materialization, the agent process, and scoring:
 
 ```bash
-go run ./cmd/zero eval bench \
+go run ./cmd/kajicode eval bench \
   --suite internal/agenteval/testdata/sample_suite.json \
   --task document-stream-json-verify-events \
-  --work-root /tmp/zero-evals \
+  --work-root /tmp/kajicode-evals \
   --timeout 5m \
   --agent-command ./scripts/fake-agent --workspace {workspace} --prompt {prompt}
 ```
@@ -200,12 +200,12 @@ task/model run. Use `--keep-workspaces` when you also need to inspect the
 materialized workspaces after the run:
 
 ```bash
-go run ./cmd/zero eval bench \
+go run ./cmd/kajicode eval bench \
   --suite internal/agenteval/testdata/sample_suite.json \
   --task add-npm-wrapper-argv-helper \
-  --work-root /tmp/zero-evals \
+  --work-root /tmp/kajicode-evals \
   --keep-workspaces \
-  --report-dir /tmp/zero-eval-report \
+  --report-dir /tmp/kajicode-eval-report \
   --json \
   --agent-command ./scripts/fake-agent --workspace {workspace} --task {task_id} --prompt {prompt}
 ```
@@ -240,7 +240,7 @@ commands, and malformed changed-file expectations.
 
 ## Report JSON
 
-Scored reports use contract `zero.agenteval.report.v1`.
+Scored reports use contract `kajicode.agenteval.report.v1`.
 
 - `suiteId` and `taskId`: identify the suite and selected task.
 - `status`: overall `pass`, `fail`, `blocked`, or `error`.

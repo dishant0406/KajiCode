@@ -13,12 +13,12 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/Gitlawb/zero/internal/config"
-	"github.com/Gitlawb/zero/internal/modelregistry"
-	"github.com/Gitlawb/zero/internal/oauth"
-	"github.com/Gitlawb/zero/internal/providercatalog"
-	"github.com/Gitlawb/zero/internal/providermodeldiscovery"
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
+	"github.com/dishant0406/KajiCode/internal/modelregistry"
+	"github.com/dishant0406/KajiCode/internal/oauth"
+	"github.com/dishant0406/KajiCode/internal/providercatalog"
+	"github.com/dishant0406/KajiCode/internal/providermodeldiscovery"
 )
 
 func TestModelPickerDetectsOllamaCloudFromBaseURL(t *testing.T) {
@@ -275,7 +275,7 @@ func TestModelPickerAppliesLiveDiscoveredModelID(t *testing.T) {
 			APIKey:       "ollama-key",
 			Model:        "minimax-m3",
 		},
-		NewProvider: func(profile config.ProviderProfile) (zeroruntime.Provider, error) {
+		NewProvider: func(profile config.ProviderProfile) (kajicoderuntime.Provider, error) {
 			captured = profile
 			return &fakeProvider{}, nil
 		},
@@ -308,7 +308,7 @@ func TestModelSwitchNormalizesDetectedOllamaCloudProfile(t *testing.T) {
 			APIKeyEnv:    "OPENAI_API_KEY",
 			Model:        "minimax-m3",
 		},
-		NewProvider: func(profile config.ProviderProfile) (zeroruntime.Provider, error) {
+		NewProvider: func(profile config.ProviderProfile) (kajicoderuntime.Provider, error) {
 			captured = profile
 			return &fakeProvider{}, nil
 		},
@@ -360,7 +360,7 @@ func TestModelPickerSearchFiltersModels(t *testing.T) {
 }
 
 func TestModelPickerFavoriteShortcutTogglesSelectedModel(t *testing.T) {
-	configPath := filepath.Join(t.TempDir(), "zero", "config.json")
+	configPath := filepath.Join(t.TempDir(), "kajicode", "config.json")
 	m := newModel(context.Background(), Options{
 		UserConfigPath: configPath,
 		ProviderName:   "ollama-cloud",
@@ -479,7 +479,7 @@ func TestModelPickerAppliesActiveProviderCatalogModelID(t *testing.T) {
 			BaseURL:      "https://openrouter.ai/api/v1",
 			APIFormat:    "chat-completions",
 		},
-		NewProvider: func(profile config.ProviderProfile) (zeroruntime.Provider, error) {
+		NewProvider: func(profile config.ProviderProfile) (kajicoderuntime.Provider, error) {
 			captured = profile
 			return &fakeProvider{}, nil
 		},
@@ -682,7 +682,7 @@ func TestModelPickerRecentSectionShowsHistoryPastTheActiveModel(t *testing.T) {
 // Typed /model switches must record + persist recent history, moving a
 // re-selected pair back to the front rather than leaving a stale duplicate.
 func TestModelCommandRecordsAndPersistsRecentHistory(t *testing.T) {
-	configPath := filepath.Join(t.TempDir(), "zero", "config.json")
+	configPath := filepath.Join(t.TempDir(), "kajicode", "config.json")
 	m := newModel(context.Background(), Options{
 		UserConfigPath: configPath,
 		ProviderName:   "openrouter",
@@ -697,7 +697,7 @@ func TestModelCommandRecordsAndPersistsRecentHistory(t *testing.T) {
 			BaseURL:   "https://openrouter.ai/api/v1",
 			APIFormat: "chat-completions",
 		},
-		NewProvider: func(profile config.ProviderProfile) (zeroruntime.Provider, error) {
+		NewProvider: func(profile config.ProviderProfile) (kajicoderuntime.Provider, error) {
 			return &fakeProvider{}, nil
 		},
 	})
@@ -752,7 +752,7 @@ func TestModelCommandRecordsAndPersistsRecentHistory(t *testing.T) {
 // switchProviderModel (the picker's cross-provider path) must also record
 // history, tagged with the provider actually switched to.
 func TestSwitchProviderModelRecordsRecentHistory(t *testing.T) {
-	configPath := filepath.Join(t.TempDir(), "zero", "config.json")
+	configPath := filepath.Join(t.TempDir(), "kajicode", "config.json")
 	m := newModel(context.Background(), Options{
 		UserConfigPath:  configPath,
 		ProviderName:    "openai",
@@ -763,7 +763,7 @@ func TestSwitchProviderModelRecordsRecentHistory(t *testing.T) {
 			{Name: "openai", CatalogID: "openai", Model: "gpt-5.1"},
 			{Name: "ollama", CatalogID: "ollama", ProviderKind: config.ProviderKindOpenAICompatible, BaseURL: "http://localhost:11434/v1", Model: "kimi-k2.7-code:cloud"},
 		},
-		NewProvider: func(config.ProviderProfile) (zeroruntime.Provider, error) {
+		NewProvider: func(config.ProviderProfile) (kajicoderuntime.Provider, error) {
 			return &fakeProvider{}, nil
 		},
 	})
@@ -801,7 +801,7 @@ func TestModelCommandAcceptsManualModelForCustomProvider(t *testing.T) {
 			APIKey:       "proxy-key",
 			Model:        "custom-model",
 		},
-		NewProvider: func(profile config.ProviderProfile) (zeroruntime.Provider, error) {
+		NewProvider: func(profile config.ProviderProfile) (kajicoderuntime.Provider, error) {
 			captured = profile
 			return &fakeProvider{}, nil
 		},
@@ -819,7 +819,7 @@ func TestModelCommandAcceptsManualModelForCustomProvider(t *testing.T) {
 	if next.modelName != "qwen-custom-latest" {
 		t.Fatalf("active model = %q, want manual custom model", next.modelName)
 	}
-	if transcriptContains(next.transcript, "unknown Zero model") {
+	if transcriptContains(next.transcript, "unknown KajiCode model") {
 		t.Fatalf("manual custom model should not be rejected, got %#v", next.transcript)
 	}
 }
@@ -852,7 +852,7 @@ func TestModelPickerNavigatesAndChoosesAppliesHandler(t *testing.T) {
 		ModelName:       "claude-sonnet-4.5",
 		Provider:        &fakeProvider{},
 		ProviderProfile: anthropicTestProfile("claude-sonnet-4.5"),
-		NewProvider: func(profile config.ProviderProfile) (zeroruntime.Provider, error) {
+		NewProvider: func(profile config.ProviderProfile) (kajicoderuntime.Provider, error) {
 			return next, nil
 		},
 		DiscoverProviderModels: func(ctx context.Context, profile config.ProviderProfile) ([]providermodeldiscovery.Model, error) {
@@ -1247,7 +1247,7 @@ func TestSwitchProviderModelWarmsDiscoveryForTheNewProvider(t *testing.T) {
 			{Name: "openai", CatalogID: "openai", Model: "gpt-5.1"},
 			{Name: "ollama", CatalogID: "ollama", ProviderKind: config.ProviderKindOpenAICompatible, BaseURL: "http://localhost:11434/v1", Model: "kimi-k2.7-code:cloud"},
 		},
-		NewProvider: func(config.ProviderProfile) (zeroruntime.Provider, error) {
+		NewProvider: func(config.ProviderProfile) (kajicoderuntime.Provider, error) {
 			return &fakeProvider{}, nil
 		},
 	})
@@ -1319,7 +1319,7 @@ func TestNormalizeProfileForProviderCanonicalizesPlaceholderName(t *testing.T) {
 // `chatgpt-account-id` header, so every call 401s.
 func TestSwitchProviderModelUsesOAuthLoginWithoutInliningBearer(t *testing.T) {
 	tokensPath := filepath.Join(t.TempDir(), "oauth-tokens.json")
-	t.Setenv("ZERO_OAUTH_TOKENS_PATH", tokensPath)
+	t.Setenv("KAJICODE_OAUTH_TOKENS_PATH", tokensPath)
 	store, err := oauth.NewStore(oauth.StoreOptions{})
 	if err != nil {
 		t.Fatalf("oauth store: %v", err)
@@ -1338,7 +1338,7 @@ func TestSwitchProviderModelUsesOAuthLoginWithoutInliningBearer(t *testing.T) {
 			{Name: "opengateway", ProviderKind: config.ProviderKindOpenAICompatible, BaseURL: "https://gateway.example.com/v1", Model: "some-model"},
 			{Name: "chatgpt", CatalogID: "chatgpt", ProviderKind: config.ProviderKindOpenAICompatible, BaseURL: "https://chatgpt.com/backend-api/codex", Model: "gpt-5.5"},
 		},
-		NewProvider: func(profile config.ProviderProfile) (zeroruntime.Provider, error) {
+		NewProvider: func(profile config.ProviderProfile) (kajicoderuntime.Provider, error) {
 			built = profile
 			return &fakeProvider{}, nil
 		},
@@ -1360,7 +1360,7 @@ func TestSwitchProviderModelUsesOAuthLoginWithoutInliningBearer(t *testing.T) {
 // header, no local runtime, and no OAuth login, the gate must keep refusing.
 func TestSwitchProviderModelStillRejectsProviderWithNoCredential(t *testing.T) {
 	tokensPath := filepath.Join(t.TempDir(), "oauth-tokens.json")
-	t.Setenv("ZERO_OAUTH_TOKENS_PATH", tokensPath)
+	t.Setenv("KAJICODE_OAUTH_TOKENS_PATH", tokensPath)
 
 	m := newModel(context.Background(), Options{
 		ProviderName:    "opengateway",
@@ -1371,7 +1371,7 @@ func TestSwitchProviderModelStillRejectsProviderWithNoCredential(t *testing.T) {
 			{Name: "opengateway", ProviderKind: config.ProviderKindOpenAICompatible, BaseURL: "https://gateway.example.com/v1", Model: "some-model"},
 			{Name: "chatgpt", CatalogID: "chatgpt", ProviderKind: config.ProviderKindOpenAICompatible, BaseURL: "https://chatgpt.com/backend-api/codex", Model: "gpt-5.5"},
 		},
-		NewProvider: func(config.ProviderProfile) (zeroruntime.Provider, error) {
+		NewProvider: func(config.ProviderProfile) (kajicoderuntime.Provider, error) {
 			t.Fatal("newProvider must not run for a credential-less provider")
 			return nil, nil
 		},

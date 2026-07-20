@@ -22,17 +22,17 @@ func TestUnixInstallerScriptMatchesReleaseContracts(t *testing.T) {
 	}
 	containsAll(t, script, []string{
 		"set -euo pipefail",
-		`ZERO_REPO="${ZERO_REPO:-Gitlawb/zero}"`,
-		`ZERO_INSTALL_DIR="${ZERO_INSTALL_DIR:-$HOME/.local/bin}"`,
-		`archive_name="zero-v${version}-${platform}-${arch}.tar.gz"`,
+		`KAJICODE_REPO="${KAJICODE_REPO:-dishant0406/KajiCode}"`,
+		`KAJICODE_INSTALL_DIR="${KAJICODE_INSTALL_DIR:-$HOME/.local/bin}"`,
+		`archive_name="kajicode-v${version}-${platform}-${arch}.tar.gz"`,
 		`checksum_name="${archive_name}.sha256"`,
 		"curl --fail --location --show-error --silent --header 'Accept: application/vnd.github+json'",
 		`verify_checksum "$checksum_name"`,
 		`tar -xzf "$archive_path" -C "$extract_dir"`,
 		`find_extracted_binary "$extract_dir"`,
-		`cp "$binary_path" "$ZERO_INSTALL_DIR/zero"`,
-		`copy_optional_file "zero-linux-sandbox"`,
-		`copy_optional_file "zero-seccomp"`,
+		`cp "$binary_path" "$KAJICODE_INSTALL_DIR/kajicode"`,
+		`copy_optional_file "kajicode-linux-sandbox"`,
+		`copy_optional_file "kajicode-seccomp"`,
 		`copy_optional_dir "helpers"`,
 	})
 }
@@ -41,17 +41,17 @@ func TestPowerShellInstallerScriptMatchesWindowsReleaseContracts(t *testing.T) {
 	script := readRepoText(t, "scripts/install.ps1")
 
 	containsAll(t, script, []string{
-		`[string]$Repository = $(if ($env:ZERO_REPO)`,
-		`Join-Path $env:LOCALAPPDATA "zero\bin"`,
-		`$archiveName = "zero-v$releaseVersion-windows-$arch.zip"`,
+		`[string]$Repository = $(if ($env:KAJICODE_REPO)`,
+		`Join-Path $env:LOCALAPPDATA "kajicode\bin"`,
+		`$archiveName = "kajicode-v$releaseVersion-windows-$arch.zip"`,
 		`$checksumName = "$archiveName.sha256"`,
 		`Get-FileHash -Path $archivePath -Algorithm SHA256`,
 		`Expand-Archive -Path $archivePath -DestinationPath $extractDir -Force`,
-		`Find-ZeroExtractedFile -Root $extractDir -FileName $fileName`,
-		`"zero-windows-command-runner.exe"`,
-		`"zero-windows-sandbox-setup.exe"`,
+		`Find-KajiCodeExtractedFile -Root $extractDir -FileName $fileName`,
+		`"kajicode-windows-command-runner.exe"`,
+		`"kajicode-windows-sandbox-setup.exe"`,
 		`Copy-Item -Path $sourcePath -Destination (Join-Path $InstallDir $fileName) -Force`,
-		`Find-ZeroOptionalExtractedDirectory -Root $extractDir -DirectoryName "helpers"`,
+		`Find-KajiCodeOptionalExtractedDirectory -Root $extractDir -DirectoryName "helpers"`,
 		`Copy-Item -Path $helpersPath -Destination $targetHelpersPath -Recurse -Force`,
 	})
 }
@@ -65,18 +65,18 @@ func TestUnixInstallerInstallsFromPrefixedReleaseArchiveWithoutNetwork(t *testin
 	if got := strings.TrimSpace(stderr); got != "" {
 		t.Fatalf("install.sh stderr = %q, want empty", got)
 	}
-	if !strings.Contains(stdout, "Installed "+filepath.Join(fixture.installDir, "zero")) {
+	if !strings.Contains(stdout, "Installed "+filepath.Join(fixture.installDir, "kajicode")) {
 		t.Fatalf("install.sh stdout missing install path:\n%s", stdout)
 	}
 
-	installed := readFile(t, filepath.Join(fixture.installDir, "zero"))
-	if !strings.Contains(string(installed), "mock-zero") {
-		t.Fatalf("installed binary = %q, want mock-zero script", string(installed))
+	installed := readFile(t, filepath.Join(fixture.installDir, "kajicode"))
+	if !strings.Contains(string(installed), "mock-kajicode") {
+		t.Fatalf("installed binary = %q, want mock-kajicode script", string(installed))
 	}
 	if _, err := os.Stat(filepath.Join(fixture.installDir, "helpers", "node_modules", ".bin", "agent-browser")); err != nil {
 		t.Fatalf("installed helper package missing: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(fixture.installDir, "zero-linux-sandbox")); err != nil {
+	if _, err := os.Stat(filepath.Join(fixture.installDir, "kajicode-linux-sandbox")); err != nil {
 		t.Fatalf("installed linux sandbox helper missing: %v", err)
 	}
 }
@@ -96,7 +96,7 @@ func TestUnixInstallerRejectsChecksumMismatchWithoutNetwork(t *testing.T) {
 	if !strings.Contains(output, "FAILED") || !strings.Contains(strings.ToLower(output), "checksum") {
 		t.Fatalf("checksum failure output missing checksum mismatch detail:\n%s", output)
 	}
-	if _, err := os.Stat(filepath.Join(fixture.installDir, "zero")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(fixture.installDir, "kajicode")); !os.IsNotExist(err) {
 		t.Fatalf("installed binary exists after checksum failure: %v", err)
 	}
 }
@@ -120,7 +120,7 @@ func newUnixInstallFixture(t *testing.T) unixInstallFixture {
 
 	releasePlatform := unixReleasePlatform(t)
 	releaseArch := unixReleaseArch(t)
-	packageName := fmt.Sprintf("zero-v0.1.0-%s-%s", releasePlatform, releaseArch)
+	packageName := fmt.Sprintf("kajicode-v0.1.0-%s-%s", releasePlatform, releaseArch)
 	archiveName := packageName + ".tar.gz"
 	checksumName := archiveName + ".sha256"
 	root := t.TempDir()
@@ -139,9 +139,9 @@ func newUnixInstallFixture(t *testing.T) unixInstallFixture {
 	mustMkdirAll(t, filepath.Dir(fixture.archivePath))
 	mustMkdirAll(t, fixture.installDir)
 	mustMkdirAll(t, filepath.Join(packageDir, "helpers", "node_modules", ".bin"))
-	writeFile(t, filepath.Join(packageDir, "zero"), []byte("#!/usr/bin/env sh\necho mock-zero\n"), 0o755)
-	writeFile(t, filepath.Join(packageDir, "zero-linux-sandbox"), []byte("#!/usr/bin/env sh\n"), 0o755)
-	writeFile(t, filepath.Join(packageDir, "zero-seccomp"), []byte("#!/usr/bin/env sh\n"), 0o755)
+	writeFile(t, filepath.Join(packageDir, "kajicode"), []byte("#!/usr/bin/env sh\necho mock-kajicode\n"), 0o755)
+	writeFile(t, filepath.Join(packageDir, "kajicode-linux-sandbox"), []byte("#!/usr/bin/env sh\n"), 0o755)
+	writeFile(t, filepath.Join(packageDir, "kajicode-seccomp"), []byte("#!/usr/bin/env sh\n"), 0o755)
 	mustMkdirAll(t, filepath.Join(packageDir, "helpers", "node_modules", "agent-browser", "bin"))
 	writeFile(t, filepath.Join(packageDir, "helpers", "node_modules", "agent-browser", "bin", "agent-browser.js"), []byte("#!/usr/bin/env node\n"), 0o755)
 	if err := os.Symlink("../agent-browser/bin/agent-browser.js", filepath.Join(packageDir, "helpers", "node_modules", ".bin", "agent-browser")); err != nil {
@@ -219,8 +219,8 @@ func runUnixInstaller(t *testing.T, fixture unixInstallFixture) (string, string,
 	command.Dir = repoRoot(t)
 	command.Env = append(os.Environ(),
 		"PATH="+fixture.mockBin+string(os.PathListSeparator)+os.Getenv("PATH"),
-		"ZERO_GITHUB_BASE_URL=https://example.test",
-		"ZERO_REPO=Gitlawb/zero",
+		"KAJICODE_GITHUB_BASE_URL=https://example.test",
+		"KAJICODE_REPO=dishant0406/KajiCode",
 	)
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer

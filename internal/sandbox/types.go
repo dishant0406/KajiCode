@@ -6,26 +6,26 @@ import (
 	"strings"
 )
 
-// EnvSandboxed marks a process that zero has already wrapped in a sandbox: every
-// wrapped command carries ZERO_SANDBOXED=1 in its environment. When such a
+// EnvSandboxed marks a process that KajiCode has already wrapped in a sandbox: every
+// wrapped command carries KAJICODE_SANDBOXED=1 in its environment. When such a
 // process spawns another command through the engine, the re-entrancy guard
 // returns a pass-through plan instead of double-wrapping it; nested platform
 // wrappers fail, and a second sandbox wrapper would be redundant. Unset by
 // default.
-const EnvSandboxed = "ZERO_SANDBOXED"
+const EnvSandboxed = "KAJICODE_SANDBOXED"
 
 // EnvSandboxBackend records which backend wrapped the command. sandboxEnvironment
 // always sets it alongside EnvSandboxed, so it serves as a corroborating marker:
 // the re-entrancy guard requires BOTH, raising the provenance bar above a single
-// ambient flag (a stray or hand-exported ZERO_SANDBOXED=1 with no backend marker
+// ambient flag (a stray or hand-exported KAJICODE_SANDBOXED=1 with no backend marker
 // no longer forces an unsandboxed pass-through).
-const EnvSandboxBackend = "ZERO_SANDBOX_BACKEND"
+const EnvSandboxBackend = "KAJICODE_SANDBOX_BACKEND"
 
 // IsAlreadySandboxed reports whether the current process is already running
-// inside a zero-created sandbox. It requires BOTH correlated markers that
+// inside a KajiCode-created sandbox. It requires BOTH correlated markers that
 // sandboxEnvironment sets together — EnvSandboxed == "1" AND a non-empty
-// EnvSandboxBackend — so a single user-set/inherited ZERO_SANDBOXED=1 cannot by
-// itself disable wrapping. zero sets both only on genuinely wrapped commands;
+// EnvSandboxBackend — so a single user-set/inherited KAJICODE_SANDBOXED=1 cannot by
+// itself disable wrapping. KajiCode sets both only on genuinely wrapped commands;
 // pass-through (direct) plans set neither.
 func IsAlreadySandboxed() bool {
 	return os.Getenv(EnvSandboxed) == "1" && strings.TrimSpace(os.Getenv(EnvSandboxBackend)) != ""
@@ -145,7 +145,7 @@ const (
 const (
 	EnforcementNative EnforcementLevel = "native"
 	// EnforcementUnelevated is the Windows-only middle tier used when the
-	// elevated `zero sandbox setup` has not run: commands still wrap through the
+	// elevated `kajicode sandbox setup` has not run: commands still wrap through the
 	// command runner with a write-restricted token and workspace ACLs (which the
 	// runner can apply without Administrator rights), but the WFP network
 	// filters are absent, so network isolation stays with the in-process

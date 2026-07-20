@@ -9,18 +9,18 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/testrunner"
+	"github.com/dishant0406/KajiCode/internal/testrunner"
 )
 
 func TestDetectPlanFindsBunAndGoChecks(t *testing.T) {
 	root := t.TempDir()
-	writeFile(t, filepath.Join(root, "go.mod"), "module example.com/zero\n")
+	writeFile(t, filepath.Join(root, "go.mod"), "module example.com/kajicode\n")
 	writeFile(t, filepath.Join(root, "bun.lock"), "")
 	writeFile(t, filepath.Join(root, "package.json"), `{
 		"scripts": {
 			"test": "bun test ./tests",
 			"typecheck": "tsc --noEmit",
-			"build": "go run ./cmd/zero-release build",
+			"build": "go run ./cmd/kajicode-release build",
 			"lint": "eslint ."
 		}
 	}`)

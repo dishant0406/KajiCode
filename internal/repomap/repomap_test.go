@@ -13,12 +13,12 @@ func TestScanBuildsDeterministicSnapshot(t *testing.T) {
 	writeFile(t, root, "go.mod", "module example.test/repo\n")
 	writeFile(t, root, "README.md", "# Example\n")
 	writeFile(t, root, "package.json", `{"name":"example"}`)
-	writeFile(t, root, "cmd/zero/main.go", "package main\n")
+	writeFile(t, root, "cmd/kajicode/main.go", "package main\n")
 	writeFile(t, root, "internal/app/app.go", "package app\n")
 	writeFile(t, root, "web/app.ts", "export const app = true\n")
-	writeFile(t, root, "zero.exe", "ignored binary")
+	writeFile(t, root, "kajicode.exe", "ignored binary")
 	writeFile(t, root, ".git/config", "[core]\n")
-	writeFile(t, root, ".zero/state.json", "{}")
+	writeFile(t, root, ".kajicode/state.json", "{}")
 	writeFile(t, root, "node_modules/pkg/index.js", "ignored")
 	writeFile(t, root, "vendor/lib/lib.go", "ignored")
 	writeFile(t, root, "dist/bundle.js", "ignored")
@@ -36,7 +36,7 @@ func TestScanBuildsDeterministicSnapshot(t *testing.T) {
 	}
 	wantFiles := []string{
 		"README.md",
-		"cmd/zero/main.go",
+		"cmd/kajicode/main.go",
 		"go.mod",
 		"internal/app/app.go",
 		"package.json",
@@ -72,7 +72,7 @@ func TestScanBuildsDeterministicSnapshot(t *testing.T) {
 		".",
 		"README.md",
 		"cmd/",
-		"  zero/",
+		"  kajicode/",
 		"    main.go",
 		"go.mod",
 		"internal/",
@@ -112,7 +112,7 @@ func TestScanDoesNotFollowSymlinkedDirectories(t *testing.T) {
 
 func TestScanSkipsGitMetadataFile(t *testing.T) {
 	root := t.TempDir()
-	writeFile(t, root, ".git", "gitdir: ../.git/worktrees/zero\n")
+	writeFile(t, root, ".git", "gitdir: ../.git/worktrees/kajicode\n")
 	writeFile(t, root, "main.go", "package main\n")
 
 	got, err := Scan(root, Options{MaxDepth: DefaultMaxDepth})
@@ -210,7 +210,7 @@ func TestScanHonorsTraversalCaps(t *testing.T) {
 		}
 	})
 
-	t.Run("zero max depth includes root files only", func(t *testing.T) {
+	t.Run("kajicode max depth includes root files only", func(t *testing.T) {
 		root := t.TempDir()
 		writeFile(t, root, "top.go", "package top\n")
 		writeFile(t, root, "pkg/one.go", "package pkg\n")

@@ -100,9 +100,9 @@ func (m model) fileViewNavBar(width int) string {
 		mode = "full"
 		other = "d diff"
 	}
-	left := zeroTheme.accent.Render("← "+truncatePathLeft(m.fileView.path, maxInt(8, width/2))) +
-		zeroTheme.faint.Render("  ·  "+mode)
-	right := zeroTheme.faint.Render(other + " · esc back")
+	left := kajicodeTheme.accent.Render("← "+truncatePathLeft(m.fileView.path, maxInt(8, width/2))) +
+		kajicodeTheme.faint.Render("  ·  "+mode)
+	right := kajicodeTheme.faint.Render(other + " · esc back")
 	return fitStyledLine(joinHeaderLine(left, right, width), width)
 }
 
@@ -143,7 +143,7 @@ func (m model) fileViewResultRows() []transcriptRow {
 func (m model) renderFileViewDiff(width int) string {
 	rows := m.fileViewResultRows()
 	if len(rows) == 0 {
-		return zeroTheme.faint.Render("No recorded edits for this file in this session.")
+		return kajicodeTheme.faint.Render("No recorded edits for this file in this session.")
 	}
 	rc := buildRowContext(m.transcript)
 	opts := cardRenderOptions{bodyCap: 0, cwd: m.cwd}
@@ -153,7 +153,7 @@ func (m model) renderFileViewDiff(width int) string {
 			b.WriteString("\n\n")
 		}
 		if len(rows) > 1 {
-			b.WriteString(zeroTheme.faint.Render(fmt.Sprintf("edit %d of %d", i+1, len(rows))))
+			b.WriteString(kajicodeTheme.faint.Render(fmt.Sprintf("edit %d of %d", i+1, len(rows))))
 			b.WriteString("\n")
 		}
 		b.WriteString(m.renderRowModeUncached(row, width, rc, opts))
@@ -175,7 +175,7 @@ func (m model) renderFileViewFull(width int) string {
 	// fileViewMaxLines exists to prevent.
 	file, err := os.Open(target)
 	if err != nil {
-		return zeroTheme.faint.Render("Could not read file: " + err.Error())
+		return kajicodeTheme.faint.Render("Could not read file: " + err.Error())
 	}
 	defer file.Close()
 	var lines []string
@@ -191,7 +191,7 @@ func (m model) renderFileViewFull(width int) string {
 	}
 	if err := scanner.Err(); err != nil {
 		if len(lines) == 0 {
-			return zeroTheme.faint.Render("Could not read file: " + err.Error())
+			return kajicodeTheme.faint.Render("Could not read file: " + err.Error())
 		}
 		truncated = true // e.g. a single over-long line mid-file: show what we have
 	}
@@ -215,9 +215,9 @@ func (m model) renderFileViewFull(width int) string {
 		}
 		marker := " "
 		if changed[strings.TrimSpace(lines[i])] {
-			marker = zeroTheme.accent.Render("▎")
+			marker = kajicodeTheme.accent.Render("▎")
 		}
-		b.WriteString(zeroTheme.faintest.Render(fmt.Sprintf("%*d ", gutterW, i+1)))
+		b.WriteString(kajicodeTheme.faintest.Render(fmt.Sprintf("%*d ", gutterW, i+1)))
 		b.WriteString(marker)
 		b.WriteString(line)
 	}
@@ -225,7 +225,7 @@ func (m model) renderFileViewFull(width int) string {
 		// No exact remaining-line count: computing one would require reading the
 		// rest of the file, defeating the bounded read above.
 		b.WriteString("\n")
-		b.WriteString(zeroTheme.faint.Render(fmt.Sprintf("… more lines (file truncated at %d for display)", len(lines))))
+		b.WriteString(kajicodeTheme.faint.Render(fmt.Sprintf("… more lines (file truncated at %d for display)", len(lines))))
 	}
 	return b.String()
 }

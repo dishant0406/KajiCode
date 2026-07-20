@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/specialist"
-	"github.com/Gitlawb/zero/internal/streamjson"
+	"github.com/dishant0406/KajiCode/internal/specialist"
+	"github.com/dishant0406/KajiCode/internal/streamjson"
 )
 
 // TestSpecialistLauncherRunsUnregisteredSwarmAgent guards the fix for the swarm
@@ -20,7 +20,7 @@ func TestSpecialistLauncherRunsUnregisteredSwarmAgent(t *testing.T) {
 	var ran bool
 	var gotArgs []string
 	executor := specialist.Executor{
-		BinaryPath:   "/usr/local/bin/zero",
+		BinaryPath:   "/usr/local/bin/kajicode",
 		NewSessionID: func() (string, error) { return "member_task", nil },
 		// No "subagent" specialist is registered — the old name-lookup path failed.
 		Load: func(specialist.LoadOptions) (specialist.LoadResult, error) {
@@ -75,7 +75,7 @@ func TestSpecialistLauncherRunsUnregisteredSwarmAgent(t *testing.T) {
 func TestSpecialistLauncherMarksNonZeroExitAsFailed(t *testing.T) {
 	four := 4
 	executor := specialist.Executor{
-		BinaryPath:   "/usr/local/bin/zero",
+		BinaryPath:   "/usr/local/bin/kajicode",
 		NewSessionID: func() (string, error) { return "member_task", nil },
 		Load: func(specialist.LoadOptions) (specialist.LoadResult, error) {
 			return specialist.LoadResult{}, nil

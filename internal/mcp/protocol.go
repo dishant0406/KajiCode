@@ -13,7 +13,7 @@ import (
 // maxMessageBytes caps a single framed MCP message so a hostile or buggy peer
 // cannot drive an unbounded allocation with an enormous Content-Length header
 // (Atoi accepts values up to ~9.2e18). 64 MiB is far above any legitimate
-// JSON-RPC payload Zero exchanges.
+// JSON-RPC payload KajiCode exchanges.
 const maxMessageBytes = 64 * 1024 * 1024
 
 type rpcMessage struct {

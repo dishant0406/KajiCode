@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
 )
 
 // promptSubstrings are the cacheable components of the prompt a run sends to a
@@ -28,11 +28,11 @@ type promptSubstrings struct {
 // form and narrower diagnostic components. Callers that already built the
 // prompt should use buildPromptSubstringsFromParts to avoid repeating workspace
 // reads.
-func buildPromptSubstrings(options Options, exposed []zeroruntime.ToolDefinition) promptSubstrings {
+func buildPromptSubstrings(options Options, exposed []kajicoderuntime.ToolDefinition) promptSubstrings {
 	return buildPromptSubstringsFromParts(buildSystemPromptParts(options), exposed)
 }
 
-func buildPromptSubstringsFromParts(parts systemPromptParts, exposed []zeroruntime.ToolDefinition) promptSubstrings {
+func buildPromptSubstringsFromParts(parts systemPromptParts, exposed []kajicoderuntime.ToolDefinition) promptSubstrings {
 	toolsSubstr, schemaSubstr := toolSubstrings(exposed)
 
 	return promptSubstrings{
@@ -50,7 +50,7 @@ func buildPromptSubstringsFromParts(parts systemPromptParts, exposed []zerorunti
 // fingerprinted separately from schemas so either kind of drift is identifiable.
 // Order is part of request identity: silently sorting here would hide a provider-
 // visible reordering and could report a false cache hit.
-func toolSubstrings(exposed []zeroruntime.ToolDefinition) (toolsSubstr, schemaSubstr string) {
+func toolSubstrings(exposed []kajicoderuntime.ToolDefinition) (toolsSubstr, schemaSubstr string) {
 	if len(exposed) == 0 {
 		return "", ""
 	}
@@ -193,7 +193,7 @@ func writeStable(sb *strings.Builder, v any) {
 // not already have one. The agent loop uses computePrefixFingerprint with the
 // prompt parts it built once at run start, ensuring tracing observes the exact
 // request content without repeating workspace I/O.
-func ComputePrefixFingerprint(options Options, exposed []zeroruntime.ToolDefinition) prefixFingerprint {
+func ComputePrefixFingerprint(options Options, exposed []kajicoderuntime.ToolDefinition) prefixFingerprint {
 	return computePrefixFingerprint(buildPromptSubstrings(options, exposed))
 }
 

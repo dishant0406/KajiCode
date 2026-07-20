@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/redaction"
-	"github.com/Gitlawb/zero/internal/verify"
+	"github.com/dishant0406/KajiCode/internal/redaction"
+	"github.com/dishant0406/KajiCode/internal/verify"
 )
 
 func TestRunStopsAfterPassingAttempt(t *testing.T) {

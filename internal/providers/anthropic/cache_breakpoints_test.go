@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
 )
 
 // The final two messages must carry a cache_control breakpoint on their last
@@ -29,15 +29,15 @@ func TestAnthropicRequestMarksLastTwoMessagesForCaching(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New returned error: %v", err)
 	}
-	stream, err := provider.StreamCompletion(context.Background(), zeroruntime.CompletionRequest{
-		Messages: []zeroruntime.Message{
-			{Role: zeroruntime.MessageRoleUser, Content: "first"},
+	stream, err := provider.StreamCompletion(context.Background(), kajicoderuntime.CompletionRequest{
+		Messages: []kajicoderuntime.Message{
+			{Role: kajicoderuntime.MessageRoleUser, Content: "first"},
 			{
-				Role:      zeroruntime.MessageRoleAssistant,
+				Role:      kajicoderuntime.MessageRoleAssistant,
 				Content:   "calling a tool",
-				ToolCalls: []zeroruntime.ToolCall{{ID: "toolu_1", Name: "grep", Arguments: `{}`}},
+				ToolCalls: []kajicoderuntime.ToolCall{{ID: "toolu_1", Name: "grep", Arguments: `{}`}},
 			},
-			{Role: zeroruntime.MessageRoleTool, Content: "result", ToolCallID: "toolu_1"},
+			{Role: kajicoderuntime.MessageRoleTool, Content: "result", ToolCallID: "toolu_1"},
 		},
 	})
 	if err != nil {

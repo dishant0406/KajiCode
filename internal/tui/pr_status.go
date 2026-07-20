@@ -373,13 +373,13 @@ func renderPRSegment(segment PrSegment) string {
 	style := lipgloss.NewStyle()
 	switch segment.Color {
 	case ColorAccent:
-		style = zeroTheme.accent
+		style = kajicodeTheme.accent
 	case ColorGreen:
-		style = zeroTheme.gitAdd
+		style = kajicodeTheme.gitAdd
 	case ColorRed:
-		style = zeroTheme.gitDel
+		style = kajicodeTheme.gitDel
 	case ColorDefault:
-		style = zeroTheme.muted
+		style = kajicodeTheme.muted
 	}
 	if segment.Bold {
 		style = style.Bold(true)

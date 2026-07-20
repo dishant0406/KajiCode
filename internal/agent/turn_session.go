@@ -3,7 +3,7 @@ package agent
 import (
 	"context"
 
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
 )
 
 // sessionProvider adapts a TurnSession back to the Provider interface so the
@@ -13,9 +13,9 @@ import (
 // this reduces to the wrapped provider's StreamCompletion, so behavior is
 // byte-identical; an optimized session (PR8) takes effect here transparently.
 type sessionProvider struct {
-	session zeroruntime.TurnSession
+	session kajicoderuntime.TurnSession
 }
 
-func (s sessionProvider) StreamCompletion(ctx context.Context, request zeroruntime.CompletionRequest) (<-chan zeroruntime.StreamEvent, error) {
+func (s sessionProvider) StreamCompletion(ctx context.Context, request kajicoderuntime.CompletionRequest) (<-chan kajicoderuntime.StreamEvent, error) {
 	return s.session.Stream(ctx, request)
 }

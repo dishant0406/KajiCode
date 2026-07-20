@@ -1,4 +1,4 @@
-// Package oauth is zero's reusable OAuth 2.0 engine. It generalizes the
+// Package oauth is KajiCode's reusable OAuth 2.0 engine. It generalizes the
 // authorization-code + PKCE flow that internal/mcp already uses for MCP servers
 // into a transport/identity-agnostic core, and adds the pieces provider login
 // needs: a device-authorization (RFC 8628) grant, a provider registry, a
@@ -18,7 +18,7 @@
 // from config/env by default, so no third-party OAuth client identity is used
 // unless the operator opts in. A small set of built-in presets (e.g. xAI's public
 // client) exists for convenience but is OFF by default and only consulted when
-// ZERO_OAUTH_ALLOW_PRESETS is set; env always overrides a preset.
+// KAJICODE_OAUTH_ALLOW_PRESETS is set; env always overrides a preset.
 package oauth
 
 import (

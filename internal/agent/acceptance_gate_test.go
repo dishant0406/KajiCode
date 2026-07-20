@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/tools"
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
 func enabledSelfCorrector(t *testing.T) *SelfCorrector {
@@ -20,7 +20,7 @@ func enabledSelfCorrector(t *testing.T) *SelfCorrector {
 // objective must be reported as INCOMPLETE, never success — and immediately
 // (an admitted guess is not worth re-prompting).
 func TestAcceptanceSelfReportAdmissionIsIncomplete(t *testing.T) {
-	provider := &mockProvider{turns: [][]zeroruntime.StreamEvent{
+	provider := &mockProvider{turns: [][]kajicoderuntime.StreamEvent{
 		textTurn("I couldn't analyze the board image, so I wrote the common opening move e2e4 as my best guess."),
 	}}
 
@@ -75,7 +75,7 @@ func TestSelfReportedIncompletionMatching(t *testing.T) {
 		// real false positive (conversational recap): retelling a PAST exchange is
 		// not an admission about the current objective — the sentence carries its
 		// own narrative context ("You asked …", "at the time"):
-		{"You asked if I could work autonomously on zero if you gave me a GitHub account — I was honest that my sandbox had no repo, no build system, and no network/integration wired up yet, so I couldn't actually do it at the time.", false},
+		{"You asked if I could work autonomously on KajiCode if you gave me a GitHub account — I was honest that my sandbox had no repo, no build system, and no network/integration wired up yet, so I couldn't actually do it at the time.", false},
 		{"When we last spoke, I couldn't reach the GitHub API from the sandbox.", false},
 		{"Last session I was unable to build the project; that is what we should retry now.", false},
 		// quoted admissions (the model citing its own earlier message or a log
@@ -106,7 +106,7 @@ func TestSelfReportedIncompletionMatching(t *testing.T) {
 // Mirrors the chess-best-move final ("I cannot analyze the position… PASS: I wrote
 // the move and verified by reading it back").
 func TestAcceptanceCannotPhrasingIsIncomplete(t *testing.T) {
-	provider := &mockProvider{turns: [][]zeroruntime.StreamEvent{
+	provider := &mockProvider{turns: [][]kajicoderuntime.StreamEvent{
 		textTurn("I cannot analyze the specific position from the image, so I cannot determine the best move. PASS: I wrote e2e4 to the file and verified it by reading it back."),
 	}}
 
@@ -134,7 +134,7 @@ func TestPendingPlanAloneDoesNotForceIncomplete(t *testing.T) {
 	registry := tools.NewRegistry()
 	registry.Register(tools.NewUpdatePlanTool())
 	done := "All set." // confident; no cue, no admission — only the plan is stale
-	provider := &mockProvider{turns: [][]zeroruntime.StreamEvent{
+	provider := &mockProvider{turns: [][]kajicoderuntime.StreamEvent{
 		planTurn("completed", "in_progress"),
 		textTurn(done), textTurn(done), textTurn(done), textTurn(done), textTurn(done),
 	}}
@@ -163,7 +163,7 @@ func TestPendingPlanAloneDoesNotForceIncomplete(t *testing.T) {
 // acceptance check before success. A model that, when challenged, confirms its
 // work meets the criterion (no admission) then finalizes as success — no regression.
 func TestAcceptanceGroundedCompletionSucceeds(t *testing.T) {
-	provider := &mockProvider{turns: [][]zeroruntime.StreamEvent{
+	provider := &mockProvider{turns: [][]kajicoderuntime.StreamEvent{
 		textTurn("I implemented the function."),
 		textTurn("PASS. I ran the verification and it passes; the output meets the task requirement."),
 	}}
@@ -196,7 +196,7 @@ func TestAcceptanceGroundedCompletionSucceeds(t *testing.T) {
 // final answer exactly as before — proving no behavior change for non-headless callers.
 func TestAcceptanceGateOffLeavesAdmissionAsSuccess(t *testing.T) {
 	admission := "I couldn't determine the value, so this is a guess."
-	provider := &mockProvider{turns: [][]zeroruntime.StreamEvent{
+	provider := &mockProvider{turns: [][]kajicoderuntime.StreamEvent{
 		textTurn(admission),
 	}}
 
@@ -223,7 +223,7 @@ func TestAcceptanceGateOffLeavesAdmissionAsSuccess(t *testing.T) {
 // WITHOUT a SelfCorrector accepts a confident completion immediately (the (b) gate
 // is inert), so enabling RequireCompletionSignal alone adds no acceptance turn.
 func TestAcceptanceGateRequiresSelfCorrect(t *testing.T) {
-	provider := &mockProvider{turns: [][]zeroruntime.StreamEvent{
+	provider := &mockProvider{turns: [][]kajicoderuntime.StreamEvent{
 		textTurn("Done. Implemented and it works."),
 	}}
 

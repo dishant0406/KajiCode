@@ -6,9 +6,9 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/Gitlawb/zero/internal/agent"
-	"github.com/Gitlawb/zero/internal/sandbox"
-	"github.com/Gitlawb/zero/internal/tools"
+	"github.com/dishant0406/KajiCode/internal/agent"
+	"github.com/dishant0406/KajiCode/internal/sandbox"
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
 type rowKind int
@@ -79,7 +79,7 @@ type transcriptAction struct {
 func initialTranscript() []transcriptRow {
 	return []transcriptRow{{
 		kind: rowWelcome,
-		text: "Welcome to Zero. Type /help for commands.",
+		text: "Welcome to KajiCode. Type /help for commands.",
 	}}
 }
 
@@ -332,7 +332,7 @@ func permissionTranscriptRow(event agent.PermissionEvent) transcriptRow {
 // noise — the reference agents only surface approval when the user is actually
 // prompted or makes an explicit durable choice. The underlying audit event is
 // still recorded regardless (see the OnPermission handler and resume rebuild);
-// this only gates the rendered row, so the session log / `zero sessions` stay
+// this only gates the rendered row, so the session log / `kajicode sessions` stay
 // complete.
 //
 // Used in BOTH the live path (model.go OnPermission) and the resume rebuild

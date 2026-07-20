@@ -8,9 +8,9 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/Gitlawb/zero/internal/config"
-	"github.com/Gitlawb/zero/internal/providercatalog"
-	"github.com/Gitlawb/zero/internal/provideronboarding"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/providercatalog"
+	"github.com/dishant0406/KajiCode/internal/provideronboarding"
 )
 
 type providerUseOptions struct {
@@ -226,7 +226,7 @@ func parseProviderSetupArgs(args []string) (providerSetupOptions, bool, error) {
 }
 
 func providerSetupAddCommand(options providerSetupOptions, profile config.ProviderProfile) string {
-	parts := []string{"zero", "providers", "add", profile.CatalogID}
+	parts := []string{"kajicode", "providers", "add", profile.CatalogID}
 	if strings.TrimSpace(options.name) != "" {
 		parts = append(parts, "--name", options.name)
 	}
@@ -335,9 +335,9 @@ func parseProviderNamesArgs(args []string, want int, usage string) (providerName
 
 // runProvidersRemove deletes a saved provider profile and its stored API key.
 // The OAuth token (if any) is kept — logins outlive profiles so re-adding the
-// provider needs no new browser round-trip; `zero auth logout <name>` removes it.
+// provider needs no new browser round-trip; `kajicode auth logout <name>` removes it.
 func runProvidersRemove(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) int {
-	options, help, err := parseProviderNamesArgs(args, 1, "usage: zero providers remove <name>")
+	options, help, err := parseProviderNamesArgs(args, 1, "usage: kajicode providers remove <name>")
 	if err != nil {
 		return writeExecUsageError(stderr, err.Error())
 	}
@@ -393,7 +393,7 @@ func runProvidersRemove(args []string, stdout io.Writer, stderr io.Writer, deps 
 			return exitCrash
 		}
 	} else {
-		if _, err := fmt.Fprintln(stdout, "No providers remain — run zero setup to add one."); err != nil {
+		if _, err := fmt.Fprintln(stdout, "No providers remain — run kajicode setup to add one."); err != nil {
 			return exitCrash
 		}
 	}
@@ -414,7 +414,7 @@ func removeStoredProviderKeyAt(configPath string, provider string) (bool, error)
 // runProvidersRename renames a saved provider profile, migrating its stored
 // API key and the activeProvider pointer along with it (config.RenameProvider).
 func runProvidersRename(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) int {
-	options, help, err := parseProviderNamesArgs(args, 2, "usage: zero providers rename <old> <new>")
+	options, help, err := parseProviderNamesArgs(args, 2, "usage: kajicode providers rename <old> <new>")
 	if err != nil {
 		return writeExecUsageError(stderr, err.Error())
 	}

@@ -96,7 +96,7 @@ func TestOutputCeilingSmallOutputUntouched(t *testing.T) {
 	}
 }
 
-// ZERO_TOOL_OUTPUT_CEILING_TOKENS tightens, loosens, or disables the ceiling.
+// KAJICODE_TOOL_OUTPUT_CEILING_TOKENS tightens, loosens, or disables the ceiling.
 func TestOutputCeilingEnvOverride(t *testing.T) {
 	setTestTempDir(t)
 	big := strings.Repeat("z", 100*1024)

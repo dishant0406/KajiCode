@@ -1,11 +1,11 @@
 package selfverify
 
 import (
-	"github.com/Gitlawb/zero/internal/redaction"
-	"github.com/Gitlawb/zero/internal/verify"
+	"github.com/dishant0406/KajiCode/internal/redaction"
+	"github.com/dishant0406/KajiCode/internal/verify"
 )
 
-const LoopContractVersion = "zero.selfverify.report.v1"
+const LoopContractVersion = "kajicode.selfverify.report.v1"
 
 type EventType string
 

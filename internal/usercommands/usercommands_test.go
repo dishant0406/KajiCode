@@ -18,7 +18,7 @@ func writeFile(t *testing.T, dir, name, content string) {
 
 func TestLoadParsesFrontmatterAndBody(t *testing.T) {
 	root := t.TempDir()
-	dir := filepath.Join(root, ".zero", "commands")
+	dir := filepath.Join(root, ".kajicode", "commands")
 	writeFile(t, dir, "release.md", "---\ndescription: Cut a release\nmodel: claude-sonnet-4.5\n---\nCut release $1 from the current branch.")
 
 	cmds := Load(DefaultPaths(root, ""))
@@ -39,15 +39,15 @@ func TestLoadParsesFrontmatterAndBody(t *testing.T) {
 		t.Fatalf("template = %q", c.Template)
 	}
 	if !c.Project {
-		t.Fatal("expected Project=true for a .zero/commands file")
+		t.Fatal("expected Project=true for a .kajicode/commands file")
 	}
 }
 
 func TestLoadProjectOverridesUser(t *testing.T) {
 	root := t.TempDir()
 	userCfg := t.TempDir()
-	writeFile(t, filepath.Join(userCfg, "zero", "commands"), "review.md", "USER version")
-	writeFile(t, filepath.Join(root, ".zero", "commands"), "review.md", "PROJECT version")
+	writeFile(t, filepath.Join(userCfg, "kajicode", "commands"), "review.md", "USER version")
+	writeFile(t, filepath.Join(root, ".kajicode", "commands"), "review.md", "PROJECT version")
 
 	cmds := Load(DefaultPaths(root, userCfg))
 	if len(cmds) != 1 {
@@ -63,7 +63,7 @@ func TestLoadProjectOverridesUser(t *testing.T) {
 
 func TestLoadSkipsNonMarkdownAndInvalidNames(t *testing.T) {
 	root := t.TempDir()
-	dir := filepath.Join(root, ".zero", "commands")
+	dir := filepath.Join(root, ".kajicode", "commands")
 	writeFile(t, dir, "ok.md", "fine")
 	writeFile(t, dir, "notes.txt", "ignored")   // not .md
 	writeFile(t, dir, "Bad Name.md", "ignored") // space → invalid name

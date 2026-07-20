@@ -224,7 +224,7 @@ func TestGrantStoreRejectsUnsafeStoredCommandPrefix(t *testing.T) {
 
 func TestResolveGrantPathUsesOverrideAndConfigHome(t *testing.T) {
 	override := filepath.Join(t.TempDir(), "custom.json")
-	path, err := ResolveGrantPath(map[string]string{"ZERO_SANDBOX_GRANTS_PATH": override})
+	path, err := ResolveGrantPath(map[string]string{"KAJICODE_SANDBOX_GRANTS_PATH": override})
 	if err != nil {
 		t.Fatalf("ResolveGrantPath override returned error: %v", err)
 	}
@@ -237,7 +237,7 @@ func TestResolveGrantPathUsesOverrideAndConfigHome(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResolveGrantPath config home returned error: %v", err)
 	}
-	want := filepath.Join(configHome, "zero", "sandbox-grants.json")
+	want := filepath.Join(configHome, "kajicode", "sandbox-grants.json")
 	if path != want {
 		t.Fatalf("config path = %q, want %q", path, want)
 	}

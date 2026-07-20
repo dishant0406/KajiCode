@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/tools"
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
 func TestParseMarkdownValidatesAndResolvesTools(t *testing.T) {
@@ -380,7 +380,7 @@ Prompt.`)
 func TestKnownToolNamesMatchCoreRegistry(t *testing.T) {
 	// web_search is only registered when a search backend is configured; set one so
 	// CoreTools() exposes the full set this list is meant to mirror.
-	t.Setenv("ZERO_WEBSEARCH_BASE_URL", "https://search.example/api")
+	t.Setenv("KAJICODE_WEBSEARCH_BASE_URL", "https://search.example/api")
 	core := tools.CoreTools(t.TempDir())
 	got := make([]string, 0, len(knownToolNames))
 	for name := range knownToolNames {
@@ -411,7 +411,7 @@ func TestFormatListUsesSpecialistTerminology(t *testing.T) {
 		FilePath: "(builtin)",
 	}}}
 	output := FormatList(result)
-	if !strings.Contains(output, "Zero Specialists") || !strings.Contains(output, "worker [builtin]") {
+	if !strings.Contains(output, "KajiCode Specialists") || !strings.Contains(output, "worker [builtin]") {
 		t.Fatalf("unexpected list output: %s", output)
 	}
 	show := FormatShow(result.Specialists[0])

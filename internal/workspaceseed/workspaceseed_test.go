@@ -11,7 +11,7 @@ import (
 func TestBuildOrdersAndClassifiesWorkspaceSeed(t *testing.T) {
 	dirty := true
 	got := Build(Input{
-		CWD:        filepath.Join("tmp", "Zero"),
+		CWD:        filepath.Join("tmp", "KajiCode"),
 		GitBranch:  "feat/context",
 		GitDirty:   &dirty,
 		GitSummary: "3 modified, 1 untracked",
@@ -19,16 +19,16 @@ func TestBuildOrdersAndClassifiesWorkspaceSeed(t *testing.T) {
 			"internal/agent/loop.go",
 			"docs/STREAM_JSON_PROTOCOL.md",
 			"package.json",
-			"cmd/zero/main.go",
+			"cmd/kajicode/main.go",
 			"AGENTS.md",
 			"docs/INSTALL.md",
 			"README.md",
-			"ZERO.md",
+			"KAJICODE.md",
 			"go.mod",
 		},
 	})
 
-	if got.CWD != filepath.Clean(filepath.Join("tmp", "Zero")) {
+	if got.CWD != filepath.Clean(filepath.Join("tmp", "KajiCode")) {
 		t.Fatalf("CWD=%q", got.CWD)
 	}
 	if got.GitBranch != "feat/context" {
@@ -37,19 +37,19 @@ func TestBuildOrdersAndClassifiesWorkspaceSeed(t *testing.T) {
 	if got.GitSummary != "dirty: 3 modified, 1 untracked" {
 		t.Fatalf("GitSummary=%q", got.GitSummary)
 	}
-	if want := []string{"AGENTS.md", "README.md", "ZERO.md", "cmd/", "docs/", "go.mod", "internal/", "package.json"}; !reflect.DeepEqual(got.Layout, want) {
+	if want := []string{"AGENTS.md", "KAJICODE.md", "README.md", "cmd/", "docs/", "go.mod", "internal/", "package.json"}; !reflect.DeepEqual(got.Layout, want) {
 		t.Fatalf("Layout=%v want %v", got.Layout, want)
 	}
 	if want := []string{"README.md", "go.mod", "package.json", "AGENTS.md", "docs/INSTALL.md", "docs/STREAM_JSON_PROTOCOL.md"}; !reflect.DeepEqual(got.ProjectFiles, want) {
 		t.Fatalf("ProjectFiles=%v want %v", got.ProjectFiles, want)
 	}
-	if want := []string{"AGENTS.md", "ZERO.md"}; !reflect.DeepEqual(got.MemoryFiles, want) {
+	if want := []string{"AGENTS.md", "KAJICODE.md"}; !reflect.DeepEqual(got.MemoryFiles, want) {
 		t.Fatalf("MemoryFiles=%v want %v", got.MemoryFiles, want)
 	}
 }
 
 func TestBuildKeepsPathsRelativeToCWD(t *testing.T) {
-	root := filepath.Join(t.TempDir(), "Zero")
+	root := filepath.Join(t.TempDir(), "KajiCode")
 	dirty := false
 	got := Build(Input{
 		CWD:       root,
@@ -69,7 +69,7 @@ func TestBuildKeepsPathsRelativeToCWD(t *testing.T) {
 	if strings.Contains(rendered, "outside") {
 		t.Fatalf("Render included path outside root:\n%s", rendered)
 	}
-	if !strings.Contains(rendered, "cwd: Zero") {
+	if !strings.Contains(rendered, "cwd: KajiCode") {
 		t.Fatalf("Render should use safe cwd base, got:\n%s", rendered)
 	}
 	if got.GitSummary != "clean" {
@@ -109,17 +109,17 @@ func TestBuildNormalizesBackslashPathsBeforeTraversalChecks(t *testing.T) {
 
 func TestRenderHonorsLineAndWidthBudgets(t *testing.T) {
 	seed := Build(Input{
-		CWD:       "/repo/Zero",
+		CWD:       "/repo/KajiCode",
 		GitBranch: "feature/very-long-branch-name",
 		Paths: []string{
 			"averyveryveryverylongdirectoryname/averyveryveryverylongfilename.go",
-			"cmd/zero/main.go",
+			"cmd/kajicode/main.go",
 			"docs/INSTALL.md",
 			"docs/STREAM_JSON_PROTOCOL.md",
 			"go.mod",
 			"package.json",
 			"AGENTS.md",
-			"ZERO.md",
+			"KAJICODE.md",
 		},
 	})
 
@@ -151,8 +151,8 @@ func TestRenderClampsOnRuneBoundaries(t *testing.T) {
 
 func TestBuildFromWorkspaceUsesWorkspaceIndexWithoutGit(t *testing.T) {
 	root := t.TempDir()
-	writeSeedFile(t, root, "go.mod", "module example.test/zero\n")
-	writeSeedFile(t, root, "cmd/zero/main.go", "package main\n")
+	writeSeedFile(t, root, "go.mod", "module example.test/kajicode\n")
+	writeSeedFile(t, root, "cmd/kajicode/main.go", "package main\n")
 	writeSeedFile(t, root, "docs/INSTALL.md", "# Install\n")
 	writeSeedFile(t, root, "node_modules/pkg/index.js", "ignored")
 

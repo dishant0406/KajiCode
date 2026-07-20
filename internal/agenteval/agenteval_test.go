@@ -506,7 +506,7 @@ func TestReportJSONIsStable(t *testing.T) {
 		t.Fatalf("marshal report: %v", err)
 	}
 	want := `{
-  "contract": "zero.agenteval.report.v1",
+  "contract": "kajicode.agenteval.report.v1",
   "suiteId": "quality-context",
   "taskId": "edit-reader",
   "status": "pass",

@@ -9,11 +9,11 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/Gitlawb/zero/internal/config"
-	"github.com/Gitlawb/zero/internal/modelregistry"
-	"github.com/Gitlawb/zero/internal/providercatalog"
-	"github.com/Gitlawb/zero/internal/providermodelcatalog"
-	"github.com/Gitlawb/zero/internal/providermodeldiscovery"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/modelregistry"
+	"github.com/dishant0406/KajiCode/internal/providercatalog"
+	"github.com/dishant0406/KajiCode/internal/providermodelcatalog"
+	"github.com/dishant0406/KajiCode/internal/providermodeldiscovery"
 )
 
 // pickerKind identifies which command a picker selection feeds back into.
@@ -741,7 +741,7 @@ type modelPickerModelsDiscoveredMsg struct {
 
 // ollamaContextWindowDiscoveredMsg carries the result of an async /api/show
 // probe against a local Ollama daemon (see ollamaContextWindowDiscoveryCmd).
-// A zero contextWindow (or a non-nil err) means the probe found nothing
+// A kajicode contextWindow (or a non-nil err) means the probe found nothing
 // usable and the map is left untouched, not zeroed out.
 type ollamaContextWindowDiscoveredMsg struct {
 	modelName     string

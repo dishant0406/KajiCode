@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	zeroSandbox "github.com/Gitlawb/zero/internal/sandbox"
-	"github.com/Gitlawb/zero/internal/secrets"
+	zeroSandbox "github.com/dishant0406/KajiCode/internal/sandbox"
+	"github.com/dishant0406/KajiCode/internal/secrets"
 )
 
 const defaultBashTimeoutMS = 120000
@@ -144,7 +144,7 @@ func (tool bashTool) run(ctx context.Context, args map[string]any, engine *zeroS
 	addSandboxMeta(meta, plan)
 
 	// Bound the capture so a command with runaway output (`cat huge.log`, `yes`)
-	// can't grow Zero's memory before truncation: only the head+tail each stream
+	// can't grow KajiCode's memory before truncation: only the head+tail each stream
 	// will ever surface to the model are retained, the middle is discarded as it
 	// streams, and the true size is counted for the truncation marker.
 	stdout := newBoundedBuffer(bashCaptureBudgetBytes, bashCaptureBudgetBytes)
@@ -395,7 +395,7 @@ func formatBashOutput(stdout string, stderr string, exitCode int) string {
 		parts = append(parts, fmt.Sprintf("exit_code: %d", exitCode))
 	}
 	if n := len(outFindings) + len(errFindings); n > 0 {
-		parts = append(parts, fmt.Sprintf("[zero] redacted %d likely secret(s) from this output before showing it.", n))
+		parts = append(parts, fmt.Sprintf("[kajicode] redacted %d likely secret(s) from this output before showing it.", n))
 	}
 	if len(parts) == 0 {
 		return "Command completed with no output."
@@ -461,7 +461,7 @@ func budgetBashCapture(out string, outTotal int, errStr string, errTotal int, me
 	truncated := outTrunc || errTrunc
 	if truncated {
 		if spillPath := spillBashStreams(out, outTotal, errStr, errTotal); spillPath != "" {
-			hint := "\n[zero] captured output saved to " + spillPath + " (grep or read_file it instead of re-running)"
+			hint := "\n[kajicode] captured output saved to " + spillPath + " (grep or read_file it instead of re-running)"
 			if errTrunc {
 				errText += hint
 			} else {
@@ -487,7 +487,7 @@ func budgetBashCapture(out string, outTotal int, errStr string, errTotal int, me
 // spillBashStreams writes the retained (capture-bounded) stdout and stderr to
 // the spill directory as one sectioned file and returns its path, or "" when
 // spilling fails. The spill holds up to bashCaptureBudgetBytes of head and
-// tail per stream — everything zero kept in memory, which is more than the
+// tail per stream — everything KajiCode kept in memory, which is more than the
 // emit budget shows the model but not necessarily the whole output. When the
 // capture itself dropped the middle of a stream (total exceeds the retained
 // bytes), a gap marker is inserted at the head/tail junction so the spilled
@@ -517,13 +517,13 @@ func sectionWithCaptureGap(text string, total int) string {
 		return text
 	}
 	head := utf8Prefix(text, bashCaptureBudgetBytes)
-	marker := fmt.Sprintf("\n[zero] capture gap: %d bytes omitted from the middle of this stream\n", total-len(text))
+	marker := fmt.Sprintf("\n[kajicode] capture gap: %d bytes omitted from the middle of this stream\n", total-len(text))
 	return head + marker + text[len(head):]
 }
 
 // boundedBuffer is an io.Writer that retains at most headCap bytes from the start
 // and tailCap bytes from the end of a stream while counting the total written, so
-// a command emitting unbounded output (`cat huge.log`, `yes`) cannot grow Zero's
+// a command emitting unbounded output (`cat huge.log`, `yes`) cannot grow KajiCode's
 // memory: the middle is discarded as it arrives instead of buffered whole and then
 // truncated. total records the full size for the truncation marker even though the
 // middle is never held. Not safe for concurrent writes; exec drives Stdout and
@@ -584,7 +584,7 @@ func truncateHeadTailWithTotal(value string, total, maxBytes int) (string, int, 
 	if maxBytes <= 0 || total <= maxBytes {
 		return value, total, false
 	}
-	marker := fmt.Sprintf("\n[zero] output truncated: %d bytes omitted from the middle — redirect to a file and read_file a range for the full text\n", total-maxBytes)
+	marker := fmt.Sprintf("\n[kajicode] output truncated: %d bytes omitted from the middle — redirect to a file and read_file a range for the full text\n", total-maxBytes)
 	budget := maxBytes - len(marker)
 	if budget < 0 {
 		budget = 0

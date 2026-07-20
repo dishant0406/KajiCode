@@ -16,25 +16,25 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/Gitlawb/zero/internal/agent"
-	"github.com/Gitlawb/zero/internal/config"
-	"github.com/Gitlawb/zero/internal/doctor"
-	"github.com/Gitlawb/zero/internal/errhint"
-	"github.com/Gitlawb/zero/internal/lsp"
-	internalmcp "github.com/Gitlawb/zero/internal/mcp"
-	"github.com/Gitlawb/zero/internal/modelregistry"
-	"github.com/Gitlawb/zero/internal/notify"
-	"github.com/Gitlawb/zero/internal/providerhealth"
-	"github.com/Gitlawb/zero/internal/providermodeldiscovery"
-	"github.com/Gitlawb/zero/internal/providers/providerio"
-	"github.com/Gitlawb/zero/internal/sandbox"
-	"github.com/Gitlawb/zero/internal/sessions"
-	"github.com/Gitlawb/zero/internal/skills"
-	"github.com/Gitlawb/zero/internal/streamjson"
-	"github.com/Gitlawb/zero/internal/tools"
-	"github.com/Gitlawb/zero/internal/usage"
-	"github.com/Gitlawb/zero/internal/usercommands"
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/agent"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/doctor"
+	"github.com/dishant0406/KajiCode/internal/errhint"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
+	"github.com/dishant0406/KajiCode/internal/lsp"
+	internalmcp "github.com/dishant0406/KajiCode/internal/mcp"
+	"github.com/dishant0406/KajiCode/internal/modelregistry"
+	"github.com/dishant0406/KajiCode/internal/notify"
+	"github.com/dishant0406/KajiCode/internal/providerhealth"
+	"github.com/dishant0406/KajiCode/internal/providermodeldiscovery"
+	"github.com/dishant0406/KajiCode/internal/providers/providerio"
+	"github.com/dishant0406/KajiCode/internal/sandbox"
+	"github.com/dishant0406/KajiCode/internal/sessions"
+	"github.com/dishant0406/KajiCode/internal/skills"
+	"github.com/dishant0406/KajiCode/internal/streamjson"
+	"github.com/dishant0406/KajiCode/internal/tools"
+	"github.com/dishant0406/KajiCode/internal/usage"
+	"github.com/dishant0406/KajiCode/internal/usercommands"
 )
 
 const tuiToolOutputLimit = 240
@@ -63,7 +63,7 @@ type model struct {
 	ctx                         context.Context
 	cwd                         string
 	appVersion                  string
-	userCommands                []usercommands.Command // file-sourced /commands (.zero/commands)
+	userCommands                []usercommands.Command // file-sourced /commands (.kajicode/commands)
 	loadSkills                  func() []skills.Skill  // lazy installed-skills loader for /skills + /<skill-name>
 	userConfigPath              string
 	doctorUserConfigPath        string
@@ -74,8 +74,8 @@ type model struct {
 	modelCatalog                modelregistry.Registry
 	providerProfile             config.ProviderProfile
 	savedProviders              []config.ProviderProfile
-	provider                    zeroruntime.Provider
-	newProvider                 func(config.ProviderProfile) (zeroruntime.Provider, error)
+	provider                    kajicoderuntime.Provider
+	newProvider                 func(config.ProviderProfile) (kajicoderuntime.Provider, error)
 	probeProviderHealth         func(context.Context, providerhealth.Options) providerhealth.Result
 	discoverProviderModels      func(context.Context, config.ProviderProfile) ([]providermodeldiscovery.Model, error)
 	discoverOllamaContextWindow func(ctx context.Context, baseURL string, model string) (int, error)
@@ -219,7 +219,7 @@ type model struct {
 	pending        bool
 	// turnStartedAt is when the in-flight run began; the working status line
 	// renders the live elapsed time from it so a long or stalled turn never looks
-	// like a frozen terminal (for ANY provider, not just slow ones). Zero = idle.
+	// like a frozen terminal (for ANY provider, not just slow ones). KajiCode = idle.
 	turnStartedAt time.Time
 	// lastCharTime tracks when the last non-Enter key was received, for paste detection.
 	lastCharTime time.Time
@@ -333,7 +333,7 @@ type model struct {
 	// request — otherwise a vision/PDF-backed prompt would silently retry as
 	// text-only and answer a different task. They share the underlying image bytes
 	// with the sent turn (never mutated in place), so no deep copy is needed.
-	lastImages      []zeroruntime.ImageBlock
+	lastImages      []kajicoderuntime.ImageBlock
 	lastImageLabels []string
 	lastDocuments   []pendingDocument
 	// historyIdx == len(inputHistory) means "not navigating"; historyDraft
@@ -369,8 +369,8 @@ type model struct {
 	lineAges           []time.Time
 	lastStreamActivity time.Time
 	fadeActive         bool
-	fadeDisabled       bool // streaming fade off (ZERO_NO_FADE / SSH / tmux / low-color / reduced motion)
-	reducedMotion      bool // ZERO_REDUCED_MOTION / no-TTY: static spinner glyph, no fade
+	fadeDisabled       bool // streaming fade off (KAJICODE_NO_FADE / SSH / tmux / low-color / reduced motion)
+	reducedMotion      bool // KAJICODE_REDUCED_MOTION / no-TTY: static spinner glyph, no fade
 	// In-progress tool call whose arguments are streaming (a file being written),
 	// shown live by streamingToolCallView so a long write/edit isn't a frozen
 	// spinner. Cleared when the call completes (next text/turn) — see updateModel.
@@ -470,7 +470,7 @@ type model struct {
 	// turn; pendingImageLabels are their display names (base(path)) for the chip
 	// row. Both are cleared after a prompt is submitted (or /image clear). nil =
 	// no attachments = today's text-only behavior exactly.
-	pendingImages      []zeroruntime.ImageBlock
+	pendingImages      []kajicoderuntime.ImageBlock
 	pendingImageLabels []string
 
 	// pendingDocuments holds PDF text layers staged by /image for the next user
@@ -481,7 +481,7 @@ type model struct {
 	// captureRunImages, when set, is invoked with the images a run is launched
 	// with. Nil in production; used by tests to assert image threading without a
 	// real provider round-trip.
-	captureRunImages func([]zeroruntime.ImageBlock)
+	captureRunImages func([]kajicoderuntime.ImageBlock)
 }
 
 type agentTextMsg struct {
@@ -531,13 +531,13 @@ type agentReasoningMsg struct {
 type agentUsageMsg struct {
 	runID   int
 	modelID string
-	usage   zeroruntime.Usage
+	usage   kajicoderuntime.Usage
 }
 
 type agentResponseMsg struct {
 	runID         int
 	rows          []transcriptRow
-	usageEvents   []zeroruntime.Usage
+	usageEvents   []kajicoderuntime.Usage
 	usageModelID  string
 	sessionEvents []pendingSessionEvent
 	specReview    *pendingSpecReviewPrompt
@@ -786,7 +786,7 @@ func newModel(ctx context.Context, options Options) model {
 		Mode:      notify.Mode(strings.TrimSpace(options.Notify.Mode)),
 		FocusMode: notify.FocusMode(strings.TrimSpace(options.Notify.FocusMode)),
 	})
-	// Opt-in webhook fan-out (ZERO_NOTIFY_WEBHOOK_URL). Delivery failures stay
+	// Opt-in webhook fan-out (KAJICODE_NOTIFY_WEBHOOK_URL). Delivery failures stay
 	// silent here: the TUI owns the alt-screen, so writing to stderr would
 	// corrupt the display.
 	notify.MaybeAddWebhookSink(notifier, os.Getenv, nil)
@@ -835,7 +835,7 @@ func newModel(ctx context.Context, options Options) model {
 		reasoningEffort:             options.ReasoningEffort,
 		responseStyle:               defaultedResponseStyle(options.ResponseStyle),
 		keyBindings:                 resolvedKeyBindings,
-		themeMode:                   resolveThemeMode(options.Theme, os.Getenv("ZERO_THEME"), options.SavedTheme),
+		themeMode:                   resolveThemeMode(options.Theme, os.Getenv("KAJICODE_THEME"), options.SavedTheme),
 		hasDarkBg:                   true,
 		userAgent:                   options.UserAgent,
 		usageTracker:                usageTracker,
@@ -907,7 +907,7 @@ func (m model) doctorOptions(connectivity bool) doctor.Options {
 }
 
 const (
-	composerPlaceholder     = "describe a task for zero…"
+	composerPlaceholder     = "describe a task for KajiCode…"
 	composerMaxVisibleLines = 4
 )
 
@@ -940,7 +940,7 @@ func (m model) Init() tea.Cmd {
 	// `if m.altScreen && m.height > 0` (transcriptView) falls back to the
 	// unpadded, non-fullscreen render path for the rest of the session, and
 	// the alt-screen viewport never gets filled below the actual content.
-	// Explicitly requesting it here means Zero doesn't depend solely on the
+	// Explicitly requesting it here means KajiCode doesn't depend solely on the
 	// terminal's unprompted push — mirrors the RequestBackgroundColor request
 	// below for the same reason.
 	cmds = append(cmds, tea.RequestWindowSize)
@@ -1944,7 +1944,7 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// case schedules the next one). Schedule the FIRST tick only on
 		// the inactive→active transition; subsequent deltas just refresh
 		// state and rely on the existing tick chain.
-		// When the fade is disabled (ZERO_NO_FADE / SSH / tmux / low-color),
+		// When the fade is disabled (KAJICODE_NO_FADE / SSH / tmux / low-color),
 		// fadeActive stays false so styleStreamingLine renders streaming text
 		// statically at base ink, and no self-perpetuating tick is scheduled.
 		if !m.fadeDisabled {
@@ -2566,7 +2566,7 @@ func (m model) View() tea.View {
 
 	view := tea.NewView(content)
 	view.AltScreen = m.altScreen
-	// Paint the whole frame with the active theme's surface. Zero never paints the
+	// Paint the whole frame with the active theme's surface. KajiCode never paints the
 	// terminal's own canvas, so without this a theme's text falls on the terminal
 	// background — fine when they share polarity, but a light theme's dark text on a
 	// dark terminal (or vice versa) is invisible, and a color theme never shows its
@@ -2575,7 +2575,7 @@ func (m model) View() tea.View {
 	// picker) too. Alt-screen only, so inline output never leaves a painted
 	// background behind in the user's scrollback after exit.
 	if m.altScreen {
-		view.BackgroundColor = zeroTheme.bgPanel
+		view.BackgroundColor = kajicodeTheme.bgPanel
 	}
 	// Always requested, independent of the notifier: the composer cursor's
 	// focus/blink behavior (composerBlinkMsg above) needs tea.FocusMsg/BlurMsg
@@ -2788,7 +2788,7 @@ func (m model) footerView(width int) string {
 	// cue on the right when scrolled up. Always one line (blank when nothing shows),
 	// so the footer height is unchanged.
 	if copyStatus := strings.TrimSpace(m.copyStatus); copyStatus != "" {
-		footer.WriteString(rightAlignedLine(zeroTheme.ink.Render(copyStatus), width))
+		footer.WriteString(rightAlignedLine(kajicodeTheme.ink.Render(copyStatus), width))
 	} else if left, right := m.composerIdleHint(), m.jumpToBottomHint(); left != "" || right != "" {
 		footer.WriteString(fitStyledLine(joinHeaderLine("  "+left, right, width), width))
 	}
@@ -2819,7 +2819,7 @@ func (m model) composerIdleHint() string {
 	// Leader-pending is always shown (even mid-type) so the user knows the next
 	// key is a chord, not composer input.
 	if m.leaderPending {
-		return zeroTheme.faint.Render("Ctrl+X — await shortcut (m model · p provider · ? list · Esc cancel)")
+		return kajicodeTheme.faint.Render("Ctrl+X — await shortcut (m model · p provider · ? list · Esc cancel)")
 	}
 	// Managed (alt-screen) mode only: inline mode prints to native scrollback where
 	// this footer row isn't a stable surface. Hidden while typing, during a run, in
@@ -2843,7 +2843,7 @@ func (m model) composerIdleHint() string {
 	default:
 		hint = fmt.Sprintf("? shortcuts · Ctrl+X cmds · %s sidebar · %s detail · %s copy · Shift+Tab mode", sidebarKey, detailKey, mouseKey)
 	}
-	return zeroTheme.faint.Render(hint)
+	return kajicodeTheme.faint.Render(hint)
 }
 
 // jumpToBottomHint returns a faint "↓ N more · PgDn" cue when the transcript is
@@ -2853,7 +2853,7 @@ func (m model) jumpToBottomHint() string {
 	if m.chatScrollOffset <= 0 {
 		return ""
 	}
-	return zeroTheme.faint.Render(fmt.Sprintf("↓ %d more · PgDn", m.chatScrollOffset))
+	return kajicodeTheme.faint.Render(fmt.Sprintf("↓ %d more · PgDn", m.chatScrollOffset))
 }
 
 // pinnedPlanMaxHeight is the line budget for the pinned plan panel: at most a
@@ -3056,7 +3056,7 @@ func scrimViewportLine(line string, width int) string {
 	if strings.TrimSpace(plain) == "" {
 		return line
 	}
-	return zeroTheme.faint.Render(plain)
+	return kajicodeTheme.faint.Render(plain)
 }
 
 func normalizeOverlayBlock(lines []string, width int) (int, []string, int) {
@@ -3165,7 +3165,7 @@ func (m model) chatTranscriptViewport() (transcriptViewport, bool) {
 	if m.transcriptDetailed {
 		items := m.transcriptBodyItems(width, "", true)
 		body := measureTranscriptBodyItems(items, m.transcriptBodyHeights)
-		header := detailedTranscriptHeader(width) + "\n" + zeroTheme.line.Render(strings.Repeat("-", width))
+		header := detailedTranscriptHeader(width) + "\n" + kajicodeTheme.line.Render(strings.Repeat("-", width))
 		footer := m.detailedTranscriptFooter(width)
 		frame := m.scrollableTranscriptFrame(header, footer)
 		return transcriptViewportForLayout(body, frame, m.chatScrollOffset), true
@@ -3316,19 +3316,19 @@ func (m model) workingStatusLine() string {
 	// 6-char wavelength fits the 7-letter word so a full oscillation is visible.
 	// Under reduced motion the phase is frozen, so this renders a static gradient.
 	working := rippleText("Working", ripplePalette(), m.spinnerPhase, 6)
-	line := zeroTheme.accent.Render(m.spinnerGlyph()) + " " + working
+	line := kajicodeTheme.accent.Render(m.spinnerGlyph()) + " " + working
 	// Phase label so a long, output-less step reads as live progress rather than a
 	// frozen screen: "writing" while the answer streams, "thinking" otherwise
 	// (reasoning, waiting on the model, or running a tool).
-	line += zeroTheme.faint.Render("  ·  " + m.workingActivity())
+	line += kajicodeTheme.faint.Render("  ·  " + m.workingActivity())
 	if !m.turnStartedAt.IsZero() {
-		line += zeroTheme.faint.Render("  ·  " + formatWorkingElapsed(m.now().Sub(m.turnStartedAt)))
+		line += kajicodeTheme.faint.Render("  ·  " + formatWorkingElapsed(m.now().Sub(m.turnStartedAt)))
 	}
 	// Live token estimate so the working line visibly climbs as the model reasons
 	// and writes, instead of a static figure. Shown from the start of the turn (at
 	// 0) so the counter is never missing — the authoritative totals stay in the
 	// status line and sidebar; this is the at-a-glance "it's generating" pulse.
-	line += zeroTheme.faint.Render("  ·  " + m.workingTokenIndicator())
+	line += kajicodeTheme.faint.Render("  ·  " + m.workingTokenIndicator())
 	// If the model has gone quiet (no streamed text, reasoning, OR tool-call output
 	// for a while — common when a provider buffers a large tool call instead of
 	// streaming it), say so plainly with an advancing timer, so a long silent
@@ -3337,7 +3337,7 @@ func (m model) workingStatusLine() string {
 	// whenever the sidebar is up, so it never appears in both places at once.
 	if !m.sidebarActive() {
 		if hint := m.quietGenerationHint(); hint != "" {
-			line += zeroTheme.amber.Render("  ·  " + hint)
+			line += kajicodeTheme.amber.Render("  ·  " + hint)
 		}
 	}
 	// A second line carries live plan progress (how far along + the current step)
@@ -3368,7 +3368,7 @@ func (m model) workingPlanLine() string {
 	if current := truncateStep(currentStepContent(m.plan.steps), 48); current != "" {
 		text += " · " + current
 	}
-	return "  " + zeroTheme.faint.Render(text)
+	return "  " + kajicodeTheme.faint.Render(text)
 }
 
 // workingTokenIndicator renders a live "↑ <n> tok" estimate of the tokens
@@ -3399,7 +3399,7 @@ const quietWorkingHint = 8 * time.Second
 // else "". The advancing number is itself the liveness signal.
 //
 // Past half the provider's idle timeout, the cue escalates to name what's
-// actually happening and when Zero will act on its own: a heartbeating-but-
+// actually happening and when KajiCode will act on its own: a heartbeating-but-
 // silent stream (observed on chatgpt/gpt-5.x and ollama reasoning models,
 // see providerio.ErrStreamStalled) is bounded by the content-stall watchdog at
 // providerio.ContentStallTimeout(idle), but until it fires this exact same
@@ -3423,7 +3423,7 @@ func (m model) quietGenerationHint() string {
 	}
 	if idleTimeout := providerio.ResolveStreamIdleTimeout(0); idleTimeout > 0 && quiet >= idleTimeout/2 {
 		ceiling := providerio.ContentStallTimeout(idleTimeout)
-		return fmt.Sprintf("still generating… %s — unusually quiet, Zero will auto-recover by ~%s if it doesn't resume", formatWorkingElapsed(quiet), formatWorkingElapsed(ceiling))
+		return fmt.Sprintf("still generating… %s — unusually quiet, KajiCode will auto-recover by ~%s if it doesn't resume", formatWorkingElapsed(quiet), formatWorkingElapsed(ceiling))
 	}
 	return "still generating… " + formatWorkingElapsed(quiet)
 }
@@ -3463,7 +3463,7 @@ func reasoningPreviewLines(reasoning string, width int) []string {
 	}
 	out := make([]string, 0, len(lines))
 	for _, line := range lines {
-		out = append(out, "  "+zeroTheme.faint.Render(previewTail(line, avail)))
+		out = append(out, "  "+kajicodeTheme.faint.Render(previewTail(line, avail)))
 	}
 	return out
 }
@@ -3486,9 +3486,9 @@ func (m model) appendStreamingCursor(lines []string, width int) []string {
 	// Pulse the caret on the shared spinner clock so the typing edge reads as alive
 	// even during fade-tick gaps or upstream stalls. Width-stable (bright ↔ dim,
 	// never on/off, so the line never jitters). Steady bright under reduced motion.
-	cursor := zeroTheme.accent.Render("▌")
+	cursor := kajicodeTheme.accent.Render("▌")
 	if !m.reducedMotion && (m.spinnerPhase/6)%2 == 1 {
-		cursor = zeroTheme.faint.Render("▌")
+		cursor = kajicodeTheme.faint.Render("▌")
 	}
 	if len(lines) == 0 {
 		return []string{cursor}
@@ -3560,7 +3560,7 @@ func renderComposerInput(input textinput.Model, state composerState, width int, 
 		if cursorVisible {
 			cursor = composerCursor(" ")
 		}
-		return fitStyledLine(composerVisualLinePrefix(input, true)+cursor+zeroTheme.faint.Render(input.Placeholder), width)
+		return fitStyledLine(composerVisualLinePrefix(input, true)+cursor+kajicodeTheme.faint.Render(input.Placeholder), width)
 	}
 
 	segments, cursorLine := composerVisibleVisualLines(input, state, width)
@@ -3651,7 +3651,7 @@ func composerCursorVisualLine(segments []composerVisualLine, cursor int) int {
 func renderComposerVisualLine(input textinput.Model, state composerState, segment composerVisualLine, hasCursor bool, cursorVisible bool, selection composerSelectionState) string {
 	runes := []rune(state.text)
 	prefix := composerVisualLinePrefix(input, segment.first)
-	textStyle := zeroTheme.ink.Inline(true)
+	textStyle := kajicodeTheme.ink.Inline(true)
 	selectionStart, selectionEnd, hasSelection := selection.rangeFor(state)
 	cursorIndex := -1
 	if hasCursor && !hasSelection {
@@ -3666,7 +3666,7 @@ func renderComposerVisualLine(input textinput.Model, state composerState, segmen
 		case index == cursorIndex && cursorVisible:
 			line.WriteString(composerCursor(cell))
 		case hasSelection && index >= selectionStart && index < selectionEnd:
-			line.WriteString(zeroTheme.selection.Render(cell))
+			line.WriteString(kajicodeTheme.selection.Render(cell))
 		default:
 			line.WriteString(textStyle.Render(cell))
 		}
@@ -3679,7 +3679,7 @@ func renderComposerVisualLine(input textinput.Model, state composerState, segmen
 
 func composerVisualLinePrefix(input textinput.Model, first bool) string {
 	if first {
-		return zeroTheme.userPrompt.Render(input.Prompt)
+		return kajicodeTheme.userPrompt.Render(input.Prompt)
 	}
 	return "  "
 }
@@ -3811,19 +3811,19 @@ func commandArgumentHintComposerLine(input textinput.Model, argumentHint string,
 	// This alternate composer path must follow the same caret contract as
 	// renderComposerInput: hidden while the terminal is unfocused and blinking
 	// per composerCursorVisible, not a permanently painted cursor cell.
-	cursor := zeroTheme.faint.Render(string(hintRunes[0]))
+	cursor := kajicodeTheme.faint.Render(string(hintRunes[0]))
 	if cursorVisible {
 		cursor = composerCursor(cursor)
 	}
-	return zeroTheme.userPrompt.Render(input.Prompt) +
-		zeroTheme.ink.Inline(true).Render(displayValue) +
-		zeroTheme.faint.Render(" ") +
+	return kajicodeTheme.userPrompt.Render(input.Prompt) +
+		kajicodeTheme.ink.Inline(true).Render(displayValue) +
+		kajicodeTheme.faint.Render(" ") +
 		cursor +
-		zeroTheme.faint.Render(string(hintRunes[1:]))
+		kajicodeTheme.faint.Render(string(hintRunes[1:]))
 }
 
 func composerCursor(char string) string {
-	return zeroTheme.selection.Render(char)
+	return kajicodeTheme.selection.Render(char)
 }
 
 func commandArgumentHintForInput(value string) string {
@@ -3843,18 +3843,18 @@ func (m model) composerBox(width int) string {
 	lines := strings.Split(content, "\n")
 
 	rendered := make([]string, 0, len(lines)+3)
-	rendered = append(rendered, zeroTheme.lineStrong.Render("╭"+strings.Repeat("─", width-2)+"╮"))
+	rendered = append(rendered, kajicodeTheme.lineStrong.Render("╭"+strings.Repeat("─", width-2)+"╮"))
 	// Attachment chips ([Image #1] …) render INSIDE the box, above the input line,
 	// instead of as a separate row above the box.
 	if chips := renderAttachmentChips(m.pendingImageLabels, m.pendingDocuments); chips != "" {
-		fitted := fitStyledLine(zeroTheme.muted.Render(chips), innerWidth)
+		fitted := fitStyledLine(kajicodeTheme.muted.Render(chips), innerWidth)
 		pad := strings.Repeat(" ", maxInt(0, innerWidth-lipgloss.Width(fitted)))
-		rendered = append(rendered, zeroTheme.lineStrong.Render("│ ")+fitted+pad+zeroTheme.lineStrong.Render(" │"))
+		rendered = append(rendered, kajicodeTheme.lineStrong.Render("│ ")+fitted+pad+kajicodeTheme.lineStrong.Render(" │"))
 	}
 	for _, line := range lines {
 		fitted := fitStyledLine(line, innerWidth)
 		pad := strings.Repeat(" ", maxInt(0, innerWidth-lipgloss.Width(fitted)))
-		rendered = append(rendered, zeroTheme.lineStrong.Render("│ ")+fitted+pad+zeroTheme.lineStrong.Render(" │"))
+		rendered = append(rendered, kajicodeTheme.lineStrong.Render("│ ")+fitted+pad+kajicodeTheme.lineStrong.Render(" │"))
 	}
 	rendered = append(rendered, m.composerDividerLine(width))
 	return strings.Join(rendered, "\n")
@@ -3888,7 +3888,7 @@ func (m model) composerDescriptionHint(width int) string {
 	if desc == "" {
 		return ""
 	}
-	return fitStyledLine(zeroTheme.muted.Render(desc), width)
+	return fitStyledLine(kajicodeTheme.muted.Render(desc), width)
 }
 
 // startsTurn reports whether a row begins a new conversational turn and therefore
@@ -4387,7 +4387,7 @@ func (m model) dispatchCommand(command parsedCommand) (tea.Model, tea.Cmd) {
 		m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: text})
 		return m, nil
 	case commandTurns:
-		// Changing the budget mid-run would mutate the inherited ZERO_MAX_TURNS env
+		// Changing the budget mid-run would mutate the inherited KAJICODE_MAX_TURNS env
 		// that sub-agents spawned later in THIS run read, making the run's budget
 		// inconsistent. Require an idle session (the new budget applies next run).
 		if m.pending && strings.TrimSpace(command.text) != "" {
@@ -4400,7 +4400,7 @@ func (m model) dispatchCommand(command parsedCommand) (tea.Model, tea.Cmd) {
 		return m, nil
 	case commandProfile:
 		// Same idle-session rule as /turns: switching the profile mutates the
-		// turn budget (and its ZERO_MAX_TURNS propagation), so a change needs
+		// turn budget (and its KAJICODE_MAX_TURNS propagation), so a change needs
 		// an idle session; bare /profile (status) is always allowed.
 		if m.pending && strings.TrimSpace(command.text) != "" && !strings.EqualFold(strings.TrimSpace(command.text), "status") {
 			m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: "Profile\nFinish or stop the current run before switching the execution profile."})
@@ -4436,7 +4436,7 @@ func (m model) dispatchCommand(command parsedCommand) (tea.Model, tea.Cmd) {
 		return m, nil
 	case commandUnknown:
 		// A "/name" not in the builtin registry may be a user-defined command
-		// from .zero/commands/<name>.md — expand its template and run it as a
+		// from .kajicode/commands/<name>.md — expand its template and run it as a
 		// normal prompt before reporting "unknown".
 		if next, cmd, handled := m.handleUserCommand(command.text); handled {
 			return next, cmd
@@ -4570,7 +4570,7 @@ func (m model) launchPrompt(prompt string) (model, tea.Cmd) {
 	if m.provider == nil {
 		m.transcript = reduceTranscript(m.transcript, transcriptAction{
 			kind: actionAppendAssistant,
-			text: "No provider configured. Run `zero setup` (guided) or `zero auth` (OAuth) from a shell, or set a provider API key env var, then relaunch.",
+			text: "No provider configured. Run `kajicode setup` (guided) or `kajicode auth` (OAuth) from a shell, or set a provider API key env var, then relaunch.",
 		})
 		return m, nil
 	}
@@ -4804,7 +4804,7 @@ func (m *model) cancelRun() {
 	m.resetStreamingFade()
 }
 
-func (m model) runAgent(runID int, runCtx context.Context, prompt string, images []zeroruntime.ImageBlock) tea.Cmd {
+func (m model) runAgent(runID int, runCtx context.Context, prompt string, images []kajicoderuntime.ImageBlock) tea.Cmd {
 	return m.runAgentWithOptions(runID, runCtx, prompt, images, tuiAgentRunOptions{})
 }
 
@@ -4822,7 +4822,7 @@ func selfCorrectAutonomyForMode(mode agent.PermissionMode) string {
 	}
 }
 
-func (m model) runAgentWithOptions(runID int, runCtx context.Context, prompt string, images []zeroruntime.ImageBlock, runOptions tuiAgentRunOptions) tea.Cmd {
+func (m model) runAgentWithOptions(runID int, runCtx context.Context, prompt string, images []kajicoderuntime.ImageBlock, runOptions tuiAgentRunOptions) tea.Cmd {
 	return func() tea.Msg {
 		started := m.now()
 		// firstTokenAt is stamped when the first token (reasoning or text) streams,
@@ -4830,7 +4830,7 @@ func (m model) runAgentWithOptions(runID int, runCtx context.Context, prompt str
 		var firstTokenAt time.Time
 		toolCalls := 0
 		rows := []transcriptRow{}
-		usageEvents := []zeroruntime.Usage{}
+		usageEvents := []kajicoderuntime.Usage{}
 		sessionEvents := []pendingSessionEvent{}
 		usageModelID := m.modelName
 		var specReview *pendingSpecReviewPrompt
@@ -5231,7 +5231,7 @@ func (m model) runAgentWithOptions(runID int, runCtx context.Context, prompt str
 		}
 
 		onUsage := options.OnUsage
-		options.OnUsage = func(event zeroruntime.Usage) {
+		options.OnUsage = func(event kajicoderuntime.Usage) {
 			usageEvents = append(usageEvents, event)
 			sessionEvents = append(sessionEvents, pendingSessionEvent{
 				Type:    sessions.EventUsage,
@@ -5383,7 +5383,7 @@ func (m model) sendAgentReasoning(runID int, delta string) {
 	m.runtimeMessageSink(agentReasoningMsg{runID: runID, delta: delta})
 }
 
-func (m model) sendAgentUsage(runID int, modelID string, event zeroruntime.Usage) {
+func (m model) sendAgentUsage(runID int, modelID string, event kajicoderuntime.Usage) {
 	if m.runtimeMessageSink == nil {
 		return
 	}

@@ -18,7 +18,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/release"
+	"github.com/dishant0406/KajiCode/internal/release"
 )
 
 const SchemaVersion = 3
@@ -182,11 +182,11 @@ func Run(ctx context.Context, options Options) (Result, error) {
 }
 
 func ResolveColdStartCommand(rootDir string) ([]string, error) {
-	return resolveZeroVersionCommand(rootDir)
+	return resolveKajicodeVersionCommand(rootDir)
 }
 
 func ResolveFirstOutputCommand(rootDir string) ([]string, error) {
-	return resolveZeroVersionCommand(rootDir)
+	return resolveKajicodeVersionCommand(rootDir)
 }
 
 func SummarizeSamples(samples []float64) NumericStats {
@@ -228,7 +228,7 @@ func EvaluateWarnings(metrics Metrics, thresholds Thresholds) []Warning {
 
 func FormatSummary(result Result) string {
 	lines := []string{
-		fmt.Sprintf("Zero performance benchmark (%s/%s, Go %s)", result.Platform.OS, result.Platform.Arch, result.Platform.GoVersion),
+		fmt.Sprintf("KajiCode performance benchmark (%s/%s, Go %s)", result.Platform.OS, result.Platform.Arch, result.Platform.GoVersion),
 		"command: " + FormatCommand(result.ColdStartCommand),
 		"first-output command: " + FormatCommand(result.FirstOutputCommand),
 		fmt.Sprintf("iterations: %d measured, %d warmup", result.Iterations, result.WarmupIterations),
@@ -250,7 +250,7 @@ func FormatSummary(result Result) string {
 
 func EmitWarnings(w io.Writer, result Result) {
 	for _, warning := range result.Warnings {
-		_, _ = fmt.Fprintf(w, "::warning title=Zero performance::%s\n", EscapeActionCommand(warning.Message))
+		_, _ = fmt.Fprintf(w, "::warning title=KajiCode performance::%s\n", EscapeActionCommand(warning.Message))
 	}
 }
 
@@ -369,7 +369,7 @@ func EscapeActionCommand(value string) string {
 	return replacer.Replace(value)
 }
 
-func resolveZeroVersionCommand(rootDir string) ([]string, error) {
+func resolveKajicodeVersionCommand(rootDir string) ([]string, error) {
 	if strings.TrimSpace(rootDir) == "" {
 		var err error
 		rootDir, err = os.Getwd()
@@ -381,7 +381,7 @@ func resolveZeroVersionCommand(rootDir string) ([]string, error) {
 	binaryPath := filepath.Join(rootDir, binaryName)
 	if _, err := os.Stat(binaryPath); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return nil, fmt.Errorf("no %s binary found; run `go run ./cmd/zero-release build` before running the performance benchmark", binaryName)
+			return nil, fmt.Errorf("no %s binary found; run `go run ./cmd/kajicode-release build` before running the performance benchmark", binaryName)
 		}
 		return nil, err
 	}
@@ -466,20 +466,20 @@ func appendNoColor(env []string) []string {
 
 func offlineBenchmarkEnv(env []string) []string {
 	remove := map[string]bool{
-		"ZERO_PROVIDER_COMMAND": true,
-		"ZERO_PROVIDER":         true,
-		"OPENAI_API_KEY":        true,
-		"OPENAI_BASE_URL":       true,
-		"OPENAI_MODEL":          true,
-		"ANTHROPIC_API_KEY":     true,
-		"ANTHROPIC_BASE_URL":    true,
-		"ANTHROPIC_MODEL":       true,
-		"GEMINI_API_KEY":        true,
-		"GEMINI_BASE_URL":       true,
-		"GEMINI_MODEL":          true,
-		"GOOGLE_API_KEY":        true,
-		"GOOGLE_BASE_URL":       true,
-		"GOOGLE_MODEL":          true,
+		"KAJICODE_PROVIDER_COMMAND": true,
+		"KAJICODE_PROVIDER":         true,
+		"OPENAI_API_KEY":            true,
+		"OPENAI_BASE_URL":           true,
+		"OPENAI_MODEL":              true,
+		"ANTHROPIC_API_KEY":         true,
+		"ANTHROPIC_BASE_URL":        true,
+		"ANTHROPIC_MODEL":           true,
+		"GEMINI_API_KEY":            true,
+		"GEMINI_BASE_URL":           true,
+		"GEMINI_MODEL":              true,
+		"GOOGLE_API_KEY":            true,
+		"GOOGLE_BASE_URL":           true,
+		"GOOGLE_MODEL":              true,
 	}
 	filtered := make([]string, 0, len(env)+1)
 	for _, entry := range env {

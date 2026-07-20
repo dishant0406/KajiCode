@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/sessions"
-	"github.com/Gitlawb/zero/internal/specmode"
+	"github.com/dishant0406/KajiCode/internal/sessions"
+	"github.com/dishant0406/KajiCode/internal/specmode"
 )
 
 func TestRunSpecApproveCreatesImplementationSession(t *testing.T) {
@@ -124,12 +124,12 @@ func TestParseSpecRejectsCommandSpecificFlags(t *testing.T) {
 		{
 			name: "comment on show",
 			args: []string{"show", "draft", "--comment", "ship it"},
-			want: "--comment is only valid for zero spec approve",
+			want: "--comment is only valid for kajicode spec approve",
 		},
 		{
 			name: "reason on approve",
 			args: []string{"approve", "draft", "--reason", "too broad"},
-			want: "--reason is only valid for zero spec reject",
+			want: "--reason is only valid for kajicode spec reject",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

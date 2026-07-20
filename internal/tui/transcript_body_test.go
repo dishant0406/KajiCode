@@ -72,7 +72,7 @@ func TestTranscriptBodyItemsKeepPendingInterimSelectableLocal(t *testing.T) {
 }
 
 func TestTranscriptBodyLayoutVisibleLinesUsesViewportWindow(t *testing.T) {
-	layout := transcriptBodyLayout{lines: []string{"zero", "one", "two", "three"}}
+	layout := transcriptBodyLayout{lines: []string{"kajicode", "one", "two", "three"}}
 	window := newTranscriptViewport(layout.totalLines(), 2, 1).window()
 
 	got := layout.visibleLines(window)

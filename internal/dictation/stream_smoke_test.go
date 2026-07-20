@@ -11,16 +11,16 @@ import (
 // REAL sherpa-onnx-online-websocket-server + streaming model: spawn the server,
 // connect, feed a wav's PCM in 50ms chunks, and check the transcript. Opt-in:
 //
-//	ZERO_STT_STREAM_SERVER=/path/to/sherpa-onnx-online-websocket-server \
-//	ZERO_STT_STREAM_MODEL=/path/to/streaming-model-dir \
-//	ZERO_STT_STREAM_WAV=/path/to/16k-mono.wav \
+//	KAJICODE_STT_STREAM_SERVER=/path/to/sherpa-onnx-online-websocket-server \
+//	KAJICODE_STT_STREAM_MODEL=/path/to/streaming-model-dir \
+//	KAJICODE_STT_STREAM_WAV=/path/to/16k-mono.wav \
 //	go test ./internal/dictation/ -run RealServer -v -timeout 5m
 func TestLocalStreamingRealServer(t *testing.T) {
-	server := os.Getenv("ZERO_STT_STREAM_SERVER")
-	model := os.Getenv("ZERO_STT_STREAM_MODEL")
-	wav := os.Getenv("ZERO_STT_STREAM_WAV")
+	server := os.Getenv("KAJICODE_STT_STREAM_SERVER")
+	model := os.Getenv("KAJICODE_STT_STREAM_MODEL")
+	wav := os.Getenv("KAJICODE_STT_STREAM_WAV")
 	if server == "" || model == "" || wav == "" {
-		t.Skip("set ZERO_STT_STREAM_SERVER, ZERO_STT_STREAM_MODEL, ZERO_STT_STREAM_WAV to run the streaming smoke test")
+		t.Skip("set KAJICODE_STT_STREAM_SERVER, KAJICODE_STT_STREAM_MODEL, KAJICODE_STT_STREAM_WAV to run the streaming smoke test")
 	}
 	raw, err := os.ReadFile(wav)
 	if err != nil {

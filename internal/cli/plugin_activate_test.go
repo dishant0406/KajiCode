@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/hooks"
-	"github.com/Gitlawb/zero/internal/plugins"
-	"github.com/Gitlawb/zero/internal/tools"
+	"github.com/dishant0406/KajiCode/internal/hooks"
+	"github.com/dishant0406/KajiCode/internal/plugins"
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
 // fakePluginDeps builds appDeps whose loadPlugins returns the supplied plugins and
@@ -31,7 +31,7 @@ func fakePluginDeps(t *testing.T, loaded []plugins.LoadedPlugin) appDeps {
 func TestActivatePluginsRegistersToolAndCollectsHooks(t *testing.T) {
 	pluginDir := t.TempDir()
 	loaded := []plugins.LoadedPlugin{{
-		ID:        "zero.demo",
+		ID:        "kajicode.demo",
 		Name:      "Demo",
 		Enabled:   true,
 		Source:    plugins.SourceProject,
@@ -60,8 +60,8 @@ func TestActivatePluginsRegistersToolAndCollectsHooks(t *testing.T) {
 	if len(activation.hooks) != 1 || activation.hooks[0].Event != hooks.EventBeforeTool {
 		t.Fatalf("expected one beforeTool plugin hook, got %#v", activation.hooks)
 	}
-	if activation.hooks[0].ID != "zero.demo.pre" {
-		t.Fatalf("plugin hook id = %q, want namespaced zero.demo.pre", activation.hooks[0].ID)
+	if activation.hooks[0].ID != "kajicode.demo.pre" {
+		t.Fatalf("plugin hook id = %q, want namespaced kajicode.demo.pre", activation.hooks[0].ID)
 	}
 	if stderr.Len() != 0 {
 		t.Fatalf("unexpected stderr for a clean activation: %s", stderr.String())
@@ -85,7 +85,7 @@ func TestActivatePluginsRegistersPluginSkillTool(t *testing.T) {
 	}
 
 	loaded := []plugins.LoadedPlugin{{
-		ID:        "zero.skills",
+		ID:        "kajicode.skills",
 		Name:      "Skills",
 		Enabled:   true,
 		Source:    plugins.SourceProject,
@@ -114,7 +114,7 @@ func TestActivatePluginsRegistersPluginSkillTool(t *testing.T) {
 }
 
 func TestActivatePluginsAlwaysRegistersMultiRootSkillTool(t *testing.T) {
-	// Even with zero plugins / zero plugin skill roots, activation must overlay
+	// Even with kajicode plugins / kajicode plugin skill roots, activation must overlay
 	// the multi-root skill tool so ~/.agents/skills is loadable on bare runs.
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -145,7 +145,7 @@ func TestActivatePluginsAlwaysRegistersMultiRootSkillTool(t *testing.T) {
 	}
 	res := skillTool.Run(context.Background(), map[string]any{"name": "agents-skill"})
 	if res.Status != tools.StatusOK || !bytes.Contains([]byte(res.Output), []byte("agents body")) {
-		t.Fatalf("agents skill must load with zero plugin roots: %q (%s)", res.Status, res.Output)
+		t.Fatalf("agents skill must load with kajicode plugin roots: %q (%s)", res.Status, res.Output)
 	}
 }
 
@@ -200,7 +200,7 @@ func TestActivatePluginsFailsOpenOnLoadError(t *testing.T) {
 
 func TestActivatePluginsWarnsOnMalformedPluginButKeepsGood(t *testing.T) {
 	good := plugins.LoadedPlugin{
-		ID:        "zero.good",
+		ID:        "kajicode.good",
 		Name:      "Good",
 		Enabled:   true,
 		Source:    plugins.SourceProject,
@@ -208,7 +208,7 @@ func TestActivatePluginsWarnsOnMalformedPluginButKeepsGood(t *testing.T) {
 		Tools:     []plugins.ToolExtension{{Name: "good_tool", Command: "true", Permission: plugins.PermissionPrompt}},
 	}
 	bad := plugins.LoadedPlugin{
-		ID:        "zero.bad",
+		ID:        "kajicode.bad",
 		Name:      "Bad",
 		Enabled:   true,
 		Source:    plugins.SourceProject,
@@ -238,7 +238,7 @@ func TestNewHookDispatcherWithExtraFoldsPluginHooks(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	workspace := t.TempDir()
 	extra := []hooks.Definition{{
-		ID:      "zero.demo.pre",
+		ID:      "kajicode.demo.pre",
 		Event:   hooks.EventBeforeTool,
 		Command: "guard.sh",
 		Enabled: true,

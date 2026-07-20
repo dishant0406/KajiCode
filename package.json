@@ -1,14 +1,14 @@
 {
-  "name": "@gitlawb/zero",
+  "name": "@dishant0406/kajicode",
   "version": "0.4.0",
-  "description": "Zero — a fast, multi-provider terminal coding agent.",
+  "description": "KajiCode — a fast, multi-provider terminal coding agent.",
   "type": "module",
-  "module": "bin/zero.js",
+  "module": "bin/kajicode.js",
   "bin": {
-    "zero": "bin/zero.js"
+    "kajicode": "bin/kajicode.js"
   },
   "files": [
-    "bin/zero.js",
+    "bin/kajicode.js",
     "scripts/postinstall.mjs"
   ],
   "engines": {
@@ -30,11 +30,11 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Gitlawb/zero.git"
+    "url": "git+https://github.com/dishant0406/KajiCode.git"
   },
-  "homepage": "https://github.com/Gitlawb/zero#readme",
+  "homepage": "https://github.com/dishant0406/KajiCode#readme",
   "bugs": {
-    "url": "https://github.com/Gitlawb/zero/issues"
+    "url": "https://github.com/dishant0406/KajiCode/issues"
   },
   "license": "MIT"
 }

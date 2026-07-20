@@ -10,8 +10,8 @@ import (
 
 func TestReplaceBinaryReplacesRunningBinary(t *testing.T) {
 	dir := t.TempDir()
-	targetPath := filepath.Join(dir, "zero.exe")
-	newPath := filepath.Join(dir, "zero.exe.new")
+	targetPath := filepath.Join(dir, "kajicode.exe")
+	newPath := filepath.Join(dir, "kajicode.exe.new")
 
 	if err := os.WriteFile(targetPath, []byte("old-binary"), 0o755); err != nil {
 		t.Fatalf("WriteFile target: %v", err)

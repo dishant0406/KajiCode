@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/tools"
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
 // TestWorkingPlanLine: the working indicator's second line carries the plan's
@@ -112,12 +112,12 @@ func TestQuietGenerationHint(t *testing.T) {
 // identical under the plain "still generating… Xs" cue — the ticking number
 // is the only signal, whether real content is still coming or nothing ever
 // will. Past half the provider's idle timeout the cue must say so explicitly
-// and name when Zero's own content-stall watchdog will act, rather than
+// and name when KajiCode's own content-stall watchdog will act, rather than
 // leaving the user to guess whether this is a hang.
 func TestQuietGenerationHintEscalatesPastHalfIdleTimeout(t *testing.T) {
 	// 30s idle timeout: half (15s) sits comfortably above quietWorkingHint (8s),
 	// leaving a clean window to observe the plain cue before it escalates.
-	t.Setenv("ZERO_STREAM_IDLE_TIMEOUT", "30s")
+	t.Setenv("KAJICODE_STREAM_IDLE_TIMEOUT", "30s")
 	base := time.Date(2026, 6, 25, 12, 0, 0, 0, time.UTC)
 	m := model{now: func() time.Time { return base }}
 	m.activeRunID = 7

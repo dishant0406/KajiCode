@@ -19,7 +19,7 @@ func TestBuildWindowsACLPlanForWorkspaceWriteProfile(t *testing.T) {
 					{
 						Root:                   `C:\workspace`,
 						ReadOnlySubpaths:       []string{`C:\workspace\vendor`},
-						ProtectedMetadataNames: []string{".git", ".zero"},
+						ProtectedMetadataNames: []string{".git", ".kajicode"},
 					},
 					{Root: `D:\cache`},
 				},
@@ -47,7 +47,7 @@ func TestBuildWindowsACLPlanForWorkspaceWriteProfile(t *testing.T) {
 	assertWindowsACLEntry(t, plan, WindowsACLAllowWrite, `D:\cache`, cacheSID, false)
 	assertWindowsACLEntry(t, plan, WindowsACLDenyWrite, `C:\workspace\vendor`, workspaceSID, false)
 	assertWindowsACLEntry(t, plan, WindowsACLDenyWrite, `C:\workspace\.git`, workspaceSID, false)
-	assertWindowsACLEntry(t, plan, WindowsACLDenyWrite, `C:\workspace\.zero`, workspaceSID, false)
+	assertWindowsACLEntry(t, plan, WindowsACLDenyWrite, `C:\workspace\.kajicode`, workspaceSID, false)
 	assertWindowsACLEntry(t, plan, WindowsACLDenyWrite, `C:\workspace\secret-write`, workspaceSID, false)
 	assertWindowsACLEntry(t, plan, WindowsACLDenyWrite, `C:\workspace\secret-write`, cacheSID, false)
 	assertWindowsACLEntry(t, plan, WindowsACLDenyRead, `C:\workspace\secret-read`, workspaceSID, true)

@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Gitlawb/zero/internal/workspaceindex"
+	"github.com/dishant0406/KajiCode/internal/workspaceindex"
 )
 
 const (

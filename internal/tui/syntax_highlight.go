@@ -58,26 +58,26 @@ func cachedLexerForPath(path string) chroma.Lexer {
 	return lexer
 }
 
-// tokenStyle maps a chroma token type onto Zero's existing, contrast-audited
+// tokenStyle maps a chroma token type onto KajiCode's existing, contrast-audited
 // palette rather than a chroma color scheme — so highlighted code stays on-brand
 // and degrades through the same lipgloss profile path as the rest of the UI
 // (truecolor → 256 → 16 → plain on no-TTY).
 func tokenStyle(tt chroma.TokenType) lipgloss.Style {
 	switch {
 	case tt.InCategory(chroma.Keyword):
-		return zeroTheme.accent
+		return kajicodeTheme.accent
 	case tt.InCategory(chroma.Comment):
-		return zeroTheme.faint
+		return kajicodeTheme.faint
 	case tt.InSubCategory(chroma.LiteralString):
-		return zeroTheme.green
+		return kajicodeTheme.green
 	case tt.InSubCategory(chroma.LiteralNumber):
-		return zeroTheme.amber
+		return kajicodeTheme.amber
 	case tt == chroma.NameFunction || tt == chroma.NameClass || tt == chroma.NameBuiltin || tt == chroma.NameNamespace || tt == chroma.NameDecorator:
-		return zeroTheme.blue
+		return kajicodeTheme.blue
 	case tt.InCategory(chroma.Operator), tt.InCategory(chroma.Punctuation):
-		return zeroTheme.muted
+		return kajicodeTheme.muted
 	default:
-		return zeroTheme.ink
+		return kajicodeTheme.ink
 	}
 }
 

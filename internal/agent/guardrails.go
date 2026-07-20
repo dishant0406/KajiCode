@@ -4,7 +4,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
 )
 
 // Guardrail thresholds for the agent loop. These keep a runaway model from
@@ -505,7 +505,7 @@ func (state *guardState) observeToolResult(name string, failed bool, output stri
 //
 // Callers must NOT invoke this for turns handled by the dropped-tool-call retry
 // path; those are not "empty" in the runaway sense and are handled separately.
-func (state *guardState) observeTurn(collected zeroruntime.CollectedStream) (stop bool) {
+func (state *guardState) observeTurn(collected kajicoderuntime.CollectedStream) (stop bool) {
 	hasToolCalls := len(collected.ToolCalls) > 0
 	hasVisibleText := strings.TrimSpace(collected.Text) != ""
 	hasReasoning := collected.HasReasoning || len(collected.ReasoningBlocks) > 0

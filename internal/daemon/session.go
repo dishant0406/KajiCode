@@ -10,7 +10,7 @@ import (
 
 // Session/lease/roster model. Mirrors reference-daemon-code-agent-js/
 // session-manager.js (sessionID -> worker + metrics), lease.js (one active
-// request per worker) and roster.js (the live session registry). Because zero's
+// request per worker) and roster.js (the live session registry). Because KajiCode's
 // `exec` worker is one-shot, each session is served by exactly one worker via
 // Pool.Run, so "one active request per worker" holds inherently and the pool's
 // bounded slots provide the queue-when-full behavior.

@@ -6,7 +6,7 @@ import (
 )
 
 // TestParseExecArgsInlinePromptKeepsLeadingDash guards the M19 fix: the top-level
-// `zero -p "<prompt>"` path forwards the prompt as the inline `--prompt=<value>`
+// `kajicode -p "<prompt>"` path forwards the prompt as the inline `--prompt=<value>`
 // form precisely so a prompt whose first character is a dash is taken verbatim
 // instead of being mistaken for a flag and rejected.
 func TestParseExecArgsInlinePromptKeepsLeadingDash(t *testing.T) {

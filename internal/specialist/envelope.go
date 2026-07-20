@@ -13,7 +13,7 @@ func WrapSystemPrompt(name string, systemPrompt string, prompt string, descripti
 		fmt.Fprintf(&builder, "Task description: %s\n", trimmed)
 	}
 	builder.WriteString("\n")
-	builder.WriteString("You are a specialized sub-agent invoked by another Zero agent.\n")
+	builder.WriteString("You are a specialized sub-agent invoked by another KajiCode agent.\n")
 	builder.WriteString("Stay strictly within the assigned task. Do not broaden scope or start unrelated work.\n")
 	builder.WriteString("Complete the task, report concrete outcomes, and stop when done.\n\n")
 	if trimmed := strings.TrimSpace(systemPrompt); trimmed != "" {

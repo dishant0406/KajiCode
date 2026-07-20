@@ -3,7 +3,7 @@ package tools
 import (
 	"testing"
 
-	zeroSandbox "github.com/Gitlawb/zero/internal/sandbox"
+	zeroSandbox "github.com/dishant0406/KajiCode/internal/sandbox"
 )
 
 func TestLikelySandboxDeniedDetectsReferenceKeywords(t *testing.T) {

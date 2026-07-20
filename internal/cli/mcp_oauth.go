@@ -6,13 +6,13 @@ import (
 	"io"
 	"strings"
 
-	"github.com/Gitlawb/zero/internal/mcp"
-	"github.com/Gitlawb/zero/internal/redaction"
+	"github.com/dishant0406/KajiCode/internal/mcp"
+	"github.com/dishant0406/KajiCode/internal/redaction"
 )
 
 func runMCPOAuth(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) int {
 	if len(args) == 0 {
-		return writeExecUsageError(stderr, "mcp oauth subcommand required. Use `zero mcp oauth status`.")
+		return writeExecUsageError(stderr, "mcp oauth subcommand required. Use `kajicode mcp oauth status`.")
 	}
 	if args[0] == "-h" || args[0] == "--help" || args[0] == "help" {
 		if err := writeMCPOAuthHelp(stdout); err != nil {
@@ -48,10 +48,10 @@ func runMCPOAuthLogin(args []string, stdout io.Writer, stderr io.Writer, deps ap
 		// login is an interactive flow (prints a URL, waits for the callback); a
 		// machine-readable mode would be misleading, so reject it rather than
 		// accepting the flag and ignoring it.
-		return writeExecUsageError(stderr, "zero mcp oauth login does not support --json")
+		return writeExecUsageError(stderr, "kajicode mcp oauth login does not support --json")
 	}
 	if len(positional) != 1 {
-		return writeExecUsageError(stderr, "usage: zero mcp oauth login <server>")
+		return writeExecUsageError(stderr, "usage: kajicode mcp oauth login <server>")
 	}
 	serverName := positional[0]
 
@@ -59,7 +59,7 @@ func runMCPOAuthLogin(args []string, stdout io.Writer, stderr io.Writer, deps ap
 	if err != nil {
 		// When the named server was dropped because the workspace is untrusted, explain
 		// that with the same one-line notice the other trust-gated MCP paths emit, so a
-		// gated project OAuth server reads as "run zero trust", not a bare miss.
+		// gated project OAuth server reads as "run kajicode trust", not a bare miss.
 		emitTrustNotice(stderr, skip)
 		return writeAppError(stderr, redaction.ErrorMessage(err, redaction.Options{}), exitCrash)
 	}
@@ -108,7 +108,7 @@ func runMCPOAuthLogout(args []string, stdout io.Writer, stderr io.Writer, deps a
 		return exitSuccess
 	}
 	if len(positional) != 1 {
-		return writeExecUsageError(stderr, "usage: zero mcp oauth logout <server>")
+		return writeExecUsageError(stderr, "usage: kajicode mcp oauth logout <server>")
 	}
 	serverName := positional[0]
 
@@ -152,7 +152,7 @@ func runMCPOAuthStatus(args []string, stdout io.Writer, stderr io.Writer, deps a
 		return exitSuccess
 	}
 	if len(positional) > 1 {
-		return writeExecUsageError(stderr, "usage: zero mcp oauth status [server]")
+		return writeExecUsageError(stderr, "usage: kajicode mcp oauth status [server]")
 	}
 
 	store, err := deps.newMCPTokenStore()
@@ -204,7 +204,7 @@ func filterTokenStatuses(statuses []mcp.TokenStatus, serverName string) []mcp.To
 // loads a project-scoped MCP server and drives its OAuth flow (endpoint discovery,
 // dynamic client registration, code exchange, token persist) against the server's
 // configured URL. That is a project-scoped server being activated and contacted, so an
-// untrusted clone's ./.zero/config.json OAuth server must be dropped rather than loaded —
+// untrusted clone's ./.kajicode/config.json OAuth server must be dropped rather than loaded —
 // leaving it ungated would let a cloned repo initiate outbound OAuth I/O and persist a
 // token. There is no --worktree reassignment on this command path, so trustRoot == cwd.
 func resolveOAuthServer(deps appDeps, serverName string) (mcp.Server, trustSkip, error) {
@@ -249,7 +249,7 @@ func oauthConfigForServer(server mcp.Server) mcp.OAuthConfig {
 
 func writeMCPOAuthHelp(w io.Writer) error {
 	_, err := fmt.Fprint(w, `Usage:
-  zero mcp oauth <command>
+  kajicode mcp oauth <command>
 
 Commands:
   login <server>     Run the OAuth flow and store credentials for a server

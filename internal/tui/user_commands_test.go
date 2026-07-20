@@ -11,7 +11,7 @@ import (
 
 func writeUserCommand(t *testing.T, root, name, content string) {
 	t.Helper()
-	dir := filepath.Join(root, ".zero", "commands")
+	dir := filepath.Join(root, ".kajicode", "commands")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}

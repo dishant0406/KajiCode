@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/localcontrol"
+	"github.com/dishant0406/KajiCode/internal/localcontrol"
 )
 
 type fakeArtifactRunner struct {

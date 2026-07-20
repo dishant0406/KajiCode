@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/Gitlawb/zero/internal/tools"
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
 // Parallel read-ahead for tool batches. When a turn requests several

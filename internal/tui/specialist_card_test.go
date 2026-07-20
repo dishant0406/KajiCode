@@ -270,7 +270,7 @@ func TestParseTaskCallArgs(t *testing.T) {
 
 func TestRenderLeftRuleCard(t *testing.T) {
 	lines := []string{"header line", "body line"}
-	got := renderLeftRuleCard(40, lines, zeroTheme.accent)
+	got := renderLeftRuleCard(40, lines, kajicodeTheme.accent)
 	if got == "" {
 		t.Fatal("expected non-empty left-rule card")
 	}

@@ -3,7 +3,7 @@ package tui
 import (
 	"strings"
 
-	"github.com/Gitlawb/zero/internal/config"
+	"github.com/dishant0406/KajiCode/internal/config"
 )
 
 // themeMode is the operator's palette preference.
@@ -23,7 +23,7 @@ var themeModes = append([]string{string(themeAuto)}, themeNames()...)
 
 // resolveThemeMode picks the first accepted preference from candidates in
 // precedence order — the caller passes them highest-first: the --theme flag, then
-// ZERO_THEME, then the persisted config theme. A value is accepted if it is `auto`
+// KAJICODE_THEME, then the persisted config theme. A value is accepted if it is `auto`
 // or names a registered theme; unrecognized/blank values are skipped, and an empty
 // list (or all-unrecognized) falls back to auto.
 func resolveThemeMode(candidates ...string) themeMode {
@@ -53,17 +53,17 @@ func validThemeMode(s string) bool {
 	return ok
 }
 
-// ValidThemeArg reports whether s is an acceptable --theme / ZERO_THEME value
+// ValidThemeArg reports whether s is an acceptable --theme / KAJICODE_THEME value
 // (`auto` or a registered theme name). Exported so the CLI flag validator shares
 // this one source of truth instead of hardcoding the theme list.
 func ValidThemeArg(s string) bool { return validThemeMode(s) }
 
-// applyTheme swaps the active palette (zeroTheme) and the globals derived from it
+// applyTheme swaps the active palette (kajicodeTheme) and the globals derived from it
 // — the streaming-fade ramp and the static render cache — so a switch repaints
 // every subsequent render. For themeAuto it resolves to dark/light from
 // hasDarkBackground; explicit dark/light ignore it. Returns the concrete mode
 // applied (never auto). Must run on the Bubble Tea update goroutine (or before the
-// program starts), like every other zeroTheme access.
+// program starts), like every other kajicodeTheme access.
 func applyTheme(mode themeMode, hasDarkBackground bool) themeMode {
 	resolved := mode
 	if mode == themeAuto {
@@ -73,12 +73,12 @@ func applyTheme(mode themeMode, hasDarkBackground bool) themeMode {
 		}
 	}
 	// Resolve the (now concrete) mode to its registered palette; an unknown name
-	// falls back to the dark built-in so a bad value can never leave zeroTheme unset.
+	// falls back to the dark built-in so a bad value can never leave kajicodeTheme unset.
 	entry, ok := lookupTheme(string(resolved))
 	if !ok {
 		entry, _ = lookupTheme(string(themeDark))
 	}
-	zeroTheme = buildTheme(entry.Palette)
+	kajicodeTheme = buildTheme(entry.Palette)
 	rebuildStreamingFadePalette()
 	if defaultRenderCache != nil {
 		defaultRenderCache.clear() // old-palette entries must not be reused
@@ -91,10 +91,10 @@ func applyTheme(mode themeMode, hasDarkBackground bool) themeMode {
 // m.themeMode when the filter matches nothing. Called on every change to the
 // picker's selection or filter (arrow/wheel moves, mouse, and query typing) so the
 // whole UI — and the overlay itself — always renders the mode the popup points at,
-// and never strands on a stale preview. It only swaps the global zeroTheme via
+// and never strands on a stale preview. It only swaps the global kajicodeTheme via
 // applyTheme; m.themeMode keeps the committed preference so Esc can restore it. A
 // no-op unless a theme picker is open. Runs on the Update goroutine, like every
-// zeroTheme access.
+// kajicodeTheme access.
 func (m model) previewSelectedTheme() {
 	if m.picker == nil || m.picker.kind != pickerTheme {
 		return

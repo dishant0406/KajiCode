@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/repoinfo"
+	"github.com/dishant0406/KajiCode/internal/repoinfo"
 )
 
 type repoInfoOptions struct {
@@ -151,10 +151,10 @@ func writeRepoInfoList(b *strings.Builder, label string, items []string) {
 }
 
 func writeRepoInfoHelp(w io.Writer) {
-	fmt.Fprint(w, `zero repo-info — characterize the current repository (local git only)
+	fmt.Fprint(w, `kajicode repo-info — characterize the current repository (local git only)
 
 Usage:
-  zero repo-info [--json] [--cwd <dir>]
+  kajicode repo-info [--json] [--cwd <dir>]
 
 Flags:
   --json        Emit the full characterization as JSON.

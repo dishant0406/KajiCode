@@ -10,8 +10,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/Gitlawb/zero/internal/aimlapi"
-	"github.com/Gitlawb/zero/internal/redaction"
+	"github.com/dishant0406/KajiCode/internal/aimlapi"
+	"github.com/dishant0406/KajiCode/internal/redaction"
 )
 
 // aimlapiOnboardState is the shared, event-driven aimlapi.com onboarding sub-flow
@@ -259,7 +259,7 @@ func (s *aimlapiOnboardState) createKeyCmd(token string) tea.Cmd {
 	m := s.msg(aimlapiMsgKey)
 	ctx := s.opContext()
 	return func() tea.Msg {
-		res, err := aimlapiOnboardClient().CreateKey(ctx, token, "zero CLI")
+		res, err := aimlapiOnboardClient().CreateKey(ctx, token, "kajicode CLI")
 		m.key, m.err = res, err
 		return m
 	}
@@ -944,7 +944,7 @@ func (s *aimlapiOnboardState) view(width int, spinner string) []string {
 	}
 	if s.errText != "" {
 		lines = append(lines, blankSetupBlockLine(rowWidth))
-		lines = append(lines, aimlapiBlockText(s.errText, zeroTheme.red.Render, rowWidth)...)
+		lines = append(lines, aimlapiBlockText(s.errText, kajicodeTheme.red.Render, rowWidth)...)
 	}
 	return lines
 }
@@ -959,7 +959,7 @@ func aimlapiSpinnerLine(spinner string, width int) string {
 	if glyph == "" {
 		glyph = "•"
 	}
-	return padSetupLine("  "+zeroTheme.accent.Render(glyph), width)
+	return padSetupLine("  "+kajicodeTheme.accent.Render(glyph), width)
 }
 
 // aimlapiBlockText renders a plain-text message as one or more block rows: the
@@ -983,9 +983,9 @@ func aimlapiBlockText(text string, render func(...string) string, width int) []s
 func aimlapiPromptLines(prompt string, width int) []string {
 	lines := []string{}
 	for index, promptLine := range strings.Split(prompt, "\n") {
-		render := zeroTheme.ink.Render
+		render := kajicodeTheme.ink.Render
 		if index > 0 {
-			render = zeroTheme.faint.Render
+			render = kajicodeTheme.faint.Render
 		}
 		lines = append(lines, aimlapiBlockText(promptLine, render, width)...)
 	}
@@ -1003,7 +1003,7 @@ func aimlapiInputScreen(width int, prompt, inputPrompt, value, placeholder, foot
 	lines = append(lines, blankSetupBlockLine(width))
 	lines = append(lines, padSetupLine("  "+providerWizardInputLine(inputPrompt, value, placeholder, maxInt(1, width-2)), width))
 	if footnote != "" {
-		lines = append(lines, aimlapiBlockText(footnote, zeroTheme.faint.Render, width)...)
+		lines = append(lines, aimlapiBlockText(footnote, kajicodeTheme.faint.Render, width)...)
 	}
 	return lines
 }
@@ -1014,14 +1014,14 @@ func aimlapiInputScreen(width int, prompt, inputPrompt, value, placeholder, foot
 // same treatment the other setup stages use (setupMethodLines).
 func aimlapiOptionRows(label, hint string, selected bool, width int) []string {
 	marker := "  "
-	style := zeroTheme.ink
+	style := kajicodeTheme.ink
 	if selected {
 		marker = "❯ "
-		style = zeroTheme.accent.Bold(true)
+		style = kajicodeTheme.accent.Bold(true)
 	}
 	rows := []string{padSetupLine(marker+style.Render(label), width)}
 	if hint != "" {
-		rows = append(rows, padSetupLine("    "+zeroTheme.faint.Render(hint), width))
+		rows = append(rows, padSetupLine("    "+kajicodeTheme.faint.Render(hint), width))
 	}
 	return rows
 }
@@ -1033,7 +1033,7 @@ func (s *aimlapiOnboardState) viewPickPath(width int) []string {
 		{aimlapi.MsgPickPathHaveKey, aimlapi.MsgPickPathHaveHint},
 	}
 	lines := []string{}
-	lines = append(lines, aimlapiBlockText(aimlapi.MsgPickPathPrompt, zeroTheme.ink.Render, rowWidth)...)
+	lines = append(lines, aimlapiBlockText(aimlapi.MsgPickPathPrompt, kajicodeTheme.ink.Render, rowWidth)...)
 	lines = append(lines, blankSetupBlockLine(rowWidth))
 	for index, option := range options {
 		lines = append(lines, aimlapiOptionRows(option.label, option.hint, index == s.pathCursor, rowWidth)...)
@@ -1075,7 +1075,7 @@ func (s *aimlapiOnboardState) viewAmount(width int) []string {
 // the surrounding columns.
 func aimlapiFieldMarker(selected bool) string {
 	if selected {
-		return zeroTheme.accent.Bold(true).Render("❯") + " "
+		return kajicodeTheme.accent.Bold(true).Render("❯") + " "
 	}
 	return "  "
 }
@@ -1083,32 +1083,32 @@ func aimlapiFieldMarker(selected bool) string {
 // aimlapiAmountInputLine highlights only the prompt and cursor while this field
 // has focus. The dollar sign and entered amount remain white in either state.
 func aimlapiAmountInputLine(value string, placeholder string, width int, focused bool) string {
-	promptStyle := zeroTheme.ink
+	promptStyle := kajicodeTheme.ink
 	if focused {
-		promptStyle = zeroTheme.accent
+		promptStyle = kajicodeTheme.accent
 	}
-	prompt := promptStyle.Render("amount > ") + zeroTheme.ink.Render("$")
+	prompt := promptStyle.Render("amount > ") + kajicodeTheme.ink.Render("$")
 	cursor := promptStyle.Render("▌")
 	if value == "" {
-		return fitStyledLine(prompt+cursor+zeroTheme.faint.Render(placeholder), width)
+		return fitStyledLine(prompt+cursor+kajicodeTheme.faint.Render(placeholder), width)
 	}
-	return fitStyledLine(prompt+zeroTheme.ink.Render(value)+cursor, width)
+	return fitStyledLine(prompt+kajicodeTheme.ink.Render(value)+cursor, width)
 }
 
 // aimlapiToggleLine highlights only the prompt on focus. The selected choice is
 // white; the other uses the same faint style as supporting copy.
 func aimlapiToggleLine(prompt string, on bool, focused bool) string {
-	promptStyle := zeroTheme.ink
+	promptStyle := kajicodeTheme.ink
 	if focused {
-		promptStyle = zeroTheme.accent
+		promptStyle = kajicodeTheme.accent
 	}
-	onText, offText := zeroTheme.faint.Render("on"), zeroTheme.faint.Render("off")
+	onText, offText := kajicodeTheme.faint.Render("on"), kajicodeTheme.faint.Render("off")
 	if on {
-		onText = zeroTheme.ink.Render("on")
+		onText = kajicodeTheme.ink.Render("on")
 	} else {
-		offText = zeroTheme.ink.Render("off")
+		offText = kajicodeTheme.ink.Render("off")
 	}
-	return promptStyle.Render(prompt) + onText + zeroTheme.ink.Render("/") + offText
+	return promptStyle.Render(prompt) + onText + kajicodeTheme.ink.Render("/") + offText
 }
 
 // viewProgress is the streamed top-up screen. Per the design it is a spinner only
@@ -1119,9 +1119,9 @@ func (s *aimlapiOnboardState) viewProgress(width int, spinner string) []string {
 	rowWidth := aimlapiBlockWidth(width)
 	lines := []string{}
 	if link := strings.TrimSpace(s.detail); link != "" {
-		lines = append(lines, aimlapiBlockText("Opening checkout in browser...", zeroTheme.ink.Render, rowWidth)...)
+		lines = append(lines, aimlapiBlockText("Opening checkout in browser...", kajicodeTheme.ink.Render, rowWidth)...)
 		lines = append(lines, blankSetupBlockLine(rowWidth))
-		lines = append(lines, aimlapiBlockText(fmt.Sprintf(aimlapi.MsgTopUpBrowserFallback, ""), zeroTheme.faint.Render, rowWidth)...)
+		lines = append(lines, aimlapiBlockText(fmt.Sprintf(aimlapi.MsgTopUpBrowserFallback, ""), kajicodeTheme.faint.Render, rowWidth)...)
 		lines = append(lines, blankSetupBlockLine(rowWidth))
 		lines = append(lines, aimlapiLinkLines(link, rowWidth)...)
 		return lines
@@ -1144,7 +1144,7 @@ func aimlapiLinkLines(link string, width int) []string {
 	// underline even though the TUI emits no hyperlink escape sequences.
 	if schemeEnd := strings.Index(remaining, "://"); schemeEnd > 0 {
 		head := remaining[:schemeEnd+1]
-		lines = append(lines, padSetupLine("  "+zeroTheme.accent.Render(head), width))
+		lines = append(lines, padSetupLine("  "+kajicodeTheme.accent.Render(head), width))
 		remaining = remaining[schemeEnd+1:]
 	}
 	for remaining != "" {
@@ -1152,7 +1152,7 @@ func aimlapiLinkLines(link string, width int) []string {
 		if head == "" {
 			head, tail = string([]rune(remaining)[0]), string([]rune(remaining)[1:])
 		}
-		lines = append(lines, padSetupLine("  "+zeroTheme.accent.Render(head), width))
+		lines = append(lines, padSetupLine("  "+kajicodeTheme.accent.Render(head), width))
 		remaining = tail
 	}
 	return lines
@@ -1166,14 +1166,14 @@ func (s *aimlapiOnboardState) viewDone(width int) []string {
 			lines = append(lines, blankSetupBlockLine(rowWidth))
 			continue
 		}
-		render := zeroTheme.ink.Render
+		render := kajicodeTheme.ink.Render
 		if line == aimlapi.MsgEverythingRuns || line == aimlapi.MsgTopUpSuccess ||
 			line == fmt.Sprintf(aimlapi.MsgTopUpAddedFmt, strings.TrimSpace(s.amount)) {
-			render = zeroTheme.accent.Render
+			render = kajicodeTheme.accent.Render
 		}
 		lines = append(lines, aimlapiBlockText(line, render, rowWidth)...)
 	}
 	lines = append(lines, blankSetupBlockLine(rowWidth))
-	lines = append(lines, aimlapiBlockText("Press Enter to continue.", zeroTheme.faint.Render, rowWidth)...)
+	lines = append(lines, aimlapiBlockText("Press Enter to continue.", kajicodeTheme.faint.Render, rowWidth)...)
 	return lines
 }

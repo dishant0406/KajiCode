@@ -20,7 +20,7 @@ func requireGofmt(t *testing.T) {
 
 func TestFormatOnWriteDisabledByDefault(t *testing.T) {
 	requireGofmt(t)
-	t.Setenv("ZERO_FORMAT_ON_WRITE", "")
+	t.Setenv("KAJICODE_FORMAT_ON_WRITE", "")
 	dir := t.TempDir()
 	ugly := "package a\n\nfunc  A( ) {   }\n"
 
@@ -42,7 +42,7 @@ func TestFormatOnWriteDisabledByDefault(t *testing.T) {
 
 func TestFormatOnWriteFormatsAndKeepsTrackerConsistent(t *testing.T) {
 	requireGofmt(t)
-	t.Setenv("ZERO_FORMAT_ON_WRITE", "1")
+	t.Setenv("KAJICODE_FORMAT_ON_WRITE", "1")
 	dir := t.TempDir()
 	tracker := NewFileTracker()
 
@@ -74,7 +74,7 @@ func TestFormatOnWriteFormatsAndKeepsTrackerConsistent(t *testing.T) {
 }
 
 func TestFormatOnWriteSkipsUnknownExtensions(t *testing.T) {
-	t.Setenv("ZERO_FORMAT_ON_WRITE", "1")
+	t.Setenv("KAJICODE_FORMAT_ON_WRITE", "1")
 	content := maybeFormatWrittenFile(context.Background(), filepath.Join(t.TempDir(), "notes.xyz"), "raw   text")
 	if content != "raw   text" {
 		t.Fatalf("unknown extension must pass through: %q", content)

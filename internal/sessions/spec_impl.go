@@ -28,7 +28,7 @@ func (store *Store) FindSpecImplementation(specID string, sourceSessionID string
 		return nil, nil
 	}
 	if !ValidSessionID(sourceSessionID) {
-		return nil, fmt.Errorf("invalid zero session id %q", sourceSessionID)
+		return nil, fmt.Errorf("invalid kajicode session id %q", sourceSessionID)
 	}
 	items, err := store.List()
 	if err != nil {
@@ -48,23 +48,23 @@ func (store *Store) EnsureSpecImplementation(input EnsureSpecImplementationInput
 	sourceSessionID := strings.TrimSpace(input.SpecSourceSessionID)
 	prompt := input.Prompt
 	if specID == "" {
-		return Metadata{}, nil, fmt.Errorf("zero spec id is required")
+		return Metadata{}, nil, fmt.Errorf("kajicode spec id is required")
 	}
 	if sourceSessionID == "" {
-		return Metadata{}, nil, fmt.Errorf("zero spec source session id is required")
+		return Metadata{}, nil, fmt.Errorf("kajicode spec source session id is required")
 	}
 	if !ValidSessionID(sourceSessionID) {
-		return Metadata{}, nil, fmt.Errorf("invalid zero session id %q", sourceSessionID)
+		return Metadata{}, nil, fmt.Errorf("invalid kajicode session id %q", sourceSessionID)
 	}
 	if strings.TrimSpace(prompt) == "" {
-		return Metadata{}, nil, fmt.Errorf("zero spec implementation prompt is required")
+		return Metadata{}, nil, fmt.Errorf("kajicode spec implementation prompt is required")
 	}
 	source, err := store.Get(sourceSessionID)
 	if err != nil {
 		return Metadata{}, nil, err
 	}
 	if source == nil {
-		return Metadata{}, nil, fmt.Errorf("zero session not found: %s", sourceSessionID)
+		return Metadata{}, nil, fmt.Errorf("kajicode session not found: %s", sourceSessionID)
 	}
 
 	unlock, err := store.lockSession(sourceSessionID)
@@ -125,7 +125,7 @@ func (store *Store) EnsureSpecImplementation(input EnsureSpecImplementationInput
 		return Metadata{}, nil, err
 	}
 	if loaded == nil {
-		return Metadata{}, nil, fmt.Errorf("zero session not found: %s", impl.SessionID)
+		return Metadata{}, nil, fmt.Errorf("kajicode session not found: %s", impl.SessionID)
 	}
 	return *loaded, events, nil
 }

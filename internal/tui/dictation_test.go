@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/config"
-	"github.com/Gitlawb/zero/internal/dictation"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/dictation"
 )
 
 func TestDictationTranscribedInsertsIntoComposer(t *testing.T) {
@@ -51,7 +51,7 @@ func TestDictationTranscribedSetupErrorGuides(t *testing.T) {
 
 func TestDictationAuthErrorReopensKeyPrompt(t *testing.T) {
 	// A cloud auth failure should offer an inline key prompt for the current
-	// provider (preserving its model), not dead-end on "run zero auth".
+	// provider (preserving its model), not dead-end on "run kajicode auth".
 	m := model{}
 	m.dictation.cfg = config.STTConfig{Provider: config.STTProviderGroq, Model: "whisper-large-v3-turbo"}
 	m.dictation.saveKey = func(string, string) error { return nil }
@@ -292,7 +292,7 @@ func TestCurrentModelLabel(t *testing.T) {
 	}
 	// Local with a downloaded curated variant → "Local · <friendly name>".
 	kroko := dictation.ModelVariants()[0] // Kroko streaming
-	d = dictationController{cfg: config.STTConfig{Provider: config.STTProviderLocal, LocalModelPath: "/home/x/.config/zero/stt/" + kroko.DirName + "/sherpa-onnx-...-kroko"}}
+	d = dictationController{cfg: config.STTConfig{Provider: config.STTProviderLocal, LocalModelPath: "/home/x/.config/kajicode/stt/" + kroko.DirName + "/sherpa-onnx-...-kroko"}}
 	if got := d.currentModelLabel(); got != "Local · "+kroko.Label {
 		t.Errorf("local kroko label = %q, want %q", got, "Local · "+kroko.Label)
 	}

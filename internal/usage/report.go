@@ -5,9 +5,9 @@ import (
 	"sort"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/modelregistry"
-	"github.com/Gitlawb/zero/internal/sessions"
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
+	"github.com/dishant0406/KajiCode/internal/modelregistry"
+	"github.com/dishant0406/KajiCode/internal/sessions"
 )
 
 // usageEventPayload mirrors the persisted EventUsage payload written by the exec
@@ -35,7 +35,7 @@ type usageEventPayload struct {
 // back to price a turn exactly (cache discount + cache-write premium + reasoning)
 // rather than estimating from prompt/completion alone. Callers add "model"
 // afterward on escalation runs.
-func EventUsagePayload(u zeroruntime.Usage) map[string]any {
+func EventUsagePayload(u kajicoderuntime.Usage) map[string]any {
 	payload := map[string]any{
 		"promptTokens":     u.EffectiveInputTokens(),
 		"completionTokens": u.EffectiveOutputTokens(),
@@ -72,7 +72,7 @@ type Totals struct {
 	TotalCost    float64 `json:"totalCost"`
 }
 
-// Report is the aggregated usage view rendered by `zero usage report`. Cost is a
+// Report is the aggregated usage view rendered by `kajicode usage report`. Cost is a
 // reconstructed estimate (see usageEventPayload) and NetLOC is a working-tree
 // estimate; both are surfaced as estimates in the rendered output.
 type Report struct {
@@ -146,7 +146,7 @@ func BuildReport(events []sessions.Event, meta []sessions.Metadata, registry *mo
 		if err != nil {
 			continue
 		}
-		cost, err := modelregistry.CalculateCost(model, zeroruntime.Usage{
+		cost, err := modelregistry.CalculateCost(model, kajicoderuntime.Usage{
 			InputTokens:       payload.PromptTokens,
 			OutputTokens:      payload.CompletionTokens,
 			CachedInputTokens: payload.CachedInputTokens,

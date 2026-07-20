@@ -4,8 +4,8 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/sandbox"
-	"github.com/Gitlawb/zero/internal/tools"
+	"github.com/dishant0406/KajiCode/internal/sandbox"
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
 func TestProposedCommandPrefixUsesSafeSimpleCommands(t *testing.T) {

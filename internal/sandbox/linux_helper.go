@@ -14,7 +14,7 @@ import (
 	"strings"
 )
 
-const LinuxSandboxHelperName = "zero-linux-sandbox"
+const LinuxSandboxHelperName = "kajicode-linux-sandbox"
 
 const linuxSandboxBackendEnv = BackendLinuxBwrap
 
@@ -333,7 +333,7 @@ func linuxHelperSandboxEnvironment(profile PermissionProfile, base []string) []s
 func linuxHelperSandboxEnvironmentOverrides(profile PermissionProfile) []string {
 	return []string{
 		EnvSandboxBackend + "=" + string(linuxSandboxBackendEnv),
-		"ZERO_SANDBOX_NETWORK=" + string(profile.Network.Mode),
+		"KAJICODE_SANDBOX_NETWORK=" + string(profile.Network.Mode),
 		EnvSandboxed + "=1",
 	}
 }
@@ -368,7 +368,7 @@ func findLinuxSandboxHelperCommand() (LinuxSandboxHelperCommand, error) {
 			}
 		}
 	}
-	return LinuxSandboxHelperCommand{}, errors.New("zero-linux-sandbox helper is not available")
+	return LinuxSandboxHelperCommand{}, errors.New("kajicode-linux-sandbox helper is not available")
 }
 
 func executableRegularFile(path string) bool {

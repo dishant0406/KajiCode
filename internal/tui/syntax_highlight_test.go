@@ -45,7 +45,7 @@ func TestFinalBarePythonCodeRendersHighlighted(t *testing.T) {
 		t.Fatalf("final bare Python code should keep content, got:\n%s", out)
 	}
 	for _, wantStyled := range []string{"from", "def", "if"} {
-		if !strings.Contains(out, zeroTheme.accent.Render(wantStyled)) {
+		if !strings.Contains(out, kajicodeTheme.accent.Render(wantStyled)) {
 			t.Fatalf("final bare Python code should color keyword %q, got:\n%s", wantStyled, out)
 		}
 	}

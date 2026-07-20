@@ -5,7 +5,7 @@ import (
 	"math"
 	"sort"
 
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
 )
 
 const tokensPerMillion = 1_000_000
@@ -27,7 +27,7 @@ type CostBreakdown struct {
 	PricingTier       *ModelCostTier
 }
 
-func (registry Registry) EstimateCost(pattern string, usage zeroruntime.Usage) (CostBreakdown, error) {
+func (registry Registry) EstimateCost(pattern string, usage kajicoderuntime.Usage) (CostBreakdown, error) {
 	model, err := registry.Require(pattern)
 	if err != nil {
 		return CostBreakdown{}, err
@@ -35,7 +35,7 @@ func (registry Registry) EstimateCost(pattern string, usage zeroruntime.Usage) (
 	return CalculateCost(model, usage)
 }
 
-func CalculateCost(model ModelEntry, usage zeroruntime.Usage) (CostBreakdown, error) {
+func CalculateCost(model ModelEntry, usage kajicoderuntime.Usage) (CostBreakdown, error) {
 	inputTokens, err := nonNegativeUsage(usage.EffectiveInputTokens(), "input tokens")
 	if err != nil {
 		return CostBreakdown{}, err

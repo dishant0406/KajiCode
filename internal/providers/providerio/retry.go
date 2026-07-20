@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/trace"
+	"github.com/dishant0406/KajiCode/internal/trace"
 )
 
 // Transient-failure retry, shared by every provider.

@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/trace"
+	"github.com/dishant0406/KajiCode/internal/trace"
 )
 
 // fakeTurnRunner returns a canned *trace.TurnTrace per task so the harness's
@@ -415,7 +415,7 @@ func approxEqual(a, b, tol float64) bool {
 // reading the code today; a test makes it durable against future refactors of
 // the runner's isolation path.
 func TestCopyFixtureIsolatesSourceFromMutation(t *testing.T) {
-	src, err := os.MkdirTemp("", "zero-fixture-src-*")
+	src, err := os.MkdirTemp("", "kajicode-fixture-src-*")
 	if err != nil {
 		t.Fatalf("mkdtemp src: %v", err)
 	}
@@ -599,7 +599,7 @@ func loadBaselineTask(t *testing.T, id string) BenchTask {
 }
 
 // runTurnStub runs one manifest task through the production NewTurnExecRunner
-// with a stub "zero" binary whose body is a POSIX sh script (writeExecStub
+// with a stub "kajicode" binary whose body is a POSIX sh script (writeExecStub
 // skips on Windows). The stub is invoked with cmd.Dir set to the fixture copy,
 // so it can both emit canned stream-json AND mutate the copy (apply or omit the
 // fix) before the runner stamps the oracle and runs the verification command.
@@ -656,7 +656,7 @@ func TestStampedOracleRejectsMissingField(t *testing.T) {
 
 // TestNavAnswerOracleRejectsWrongAnswer proves the nav oracle greps the CAPTURED
 // answer, not the raw stream: the stub emits a final answer missing the
-// required keys, the harness writes it to .zero-answer.txt, and the compound
+// required keys, the harness writes it to .kajicode-answer.txt, and the compound
 // grep fails — so a plausible-but-wrong answer cannot pass nav-09.
 func TestNavAnswerOracleRejectsWrongAnswer(t *testing.T) {
 	task := loadBaselineTask(t, "nav-09")
@@ -667,7 +667,7 @@ echo '{"type":"run_end","exitCode":0}'
 }
 
 // TestNavNoFinalTextFails proves a run that produced no answer fails nav: with
-// no "final" event, .zero-answer.txt is empty and the grep finds nothing.
+// no "final" event, .kajicode-answer.txt is empty and the grep finds nothing.
 func TestNavNoFinalTextFails(t *testing.T) {
 	task := loadBaselineTask(t, "nav-09")
 	outcome := runTurnStub(t, task, `echo '{"type":"run_end","exitCode":0}'
@@ -682,7 +682,7 @@ func TestNavNoFinalTextFails(t *testing.T) {
 // plain `! grep 'debug: starting'` would have rubber-stamped this reword.
 func TestEdit05RejectsRewordedDebugPrint(t *testing.T) {
 	task := loadBaselineTask(t, "edit-05")
-	outcome := runTurnStub(t, task, `sed 's/debug: starting/starting up/' main.go > .zero-tmp && mv .zero-tmp main.go
+	outcome := runTurnStub(t, task, `sed 's/debug: starting/starting up/' main.go > .kajicode-tmp && mv .kajicode-tmp main.go
 echo '{"type":"run_end","exitCode":0}'
 `)
 	assertVerifyFailed(t, "reworded edit-05 debug print", outcome)
@@ -696,7 +696,7 @@ echo '{"type":"run_end","exitCode":0}'
 // strings.Contains("debug: starting") assertion fails the task.
 func TestEdit05RejectsRespelledDebugPrint(t *testing.T) {
 	task := loadBaselineTask(t, "edit-05")
-	outcome := runTurnStub(t, task, `sed 's/fmt.Println("debug: starting")/fmt.Printf("debug: starting\\n")/' main.go > .zero-tmp && mv .zero-tmp main.go
+	outcome := runTurnStub(t, task, `sed 's/fmt.Println("debug: starting")/fmt.Printf("debug: starting\\n")/' main.go > .kajicode-tmp && mv .kajicode-tmp main.go
 echo '{"type":"run_end","exitCode":0}'
 `)
 	assertVerifyFailed(t, "respelled edit-05 debug print", outcome)
@@ -710,7 +710,7 @@ echo '{"type":"run_end","exitCode":0}'
 // caller (or stubbing the caller) can no longer pass the oracle.
 func TestRefactor05RejectsStubbedCaller(t *testing.T) {
 	task := loadBaselineTask(t, "refactor-05")
-	outcome := runTurnStub(t, task, `sed -e 's/return Wrapper(name)/return ""/' -e '/^func Wrapper(name string) string {/,/^}/d' main.go > .zero-tmp && mv .zero-tmp main.go
+	outcome := runTurnStub(t, task, `sed -e 's/return Wrapper(name)/return ""/' -e '/^func Wrapper(name string) string {/,/^}/d' main.go > .kajicode-tmp && mv .kajicode-tmp main.go
 echo '{"type":"run_end","exitCode":0}'
 `)
 	assertVerifyFailed(t, "stubbed refactor-05 caller", outcome)
@@ -725,7 +725,7 @@ echo '{"type":"run_end","exitCode":0}'
 // named type.
 func TestRefactor04RejectsBareMapKept(t *testing.T) {
 	task := loadBaselineTask(t, "refactor-04")
-	outcome := runTurnStub(t, task, `sed 's/type Config struct {/type Stats map[string]int\n\ntype Config struct {/' main.go > .zero-tmp && mv .zero-tmp main.go
+	outcome := runTurnStub(t, task, `sed 's/type Config struct {/type Stats map[string]int\n\ntype Config struct {/' main.go > .kajicode-tmp && mv .kajicode-tmp main.go
 echo '{"type":"run_end","exitCode":0}'
 `)
 	assertVerifyFailed(t, "refactor-04 bare-map kept", outcome)
@@ -739,7 +739,7 @@ echo '{"type":"run_end","exitCode":0}'
 // compiles, and the task passes.
 func TestEdit01IgnoresDocComment(t *testing.T) {
 	task := loadBaselineTask(t, "edit-01")
-	outcome := runTurnStub(t, task, `sed 's/const MaxRetries = 3/const RetryLimit = 3/' main.go > .zero-tmp && mv .zero-tmp main.go
+	outcome := runTurnStub(t, task, `sed 's/const MaxRetries = 3/const RetryLimit = 3/' main.go > .kajicode-tmp && mv .kajicode-tmp main.go
 echo '{"type":"run_end","exitCode":0}'
 `)
 	if outcome.Err != nil {
@@ -759,14 +759,14 @@ echo '{"type":"run_end","exitCode":0}'
 // the task passes.
 func TestStampedOraclePassesWhenRefactorHappened(t *testing.T) {
 	task := loadBaselineTask(t, "refactor-01")
-	outcome := runTurnStub(t, task, `sed -e 's/return fmt.Sprintf("hello, %s", c.Name)/return formatGreeting(c.Name)/' -e 's/return fmt.Sprintf("hello, %s", name)/return formatGreeting(name)/' main.go > .zero-tmp
-cat >> .zero-tmp <<'EOF'
+	outcome := runTurnStub(t, task, `sed -e 's/return fmt.Sprintf("hello, %s", c.Name)/return formatGreeting(c.Name)/' -e 's/return fmt.Sprintf("hello, %s", name)/return formatGreeting(name)/' main.go > .kajicode-tmp
+cat >> .kajicode-tmp <<'EOF'
 
 func formatGreeting(name string) string {
 return fmt.Sprintf("hello, %s", name)
 }
 EOF
-mv .zero-tmp main.go
+mv .kajicode-tmp main.go
 echo '{"type":"run_end","exitCode":0}'
 `)
 	if outcome.Err != nil {
@@ -782,7 +782,7 @@ echo '{"type":"run_end","exitCode":0}'
 // Config{}.Label` compiles and the task passes.
 func TestEdit03PassesWhenFieldAdded(t *testing.T) {
 	task := loadBaselineTask(t, "edit-03")
-	outcome := runTurnStub(t, task, `awk '/Name string/ && !d {print; print "Label string"; d=1; next} {print}' main.go > .zero-tmp && mv .zero-tmp main.go
+	outcome := runTurnStub(t, task, `awk '/Name string/ && !d {print; print "Label string"; d=1; next} {print}' main.go > .kajicode-tmp && mv .kajicode-tmp main.go
 echo '{"type":"run_end","exitCode":0}'
 `)
 	if outcome.Err != nil {
@@ -814,7 +814,7 @@ echo '{"type":"run_end","exitCode":0}'
 // the ! grep 'func Wrapper' check passes, so the task passes.
 func TestRefactor05PassesWhenInlined(t *testing.T) {
 	task := loadBaselineTask(t, "refactor-05")
-	outcome := runTurnStub(t, task, `sed -e 's/return Wrapper(name)/return GreetByName(name)/' -e '/^func Wrapper(name string) string {/,/^}/d' main.go > .zero-tmp && mv .zero-tmp main.go
+	outcome := runTurnStub(t, task, `sed -e 's/return Wrapper(name)/return GreetByName(name)/' -e '/^func Wrapper(name string) string {/,/^}/d' main.go > .kajicode-tmp && mv .kajicode-tmp main.go
 echo '{"type":"run_end","exitCode":0}'
 `)
 	if outcome.Err != nil {
@@ -832,7 +832,7 @@ echo '{"type":"run_end","exitCode":0}'
 // compiles, and go test passes.
 func TestRefactor04PassesWhenTyped(t *testing.T) {
 	task := loadBaselineTask(t, "refactor-04")
-	outcome := runTurnStub(t, task, `sed -e 's/type Config struct {/type Stats map[string]int\n\ntype Config struct {/' -e 's/var stats = map\[string\]int{}/var stats = Stats{}/' main.go > .zero-tmp && mv .zero-tmp main.go
+	outcome := runTurnStub(t, task, `sed -e 's/type Config struct {/type Stats map[string]int\n\ntype Config struct {/' -e 's/var stats = map\[string\]int{}/var stats = Stats{}/' main.go > .kajicode-tmp && mv .kajicode-tmp main.go
 echo '{"type":"run_end","exitCode":0}'
 `)
 	if outcome.Err != nil {
@@ -865,7 +865,7 @@ func TestStampOracleRejectsFixturelessOracleTask(t *testing.T) {
 	// verificationCommand set, no OracleTest: isolates the other reject branch.
 	withVerify := BenchTask{
 		ID:                  "t",
-		VerificationCommand: []string{"bash", "-c", "grep x .zero-answer.txt"},
+		VerificationCommand: []string{"bash", "-c", "grep x .kajicode-answer.txt"},
 	}
 	if err := stampOracleAndAnswer(withVerify, nil); err == nil {
 		t.Fatal("fixtureless task with a verificationCommand must be rejected, got nil error")
@@ -1074,7 +1074,7 @@ printf '%s\n' '{"type":"run_end","exitCode":0}'
 
 func TestResolveBinaryAbsolutizesExplicitPath(t *testing.T) {
 	dir := t.TempDir()
-	name := "zero-probe.exe"
+	name := "kajicode-probe.exe"
 	if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -1108,7 +1108,7 @@ func TestRunTurnBenchCountsErroredTasks(t *testing.T) {
 		Model:      "fake-model",
 		Iterations: 1,
 		Runner: func(context.Context, BenchTask, RunContext) TurnTaskOutcome {
-			return TurnTaskOutcome{Err: errors.New("fork/exec ./zero: file does not exist")}
+			return TurnTaskOutcome{Err: errors.New("fork/exec ./kajicode: file does not exist")}
 		},
 		Now: func() time.Time { return time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC) },
 	}
@@ -1126,7 +1126,7 @@ func TestRunTurnBenchCountsErroredTasks(t *testing.T) {
 	if !strings.Contains(summary, "ERRORED: 2 task(s)") {
 		t.Fatalf("summary does not surface the errored tasks:\n%s", summary)
 	}
-	if !strings.Contains(summary, "fork/exec ./zero") {
+	if !strings.Contains(summary, "fork/exec ./kajicode") {
 		t.Fatalf("summary does not echo the underlying run error:\n%s", summary)
 	}
 }
@@ -1164,7 +1164,7 @@ func TestRunTurnBenchPartialErrorStillCounts(t *testing.T) {
 	}
 }
 
-// The exec-profile passthrough: the profile must reach every task's zero exec
+// The exec-profile passthrough: the profile must reach every task's kajicode exec
 // invocation as --exec-profile (with the prompt staying last) and stay out of
 // the args entirely when unset.
 func TestBuildTurnExecArgsIncludesExecProfile(t *testing.T) {

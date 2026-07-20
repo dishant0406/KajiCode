@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/config"
-	"github.com/Gitlawb/zero/internal/providerhealth"
-	"github.com/Gitlawb/zero/internal/sessions"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/providerhealth"
+	"github.com/dishant0406/KajiCode/internal/sessions"
 )
 
 func TestRunDoctorFormatsRedactedProviderDiagnostics(t *testing.T) {
@@ -49,7 +49,7 @@ func TestRunDoctorFormatsRedactedProviderDiagnostics(t *testing.T) {
 		t.Fatalf("expected empty stderr, got %q", stderr.String())
 	}
 	output := stdout.String()
-	for _, want := range []string{"Zero doctor report", "Overall: pass", "[pass] provider.config", "[warn] provider.connectivity"} {
+	for _, want := range []string{"KajiCode doctor report", "Overall: pass", "[pass] provider.config", "[warn] provider.connectivity"} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("expected doctor output to contain %q, got %q", want, output)
 		}
@@ -368,11 +368,11 @@ func TestRunSearchJSONRedactsQueryAndSessionMetadata(t *testing.T) {
 
 func TestRunDoctorReportsConfigValidationForMalformedFile(t *testing.T) {
 	cwd := t.TempDir()
-	zeroDir := filepath.Join(cwd, ".zero")
-	if err := os.MkdirAll(zeroDir, 0o755); err != nil {
-		t.Fatalf("mkdir .zero: %v", err)
+	kajicodeDir := filepath.Join(cwd, ".kajicode")
+	if err := os.MkdirAll(kajicodeDir, 0o755); err != nil {
+		t.Fatalf("mkdir .kajicode: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(zeroDir, "config.json"), []byte("{\n  \"activeProvider\": \"openai\",\n"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(kajicodeDir, "config.json"), []byte("{\n  \"activeProvider\": \"openai\",\n"), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 
@@ -381,7 +381,7 @@ func TestRunDoctorReportsConfigValidationForMalformedFile(t *testing.T) {
 	exitCode := runWithDeps([]string{"doctor", "--json"}, &stdout, &stderr, appDeps{
 		getwd: func() (string, error) { return cwd, nil },
 		resolveConfig: func(string, config.Overrides) (config.ResolvedConfig, error) {
-			return config.ResolvedConfig{}, fmt.Errorf("invalid config JSON %s: unexpected end of JSON input", filepath.Join(zeroDir, "config.json"))
+			return config.ResolvedConfig{}, fmt.Errorf("invalid config JSON %s: unexpected end of JSON input", filepath.Join(kajicodeDir, "config.json"))
 		},
 		now: fixedCLITime("2026-06-08T11:00:00Z"),
 	})

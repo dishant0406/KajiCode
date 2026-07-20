@@ -8,11 +8,11 @@ import (
 func TestResolveConfigFromEnv(t *testing.T) {
 	r := NewRegistry()
 	env := map[string]string{
-		"ZERO_OAUTH_DEMO_CLIENT_ID":     "my-client",
-		"ZERO_OAUTH_DEMO_CLIENT_SECRET": "shh",
-		"ZERO_OAUTH_DEMO_SCOPES":        "read write",
-		"ZERO_OAUTH_DEMO_AUTHORIZE_URL": "https://auth.example.com/authorize",
-		"ZERO_OAUTH_DEMO_TOKEN_URL":     "https://auth.example.com/token",
+		"KAJICODE_OAUTH_DEMO_CLIENT_ID":     "my-client",
+		"KAJICODE_OAUTH_DEMO_CLIENT_SECRET": "shh",
+		"KAJICODE_OAUTH_DEMO_SCOPES":        "read write",
+		"KAJICODE_OAUTH_DEMO_AUTHORIZE_URL": "https://auth.example.com/authorize",
+		"KAJICODE_OAUTH_DEMO_TOKEN_URL":     "https://auth.example.com/token",
 	}
 	cfg, flow, err := r.ResolveConfig("demo", env)
 	if err != nil {
@@ -35,10 +35,10 @@ func TestResolveConfigFromEnv(t *testing.T) {
 func TestResolveConfigDeviceFlow(t *testing.T) {
 	r := NewRegistry()
 	env := map[string]string{
-		"ZERO_OAUTH_DEMO_CLIENT_ID":  "c",
-		"ZERO_OAUTH_DEMO_TOKEN_URL":  "https://auth.example.com/token",
-		"ZERO_OAUTH_DEMO_DEVICE_URL": "https://auth.example.com/device",
-		"ZERO_OAUTH_DEMO_FLOW":       "device",
+		"KAJICODE_OAUTH_DEMO_CLIENT_ID":  "c",
+		"KAJICODE_OAUTH_DEMO_TOKEN_URL":  "https://auth.example.com/token",
+		"KAJICODE_OAUTH_DEMO_DEVICE_URL": "https://auth.example.com/device",
+		"KAJICODE_OAUTH_DEMO_FLOW":       "device",
 	}
 	_, flow, err := r.ResolveConfig("demo", env)
 	if err != nil {
@@ -59,7 +59,7 @@ func TestResolveConfigRequiresClientID(t *testing.T) {
 func TestResolveConfigRequiresEndpointsOrIssuer(t *testing.T) {
 	r := NewRegistry()
 	// client id but no token endpoint and no issuer => error.
-	_, _, err := r.ResolveConfig("demo", map[string]string{"ZERO_OAUTH_DEMO_CLIENT_ID": "c"})
+	_, _, err := r.ResolveConfig("demo", map[string]string{"KAJICODE_OAUTH_DEMO_CLIENT_ID": "c"})
 	if err == nil {
 		t.Fatal("missing endpoints/issuer must error")
 	}
@@ -68,9 +68,9 @@ func TestResolveConfigRequiresEndpointsOrIssuer(t *testing.T) {
 func TestResolveConfigRejectsInsecureEndpoint(t *testing.T) {
 	r := NewRegistry()
 	env := map[string]string{
-		"ZERO_OAUTH_DEMO_CLIENT_ID":     "c",
-		"ZERO_OAUTH_DEMO_AUTHORIZE_URL": "https://auth.example.com/authorize",
-		"ZERO_OAUTH_DEMO_TOKEN_URL":     "http://insecure.example/token", // non-https, non-loopback
+		"KAJICODE_OAUTH_DEMO_CLIENT_ID":     "c",
+		"KAJICODE_OAUTH_DEMO_AUTHORIZE_URL": "https://auth.example.com/authorize",
+		"KAJICODE_OAUTH_DEMO_TOKEN_URL":     "http://insecure.example/token", // non-https, non-loopback
 	}
 	_, _, err := r.ResolveConfig("demo", env)
 	if !errors.Is(err, ErrInsecureTokenEndpoint) {
@@ -88,10 +88,10 @@ func TestResolveConfigInvalidName(t *testing.T) {
 }
 
 func TestEnvKey(t *testing.T) {
-	if got := envKey("my-svc", "CLIENT_ID"); got != "ZERO_OAUTH_MY_SVC_CLIENT_ID" {
+	if got := envKey("my-svc", "CLIENT_ID"); got != "KAJICODE_OAUTH_MY_SVC_CLIENT_ID" {
 		t.Fatalf("envKey = %q", got)
 	}
-	if got := envKey("two.part", "SCOPES"); got != "ZERO_OAUTH_TWO_PART_SCOPES" {
+	if got := envKey("two.part", "SCOPES"); got != "KAJICODE_OAUTH_TWO_PART_SCOPES" {
 		t.Fatalf("envKey = %q", got)
 	}
 }

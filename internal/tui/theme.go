@@ -6,10 +6,10 @@ import (
 	"charm.land/lipgloss/v2"
 )
 
-// tuiTheme is the resolved terminal palette Zero renders with. It is produced by
+// tuiTheme is the resolved terminal palette KajiCode renders with. It is produced by
 // buildTheme from a palette, so the same renderers serve both the dark default
-// and the light variant; the active theme lives in the package var zeroTheme and
-// may be swapped at startup (background detection / ZERO_THEME / --theme) or live
+// and the light variant; the active theme lives in the package var kajicodeTheme and
+// may be swapped at startup (background detection / KAJICODE_THEME / --theme) or live
 // via /theme. Colors are truecolor hex; lipgloss downsamples on limited displays
 // and renders plain text when there is no TTY (tests). Every renderer consumes
 // these named styles — no hex literal may appear outside theme_palettes.go (the
@@ -202,11 +202,11 @@ func buildTheme(p palette) tuiTheme {
 	}
 }
 
-// zeroTheme is the active palette every renderer reads. It defaults to dark and is
+// kajicodeTheme is the active palette every renderer reads. It defaults to dark and is
 // reassigned by theme selection at startup and by /theme. All references are
 // .field accesses evaluated at render time, so reassigning this var repaints every
 // subsequent render.
-var zeroTheme = buildTheme(darkPalette)
+var kajicodeTheme = buildTheme(darkPalette)
 
 // onPanel returns a copy of style that paints on the panel surface. lipgloss
 // resets the background between adjacent Render calls, so every segment of a

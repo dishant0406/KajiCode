@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/testrunner"
+	"github.com/dishant0406/KajiCode/internal/testrunner"
 )
 
 func TestSnapshotFromReportRedactsLogsAndBuildsEvents(t *testing.T) {

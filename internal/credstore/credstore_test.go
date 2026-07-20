@@ -149,7 +149,7 @@ func TestKeyringRequestedButUnavailableErrors(t *testing.T) {
 func TestEnvSelectsStorage(t *testing.T) {
 	dir := t.TempDir()
 	env := func(k string) string {
-		if k == "ZERO_CRED_STORAGE" {
+		if k == "KAJICODE_CRED_STORAGE" {
 			return "encrypted-file"
 		}
 		return ""

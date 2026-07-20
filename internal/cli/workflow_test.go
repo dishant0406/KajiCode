@@ -10,14 +10,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/config"
-	"github.com/Gitlawb/zero/internal/redaction"
-	"github.com/Gitlawb/zero/internal/selfverify"
-	"github.com/Gitlawb/zero/internal/testrunner"
-	"github.com/Gitlawb/zero/internal/verify"
-	"github.com/Gitlawb/zero/internal/worktrees"
-	"github.com/Gitlawb/zero/internal/zerogit"
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/kajicodegit"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
+	"github.com/dishant0406/KajiCode/internal/redaction"
+	"github.com/dishant0406/KajiCode/internal/selfverify"
+	"github.com/dishant0406/KajiCode/internal/testrunner"
+	"github.com/dishant0406/KajiCode/internal/verify"
+	"github.com/dishant0406/KajiCode/internal/worktrees"
 )
 
 func TestRunWorktreesPrepareTextAndJSON(t *testing.T) {
@@ -62,7 +62,7 @@ func TestRunWorktreesPrepareTextAndJSON(t *testing.T) {
 				if decoded.Path != prepared.Path || decoded.Name != prepared.Name {
 					t.Fatalf("unexpected JSON result: %#v", decoded)
 				}
-			} else if !strings.Contains(stdout.String(), "Zero worktree ready") || !strings.Contains(stdout.String(), prepared.Path) {
+			} else if !strings.Contains(stdout.String(), "KajiCode worktree ready") || !strings.Contains(stdout.String(), prepared.Path) {
 				t.Fatalf("unexpected worktree text output: %q", stdout.String())
 			}
 		})
@@ -230,7 +230,7 @@ func TestRunVerifyTextAndJSON(t *testing.T) {
 				if snapshot.Contract != verify.ReportContractVersion || len(snapshot.Events) == 0 {
 					t.Fatalf("verify JSON did not expose runtime contract: %#v", snapshot)
 				}
-			} else if !strings.Contains(stdout.String(), "Zero verification") || !strings.Contains(stdout.String(), "go.test") || !strings.Contains(stdout.String(), cwd) || !strings.Contains(stdout.String(), "tests: 2 total, 1 passed, 1 failed") {
+			} else if !strings.Contains(stdout.String(), "KajiCode verification") || !strings.Contains(stdout.String(), "go.test") || !strings.Contains(stdout.String(), cwd) || !strings.Contains(stdout.String(), "tests: 2 total, 1 passed, 1 failed") {
 				t.Fatalf("unexpected verify text output: %q", stdout.String())
 			}
 		})
@@ -419,7 +419,7 @@ func TestRunVerifyAttemptsFormatsSelfVerifyText(t *testing.T) {
 		t.Fatalf("expected exit code %d, got %d: %s", exitSuccess, exitCode, stderr.String())
 	}
 	output := stdout.String()
-	for _, want := range []string{"Zero self-verification", "root: " + cwd, "stop: passed", "attempt 1: failed", "remediation: applied - prepared retry", "attempt 2: passed"} {
+	for _, want := range []string{"KajiCode self-verification", "root: " + cwd, "stop: passed", "attempt 1: failed", "remediation: applied - prepared retry", "attempt 2: passed"} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("expected %q in output: %q", want, output)
 		}
@@ -428,13 +428,13 @@ func TestRunVerifyAttemptsFormatsSelfVerifyText(t *testing.T) {
 
 func TestRunChangesInspectAndCommit(t *testing.T) {
 	cwd := t.TempDir()
-	summary := zerogit.ChangeSummary{
+	summary := kajicodegit.ChangeSummary{
 		Root:   cwd,
 		Branch: "main",
 		Commit: "abc1234",
-		Files:  []zerogit.FileChange{{Path: "README.md", Status: "modified", Unstaged: true}},
+		Files:  []kajicodegit.FileChange{{Path: "README.md", Status: "modified", Unstaged: true}},
 	}
-	commit := zerogit.CommitResult{
+	commit := kajicodegit.CommitResult{
 		Root:       cwd,
 		Message:    "Update README",
 		DryRun:     true,
@@ -448,7 +448,7 @@ func TestRunChangesInspectAndCommit(t *testing.T) {
 		var stderr bytes.Buffer
 		exitCode := runWithDeps([]string{"changes", "inspect", "--json"}, &stdout, &stderr, appDeps{
 			getwd: func() (string, error) { return cwd, nil },
-			inspectChanges: func(ctx context.Context, options zerogit.InspectOptions) (zerogit.ChangeSummary, error) {
+			inspectChanges: func(ctx context.Context, options kajicodegit.InspectOptions) (kajicodegit.ChangeSummary, error) {
 				if options.Cwd != cwd {
 					t.Fatalf("inspect cwd = %q, want %q", options.Cwd, cwd)
 				}
@@ -459,18 +459,18 @@ func TestRunChangesInspectAndCommit(t *testing.T) {
 		if exitCode != exitSuccess {
 			t.Fatalf("expected exit code %d, got %d: %s", exitSuccess, exitCode, stderr.String())
 		}
-		var decoded zerogit.ChangeSummary
+		var decoded kajicodegit.ChangeSummary
 		if err := json.Unmarshal(stdout.Bytes(), &decoded); err != nil {
 			t.Fatalf("decode changes JSON: %v\n%s", err, stdout.String())
 		}
 		if len(decoded.Files) != 1 || decoded.Files[0].Path != "README.md" {
 			t.Fatalf("unexpected changes JSON: %#v", decoded)
 		}
-		var snapshot zerogit.ChangeSnapshot
+		var snapshot kajicodegit.ChangeSnapshot
 		if err := json.Unmarshal(stdout.Bytes(), &snapshot); err != nil {
 			t.Fatalf("decode changes snapshot JSON: %v\n%s", err, stdout.String())
 		}
-		if snapshot.Contract != zerogit.ChangeContractVersion || len(snapshot.Events) == 0 {
+		if snapshot.Contract != kajicodegit.ChangeContractVersion || len(snapshot.Events) == 0 {
 			t.Fatalf("changes JSON did not expose runtime contract: %#v", snapshot)
 		}
 	})
@@ -480,7 +480,7 @@ func TestRunChangesInspectAndCommit(t *testing.T) {
 		var stderr bytes.Buffer
 		exitCode := runWithDeps([]string{"changes", "commit", "--message", "Update README", "--dry-run"}, &stdout, &stderr, appDeps{
 			getwd: func() (string, error) { return cwd, nil },
-			commitChanges: func(ctx context.Context, options zerogit.CommitOptions) (zerogit.CommitResult, error) {
+			commitChanges: func(ctx context.Context, options kajicodegit.CommitOptions) (kajicodegit.CommitResult, error) {
 				if options.Cwd != cwd || options.Message != "Update README" || !options.DryRun {
 					t.Fatalf("unexpected commit options: %#v", options)
 				}
@@ -491,7 +491,7 @@ func TestRunChangesInspectAndCommit(t *testing.T) {
 		if exitCode != exitSuccess {
 			t.Fatalf("expected exit code %d, got %d: %s", exitSuccess, exitCode, stderr.String())
 		}
-		if !strings.Contains(stdout.String(), "Zero changes commit") || !strings.Contains(stdout.String(), "dry-run: true") {
+		if !strings.Contains(stdout.String(), "KajiCode changes commit") || !strings.Contains(stdout.String(), "dry-run: true") {
 			t.Fatalf("unexpected changes commit output: %q", stdout.String())
 		}
 	})
@@ -499,18 +499,18 @@ func TestRunChangesInspectAndCommit(t *testing.T) {
 
 func TestRunChangesInspectThreadsBaseRef(t *testing.T) {
 	cwd := t.TempDir()
-	summary := zerogit.ChangeSummary{
+	summary := kajicodegit.ChangeSummary{
 		Root:   cwd,
 		Branch: "feature",
 		Base:   "main",
-		Files:  []zerogit.FileChange{{Path: "feature.md", Status: "added"}},
+		Files:  []kajicodegit.FileChange{{Path: "feature.md", Status: "added"}},
 	}
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	exitCode := runWithDeps([]string{"changes", "inspect", "--base", "main"}, &stdout, &stderr, appDeps{
 		getwd: func() (string, error) { return cwd, nil },
-		inspectChanges: func(ctx context.Context, options zerogit.InspectOptions) (zerogit.ChangeSummary, error) {
+		inspectChanges: func(ctx context.Context, options kajicodegit.InspectOptions) (kajicodegit.ChangeSummary, error) {
 			if options.BaseRef != "main" {
 				t.Fatalf("InspectOptions.BaseRef = %q, want main", options.BaseRef)
 			}
@@ -531,9 +531,9 @@ func TestRunChangesCommitRejectsBaseRef(t *testing.T) {
 	var stderr bytes.Buffer
 	exitCode := runWithDeps([]string{"changes", "commit", "--base", "main"}, &stdout, &stderr, appDeps{
 		getwd: func() (string, error) { return t.TempDir(), nil },
-		commitChanges: func(context.Context, zerogit.CommitOptions) (zerogit.CommitResult, error) {
+		commitChanges: func(context.Context, kajicodegit.CommitOptions) (kajicodegit.CommitResult, error) {
 			t.Fatal("commitChanges should not be called when --base is rejected")
-			return zerogit.CommitResult{}, nil
+			return kajicodegit.CommitResult{}, nil
 		},
 	})
 
@@ -605,7 +605,7 @@ func TestRunExecWorktreeUsesPreparedWorkspace(t *testing.T) {
 			resolvedWorkspace = workspaceRoot
 			return execResolvedConfig(), nil
 		},
-		newProvider: func(config.ProviderProfile) (zeroruntime.Provider, error) {
+		newProvider: func(config.ProviderProfile) (kajicoderuntime.Provider, error) {
 			return echoExecProvider{}, nil
 		},
 	})
@@ -645,7 +645,7 @@ func TestRunExecRejectsForkWithWorktree(t *testing.T) {
 func TestRunExecRejectsWorktreeDirWithoutWorktree(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	exitCode := runWithDeps([]string{"exec", "--worktree-dir", "/tmp/zero", "hello"}, &stdout, &stderr, appDeps{
+	exitCode := runWithDeps([]string{"exec", "--worktree-dir", "/tmp/kajicode", "hello"}, &stdout, &stderr, appDeps{
 		prepareWorktree: func(context.Context, worktrees.Options) (worktrees.Result, error) {
 			t.Fatal("prepareWorktree should not be called for invalid flags")
 			return worktrees.Result{}, nil
@@ -702,24 +702,24 @@ func TestParseChangesArgsAuto(t *testing.T) {
 
 type mockCommitMsgProvider struct {
 	response string
-	req      zeroruntime.CompletionRequest
+	req      kajicoderuntime.CompletionRequest
 }
 
-func (p *mockCommitMsgProvider) StreamCompletion(ctx context.Context, request zeroruntime.CompletionRequest) (<-chan zeroruntime.StreamEvent, error) {
+func (p *mockCommitMsgProvider) StreamCompletion(ctx context.Context, request kajicoderuntime.CompletionRequest) (<-chan kajicoderuntime.StreamEvent, error) {
 	p.req = request
-	events := make(chan zeroruntime.StreamEvent, 2)
-	events <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventText, Content: p.response}
-	events <- zeroruntime.StreamEvent{Type: zeroruntime.StreamEventDone}
+	events := make(chan kajicoderuntime.StreamEvent, 2)
+	events <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventText, Content: p.response}
+	events <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventDone}
 	close(events)
 	return events, nil
 }
 
 func TestRunChangesCommitAuto(t *testing.T) {
 	cwd := t.TempDir()
-	summary := zerogit.ChangeSummary{
+	summary := kajicodegit.ChangeSummary{
 		Root:   cwd,
 		Branch: "main",
-		Files:  []zerogit.FileChange{{Path: "README.md", Status: "modified"}},
+		Files:  []kajicodegit.FileChange{{Path: "README.md", Status: "modified"}},
 		Diff:   "some diff content with ghp_SECRETKEYHERE",
 	}
 
@@ -733,7 +733,7 @@ func TestRunChangesCommitAuto(t *testing.T) {
 
 	exitCode := runWithDeps([]string{"changes", "commit", "--auto"}, &stdout, &stderr, appDeps{
 		getwd: func() (string, error) { return cwd, nil },
-		inspectChanges: func(ctx context.Context, options zerogit.InspectOptions) (zerogit.ChangeSummary, error) {
+		inspectChanges: func(ctx context.Context, options kajicodegit.InspectOptions) (kajicodegit.ChangeSummary, error) {
 			return summary, nil
 		},
 		resolveConfig: func(workspaceRoot string, overrides config.Overrides) (config.ResolvedConfig, error) {
@@ -742,15 +742,15 @@ func TestRunChangesCommitAuto(t *testing.T) {
 			cfg.Provider.Model = "gpt-4o"
 			return cfg, nil
 		},
-		newProvider: func(profile config.ProviderProfile) (zeroruntime.Provider, error) {
+		newProvider: func(profile config.ProviderProfile) (kajicoderuntime.Provider, error) {
 			return mockProv, nil
 		},
-		commitChanges: func(ctx context.Context, options zerogit.CommitOptions) (zerogit.CommitResult, error) {
+		commitChanges: func(ctx context.Context, options kajicodegit.CommitOptions) (kajicodegit.CommitResult, error) {
 			commitCalled = true
 			if options.Message != "feat: auto commit message" {
 				t.Fatalf("expected commit message 'feat: auto commit message', got %q", options.Message)
 			}
-			return zerogit.CommitResult{
+			return kajicodegit.CommitResult{
 				Root:       cwd,
 				Message:    options.Message,
 				Committed:  true,
@@ -785,13 +785,13 @@ func TestRunChangesCommitAuto(t *testing.T) {
 		var stdout, stderr bytes.Buffer
 		code := runWithDeps([]string{"changes", "commit", "--auto"}, &stdout, &stderr, appDeps{
 			getwd: func() (string, error) { return cwd, nil },
-			inspectChanges: func(ctx context.Context, options zerogit.InspectOptions) (zerogit.ChangeSummary, error) {
+			inspectChanges: func(ctx context.Context, options kajicodegit.InspectOptions) (kajicodegit.ChangeSummary, error) {
 				return summary, nil
 			},
 			resolveConfig: func(workspaceRoot string, overrides config.Overrides) (config.ResolvedConfig, error) {
 				return execResolvedConfig(), nil
 			},
-			newProvider: func(profile config.ProviderProfile) (zeroruntime.Provider, error) {
+			newProvider: func(profile config.ProviderProfile) (kajicoderuntime.Provider, error) {
 				return mockProvEmpty, nil
 			},
 		})

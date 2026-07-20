@@ -1,4 +1,4 @@
-// Package lsp is a direct Language Server Protocol client: ZERO spawns the
+// Package lsp is a direct Language Server Protocol client: KAJICODE spawns the
 // language server itself and speaks LSP JSON-RPC over stdio, so an unattended
 // run (cron/CI, no open editor) can still see real compiler diagnostics. This
 // file holds the minimal LSP data model and file<->URI helpers; client.go is the

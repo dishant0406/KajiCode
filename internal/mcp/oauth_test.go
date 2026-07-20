@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/redaction"
+	"github.com/dishant0406/KajiCode/internal/redaction"
 )
 
 func TestDiscoverParsesMetadata(t *testing.T) {

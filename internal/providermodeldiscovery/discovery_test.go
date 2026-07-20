@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/config"
-	"github.com/Gitlawb/zero/internal/providercatalog"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/providercatalog"
 )
 
 func TestDiscoverOpenAICompatibleModelsFetchesModelsEndpoint(t *testing.T) {

@@ -366,7 +366,7 @@ var neonPalette = palette{
 }
 
 // lightPalette is dark-on-light: a warm cream surface (so cards lift off the
-// terminal page, which Zero never paints) with near-black ink and an olive-lime
+// terminal page, which KajiCode never paints) with near-black ink and an olive-lime
 // accent that keeps the brand identity while clearing AA on the light panel. The
 // muted/faint/faintest grays get progressively LIGHTER toward the surface; diff and
 // permission tints are light surfaces. Replaces the old flat cool-gray light set
@@ -465,7 +465,7 @@ var dunePalette = palette{
 	cardPerm:  "#c2a04a",
 }
 
-// themeEntry is one registered theme: Name is the /theme value + ZERO_THEME/--theme
+// themeEntry is one registered theme: Name is the /theme value + KAJICODE_THEME/--theme
 // token (lowercase, kebab), Label is the picker display text, and IsDark groups the
 // picker (Dark/Light sections) and drives which built-in `auto` resolves to.
 type themeEntry struct {

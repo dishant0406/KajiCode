@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/testrunner"
-	"github.com/Gitlawb/zero/internal/verify"
+	"github.com/dishant0406/KajiCode/internal/testrunner"
+	"github.com/dishant0406/KajiCode/internal/verify"
 )
 
 func TestSnapshotFromReportPreservesAttemptsAndRedactsRemediation(t *testing.T) {

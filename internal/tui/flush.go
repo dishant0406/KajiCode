@@ -5,7 +5,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/Gitlawb/zero/internal/agent"
+	"github.com/dishant0406/KajiCode/internal/agent"
 )
 
 // This file implements the settled-row flush frontier that gives the chat
@@ -144,6 +144,6 @@ func (m *model) resetFlushFrontier(divider string) {
 	// coincidentally matching an unrelated row in the rebuilt transcript.
 	m.hover = hoverTarget{}
 	if divider != "" && m.flushedAny {
-		m.flushQueue = append(m.flushQueue, zeroTheme.faint.Render(divider))
+		m.flushQueue = append(m.flushQueue, kajicodeTheme.faint.Render(divider))
 	}
 }

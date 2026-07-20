@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/fsutil"
+	"github.com/dishant0406/KajiCode/internal/fsutil"
 )
 
 const (
@@ -70,7 +70,7 @@ func NewStore(opts StoreOptions) *Store {
 	return &Store{root: root, now: now}
 }
 
-// DefaultRoot mirrors sessions.DefaultRoot: <XDG_DATA_HOME|~/.local/share>/zero/cron.
+// DefaultRoot mirrors sessions.DefaultRoot: <XDG_DATA_HOME|~/.local/share>/kajicode/cron.
 func DefaultRoot(env map[string]string) string {
 	dataHome := strings.TrimSpace(env["XDG_DATA_HOME"])
 	home := strings.TrimSpace(env["HOME"])
@@ -86,7 +86,7 @@ func DefaultRoot(env map[string]string) string {
 	if base == "" {
 		base = filepath.Join(home, ".local", "share")
 	}
-	return filepath.Join(base, "zero", "cron")
+	return filepath.Join(base, "kajicode", "cron")
 }
 
 func envMap() map[string]string {

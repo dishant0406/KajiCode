@@ -13,8 +13,8 @@ import (
 )
 
 func TestLinuxHelperRealSandboxSmoke(t *testing.T) {
-	if os.Getenv("ZERO_SANDBOX_REAL_SMOKE") != "1" {
-		t.Skip("set ZERO_SANDBOX_REAL_SMOKE=1 to run real sandbox smoke tests")
+	if os.Getenv("KAJICODE_SANDBOX_REAL_SMOKE") != "1" {
+		t.Skip("set KAJICODE_SANDBOX_REAL_SMOKE=1 to run real sandbox smoke tests")
 	}
 	backend := SelectBackend(BackendOptions{})
 	if !backend.Available || backend.Name != BackendLinuxBwrap {
@@ -46,8 +46,8 @@ func TestLinuxHelperRealSandboxSmoke(t *testing.T) {
 			"set -eu",
 			"echo ok > write-ok.txt",
 			"test \"$(cat write-ok.txt)\" = ok",
-			"echo tmp > /tmp/zero-sandbox-smoke",
-			"test \"$(cat /tmp/zero-sandbox-smoke)\" = tmp",
+			"echo tmp > /tmp/kajicode-sandbox-smoke",
+			"test \"$(cat /tmp/kajicode-sandbox-smoke)\" = tmp",
 			"cat .git/config >/dev/null",
 		}, "\n")},
 		Dir: root,
@@ -114,8 +114,8 @@ func TestLinuxHelperRealSandboxSmoke(t *testing.T) {
 }
 
 func TestLinuxLandlockRealSandboxSmoke(t *testing.T) {
-	if os.Getenv("ZERO_SANDBOX_REAL_SMOKE") != "1" {
-		t.Skip("set ZERO_SANDBOX_REAL_SMOKE=1 to run real sandbox smoke tests")
+	if os.Getenv("KAJICODE_SANDBOX_REAL_SMOKE") != "1" {
+		t.Skip("set KAJICODE_SANDBOX_REAL_SMOKE=1 to run real sandbox smoke tests")
 	}
 	helper, err := linuxSandboxHelperCommand()
 	if err != nil {

@@ -29,9 +29,9 @@ func TestLoadProviderCommandSuccess(t *testing.T) {
 }
 
 func TestLoadProviderCommandDoesNotResolveAPIKeyEnvFromProcess(t *testing.T) {
-	t.Setenv("ZERO_CMD_API_KEY", "sk-process")
+	t.Setenv("KAJICODE_CMD_API_KEY", "sk-process")
 	command := writeCommand(t, commandScript{
-		Stdout: `{"name":"cmd","provider":"openai","apiKeyEnv":"ZERO_CMD_API_KEY","model":"gpt-command"}`,
+		Stdout: `{"name":"cmd","provider":"openai","apiKeyEnv":"KAJICODE_CMD_API_KEY","model":"gpt-command"}`,
 	})
 
 	cfg, err := LoadProviderCommand(command)
@@ -43,7 +43,7 @@ func TestLoadProviderCommandDoesNotResolveAPIKeyEnvFromProcess(t *testing.T) {
 	if provider.APIKey != "" {
 		t.Fatalf("APIKey = %q, want unresolved provider-command apiKeyEnv", provider.APIKey)
 	}
-	if provider.APIKeyEnv != "ZERO_CMD_API_KEY" {
+	if provider.APIKeyEnv != "KAJICODE_CMD_API_KEY" {
 		t.Fatalf("APIKeyEnv = %q, want command apiKeyEnv preserved", provider.APIKeyEnv)
 	}
 }

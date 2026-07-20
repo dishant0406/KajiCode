@@ -113,7 +113,7 @@ func TestRunTasksRecordsRunnerError(t *testing.T) {
 	config := TaskConfig{
 		Model: "m",
 		Runner: func(_ context.Context, task BenchTask, _ RunContext) TaskOutcome {
-			return TaskOutcome{Err: errors.New("zero exec exited 1")}
+			return TaskOutcome{Err: errors.New("kajicode exec exited 1")}
 		},
 	}
 
@@ -129,7 +129,7 @@ func TestRunTasksRecordsRunnerError(t *testing.T) {
 	if result.Errors != 2 {
 		t.Fatalf("errors = %d, want 2", result.Errors)
 	}
-	if !strings.Contains(result.Tasks[0].Detail, "zero exec exited 1") {
+	if !strings.Contains(result.Tasks[0].Detail, "kajicode exec exited 1") {
 		t.Fatalf("task detail should carry the runner error, got %q", result.Tasks[0].Detail)
 	}
 }
@@ -268,7 +268,7 @@ func writeExecStub(t *testing.T, body string) string {
 		t.Skip("exec stub uses a POSIX shell script")
 	}
 	dir := t.TempDir()
-	path := filepath.Join(dir, "zero-stub.sh")
+	path := filepath.Join(dir, "kajicode-stub.sh")
 	script := "#!/bin/sh\n" + body
 	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
 		t.Fatalf("write exec stub: %v", err)
@@ -312,10 +312,10 @@ exit 0
 	runner := NewExecRunner(stub)
 	outcome := runner(context.Background(), BenchTask{ID: "t1", Prompt: "p"}, RunContext{Model: "m"})
 	if outcome.Err != nil {
-		t.Fatalf("zero run_end with no verification must pass, got Err=%v", outcome.Err)
+		t.Fatalf("kajicode run_end with no verification must pass, got Err=%v", outcome.Err)
 	}
 	if !outcome.Passed {
-		t.Fatalf("zero run_end with no verification must pass, got Passed=false")
+		t.Fatalf("kajicode run_end with no verification must pass, got Passed=false")
 	}
 }
 

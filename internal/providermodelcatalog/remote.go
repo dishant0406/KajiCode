@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/providercatalog"
+	"github.com/dishant0406/KajiCode/internal/providercatalog"
 )
 
 const (
@@ -202,7 +202,7 @@ func fetchJSON(ctx context.Context, endpoint string, client *http.Client) ([]byt
 		return nil, err
 	}
 	request.Header.Set("Accept", "application/json")
-	request.Header.Set("User-Agent", "zero-cli")
+	request.Header.Set("User-Agent", "kajicode-cli")
 	if client == nil {
 		client = &http.Client{Timeout: 10 * time.Second}
 	}
@@ -227,9 +227,9 @@ func defaultedOpenGatewayURL(provider providercatalog.Descriptor, override strin
 	}
 	parsed, err := url.Parse(provider.DefaultBaseURL)
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
-		return "https://opengateway.gitlawb.com/zero/models.json"
+		return "https://opengateway.gitlawb.com/kajicode/models.json"
 	}
-	return parsed.Scheme + "://" + parsed.Host + "/zero/models.json"
+	return parsed.Scheme + "://" + parsed.Host + "/kajicode/models.json"
 }
 
 func sortModels(models []Model) {

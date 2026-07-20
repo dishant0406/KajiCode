@@ -6,7 +6,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/Gitlawb/zero/internal/sessions"
+	"github.com/dishant0406/KajiCode/internal/sessions"
 )
 
 // specialistClickTestModel builds a model with a single specialist card in the

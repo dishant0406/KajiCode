@@ -65,7 +65,7 @@ func TestIsUnconfiguredDefault(t *testing.T) {
 }
 
 func TestResolveMCPExplicitReenableIsNotUnconfiguredDefault(t *testing.T) {
-	// `zero mcp enable firecrawl` after a prior disable writes {"disabled":false}
+	// `kajicode mcp enable firecrawl` after a prior disable writes {"disabled":false}
 	// explicitly. The resolved value is identical to the untouched default (both
 	// enabled, no credentials), but the user DID take an explicit action here, so
 	// IsUnconfiguredDefault must not treat it as untouched (issue #563 review).

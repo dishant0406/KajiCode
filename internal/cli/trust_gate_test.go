@@ -8,10 +8,10 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/hooks"
-	"github.com/Gitlawb/zero/internal/plugins"
-	"github.com/Gitlawb/zero/internal/tools"
-	"github.com/Gitlawb/zero/internal/workspacetrust"
+	"github.com/dishant0406/KajiCode/internal/hooks"
+	"github.com/dishant0406/KajiCode/internal/plugins"
+	"github.com/dishant0406/KajiCode/internal/tools"
+	"github.com/dishant0406/KajiCode/internal/workspacetrust"
 )
 
 // setTrustConfigRoot redirects both the workspace-trust store and the user-level
@@ -23,7 +23,7 @@ import (
 // XDG-first there (it only falls back to $HOME/.config when XDG_CONFIG_HOME is
 // unset), and the hooks loader resolves its user layer from XDG_CONFIG_HOME too. An
 // earlier version set HOME on darwin and returned the raw root; that left the store
-// at <root>/.config/zero while the tests wrote to <root>/zero, so the store-error
+// at <root>/.config/kajicode while the tests wrote to <root>/kajicode, so the store-error
 // and user-hook cases silently missed. Only Windows needs its own variable (APPDATA,
 // what os.UserConfigDir consults). XDG_DATA_HOME is redirected so the hook audit
 // store never touches the user's real data dir.
@@ -61,13 +61,13 @@ func shellQuote(path string) string {
 	return "'" + path + "'"
 }
 
-// writeProjectHooks writes a project ./.zero/hooks.json under repo with the given
+// writeProjectHooks writes a project ./.kajicode/hooks.json under repo with the given
 // hooks and top-level enabled flag.
 func writeProjectHooks(t *testing.T, repo string, enabled bool, defs ...hooks.Definition) {
 	t.Helper()
-	path := filepath.Join(repo, ".zero", "hooks.json")
+	path := filepath.Join(repo, ".kajicode", "hooks.json")
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		t.Fatalf("mkdir project .zero: %v", err)
+		t.Fatalf("mkdir project .kajicode: %v", err)
 	}
 	if err := hooks.WriteConfig(path, hooks.Config{Enabled: enabled, Hooks: defs}); err != nil {
 		t.Fatalf("write project hooks.json: %v", err)
@@ -77,7 +77,7 @@ func writeProjectHooks(t *testing.T, repo string, enabled bool, defs ...hooks.De
 // writeUserHooks writes a user-level hooks.json into the redirected config root.
 func writeUserHooks(t *testing.T, configRoot string, enabled bool, defs ...hooks.Definition) {
 	t.Helper()
-	path := filepath.Join(configRoot, "zero", "hooks.json")
+	path := filepath.Join(configRoot, "kajicode", "hooks.json")
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatalf("mkdir user config dir: %v", err)
 	}
@@ -192,7 +192,7 @@ func TestHookGateFailClosedOnStoreError(t *testing.T) {
 	configRoot := setTrustConfigRoot(t)
 	// Create the trust store path as a DIRECTORY so os.ReadFile fails with a
 	// non-ErrNotExist error, forcing IsTrusted to return (false, non-nil).
-	trustPath := filepath.Join(configRoot, "zero", "trust.json")
+	trustPath := filepath.Join(configRoot, "kajicode", "trust.json")
 	if err := os.MkdirAll(trustPath, 0o700); err != nil {
 		t.Fatalf("create trust.json as a directory: %v", err)
 	}
@@ -292,8 +292,8 @@ func TestHookGateWorktreeInheritsTrust(t *testing.T) {
 func TestPluginGateUntrustedExcludesProject(t *testing.T) {
 	setTrustConfigRoot(t)
 	repo := t.TempDir()
-	// A ./.zero/plugins dir so the skip report flags an excluded project config.
-	if err := os.MkdirAll(filepath.Join(repo, ".zero", "plugins"), 0o700); err != nil {
+	// A ./.kajicode/plugins dir so the skip report flags an excluded project config.
+	if err := os.MkdirAll(filepath.Join(repo, ".kajicode", "plugins"), 0o700); err != nil {
 		t.Fatalf("mkdir project plugins dir: %v", err)
 	}
 
@@ -313,7 +313,7 @@ func TestPluginGateUntrustedExcludesProject(t *testing.T) {
 		t.Fatalf("untrusted workspace must pass ExcludeProject=true to loadPlugins")
 	}
 	if !activation.excludedProjectConfig {
-		t.Fatalf("skip report should flag the excluded ./.zero/plugins dir")
+		t.Fatalf("skip report should flag the excluded ./.kajicode/plugins dir")
 	}
 	if activation.trustCheckErrored {
 		t.Fatalf("a clean untrusted verdict is not a store-read error")
@@ -353,12 +353,12 @@ func TestPluginGateTrustedIncludesProject(t *testing.T) {
 // forces ExcludeProject=true and marks the error.
 func TestPluginGateFailClosedOnStoreError(t *testing.T) {
 	configRoot := setTrustConfigRoot(t)
-	trustPath := filepath.Join(configRoot, "zero", "trust.json")
+	trustPath := filepath.Join(configRoot, "kajicode", "trust.json")
 	if err := os.MkdirAll(trustPath, 0o700); err != nil {
 		t.Fatalf("create trust.json as a directory: %v", err)
 	}
 	repo := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(repo, ".zero", "plugins"), 0o700); err != nil {
+	if err := os.MkdirAll(filepath.Join(repo, ".kajicode", "plugins"), 0o700); err != nil {
 		t.Fatalf("mkdir project plugins dir: %v", err)
 	}
 
@@ -395,8 +395,8 @@ func TestEmitTrustNoticeOneLineWhenSkipped(t *testing.T) {
 		if len(lines) != 1 {
 			t.Fatalf("expected exactly one notice line, got %d: %q", len(lines), buf.String())
 		}
-		if !bytes.Contains(buf.Bytes(), []byte("zero trust")) {
-			t.Fatalf("notice should point at 'zero trust', got %q", buf.String())
+		if !bytes.Contains(buf.Bytes(), []byte("kajicode trust")) {
+			t.Fatalf("notice should point at 'kajicode trust', got %q", buf.String())
 		}
 	})
 

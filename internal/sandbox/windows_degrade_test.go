@@ -17,7 +17,7 @@ func TestWindowsFallsBackUnelevatedWhenSandboxNotInitialized(t *testing.T) {
 
 	mgr := NewSandboxManager(SandboxManagerOptions{
 		GOOS:    "windows",
-		Backend: Backend{Name: BackendWindowsRestrictedToken, Available: true, Executable: "zero.exe", Platform: "windows"},
+		Backend: Backend{Name: BackendWindowsRestrictedToken, Available: true, Executable: "kajicode.exe", Platform: "windows"},
 	})
 	base := SandboxManagerRequest{
 		WorkspaceRoot:     `C:\ws`,
@@ -76,7 +76,7 @@ func TestWindowsNetworkOnlyProfileStillDegradesWhenNotInitialized(t *testing.T) 
 
 	mgr := NewSandboxManager(SandboxManagerOptions{
 		GOOS:    "windows",
-		Backend: Backend{Name: BackendWindowsRestrictedToken, Available: true, Executable: "zero.exe", Platform: "windows"},
+		Backend: Backend{Name: BackendWindowsRestrictedToken, Available: true, Executable: "kajicode.exe", Platform: "windows"},
 	})
 	req, err := mgr.BuildExecutionRequest(SandboxManagerRequest{
 		WorkspaceRoot: `C:\ws`,

@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/doctor"
-	"github.com/Gitlawb/zero/internal/zerocommands"
+	"github.com/dishant0406/KajiCode/internal/doctor"
+	"github.com/dishant0406/KajiCode/internal/kajicodecommands"
 )
 
 func TestDoctorCommandOutputMapsOverallStatus(t *testing.T) {
@@ -78,7 +78,7 @@ func TestDoctorResultBorderStyleUsesSummaryStatusLine(t *testing.T) {
 	}, "\n")
 
 	got := fmt.Sprint(doctorResultBorderStyle(text).GetForeground())
-	want := fmt.Sprint(zeroTheme.red.GetForeground())
+	want := fmt.Sprint(kajicodeTheme.red.GetForeground())
 	if got != want {
 		t.Fatalf("border foreground = %s, want blocked red %s", got, want)
 	}
@@ -90,8 +90,8 @@ func TestDoctorCommandOutputGroupsProviderAndPlatformChecks(t *testing.T) {
 		doctorCheck("provider.model", doctor.StatusWarn, "Provider model is not configured."),
 		doctorCheck("provider.connectivity", doctor.StatusFail, "Provider connectivity failed."),
 		doctorCheck("sandbox.backend", doctor.StatusWarn, "Native sandbox backend unavailable on windows: Windows sandbox command runner is not available."),
-		doctorCheck("runtime.go", doctor.StatusPass, "Zero Go runtime is available."),
-		doctorCheck("config.files", doctor.StatusPass, "Zero config file inputs are available."),
+		doctorCheck("runtime.go", doctor.StatusPass, "KajiCode Go runtime is available."),
+		doctorCheck("config.files", doctor.StatusPass, "KajiCode config file inputs are available."),
 	}}, nil)
 
 	provider := doctorSection(output, "Provider")
@@ -114,8 +114,8 @@ func TestDoctorCommandOutputIsProblemFirstDiagnosticCenter(t *testing.T) {
 		doctorCheck("provider.config", doctor.StatusPass, "Provider config loaded."),
 		doctorCheck("provider.model", doctor.StatusWarn, "Provider model is not configured."),
 		doctorCheck("provider.connectivity", doctor.StatusWarn, "Connectivity probe skipped."),
-		doctorCheck("runtime.go", doctor.StatusPass, "Zero Go runtime is available."),
-		doctorCheck("config.files", doctor.StatusPass, "Zero config files are available."),
+		doctorCheck("runtime.go", doctor.StatusPass, "KajiCode Go runtime is available."),
+		doctorCheck("config.files", doctor.StatusPass, "KajiCode config files are available."),
 		doctorCheck("lsp.servers", doctor.StatusWarn, "2 language server(s) missing from PATH."),
 	}}, nil)
 
@@ -157,7 +157,7 @@ func TestDoctorCommandOutputAddsActionableHints(t *testing.T) {
 			Status:  doctor.StatusWarn,
 			Message: "Native sandbox backend unavailable on windows: Windows sandbox setup helper is not available.",
 			Details: map[string]any{
-				"remedy": "install the Windows sandbox command runner and setup helper together, then run `zero sandbox setup`",
+				"remedy": "install the Windows sandbox command runner and setup helper together, then run `kajicode sandbox setup`",
 			},
 		},
 		doctorCheck("lsp.servers", doctor.StatusWarn, "2 language server(s) missing from PATH; affected files degrade to text-only edits."),
@@ -167,7 +167,7 @@ func TestDoctorCommandOutputAddsActionableHints(t *testing.T) {
 	for _, want := range []string{
 		"/provider",
 		"/doctor --connectivity",
-		"zero sandbox setup",
+		"kajicode sandbox setup",
 		"install missing language servers",
 	} {
 		if !strings.Contains(text, want) {
@@ -192,10 +192,10 @@ func TestDoctorCommandOutputIsNilBackendSafe(t *testing.T) {
 }
 
 func TestDoctorCommandOutputIncludesBackendCountsAndHints(t *testing.T) {
-	backend := zerocommands.BackendLifecycleSnapshot{
-		MCPServers: []zerocommands.MCPServerSnapshot{{Name: "filesystem"}, {Name: "github"}},
-		Hooks:      []zerocommands.HookSnapshot{{ID: "lint", Enabled: true}},
-		Plugins:    []zerocommands.PluginSnapshot{{ID: "browser"}, {ID: "github"}, {ID: "linear"}},
+	backend := kajicodecommands.BackendLifecycleSnapshot{
+		MCPServers: []kajicodecommands.MCPServerSnapshot{{Name: "filesystem"}, {Name: "github"}},
+		Hooks:      []kajicodecommands.HookSnapshot{{ID: "lint", Enabled: true}},
+		Plugins:    []kajicodecommands.PluginSnapshot{{ID: "browser"}, {ID: "github"}, {ID: "linear"}},
 	}
 
 	output := doctorCommandOutput(doctor.Report{Checks: []doctor.Check{

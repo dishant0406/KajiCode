@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Gitlawb/zero/internal/localcontrol"
+	"github.com/dishant0406/KajiCode/internal/localcontrol"
 )
 
 func NewLocalTerminalTools(options localcontrol.TerminalOptions) []Tool {

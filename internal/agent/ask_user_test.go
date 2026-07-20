@@ -6,24 +6,24 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/tools"
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
 // providerCallingAskUserThenAnswer returns a mock provider whose first turn calls
 // the ask_user tool and whose second turn returns a plain-text final answer.
 func providerCallingAskUserThenAnswer(arguments string, answer string) *mockProvider {
 	return &mockProvider{
-		turns: [][]zeroruntime.StreamEvent{
+		turns: [][]kajicoderuntime.StreamEvent{
 			{
-				{Type: zeroruntime.StreamEventToolCallStart, ToolCallID: "call-1", ToolName: "ask_user"},
-				{Type: zeroruntime.StreamEventToolCallDelta, ToolCallID: "call-1", ArgumentsFragment: arguments},
-				{Type: zeroruntime.StreamEventToolCallEnd, ToolCallID: "call-1"},
-				{Type: zeroruntime.StreamEventDone},
+				{Type: kajicoderuntime.StreamEventToolCallStart, ToolCallID: "call-1", ToolName: "ask_user"},
+				{Type: kajicoderuntime.StreamEventToolCallDelta, ToolCallID: "call-1", ArgumentsFragment: arguments},
+				{Type: kajicoderuntime.StreamEventToolCallEnd, ToolCallID: "call-1"},
+				{Type: kajicoderuntime.StreamEventDone},
 			},
 			{
-				{Type: zeroruntime.StreamEventText, Content: answer},
-				{Type: zeroruntime.StreamEventDone},
+				{Type: kajicoderuntime.StreamEventText, Content: answer},
+				{Type: kajicoderuntime.StreamEventDone},
 			},
 		},
 	}
@@ -71,7 +71,7 @@ func TestRunAskUserReturnsHandlerAnswers(t *testing.T) {
 
 	// The answers must be threaded back to the model as the tool result.
 	toolMessage := provider.requests[1].Messages[len(provider.requests[1].Messages)-1]
-	if toolMessage.Role != zeroruntime.MessageRoleTool || toolMessage.ToolCallID != "call-1" {
+	if toolMessage.Role != kajicoderuntime.MessageRoleTool || toolMessage.ToolCallID != "call-1" {
 		t.Fatalf("expected tool result message for call-1, got %#v", toolMessage)
 	}
 	for _, want := range []string{"Which framework?", "React", "TypeScript?", "yes"} {
@@ -166,7 +166,7 @@ func TestRunAskUserCancellationAbortsRun(t *testing.T) {
 	// The recorded tool result must reflect cancellation, not a synthetic answer.
 	var toolMsg string
 	for _, m := range result.Messages {
-		if m.Role == zeroruntime.MessageRoleTool {
+		if m.Role == kajicoderuntime.MessageRoleTool {
 			toolMsg = m.Content
 		}
 	}

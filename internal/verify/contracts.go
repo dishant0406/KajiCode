@@ -3,12 +3,12 @@ package verify
 import (
 	"strings"
 
-	"github.com/Gitlawb/zero/internal/redaction"
-	"github.com/Gitlawb/zero/internal/testrunner"
+	"github.com/dishant0406/KajiCode/internal/redaction"
+	"github.com/dishant0406/KajiCode/internal/testrunner"
 )
 
 const RuntimeGo = "go"
-const ReportContractVersion = "zero.verify.report.v1"
+const ReportContractVersion = "kajicode.verify.report.v1"
 
 type EventType string
 

@@ -7,10 +7,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/Gitlawb/zero/internal/agent"
-	"github.com/Gitlawb/zero/internal/hooks"
-	"github.com/Gitlawb/zero/internal/plugins"
-	"github.com/Gitlawb/zero/internal/tools"
+	"github.com/dishant0406/KajiCode/internal/agent"
+	"github.com/dishant0406/KajiCode/internal/hooks"
+	"github.com/dishant0406/KajiCode/internal/plugins"
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
 // pluginActivation holds what plugin activation contributed to a bootstrap so the
@@ -79,14 +79,14 @@ func activatePlugins(workspaceRoot string, registry *tools.Registry, deps appDep
 	return pluginActivation{hooks: result.Hooks, skillRoots: result.SkillRoots, trustSkip: skip}
 }
 
-// projectPluginsDirExists reports whether a ./.zero/plugins directory is present
+// projectPluginsDirExists reports whether a ./.kajicode/plugins directory is present
 // under workspaceRoot, so the caller only notices about config it actually
 // skipped.
 func projectPluginsDirExists(workspaceRoot string) bool {
 	if workspaceRoot == "" {
 		return false
 	}
-	info, err := os.Stat(filepath.Join(workspaceRoot, ".zero", "plugins"))
+	info, err := os.Stat(filepath.Join(workspaceRoot, ".kajicode", "plugins"))
 	return err == nil && info.IsDir()
 }
 
@@ -134,5 +134,5 @@ func writePluginActivationWarning(stderr io.Writer, message string) {
 	if stderr == nil {
 		return
 	}
-	_, _ = fmt.Fprintf(stderr, "[zero] WARNING: plugin activation: %s\n", message)
+	_, _ = fmt.Fprintf(stderr, "[kajicode] WARNING: plugin activation: %s\n", message)
 }

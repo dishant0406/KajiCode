@@ -13,11 +13,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Gitlawb/zero/internal/sandbox"
+	"github.com/dishant0406/KajiCode/internal/sandbox"
 )
 
 func TestMain(m *testing.M) {
-	if len(os.Args) >= 3 && os.Args[1] == "--zero-bash-helper" {
+	if len(os.Args) >= 3 && os.Args[1] == "--kajicode-bash-helper" {
 		if os.Args[2] == "echo-arg" {
 			// Echoes back exactly the one argument it received, to verify a
 			// quoted, space-and-slash-containing argument (the same shape as
@@ -69,7 +69,7 @@ func runBashToolHelper(command string) {
 		fmt.Println("listening", listener.Addr().String())
 		server := &http.Server{
 			Handler: http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-				_, _ = response.Write([]byte("zero-server-ok"))
+				_, _ = response.Write([]byte("kajicode-server-ok"))
 			}),
 		}
 		if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
@@ -137,7 +137,7 @@ func TestBashToolDescribesHostShellSyntax(t *testing.T) {
 }
 
 func TestDetectShellCommandIssueFlagsWindowsBashisms(t *testing.T) {
-	issue := detectShellCommandIssue(`cd /d/tmp/zero-pr-158 && ls -la`, "windows")
+	issue := detectShellCommandIssue(`cd /d/tmp/kajicode-pr-158 && ls -la`, "windows")
 	if issue == nil {
 		t.Fatal("expected Windows bash-style cd command to be flagged")
 	}
@@ -149,7 +149,7 @@ func TestDetectShellCommandIssueFlagsWindowsBashisms(t *testing.T) {
 }
 
 func TestDetectShellCommandIssueAllowsWindowsCDSwitch(t *testing.T) {
-	issue := detectShellCommandIssue(`cd /d D:\tmp\zero-pr-158 && dir`, "windows")
+	issue := detectShellCommandIssue(`cd /d D:\tmp\kajicode-pr-158 && dir`, "windows")
 	if issue != nil {
 		t.Fatalf("expected valid Windows cd /d switch to pass, got %#v", issue)
 	}
@@ -306,7 +306,7 @@ func TestDetectShellOutputIssueAddsWindowsSyntaxHint(t *testing.T) {
 		t.Fatal("expected Windows syntax error to get shell guidance")
 	}
 	rendered := appendShellIssueHint("stderr:\nThe syntax of the command is incorrect.\nexit_code: 1", *issue)
-	for _, want := range []string{"[zero] shell issue:", "Windows cmd.exe", "Suggestion:"} {
+	for _, want := range []string{"[kajicode] shell issue:", "Windows cmd.exe", "Suggestion:"} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("expected rendered hint to contain %q, got %q", want, rendered)
 		}
@@ -352,7 +352,7 @@ func TestBashToolRunsCommandInWorkspace(t *testing.T) {
 
 // A command with runaway output must not be buffered whole in memory: the capture
 // is bounded to head+tail, yet raw_bytes still reports the true (much larger) size.
-// If capture were unbounded this would balloon Zero's memory before truncation.
+// If capture were unbounded this would balloon KajiCode's memory before truncation.
 func TestBashToolBoundsRunawayOutputCapture(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("uses a POSIX shell pipeline (yes | head)")
@@ -588,7 +588,7 @@ func TestBashToolRequireEscalatedMsysGuard(t *testing.T) {
 
 	t.Run("approved require_escalated still blocks an unrelated syntax issue", func(t *testing.T) {
 		result := registry.RunWithOptions(context.Background(), "bash", map[string]any{
-			"command":             `cd /d/tmp/zero-pr-158 && dir`,
+			"command":             `cd /d/tmp/kajicode-pr-158 && dir`,
 			"sandbox_permissions": string(SandboxPermissionsRequireEscalated),
 		}, RunOptions{
 			PermissionGranted: true,
@@ -807,7 +807,7 @@ func TestBashToolPreservesEmbeddedQuotesOnWindows(t *testing.T) {
 	// Space and a slash: the two characters whose position in the original
 	// bug report's SyntaxError ("print(15, truncated right before the /")
 	// showed exactly where the corruption happened.
-	commandText := executable + ` --zero-bash-helper echo-arg "hello / world"`
+	commandText := executable + ` --kajicode-bash-helper echo-arg "hello / world"`
 
 	result := NewBashTool(root).Run(context.Background(), map[string]any{
 		"command": commandText,
@@ -852,7 +852,7 @@ func TestBashToolRunsCommandLineForLoopSyntax(t *testing.T) {
 
 func helperCommand(name string) string {
 	executable := shellQuote(os.Args[0])
-	return executable + " --zero-bash-helper " + name
+	return executable + " --kajicode-bash-helper " + name
 }
 
 func shellQuote(value string) string {

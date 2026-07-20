@@ -40,7 +40,7 @@ func TestSeatbeltEnforcesExtraWriteRoots(t *testing.T) {
 	if err != nil {
 		t.Skipf("no home dir for an out-of-allowlist write target: %v", err)
 	}
-	outside, err := os.MkdirTemp(home, ".zero-seatbelt-outside-")
+	outside, err := os.MkdirTemp(home, ".kajicode-seatbelt-outside-")
 	if err != nil {
 		t.Fatalf("MkdirTemp under home: %v", err)
 	}

@@ -1,4 +1,4 @@
-// Package trace records per-turn timing for a Zero agent run.
+// Package trace records per-turn timing for a KajiCode agent run.
 //
 // Tracing is opt-in. A *Recorder is attached to agent.Options and threaded
 // through the run via context (see FromContext / WithContext). When the

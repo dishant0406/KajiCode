@@ -15,8 +15,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
-	"github.com/Gitlawb/zero/internal/config"
-	"github.com/Gitlawb/zero/internal/oauth"
+	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/oauth"
 )
 
 const providerManagerMaxVisible = 10
@@ -303,7 +303,7 @@ func (m *model) moveProviderManager(delta int) {
 
 // activateManagerSelection makes the selected provider active via the shared
 // switch path (persists activeProvider+model, rebuilds the client OAuth-aware,
-// exports ZERO_PROVIDER, warms discovery). On success the manager closes and
+// exports KAJICODE_PROVIDER, warms discovery). On success the manager closes and
 // the switch notice lands in the transcript; a refusal (busy run, missing
 // credential) stays inline so the user keeps their place in the list.
 func (m model) activateManagerSelection() (model, tea.Cmd) {
@@ -334,7 +334,7 @@ func (m model) activateManagerSelection() (model, tea.Cmd) {
 // keychain subprocess and a token-store read — run in a follow-up tea.Cmd so
 // the confirm keypress never stalls the render loop. The OAuth token is
 // deliberately kept — logins outlive profiles so re-adding the provider
-// doesn't force a browser round-trip; zero auth logout removes it.
+// doesn't force a browser round-trip; kajicode auth logout removes it.
 func (m model) deleteManagerSelection() (model, tea.Cmd) {
 	wizard := m.providerWizard
 	wizard.manageDeleting = false
@@ -410,7 +410,7 @@ func providerManagerCleanupCmd(configPath string, profile config.ProviderProfile
 			notes = append(notes, "Warning: its stored API key could not be deleted ("+storeErr.Error()+").")
 		}
 		if login, ok := oauthLoginName(config.ProviderProfile{Name: name, CatalogID: catalogID}); ok {
-			notes = append(notes, "OAuth login kept — remove with `zero auth logout "+login+"`.")
+			notes = append(notes, "OAuth login kept — remove with `kajicode auth logout "+login+"`.")
 		}
 		return providerManagerCleanupMsg{notes: notes}
 	}
@@ -561,7 +561,7 @@ func (wizard *providerWizardState) commitEditBuffer() string {
 // a failure leaves nothing half-applied). A freshly entered key is captured
 // into the encrypted store under the CURRENT name first (EditProvider's rename
 // migration then moves it), so config.json never holds it in cleartext. The
-// live session follows a rename so ZERO_PROVIDER and the status line never
+// live session follows a rename so KAJICODE_PROVIDER and the status line never
 // point at a name that no longer exists.
 func (m model) saveManagerEdit() (model, tea.Cmd) {
 	wizard := m.providerWizard
@@ -601,7 +601,7 @@ func (m model) saveManagerEdit() (model, tea.Cmd) {
 	m.savedProviders = applySavedProviderEdit(m.savedProviders, oldName, edit)
 
 	// Keep the live session's identity in sync with a rename of the provider it
-	// is running on: the exported ZERO_PROVIDER must resolve for spawned children.
+	// is running on: the exported KAJICODE_PROVIDER must resolve for spawned children.
 	if strings.EqualFold(strings.TrimSpace(m.providerName), oldName) {
 		m.providerName = newName
 		m.providerProfile.Name = newName
@@ -674,10 +674,10 @@ func (wizard *providerWizardState) renderManageStep(width int) []string {
 	rows := wizard.manageRows
 	lines := []string{}
 	if wizard.manageStatus != "" {
-		lines = append(lines, fitStyledLine(zeroTheme.accent.Render(wizard.manageStatus), width), "")
+		lines = append(lines, fitStyledLine(kajicodeTheme.accent.Render(wizard.manageStatus), width), "")
 	}
 	if len(rows) == 0 {
-		lines = append(lines, zeroTheme.faint.Render("  No providers saved — press a to add one."))
+		lines = append(lines, kajicodeTheme.faint.Render("  No providers saved — press a to add one."))
 		return lines
 	}
 	wizard.manageCursor = clampInt(wizard.manageCursor, 0, len(rows)-1)
@@ -692,26 +692,26 @@ func (wizard *providerWizardState) renderManageStep(width int) []string {
 	for offset, row := range rows[start : start+maxVisible] {
 		index := start + offset
 		surface := transparentSurface
-		marker := surface(zeroTheme.faintest).Render("  ")
+		marker := surface(kajicodeTheme.faintest).Render("  ")
 		if index == wizard.manageCursor {
-			surface = zeroTheme.onSel
-			marker = surface(zeroTheme.accent).Render("❯ ")
+			surface = kajicodeTheme.onSel
+			marker = surface(kajicodeTheme.accent).Render("❯ ")
 		}
 		active := ""
 		if strings.EqualFold(strings.TrimSpace(row.profile.Name), strings.TrimSpace(wizard.manageActiveName)) {
-			active = surface(zeroTheme.accent).Render(" ● active")
+			active = surface(kajicodeTheme.accent).Render(" ● active")
 		}
 		name := padProviderManagerCell(row.profile.Name, nameWidth)
 		meta := providerManagerRowMeta(row.profile)
-		left := marker + surface(zeroTheme.ink).Render(name) + "  " + surface(zeroTheme.faint).Render(meta)
-		right := surface(zeroTheme.faint).Render(providerManagerCredDisplay(row)) + active
+		left := marker + surface(kajicodeTheme.ink).Render(name) + "  " + surface(kajicodeTheme.faint).Render(meta)
+		right := surface(kajicodeTheme.faint).Render(providerManagerCredDisplay(row)) + active
 		gap := width - lipgloss.Width(left) - lipgloss.Width(right)
-		line := left + surface(zeroTheme.ink).Render(strings.Repeat(" ", maxInt(1, gap))) + right
+		line := left + surface(kajicodeTheme.ink).Render(strings.Repeat(" ", maxInt(1, gap))) + right
 		lines = append(lines, fillPaletteLine(line, width, surface))
 	}
 
 	if row, ok := wizard.currentManagerRow(); ok {
-		lines = append(lines, zeroTheme.line.Render(strings.Repeat("─", width)))
+		lines = append(lines, kajicodeTheme.line.Render(strings.Repeat("─", width)))
 		detail := strings.TrimSpace(row.profile.BaseURL)
 		if description := strings.TrimSpace(row.profile.Description); description != "" {
 			if detail != "" {
@@ -722,9 +722,9 @@ func (wizard *providerWizardState) renderManageStep(width int) []string {
 		if detail == "" {
 			detail = "(no endpoint)"
 		}
-		lines = append(lines, fitStyledLine(zeroTheme.faint.Render(detail), width))
+		lines = append(lines, fitStyledLine(kajicodeTheme.faint.Render(detail), width))
 		if wizard.manageDeleting {
-			lines = append(lines, fitStyledLine(zeroTheme.red.Render("Delete "+row.profile.Name+"? This also removes its stored API key.  Enter/y confirm · Esc/n cancel"), width))
+			lines = append(lines, fitStyledLine(kajicodeTheme.red.Render("Delete "+row.profile.Name+"? This also removes its stored API key.  Enter/y confirm · Esc/n cancel"), width))
 		}
 	}
 	return lines
@@ -771,14 +771,14 @@ func padProviderManagerCell(value string, width int) string {
 }
 
 func (wizard *providerWizardState) renderEditMenuStep(width int) []string {
-	lines := []string{zeroTheme.accent.Render("Edit " + wizard.editOriginal.Name)}
+	lines := []string{kajicodeTheme.accent.Render("Edit " + wizard.editOriginal.Name)}
 	wizard.editCursor = clampInt(wizard.editCursor, 0, len(providerEditFields)-1)
 	for index, entry := range providerEditFields {
 		surface := transparentSurface
-		marker := surface(zeroTheme.faintest).Render("  ")
+		marker := surface(kajicodeTheme.faintest).Render("  ")
 		if index == wizard.editCursor {
-			surface = zeroTheme.onSel
-			marker = surface(zeroTheme.accent).Render("❯ ")
+			surface = kajicodeTheme.onSel
+			marker = surface(kajicodeTheme.accent).Render("❯ ")
 		}
 		value := wizard.editFieldValue(entry.field, wizard.editDraft)
 		display := ""
@@ -796,14 +796,14 @@ func (wizard *providerWizardState) renderEditMenuStep(width int) []string {
 		default:
 			display = displayValue(value, "(empty)")
 		}
-		left := marker + surface(zeroTheme.ink).Render(padProviderManagerCell(entry.label, 12))
+		left := marker + surface(kajicodeTheme.ink).Render(padProviderManagerCell(entry.label, 12))
 		if display != "" {
-			left += surface(zeroTheme.faint).Render(display)
+			left += surface(kajicodeTheme.faint).Render(display)
 		}
 		lines = append(lines, fillPaletteLine(fitStyledLine(left, width), width, surface))
 	}
 	entry := providerEditFields[wizard.editCursor]
-	lines = append(lines, "", fitStyledLine(zeroTheme.faint.Render(entry.hint), width))
+	lines = append(lines, "", fitStyledLine(kajicodeTheme.faint.Render(entry.hint), width))
 	return lines
 }
 
@@ -813,16 +813,16 @@ func (wizard *providerWizardState) renderEditValueStep(width int) []string {
 	if wizard.editField == providerEditFieldAPIKey {
 		value = maskedProviderWizardKey(value)
 	}
-	prompt := zeroTheme.userPrompt.Render(entry.label + " > ")
+	prompt := kajicodeTheme.userPrompt.Render(entry.label + " > ")
 	if value == "" {
-		value = zeroTheme.faint.Render("(empty)")
+		value = kajicodeTheme.faint.Render("(empty)")
 	} else {
-		value = zeroTheme.ink.Render(value)
+		value = kajicodeTheme.ink.Render(value)
 	}
 	return []string{
-		zeroTheme.accent.Render("Edit " + wizard.editOriginal.Name + " — " + entry.label),
+		kajicodeTheme.accent.Render("Edit " + wizard.editOriginal.Name + " — " + entry.label),
 		fitStyledLine(prompt+value, width),
 		"",
-		fitStyledLine(zeroTheme.faint.Render(entry.hint), width),
+		fitStyledLine(kajicodeTheme.faint.Render(entry.hint), width),
 	}
 }

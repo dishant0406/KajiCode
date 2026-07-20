@@ -5,8 +5,8 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/Gitlawb/zero/internal/sandbox"
-	"github.com/Gitlawb/zero/internal/tools"
+	"github.com/dishant0406/KajiCode/internal/sandbox"
+	"github.com/dishant0406/KajiCode/internal/tools"
 	"mvdan.cc/sh/v3/syntax"
 )
 

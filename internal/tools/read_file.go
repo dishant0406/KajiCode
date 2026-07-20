@@ -87,7 +87,7 @@ func (tool readFileTool) run(args map[string]any, options RunOptions, directBudg
 		return errorResult("Error reading file " + relativePath + ": " + err.Error())
 	}
 	// Record the whole-file baseline (the raw bytes, matching what edit_file and
-	// write_file read) so a later write can detect an out-of-Zero modification.
+	// write_file read) so a later write can detect an out-of-KajiCode modification.
 	// Stat is best-effort: a missing FileInfo only drops the diagnostic size/mtime,
 	// not the authoritative content hash.
 	options.FileTracker.RecordHash(absolutePath, stats.hash, stats.info)

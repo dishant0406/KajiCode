@@ -5,10 +5,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Gitlawb/zero/internal/sandbox"
-	"github.com/Gitlawb/zero/internal/tools"
-	"github.com/Gitlawb/zero/internal/trace"
-	"github.com/Gitlawb/zero/internal/zeroruntime"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
+	"github.com/dishant0406/KajiCode/internal/sandbox"
+	"github.com/dishant0406/KajiCode/internal/tools"
+	"github.com/dishant0406/KajiCode/internal/trace"
 )
 
 func TestProfileControllerNilPolicyIsNoOp(t *testing.T) {
@@ -110,14 +110,14 @@ func TestProfileControllerEscalatesAtMostOnce(t *testing.T) {
 // counts as uncertain, escalates, and the very next request carries the target
 // effort.
 func TestPostureEscalationOnUncertainCompletion(t *testing.T) {
-	provider := &mockProvider{turns: [][]zeroruntime.StreamEvent{
+	provider := &mockProvider{turns: [][]kajicoderuntime.StreamEvent{
 		{
-			{Type: zeroruntime.StreamEventText, Content: "Let me read the file:"},
-			{Type: zeroruntime.StreamEventDone},
+			{Type: kajicoderuntime.StreamEventText, Content: "Let me read the file:"},
+			{Type: kajicoderuntime.StreamEventDone},
 		},
 		{
-			{Type: zeroruntime.StreamEventText, Content: "Done. All set."},
-			{Type: zeroruntime.StreamEventDone},
+			{Type: kajicoderuntime.StreamEventText, Content: "Done. All set."},
+			{Type: kajicoderuntime.StreamEventDone},
 		},
 	}}
 
@@ -157,14 +157,14 @@ func TestPostureEscalationOnUncertainCompletion(t *testing.T) {
 // RestoreDefaultEffort lets escalation restore that default, which a plain ""
 // ReasoningEffort target cannot express (it means "leave untouched").
 func TestPostureEscalationRestoresDefaultEffort(t *testing.T) {
-	provider := &mockProvider{turns: [][]zeroruntime.StreamEvent{
+	provider := &mockProvider{turns: [][]kajicoderuntime.StreamEvent{
 		{
-			{Type: zeroruntime.StreamEventText, Content: "Let me read the file:"},
-			{Type: zeroruntime.StreamEventDone},
+			{Type: kajicoderuntime.StreamEventText, Content: "Let me read the file:"},
+			{Type: kajicoderuntime.StreamEventDone},
 		},
 		{
-			{Type: zeroruntime.StreamEventText, Content: "Done. All set."},
-			{Type: zeroruntime.StreamEventDone},
+			{Type: kajicoderuntime.StreamEventText, Content: "Done. All set."},
+			{Type: kajicoderuntime.StreamEventDone},
 		},
 	}}
 
@@ -222,17 +222,17 @@ func TestPostureEscalationRaisesTurnCeilingMidRun(t *testing.T) {
 	registry := tools.NewRegistry()
 	registry.Register(failingProfileTool{})
 
-	toolTurn := []zeroruntime.StreamEvent{
-		{Type: zeroruntime.StreamEventToolCallStart, ToolCallID: "c1", ToolName: "flaky_probe"},
-		{Type: zeroruntime.StreamEventToolCallEnd, ToolCallID: "c1"},
-		{Type: zeroruntime.StreamEventDone},
+	toolTurn := []kajicoderuntime.StreamEvent{
+		{Type: kajicoderuntime.StreamEventToolCallStart, ToolCallID: "c1", ToolName: "flaky_probe"},
+		{Type: kajicoderuntime.StreamEventToolCallEnd, ToolCallID: "c1"},
+		{Type: kajicoderuntime.StreamEventDone},
 	}
-	provider := &mockProvider{turns: [][]zeroruntime.StreamEvent{
+	provider := &mockProvider{turns: [][]kajicoderuntime.StreamEvent{
 		toolTurn,
 		toolTurn,
 		{
-			{Type: zeroruntime.StreamEventText, Content: "recovered after escalation"},
-			{Type: zeroruntime.StreamEventDone},
+			{Type: kajicoderuntime.StreamEventText, Content: "recovered after escalation"},
+			{Type: kajicoderuntime.StreamEventDone},
 		},
 	}}
 
@@ -275,12 +275,12 @@ func TestPostureEscalationAbsentWithoutProfile(t *testing.T) {
 	registry := tools.NewRegistry()
 	registry.Register(failingProfileTool{})
 
-	toolTurn := []zeroruntime.StreamEvent{
-		{Type: zeroruntime.StreamEventToolCallStart, ToolCallID: "c1", ToolName: "flaky_probe"},
-		{Type: zeroruntime.StreamEventToolCallEnd, ToolCallID: "c1"},
-		{Type: zeroruntime.StreamEventDone},
+	toolTurn := []kajicoderuntime.StreamEvent{
+		{Type: kajicoderuntime.StreamEventToolCallStart, ToolCallID: "c1", ToolName: "flaky_probe"},
+		{Type: kajicoderuntime.StreamEventToolCallEnd, ToolCallID: "c1"},
+		{Type: kajicoderuntime.StreamEventDone},
 	}
-	provider := &mockProvider{turns: [][]zeroruntime.StreamEvent{toolTurn, toolTurn}}
+	provider := &mockProvider{turns: [][]kajicoderuntime.StreamEvent{toolTurn, toolTurn}}
 
 	result, err := Run(context.Background(), "go", provider, Options{
 		Registry: registry,
