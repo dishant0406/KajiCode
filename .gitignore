@@ -52,9 +52,9 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 docs/superpowers/
 
 # Termux/Android build artifacts
-kajicode-termux-arm64
-kajicode-linux-sandbox
-kajicode-seccomp
+/kajicode-termux-arm64
+/kajicode-linux-sandbox
+/kajicode-seccomp
 
 # Generated benchmark reports are evidence for one configuration, never tree state
 internal/perfbench/reports/*.json
