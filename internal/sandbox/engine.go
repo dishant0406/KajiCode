@@ -297,6 +297,9 @@ func (engine *Engine) Evaluate(ctx context.Context, request Request) Decision {
 	request.WorkspaceRoot = firstNonEmpty(request.WorkspaceRoot, engine.workspaceRoot)
 	request.Permission = NormalizePermission(request.Permission)
 	request.PermissionMode = NormalizePermissionMode(request.PermissionMode)
+	if request.PermissionMode == PermissionModeBypassAll {
+		policy.Mode = ModeDisabled
+	}
 	request.SideEffect = NormalizeSideEffect(request.SideEffect)
 	scope := engine.scopeFor(request.WorkspaceRoot)
 	risk := classifyWithScope(request, scope)
@@ -336,6 +339,16 @@ func (engine *Engine) Evaluate(ctx context.Context, request Request) Decision {
 	// workspace boundary itself needs a root, so it is gated on having one. Mode is
 	// already known to be enforcing here (ModeDisabled returned above).
 	enforceWorkspace := policy.EnforceWorkspace && request.WorkspaceRoot != ""
+	switch request.PermissionMode {
+	case PermissionModeReadOnly:
+		if request.SideEffect == SideEffectRead {
+			enforceWorkspace = false
+		}
+	case PermissionModeReadWrite:
+		if request.SideEffect == SideEffectRead || request.SideEffect == SideEffectWrite || request.SideEffect == SideEffectOutOfWorkspace {
+			enforceWorkspace = false
+		}
+	}
 	if block := applyPatchPathBlock(request); block != nil {
 		return deny(request, risk, block.Code, block.Path, block.Reason, false)
 	}
@@ -407,7 +420,7 @@ func (engine *Engine) Evaluate(ctx context.Context, request Request) Decision {
 	// safety boundary. Network, destructive, and path checks run before this
 	// branch, so they still prompt or deny as configured. If the backend is
 	// unavailable or disabled, shell commands keep the normal approval prompt.
-	if request.SideEffect == SideEffectShell && engine.shellSandboxActive(policy) {
+	if request.SideEffect == SideEffectShell && !isExplicitPermissionProfile(request.PermissionMode) && engine.shellSandboxActive(policy) {
 		return Decision{Action: ActionAllow, Risk: risk, Reason: "auto-allowed: sandbox is active for this shell command", AutoAllowed: true}
 	}
 	if request.PermissionGranted || request.PermissionMode == PermissionUnsafe {
@@ -418,6 +431,15 @@ func (engine *Engine) Evaluate(ctx context.Context, request Request) Decision {
 
 func requestRequiresEscalatedSandbox(request Request) bool {
 	return strings.TrimSpace(firstArgString(request.Args, "sandbox_permissions")) == "require_escalated"
+}
+
+func isExplicitPermissionProfile(mode PermissionMode) bool {
+	switch mode {
+	case PermissionModeAskAll, PermissionModeReadOnly, PermissionModeReadWrite, PermissionModeBypassAll:
+		return true
+	default:
+		return false
+	}
 }
 
 func (engine *Engine) Grant(input GrantInput) (Grant, error) {
@@ -472,7 +494,7 @@ func (engine *Engine) lookupSessionGrant(toolName string, reqScope string) Grant
 }
 
 func workspaceWriteAutoAllowed(policy Policy, request Request, scope *Scope) bool {
-	if !policy.EnforceWorkspace || request.WorkspaceRoot == "" || request.SideEffect != SideEffectWrite {
+	if isExplicitPermissionProfile(request.PermissionMode) || !policy.EnforceWorkspace || request.WorkspaceRoot == "" || request.SideEffect != SideEffectWrite {
 		return false
 	}
 	paths := requestPaths(request)

@@ -8,10 +8,10 @@ import (
 func NormalizePermissionMode(value PermissionMode) PermissionMode {
 	normalized := PermissionMode(strings.ToLower(strings.TrimSpace(string(value))))
 	switch normalized {
-	case PermissionModeAsk:
-		return PermissionModeAsk
-	case PermissionUnsafe:
-		return PermissionUnsafe
+	case PermissionModeAuto, PermissionModeAsk, PermissionUnsafe,
+		PermissionModeAskAll, PermissionModeReadOnly, PermissionModeReadWrite,
+		PermissionModeBypassAll:
+		return normalized
 	default:
 		return PermissionModeAuto
 	}

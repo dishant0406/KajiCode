@@ -59,10 +59,11 @@ type Options struct {
 	// invocation. Called lazily per use so newly installed skills are picked up
 	// without a restart. Nil means the session has no skills wiring (skills stay
 	// model-pulled via the skill tool only).
-	LoadSkills      func() []skills.Skill
-	PermissionMode  agent.PermissionMode
-	ReasoningEffort modelregistry.ReasoningEffort
-	ResponseStyle   string
+	LoadSkills            func() []skills.Skill
+	PermissionMode        agent.PermissionMode
+	SavePermissionProfile func(agent.PermissionMode) error
+	ReasoningEffort       modelregistry.ReasoningEffort
+	ResponseStyle         string
 	// Theme is the operator's palette preference: "auto" (default), a built-in
 	// ("dark"/"light"), or a registered color theme. Set from the --theme flag;
 	// falls back to KAJICODE_THEME, then the persisted SavedTheme, then auto.

@@ -24,6 +24,10 @@ const (
 	PermissionModeAuto      PermissionMode = "auto"
 	PermissionModeAsk       PermissionMode = "ask"
 	PermissionModeUnsafe    PermissionMode = "unsafe"
+	PermissionModeAskAll    PermissionMode = "ask-all"
+	PermissionModeReadOnly  PermissionMode = "read-only"
+	PermissionModeReadWrite PermissionMode = "read-write"
+	PermissionModeBypassAll PermissionMode = "bypass-all"
 	PermissionModeSpecDraft PermissionMode = "spec-draft"
 	// PermissionModeMemberAuto is a headless mode for swarm/specialist MEMBERS: it
 	// advertises the in-workspace mutators a member needs to build (write/edit +

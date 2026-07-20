@@ -751,7 +751,10 @@ func runInteractiveTUIWithSetup(stderr io.Writer, deps appDeps, permissionMode a
 	// count uses the SAME permission mode the agent loop's partition will use; an
 	// empty mode here would mis-gate prompt-advertised deferred tools.
 	if permissionMode == "" {
-		permissionMode = agent.PermissionModeAsk
+		permissionMode = agent.PermissionMode(strings.TrimSpace(resolved.Preferences.PermissionProfile))
+		if permissionMode == "" {
+			permissionMode = agent.PermissionModeAskAll
+		}
 	}
 	// Activate deferred MCP-tool loading for the interactive run only when the
 	// VISIBLE deferred-eligible count meets the resolved threshold, matching exec.
@@ -861,7 +864,11 @@ func runInteractiveTUIWithSetup(stderr io.Writer, deps appDeps, permissionMode a
 			merged, _ := plugins.MergedSkillsLoaded(deps.skillsDir(), pluginActivation.skillRoots)
 			return merged
 		}),
-		PermissionMode:            permissionMode,
+		PermissionMode: permissionMode,
+		SavePermissionProfile: func(mode agent.PermissionMode) error {
+			_, err := config.SetPermissionProfile(userConfigPath, string(mode))
+			return err
+		},
 		Notify:                    resolved.Notify,
 		KeyBindings:               resolved.KeyBindings,
 		STT:                       resolved.STT,

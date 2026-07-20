@@ -1141,8 +1141,8 @@ func executeToolCall(ctx context.Context, registry *tools.Registry, call ToolCal
 		return executeRequestPermissions(ctx, call, args, permissionMode, options)
 	}
 
-	permissionGranted := permissionMode == PermissionModeUnsafe
-	if toolFound && effectivePermission(tool, args) == tools.PermissionAllow {
+	permissionGranted := permissionMode == PermissionModeUnsafe || permissionMode == PermissionModeBypassAll
+	if toolFound && profilePermission(permissionMode, tool, args) == tools.PermissionAllow {
 		permissionGranted = true
 	}
 
@@ -2038,7 +2038,7 @@ func sandboxRequest(toolName string, tool tools.Tool, args map[string]any, permi
 		WorkspaceRoot:     "",
 		ToolName:          toolName,
 		SideEffect:        sandbox.SideEffect(safety.SideEffect),
-		Permission:        sandbox.Permission(safety.Permission),
+		Permission:        sandbox.Permission(profilePermission(permissionMode, tool, args)),
 		PermissionGranted: permissionGranted,
 		PermissionMode:    sandbox.PermissionMode(permissionMode),
 		Args:              args,
@@ -2061,11 +2061,14 @@ func shouldRequestPermission(tool tools.Tool, args map[string]any, permissionGra
 	if decision != nil && decision.Action == sandbox.ActionPrompt {
 		return true
 	}
-	if tool.Safety().Permission != tools.PermissionPrompt {
-		return false
-	}
 	if !permissionGranted && shellCommandAdditionalPermissionsRequested(args) {
 		return true
+	}
+	if decision != nil && decision.Action == sandbox.ActionAllow {
+		return false
+	}
+	if tool.Safety().Permission != tools.PermissionPrompt {
+		return false
 	}
 	if decision != nil {
 		if sandboxDecisionRequiresExplicitPermission(decision) {

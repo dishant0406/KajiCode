@@ -394,15 +394,22 @@ func TestPermissionsCommandListsPersistentSandboxGrants(t *testing.T) {
 	if cmd != nil {
 		t.Fatal("expected /permissions to be handled without starting an agent run")
 	}
+	if next.picker == nil || next.picker.kind != pickerPermissions {
+		t.Fatalf("expected /permissions to open the permissions picker, got %#v", next.picker)
+	}
+	updated, cmd = next.Update(testKey(tea.KeyEnter))
+	next = updated.(model)
+	if cmd != nil {
+		t.Fatal("expected permission profile selection to be handled synchronously")
+	}
 	text := transcriptText(next.transcript)
 	for _, want := range []string{
-		"Permissions",
-		"ask permissions",
-		"mode  ask",
+		"Permission profile set to ask-all.",
+		"ask-all permissions",
+		"mode  ask-all",
 		"Grants",
 		"bash [allow]",
 		"write_file [deny]",
-		"[REDACTED]",
 	} {
 		assertContains(t, text, want)
 	}

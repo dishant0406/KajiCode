@@ -116,6 +116,13 @@ func Resolve(options ResolveOptions) (ResolvedConfig, error) {
 			return ResolvedConfig{}, fmt.Errorf("invalid sandbox.network %q: expected allow or deny", network)
 		}
 	}
+	if profile := strings.TrimSpace(cfg.Preferences.PermissionProfile); profile != "" {
+		switch profile {
+		case "ask-all", "read-only", "read-write", "bypass-all":
+		default:
+			return ResolvedConfig{}, fmt.Errorf("invalid preferences.permissionProfile %q: expected ask-all, read-only, read-write, or bypass-all", profile)
+		}
+	}
 	if mode := strings.TrimSpace(cfg.Notify.Mode); mode != "" {
 		switch notify.Mode(mode) {
 		case notify.ModeOff, notify.ModeBell, notify.ModeNotify, notify.ModeBoth:
@@ -250,6 +257,9 @@ func mergeConfig(dst *FileConfig, src FileConfig) {
 	}
 	if strings.TrimSpace(src.Preferences.Theme) != "" {
 		dst.Preferences.Theme = strings.TrimSpace(src.Preferences.Theme)
+	}
+	if strings.TrimSpace(src.Preferences.PermissionProfile) != "" {
+		dst.Preferences.PermissionProfile = strings.TrimSpace(src.Preferences.PermissionProfile)
 	}
 	mergeLocalControlConfig(&dst.LocalControl, src.LocalControl)
 	mergeKeyBindings(&dst.KeyBindings, src.KeyBindings)

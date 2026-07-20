@@ -299,16 +299,26 @@ func TestContextAndPermissionsCommandsRenderProductState(t *testing.T) {
 	if cmd != nil {
 		t.Fatal("expected /permissions to be handled without starting an agent run")
 	}
+	if next.picker == nil || next.picker.kind != pickerPermissions {
+		t.Fatalf("expected /permissions to open the permissions picker, got %#v", next.picker)
+	}
+	if next.picker.title != "Permissions" || len(next.picker.items) != 4 {
+		t.Fatalf("unexpected permissions picker: %#v", next.picker)
+	}
+	updated, cmd = next.Update(testKey(tea.KeyEnter))
+	next = updated.(model)
+	if cmd != nil {
+		t.Fatal("expected permission profile selection to be handled synchronously")
+	}
 	permissionText := transcriptText(next.transcript)
 	for _, want := range []string{
-		"Permissions",
-		"ask permissions",
+		"Permission profile set to ask-all.",
+		"ask-all permissions",
 		"1 persistent grant",
 		"State",
-		"mode  ask",
+		"mode  ask-all",
 		"Grants",
 		"bash [allow]",
-		"[REDACTED]",
 	} {
 		assertContains(t, permissionText, want)
 	}

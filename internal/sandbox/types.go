@@ -68,9 +68,13 @@ const (
 )
 
 const (
-	PermissionModeAuto PermissionMode = "auto"
-	PermissionModeAsk  PermissionMode = "ask"
-	PermissionUnsafe   PermissionMode = "unsafe"
+	PermissionModeAuto      PermissionMode = "auto"
+	PermissionModeAsk       PermissionMode = "ask"
+	PermissionUnsafe        PermissionMode = "unsafe"
+	PermissionModeAskAll    PermissionMode = "ask-all"
+	PermissionModeReadOnly  PermissionMode = "read-only"
+	PermissionModeReadWrite PermissionMode = "read-write"
+	PermissionModeBypassAll PermissionMode = "bypass-all"
 )
 
 const (

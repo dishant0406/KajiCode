@@ -107,6 +107,9 @@ type PreferencesConfig struct {
 	// name (e.g. "dracula"). Applied at startup below the --theme flag and
 	// KAJICODE_THEME, so a /theme choice survives restart. Empty = unset (defaults auto).
 	Theme string `json:"theme,omitempty"`
+	// PermissionProfile is the global default authorization profile selected from
+	// the TUI. Project config never merges it, so a repository cannot widen access.
+	PermissionProfile string `json:"permissionProfile,omitempty"`
 	// Recaps is a tri-state: nil (unset) defaults to ON; an explicit false means
 	// the user turned post-turn recaps off. A *bool is its own tri-state, so no
 	// custom unmarshal is needed (unlike ToolsConfig.DeferThreshold's int).

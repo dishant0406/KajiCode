@@ -27,6 +27,7 @@ const (
 	pickerSkill
 	pickerSTTModel
 	pickerSTTDownload
+	pickerPermissions
 )
 
 // pickerItem is one selectable row: Label is shown, Value is passed to the

@@ -131,6 +131,7 @@ type model struct {
 	agentOptions                agent.Options
 	notifier                    *notify.Notifier
 	permissionMode              agent.PermissionMode
+	savePermissionProfile       func(agent.PermissionMode) error
 	selfCorrectTests            bool
 	reasoningEffort             modelregistry.ReasoningEffort
 	// Active execution profile (set by /profile; applies to the NEXT run).
@@ -834,6 +835,7 @@ func newModel(ctx context.Context, options Options) model {
 		sessionCompactor:            options.SessionCompactor,
 		runtimeMessageSink:          options.RuntimeMessageSink,
 		permissionMode:              permissionMode,
+		savePermissionProfile:       options.SavePermissionProfile,
 		reasoningEffort:             options.ReasoningEffort,
 		responseStyle:               defaultedResponseStyle(options.ResponseStyle),
 		keyBindings:                 resolvedKeyBindings,
@@ -4119,6 +4121,10 @@ func (m model) choosePicker() (tea.Model, tea.Cmd) {
 		}
 	case pickerSTTDownload:
 		return m.handleSTTDownloadSelection(item.Value)
+	case pickerPermissions:
+		text := ""
+		m, text = m.choosePermissionProfile(item.Value)
+		m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: text})
 	case pickerTheme:
 		// The hovered palette is already live from the preview; handleThemeCommand
 		// records the choice (m.themeMode) and re-applies it, and reports the switch.
@@ -4302,7 +4308,7 @@ func (m model) dispatchCommand(command parsedCommand) (tea.Model, tea.Cmd) {
 		}
 		return m.startMCPTranscriptCommand(command.text)
 	case commandPermissions:
-		m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: m.permissionsText()})
+		m.picker = m.newPermissionsPicker()
 		return m, nil
 	case commandPS:
 		m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: m.backgroundTerminalsText()})
