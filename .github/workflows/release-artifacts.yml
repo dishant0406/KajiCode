@@ -97,6 +97,50 @@ jobs:
           gh release create "$tag" --repo "$GITHUB_REPOSITORY" --title "$tag" --generate-notes 2>/dev/null || true
           gh release upload "$tag" dist/release/* --repo "$GITHUB_REPOSITORY" --clobber
 
+  publish-kaji-channel:
+    name: Publish Kaji channel
+    needs: package
+    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Setup Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download release artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: kajicode-*
+          path: dist/artifacts
+          merge-multiple: true
+
+      - name: Generate Kaji compatibility channel
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          go run ./cmd/kajicode-release channel \
+            --release-dir dist/artifacts \
+            --output dist/kaji-channel.json \
+            --repo "${GITHUB_REPOSITORY}" \
+            --version "${version}" \
+            --min-kaji-version "0.4.1" \
+            --protocol-version 1
+
+      - name: Upload Kaji compatibility channel
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          gh release create "$tag" --repo "$GITHUB_REPOSITORY" --title "$tag" --generate-notes 2>/dev/null || true
+          gh release upload "$tag" dist/kaji-channel.json --repo "$GITHUB_REPOSITORY" --clobber
+
   # Publishes @dishant0406/kajicode to npm: first the five platform payloads (versions
   # of the SAME package at suffixed versions like X.Y.Z-linux-x64, carrying the
   # native binary + vendored helpers), then the wrapper at X.Y.Z whose

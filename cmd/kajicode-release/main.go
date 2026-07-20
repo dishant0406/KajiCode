@@ -34,6 +34,8 @@ func run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return runSmoke(args[1:], stdout, stderr)
 	case "verify":
 		return runVerify(args[1:], stdout, stderr)
+	case "channel":
+		return runChannel(args[1:], stdout, stderr)
 	default:
 		_, _ = fmt.Fprintf(stderr, "unknown kajicode-release command %q\n", args[0])
 		return 2
@@ -125,6 +127,27 @@ func runVerify(args []string, stdout io.Writer, stderr io.Writer) int {
 		_, _ = fmt.Fprintf(stdout, "Verified %s.sha256 (%s)\n", result.ArchiveName, result.ActualChecksum)
 	}
 	_, _ = fmt.Fprintf(stdout, "Verified %d release checksum(s)\n", len(results))
+	return 0
+}
+
+func runChannel(args []string, stdout io.Writer, stderr io.Writer) int {
+	options, help, err := parseChannelArgs(args)
+	if err != nil {
+		_, _ = fmt.Fprintln(stderr, err.Error())
+		return 2
+	}
+	if help {
+		if err := writeChannelHelp(stdout); err != nil {
+			return 1
+		}
+		return 0
+	}
+	result, err := release.GenerateKajiChannel(options)
+	if err != nil {
+		_, _ = fmt.Fprintln(stderr, "[kajicode] Channel generation failed: "+err.Error())
+		return 1
+	}
+	_, _ = fmt.Fprintf(stdout, "Wrote %s with %d asset(s)\n", result.OutputPath, len(result.Channel.Entries[0].Assets))
 	return 0
 }
 
@@ -307,6 +330,96 @@ func parseVerifyArgs(args []string) (release.VerifyOptions, bool, error) {
 	return options, false, nil
 }
 
+func parseChannelArgs(args []string) (release.ChannelOptions, bool, error) {
+	options := release.ChannelOptions{}
+	for index := 0; index < len(args); index++ {
+		arg := args[index]
+		flag, inlineValue := splitFlagValue(arg)
+		switch flag {
+		case "-h", "--help", "help":
+			if strings.Contains(arg, "=") {
+				return options, false, fmt.Errorf("%s does not accept a value", flag)
+			}
+			return options, true, nil
+		case "--root":
+			value, next, err := readOptionValue(args, inlineValue, index, flag)
+			if err != nil {
+				return options, false, err
+			}
+			options.RootDir = value
+			index = next
+		case "--release-dir":
+			value, next, err := readOptionValue(args, inlineValue, index, flag)
+			if err != nil {
+				return options, false, err
+			}
+			options.ReleaseDir = value
+			index = next
+		case "-o", "--output":
+			value, next, err := readOptionValue(args, inlineValue, index, flag)
+			if err != nil {
+				return options, false, err
+			}
+			options.OutputPath = value
+			index = next
+		case "--version":
+			value, next, err := readOptionValue(args, inlineValue, index, flag)
+			if err != nil {
+				return options, false, err
+			}
+			options.Version = value
+			index = next
+		case "--repo":
+			value, next, err := readOptionValue(args, inlineValue, index, flag)
+			if err != nil {
+				return options, false, err
+			}
+			options.Repository = value
+			index = next
+		case "--base-url":
+			value, next, err := readOptionValue(args, inlineValue, index, flag)
+			if err != nil {
+				return options, false, err
+			}
+			options.BaseURL = value
+			index = next
+		case "--min-kaji-version":
+			value, next, err := readOptionValue(args, inlineValue, index, flag)
+			if err != nil {
+				return options, false, err
+			}
+			options.MinKajiVersion = value
+			index = next
+		case "--max-kaji-version":
+			value, next, err := readOptionValue(args, inlineValue, index, flag)
+			if err != nil {
+				return options, false, err
+			}
+			options.MaxKajiVersion = value
+			index = next
+		case "--protocol-version":
+			value, next, err := readOptionValue(args, inlineValue, index, flag)
+			if err != nil {
+				return options, false, err
+			}
+			var parsed int
+			if _, err := fmt.Sscanf(value, "%d", &parsed); err != nil || parsed <= 0 {
+				return options, false, fmt.Errorf("--protocol-version must be a positive integer")
+			}
+			options.ProtocolVersion = parsed
+			index = next
+		case "--allow-partial":
+			if strings.Contains(arg, "=") {
+				return options, false, fmt.Errorf("--allow-partial does not accept a value")
+			}
+			options.AllowPartial = true
+		default:
+			return options, false, fmt.Errorf("unknown channel flag %q", arg)
+		}
+	}
+	return options, false, nil
+}
+
 func splitFlagValue(arg string) (string, string) {
 	flag, value, ok := strings.Cut(arg, "=")
 	if !ok {
@@ -338,6 +451,7 @@ Commands:
   package    Build and package the current platform release archive
   smoke      Verify the built kajicode binary prints the package version
   verify     Verify release archive checksums
+  channel    Generate the Kaji compatibility channel manifest
 `)
 	return err
 }
@@ -406,6 +520,29 @@ Verifies that every release archive has a matching .sha256 file and digest.
 Flags:
       --dir <path>  Release directory to verify (default: dist/release)
   -h, --help        Show this help
+`)
+	return err
+}
+
+func writeChannelHelp(w io.Writer) error {
+	_, err := fmt.Fprint(w, `Usage:
+  kajicode-release channel [flags]
+
+Generates the Kaji compatibility channel manifest from release archives and
+their matching .sha256 files.
+
+Flags:
+      --root <path>                 Repository root (default: current directory)
+      --release-dir <path>          Release archive directory (default: dist/release)
+  -o, --output <path>               Output channel JSON path (default: dist/kaji-channel.json)
+      --version <version>           Release version (default: package.json version)
+      --repo <owner/repo>           Repository used in download URLs
+      --base-url <url>              GitHub base URL
+      --min-kaji-version <version>  Minimum compatible Kaji app version
+      --max-kaji-version <version>  Maximum compatible Kaji app version
+      --protocol-version <number>   Kaji integration protocol version
+      --allow-partial               Allow generating from a subset of platform assets
+  -h, --help                        Show this help
 `)
 	return err
 }

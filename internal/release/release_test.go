@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
@@ -187,6 +188,93 @@ func TestReleaseArchiveNamesMatchInstallerContracts(t *testing.T) {
 				t.Fatalf("package/archive = %q/%q, want %q/%q", packageName, archiveName, tt.packageName, tt.archiveName)
 			}
 		})
+	}
+}
+
+func TestGenerateKajiChannelUsesVerifiedReleaseAssets(t *testing.T) {
+	root := t.TempDir()
+	mustWriteFile(t, filepath.Join(root, "package.json"), `{"version":"0.4.2"}`)
+	releaseDir := filepath.Join(root, "dist", "release")
+	if err := os.MkdirAll(releaseDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll release: %v", err)
+	}
+	for _, target := range channelTargets {
+		archiveName, err := ReleaseArchiveName("0.4.2", target.GOOS, target.GOARCH)
+		if err != nil {
+			t.Fatalf("ReleaseArchiveName: %v", err)
+		}
+		archivePath := filepath.Join(releaseDir, archiveName)
+		if err := os.WriteFile(archivePath, []byte("archive-"+target.Key), 0o644); err != nil {
+			t.Fatalf("WriteFile archive: %v", err)
+		}
+		if _, err := WriteSHA256Checksum(archivePath); err != nil {
+			t.Fatalf("WriteSHA256Checksum: %v", err)
+		}
+	}
+
+	output := filepath.Join(root, "dist", "kaji-channel.json")
+	result, err := GenerateKajiChannel(ChannelOptions{
+		RootDir:         root,
+		OutputPath:      output,
+		Repository:      "owner/repo",
+		BaseURL:         "https://example.com/",
+		MinKajiVersion:  "0.4.1",
+		MaxKajiVersion:  "0.5.0",
+		ProtocolVersion: 2,
+	})
+	if err != nil {
+		t.Fatalf("GenerateKajiChannel: %v", err)
+	}
+	if result.Channel.Latest != "0.4.2" || len(result.Channel.Entries) != 1 {
+		t.Fatalf("channel header = %#v", result.Channel)
+	}
+	entry := result.Channel.Entries[0]
+	if entry.ProtocolVersion != 2 || entry.MinKajiVersion != "0.4.1" || entry.MaxKajiVersion == nil || *entry.MaxKajiVersion != "0.5.0" {
+		t.Fatalf("entry compatibility = %#v", entry)
+	}
+	asset := entry.Assets["macos-arm64"]
+	if !strings.Contains(asset.URL, "https://example.com/owner/repo/releases/download/v0.4.2/kajicode-v0.4.2-macos-arm64.tar.gz") {
+		t.Fatalf("macos arm64 URL = %q", asset.URL)
+	}
+	if asset.SHA256 == "" || asset.Size == 0 {
+		t.Fatalf("macos arm64 asset = %#v", asset)
+	}
+	data, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatalf("ReadFile channel: %v", err)
+	}
+	var decoded Channel
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("channel JSON did not decode: %v", err)
+	}
+}
+
+func TestGenerateKajiChannelRequiresCompleteAssetsByDefault(t *testing.T) {
+	root := t.TempDir()
+	mustWriteFile(t, filepath.Join(root, "package.json"), `{"version":"0.4.2"}`)
+	releaseDir := filepath.Join(root, "dist", "release")
+	if err := os.MkdirAll(releaseDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll release: %v", err)
+	}
+	archivePath := filepath.Join(releaseDir, "kajicode-v0.4.2-macos-arm64.tar.gz")
+	if err := os.WriteFile(archivePath, []byte("archive"), 0o644); err != nil {
+		t.Fatalf("WriteFile archive: %v", err)
+	}
+	if _, err := WriteSHA256Checksum(archivePath); err != nil {
+		t.Fatalf("WriteSHA256Checksum: %v", err)
+	}
+
+	_, err := GenerateKajiChannel(ChannelOptions{RootDir: root})
+	if err == nil || !strings.Contains(err.Error(), "missing channel asset") {
+		t.Fatalf("GenerateKajiChannel error = %v, want missing assets", err)
+	}
+
+	result, err := GenerateKajiChannel(ChannelOptions{RootDir: root, AllowPartial: true})
+	if err != nil {
+		t.Fatalf("GenerateKajiChannel allow partial: %v", err)
+	}
+	if len(result.Channel.Entries[0].Assets) != 1 {
+		t.Fatalf("partial assets = %#v", result.Channel.Entries[0].Assets)
 	}
 }
 
