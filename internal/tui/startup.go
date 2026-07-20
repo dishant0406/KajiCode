@@ -13,22 +13,16 @@ const (
 	minStartupWidth      = 58
 )
 
-// kajicodeWordmarkKajiLines and kajicodeWordmarkCodeLines form the readable
-// KAJICODE wordmark used in the empty state. The CODE suffix carries the accent.
-var kajicodeWordmarkKajiLines = []string{
-	`K  K   A   JJJ  III `,
-	`K K   A A    J   I  `,
-	`KK    AAA    J   I  `,
-	`K K   A A  J J   I  `,
-	`K  K  A A   J   III `,
+var kajicodeWordmarkLines = []string{
+	`    __ __      _ _  ______          __    `,
+	`   / //_/___ _(_| |/ / ____/___  ____/ /__ `,
+	"  / ,< / __ `/ /|   / /   / __ \\/ __  / _ \\",
+	` / /| / /_/ / / |   / /___/ /_/ / /_/ /  __/`,
+	"/_/ |_\\__,_/_/ /_/_/\\____/\\____/\\__,_/\\___/ ",
 }
 
-var kajicodeWordmarkCodeLines = []string{
-	` CCC  OOO  DDD  EEEE`,
-	`C    O   O D  D E   `,
-	`C    O   O D  D EEE `,
-	`C    O   O D  D E   `,
-	` CCC  OOO  DDD  EEEE`,
+var kajicodeCompactWordmarkLines = []string{
+	`KajiCode`,
 }
 
 const emptyStateTagline = "Any model. Every tool. KajiCode."
@@ -63,7 +57,7 @@ func (m model) emptyStateWithOverlay(width int, overlay string) string {
 
 func (m model) emptyStateLines(width int) []string {
 	lines := []string{}
-	for _, glyph := range kajicodeWordmarkLines() {
+	for _, glyph := range themedWordmarkLines(width) {
 		lines = append(lines, centerLine(glyph, width))
 	}
 	lines = append(lines, "")
@@ -127,10 +121,18 @@ func displayVersion(version string) string {
 	return version
 }
 
-func kajicodeWordmarkLines() []string {
-	lines := make([]string, 0, minInt(len(kajicodeWordmarkKajiLines), len(kajicodeWordmarkCodeLines)))
-	for index := 0; index < len(kajicodeWordmarkKajiLines) && index < len(kajicodeWordmarkCodeLines); index++ {
-		lines = append(lines, kajicodeTheme.ink.Render(kajicodeWordmarkKajiLines[index])+kajicodeTheme.accent.Render(kajicodeWordmarkCodeLines[index]))
+func themedWordmarkLines(width int) []string {
+	source := kajicodeWordmarkLines
+	if width > 0 && width < widestLine(kajicodeWordmarkLines) {
+		source = kajicodeCompactWordmarkLines
+	}
+	lines := make([]string, 0, len(source))
+	for index, line := range source {
+		style := kajicodeTheme.ink
+		if index >= len(source)/2 {
+			style = kajicodeTheme.accent
+		}
+		lines = append(lines, style.Render(line))
 	}
 	return lines
 }
@@ -141,11 +143,15 @@ func kajicodeWordmarkLines() []string {
 // global palette here would ignore a selected light theme and be unreadable
 // on light terminals. The terminal's default foreground works everywhere.
 func Wordmark() string {
-	lines := make([]string, 0, minInt(len(kajicodeWordmarkKajiLines), len(kajicodeWordmarkCodeLines)))
-	for index := 0; index < len(kajicodeWordmarkKajiLines) && index < len(kajicodeWordmarkCodeLines); index++ {
-		lines = append(lines, kajicodeWordmarkKajiLines[index]+kajicodeWordmarkCodeLines[index])
+	return strings.Join(kajicodeWordmarkLines, "\n")
+}
+
+func widestLine(lines []string) int {
+	width := 0
+	for _, line := range lines {
+		width = maxInt(width, lipgloss.Width(line))
 	}
-	return strings.Join(lines, "\n")
+	return width
 }
 
 func borderedBlock(width int, lines []string) string {

@@ -16,7 +16,7 @@
 //
 // The platform "packages" are versions of the SAME @dishant0406/kajicode package at
 // suffixed (semver-prerelease) versions, referenced from the wrapper through
-// npm: aliases. One package name keeps a single npm trusted-publisher config.
+// npm: aliases. One package name keeps a single npm publish credential.
 // See docs/NPM_PACKAGING.md for the publishing rules this feeds.
 //
 // Archives are verified against their .sha256 files before extraction. All

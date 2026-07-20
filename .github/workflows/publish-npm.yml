@@ -1,0 +1,294 @@
+name: Publish npm
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Semver version to publish, for example 0.4.1.
+        required: true
+        type: string
+      npm_tag:
+        description: Dist-tag for the wrapper package.
+        required: true
+        default: latest
+        type: string
+
+concurrency:
+  group: publish-npm
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  bump:
+    name: Bump version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      sha: ${{ steps.commit.outputs.sha }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Validate version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ inputs.version }}"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::version must be plain semver like 0.4.1"
+            exit 1
+          fi
+          if npm view "@dishant0406/kajicode@${version}" version >/dev/null 2>&1; then
+            echo "::error::@dishant0406/kajicode@${version} already exists on npm"
+            exit 1
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Update package version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ steps.version.outputs.version }}"
+          current="$(node -p "require('./package.json').version")"
+          if [ "$current" = "$version" ]; then
+            node -e '
+              const version = process.argv[1];
+              const lock = require("./package-lock.json");
+              if (lock.version !== version || lock.packages[""].version !== version) {
+                console.error("package-lock.json is not already at " + version);
+                process.exit(1);
+              }
+            ' "$version"
+            echo "package files are already at ${version}"
+            exit 0
+          fi
+          npm version "$version" --no-git-tag-version
+
+      - name: Commit version bump
+        id: commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet; then
+            echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json
+          git commit -m "chore(release): v${{ steps.version.outputs.version }}"
+          git push origin HEAD:main
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  validate:
+    name: Validate release commit
+    needs: bump
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.bump.outputs.sha }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Check formatting
+        run: make fmt-check
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./...
+
+      - name: Build
+        run: go run ./cmd/kajicode-release build --version "${{ needs.bump.outputs.version }}"
+
+      - name: Smoke
+        run: go run ./cmd/kajicode-release smoke --version "${{ needs.bump.outputs.version }}"
+
+  package:
+    name: Package ${{ matrix.target }}
+    needs:
+      - bump
+      - validate
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-x64
+            os: ubuntu-latest
+          - target: linux-arm64
+            os: ubuntu-24.04-arm
+          - target: macos-arm64
+            os: macos-latest
+          - target: macos-x64
+            os: macos-15-intel
+          - target: windows-x64
+            os: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.bump.outputs.sha }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Package release artifact
+        run: go run ./cmd/kajicode-release package --version "${{ needs.bump.outputs.version }}"
+
+      - name: Verify release checksums
+        run: go run ./cmd/kajicode-release verify
+
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: kajicode-${{ matrix.target }}
+          path: dist/release/*
+          if-no-files-found: error
+
+  publish:
+    name: Publish npm
+    needs:
+      - bump
+      - package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    env:
+      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.bump.outputs.sha }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: kajicode-*
+          path: dist/artifacts
+          merge-multiple: true
+
+      - name: Assemble npm packages
+        run: node scripts/npm/build-platform-packages.mjs --artifacts-dir dist/artifacts --out-dir dist/npm
+
+      - name: Tag release commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="v${{ needs.bump.outputs.version }}"
+          if git ls-remote --exit-code --tags origin "refs/tags/${tag}" >/dev/null 2>&1; then
+            echo "tag ${tag} already exists"
+            exit 0
+          fi
+          git tag "$tag"
+          git push origin "$tag"
+
+      - name: Publish GitHub Release assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="v${{ needs.bump.outputs.version }}"
+          gh release create "$tag" --repo "$GITHUB_REPOSITORY" --title "$tag" --generate-notes 2>/dev/null || true
+          gh release upload "$tag" dist/artifacts/* --repo "$GITHUB_REPOSITORY" --clobber
+
+      - name: Verify release assets are downloadable
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ needs.bump.outputs.version }}"
+          base="https://github.com/${GITHUB_REPOSITORY}/releases/download/v${version}"
+          for asset in \
+            "kajicode-v${version}-linux-x64.tar.gz" \
+            "kajicode-v${version}-linux-arm64.tar.gz" \
+            "kajicode-v${version}-macos-x64.tar.gz" \
+            "kajicode-v${version}-macos-arm64.tar.gz" \
+            "kajicode-v${version}-windows-x64.zip"; do
+            for suffix in "" ".sha256"; do
+              url="${base}/${asset}${suffix}"
+              for attempt in 1 2 3 4 5; do
+                if curl -fsSLI -o /dev/null "$url"; then
+                  break
+                fi
+                if [ "$attempt" = "5" ]; then
+                  echo "::error::${url} is not publicly downloadable"
+                  exit 1
+                fi
+                sleep 5
+              done
+            done
+          done
+
+      - name: Publish platform packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ needs.bump.outputs.version }}"
+          for dir in dist/npm/platforms/*/; do
+            platform_version="$(node -p "require('./${dir}/package.json').version")"
+            if npm view "@dishant0406/kajicode@${platform_version}" version >/dev/null 2>&1; then
+              echo "skipping ${platform_version}; already published"
+              continue
+            fi
+            echo "publishing ${dir}"
+            (cd "$dir" && npm publish --access public --tag platform --provenance)
+          done
+          latest="$(npm view @dishant0406/kajicode dist-tags.latest || true)"
+          case "$latest" in
+            "${version}-"*)
+              echo "::error::dist-tag latest points at platform version ${latest}"
+              exit 1
+              ;;
+          esac
+
+      - name: Publish wrapper
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ needs.bump.outputs.version }}"
+          tag="${{ inputs.npm_tag }}"
+          (cd dist/npm/wrapper && npm publish --access public --tag "$tag" --provenance)
+          for attempt in 1 2 3 4 5; do
+            published="$(npm view @dishant0406/kajicode "dist-tags.${tag}" || true)"
+            if [ "$published" = "$version" ]; then
+              echo "dist-tag ${tag} is ${version}"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::dist-tag ${tag} did not update to ${version}"
+          exit 1

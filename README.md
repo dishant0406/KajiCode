@@ -431,10 +431,3 @@ Security reports should follow [SECURITY.md](SECURITY.md).
 ## License
 
 KajiCode is released under the [MIT License](LICENSE).
-
-## Upstream Attribution
-
-KajiCode is derived from [Gitlawb/zero](https://github.com/Gitlawb/zero) and remains
-available under the MIT License. The renamed `docs/assets/kajicode-logo.png` is
-temporary upstream-derived artwork and remains derivative of the Zero logo until
-original KajiCode brand art replaces it.

@@ -4,7 +4,7 @@ How `@dishant0406/kajicode` is put together on npm, why it is shaped this way, a
 rules the release pipeline must follow. Read this before touching
 `package.json`, `bin/kajicode.js`, `scripts/postinstall.mjs`,
 `scripts/npm/build-platform-packages.mjs`, or the npm-publish steps of
-`release-artifacts.yml`.
+`publish-npm.yml`.
 
 ## Goals
 
@@ -36,7 +36,7 @@ plus per-platform payloads carrying the native binaries.
 - The platform "packages" are **versions of the same `@dishant0406/kajicode` package**,
   published at suffixed versions (`0.4.0-linux-x64`) and referenced through
   `npm:` aliases in `optionalDependencies`. One package name means one npm
-  trusted-publisher configuration — no new publish credentials per platform.
+  publish credential — no new npm packages or credentials per platform.
   The alias suffixes use Node's `process.platform`/`process.arch` names so
   `bin/kajicode.js` can derive its platform package directly.
 - Each platform version sets `os` and `cpu`, so npm installs exactly one of
@@ -105,7 +105,7 @@ dependencies of the wrapper:
 
 ## Publishing rules (release pipeline)
 
-These are the invariants `release-artifacts.yml` must hold. Breaking the first
+These are the invariants `publish-npm.yml` must hold. Breaking the first
 one is user-visible immediately.
 
 1. **Platform versions must never become `latest`.** `0.4.0-linux-x64` is a
@@ -124,10 +124,11 @@ one is user-visible immediately.
 3. **Exact-version pinning.** The wrapper at `X.Y.Z` references platform
    versions `X.Y.Z-<platform>-<arch>` exactly — never ranges — so a wrapper
    and its binaries can never skew.
-4. All publishes go through the existing npm OIDC trusted-publishing flow and
-   the `npm-publish` environment gate; no tokens. Because the platform
-   payloads are versions of the same package, they reuse the single
-   trusted-publisher configuration.
+4. All publishes use the repository `NPM_TOKEN` secret through `NODE_AUTH_TOKEN`.
+   Because the platform payloads are versions of the same package, they reuse
+   the single package-scoped publish credential. The workflow still requests
+   `id-token: write` and publishes with `--provenance` so npm can attach
+   GitHub Actions provenance when supported.
 
 `kajicode update` keeps working unchanged: it detects an npm install by finding a
 `package.json` named `@dishant0406/kajicode` next to the running binary — true inside

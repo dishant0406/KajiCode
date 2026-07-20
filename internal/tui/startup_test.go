@@ -13,7 +13,7 @@ func TestEmptyStateShowsBrandAndTaglineOnly(t *testing.T) {
 	m.width, m.height = 100, 30
 
 	view := plainRender(t, m.View())
-	assertContains(t, view, "K  K   A   JJJ  III  CCC  OOO  DDD  EEEE")
+	assertContains(t, view, "__ __      _ _  ______")
 	assertContains(t, view, emptyStateTagline)
 	assertNotContains(t, view, "running kajicode against ")
 	assertNotContains(t, view, "add a --version flag")
@@ -30,14 +30,22 @@ func TestWordmarkIsPlain(t *testing.T) {
 		t.Fatalf("expected uncolored wordmark, got %q", wordmark)
 	}
 	lines := strings.Split(wordmark, "\n")
-	if len(lines) != len(kajicodeWordmarkKajiLines) {
-		t.Fatalf("expected %d wordmark lines, got %d", len(kajicodeWordmarkKajiLines), len(lines))
+	if len(lines) != len(kajicodeWordmarkLines) {
+		t.Fatalf("expected %d wordmark lines, got %d", len(kajicodeWordmarkLines), len(lines))
 	}
 	for index, line := range lines {
-		if want := kajicodeWordmarkKajiLines[index] + kajicodeWordmarkCodeLines[index]; line != want {
+		if want := kajicodeWordmarkLines[index]; line != want {
 			t.Fatalf("wordmark line %d: expected %q, got %q", index, want, line)
 		}
 	}
+}
+
+func TestEmptyStateUsesCompactWordmarkWhenNarrow(t *testing.T) {
+	width := widestLine(kajicodeWordmarkLines) - 1
+
+	lines := plainRender(t, strings.Join(themedWordmarkLines(width), "\n"))
+	assertContains(t, lines, "KajiCode")
+	assertNotContains(t, lines, "__ __      _ _  ______")
 }
 
 func TestEmptyStateShowsVersion(t *testing.T) {
