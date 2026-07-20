@@ -10,10 +10,10 @@ import (
 
 func TestEmptyStateShowsBrandAndTaglineOnly(t *testing.T) {
 	m := newModel(context.Background(), Options{ProviderName: "anthropic", ModelName: "claude-sonnet-4.5"})
-	m.width, m.height = 100, 30
+	m.width, m.height = 120, 30
 
 	view := plainRender(t, m.View())
-	assertContains(t, view, "__ __      _ _  ______")
+	assertContains(t, view, "█████   ████   █████████")
 	assertContains(t, view, emptyStateTagline)
 	assertNotContains(t, view, "running kajicode against ")
 	assertNotContains(t, view, "add a --version flag")
@@ -45,7 +45,7 @@ func TestEmptyStateUsesCompactWordmarkWhenNarrow(t *testing.T) {
 
 	lines := plainRender(t, strings.Join(themedWordmarkLines(width), "\n"))
 	assertContains(t, lines, "KajiCode")
-	assertNotContains(t, lines, "__ __      _ _  ______")
+	assertNotContains(t, lines, "█████   ████   █████████")
 }
 
 func TestEmptyStateShowsVersion(t *testing.T) {
