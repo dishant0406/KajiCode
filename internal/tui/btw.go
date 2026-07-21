@@ -131,7 +131,7 @@ func (m model) handleBTWCommand(question string) (model, tea.Cmd) {
 	side.lastDocuments = nil
 	side.inputHistory = nil
 	side.historyIdx = 0
-	side.historyDraft = ""
+	side.historyDraft = composerState{}
 	if question == "" {
 		side.pendingImages = nil
 		side.pendingImageLabels = nil

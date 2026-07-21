@@ -104,8 +104,8 @@ func TestUserCommandShadowsSkill(t *testing.T) {
 
 	next := submitInput(t, m, "/greet")
 
-	if !transcriptContains(next.transcript, "Say hello from the user command.") {
-		t.Fatalf("user command should win the name collision, got %#v", next.transcript)
+	if got := next.composerValue(); got != "Say hello from the user command." {
+		t.Fatalf("user command should win the name collision and expand into the composer, got %q", got)
 	}
 	if transcriptContains(next.transcript, "Skill body must not run.") {
 		t.Fatalf("shadowed skill must not run, got %#v", next.transcript)
@@ -354,9 +354,9 @@ func TestSkillInvocationWarnsDuringCompaction(t *testing.T) {
 	}
 }
 
-// The same guard now protects user commands (previously they could start a
-// second concurrent run).
-func TestUserCommandQueuedWhileRunPending(t *testing.T) {
+// Expanding a snippet while a run is pending is safe because it only edits the
+// composer; it does not queue or launch another turn.
+func TestUserCommandExpandsWhileRunPending(t *testing.T) {
 	root := t.TempDir()
 	writeUserCommand(t, root, "greet.md", "Say hello to $1.")
 	m := newModel(context.Background(), Options{Cwd: root})
@@ -366,8 +366,11 @@ func TestUserCommandQueuedWhileRunPending(t *testing.T) {
 	if !handled {
 		t.Fatal("user command must be handled while pending")
 	}
-	if !strings.Contains(next.queuedMessage, "Say hello to world.") {
-		t.Fatalf("expanded user-command prompt should be queued, got %q", next.queuedMessage)
+	if got := next.composerValue(); got != "Say hello to world." {
+		t.Fatalf("expanded user-command prompt should remain editable, got %q", got)
+	}
+	if next.queuedMessage != "" {
+		t.Fatalf("expanding a snippet must not queue a model turn, got %q", next.queuedMessage)
 	}
 }
 

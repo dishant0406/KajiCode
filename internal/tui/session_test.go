@@ -90,19 +90,21 @@ func TestPromptSubmitPersistsTUISessionEvents(t *testing.T) {
 		t.Fatalf("ReadEvents returned error: %v", err)
 	}
 	if got := eventTypes(events); !equalEventTypes(got, []sessions.EventType{
+		sessions.EventComposerInput,
 		sessions.EventMessage,
 		sessions.EventUsage,
 		sessions.EventMessage,
 	}) {
 		t.Fatalf("unexpected event sequence: %#v", got)
 	}
-	assertPayloadField(t, events[0], "role", "user")
-	assertPayloadField(t, events[0], "content", "inspect repo")
-	assertPayloadField(t, events[1], "promptTokens", float64(10))
-	assertPayloadField(t, events[1], "completionTokens", float64(4))
-	assertPayloadField(t, events[1], "totalTokens", float64(14))
-	assertPayloadField(t, events[2], "role", "assistant")
-	assertPayloadField(t, events[2], "content", "saved")
+	assertPayloadField(t, events[0], "text", "inspect repo")
+	assertPayloadField(t, events[1], "role", "user")
+	assertPayloadField(t, events[1], "content", "inspect repo")
+	assertPayloadField(t, events[2], "promptTokens", float64(10))
+	assertPayloadField(t, events[2], "completionTokens", float64(4))
+	assertPayloadField(t, events[2], "totalTokens", float64(14))
+	assertPayloadField(t, events[3], "role", "assistant")
+	assertPayloadField(t, events[3], "content", "saved")
 	if !transcriptContains(next.transcript, "saved") {
 		t.Fatalf("expected persisted run to still render assistant text, got %#v", next.transcript)
 	}
@@ -218,6 +220,7 @@ func TestPromptSubmitPersistsToolSessionEvents(t *testing.T) {
 		t.Fatalf("ReadEvents returned error: %v", err)
 	}
 	if got := eventTypes(events); !equalEventTypes(got, []sessions.EventType{
+		sessions.EventComposerInput,
 		sessions.EventMessage,
 		sessions.EventToolCall,
 		sessions.EventToolResult,
@@ -225,14 +228,14 @@ func TestPromptSubmitPersistsToolSessionEvents(t *testing.T) {
 	}) {
 		t.Fatalf("unexpected event sequence: %#v", got)
 	}
-	assertPayloadField(t, events[1], "id", "call_1")
-	assertPayloadField(t, events[1], "name", "read_file")
-	assertPayloadField(t, events[1], "arguments", `{"path":"notes.txt"}`)
-	assertPayloadField(t, events[2], "toolCallId", "call_1")
+	assertPayloadField(t, events[2], "id", "call_1")
 	assertPayloadField(t, events[2], "name", "read_file")
-	assertPayloadField(t, events[2], "status", "ok")
-	assertPayloadFieldContains(t, events[2], "output", "file contents")
-	assertPayloadField(t, events[3], "content", "read complete")
+	assertPayloadField(t, events[2], "arguments", `{"path":"notes.txt"}`)
+	assertPayloadField(t, events[3], "toolCallId", "call_1")
+	assertPayloadField(t, events[3], "name", "read_file")
+	assertPayloadField(t, events[3], "status", "ok")
+	assertPayloadFieldContains(t, events[3], "output", "file contents")
+	assertPayloadField(t, events[4], "content", "read complete")
 }
 
 func TestPromptSubmitPersistsPermissionSessionEvents(t *testing.T) {
@@ -331,6 +334,7 @@ func TestPromptSubmitPersistsPermissionSessionEvents(t *testing.T) {
 		t.Fatalf("ReadEvents returned error: %v", err)
 	}
 	if got := eventTypes(events); !equalEventTypes(got, []sessions.EventType{
+		sessions.EventComposerInput,
 		sessions.EventMessage,
 		sessions.EventToolCall,
 		sessions.EventSessionCheckpoint,
@@ -341,15 +345,15 @@ func TestPromptSubmitPersistsPermissionSessionEvents(t *testing.T) {
 	}) {
 		t.Fatalf("unexpected event sequence: %#v", got)
 	}
-	assertPayloadField(t, events[3], "toolCallId", "call_write")
-	assertPayloadField(t, events[3], "name", "write_file")
-	assertPayloadField(t, events[3], "action", "prompt")
-	assertPayloadField(t, events[3], "permission", "prompt")
-	assertPayloadField(t, events[3], "permissionMode", "ask")
-	assertPayloadField(t, events[3], "sideEffect", "write")
-	assertPayloadField(t, events[4], "action", "deny")
-	assertPayloadField(t, events[4], "decisionReason", "denied in TUI")
-	assertPayloadField(t, events[6], "content", "write blocked")
+	assertPayloadField(t, events[4], "toolCallId", "call_write")
+	assertPayloadField(t, events[4], "name", "write_file")
+	assertPayloadField(t, events[4], "action", "prompt")
+	assertPayloadField(t, events[4], "permission", "prompt")
+	assertPayloadField(t, events[4], "permissionMode", "ask")
+	assertPayloadField(t, events[4], "sideEffect", "write")
+	assertPayloadField(t, events[5], "action", "deny")
+	assertPayloadField(t, events[5], "decisionReason", "denied in TUI")
+	assertPayloadField(t, events[7], "content", "write blocked")
 	if !transcriptContains(next.transcript, "permission: write_file prompt") {
 		t.Fatalf("expected permission row in transcript, got %#v", next.transcript)
 	}
@@ -381,6 +385,7 @@ func TestPermissionPromptAllowWritesFileAndRecordsDecision(t *testing.T) {
 	}
 	events := readOnlySessionEvents(t, store)
 	if got := eventTypes(events); !equalEventTypes(got, []sessions.EventType{
+		sessions.EventComposerInput,
 		sessions.EventMessage,
 		sessions.EventToolCall,
 		sessions.EventSessionCheckpoint,
@@ -391,10 +396,10 @@ func TestPermissionPromptAllowWritesFileAndRecordsDecision(t *testing.T) {
 	}) {
 		t.Fatalf("unexpected event sequence: %#v", got)
 	}
-	assertPayloadField(t, events[4], "action", "allow")
-	assertPayloadField(t, events[4], "decisionReason", "approved in TUI")
-	assertPayloadField(t, events[5], "status", "ok")
-	assertPayloadField(t, events[6], "content", "write allowed")
+	assertPayloadField(t, events[5], "action", "allow")
+	assertPayloadField(t, events[5], "decisionReason", "approved in TUI")
+	assertPayloadField(t, events[6], "status", "ok")
+	assertPayloadField(t, events[7], "content", "write allowed")
 	if !transcriptContains(next.transcript, "permission: write_file allow") {
 		t.Fatalf("expected allow decision in transcript, got %#v", next.transcript)
 	}
@@ -832,12 +837,13 @@ func TestEscCancelRecordsSessionError(t *testing.T) {
 		t.Fatalf("ReadEvents returned error: %v", err)
 	}
 	if got := eventTypes(events); !equalEventTypes(got, []sessions.EventType{
+		sessions.EventComposerInput,
 		sessions.EventMessage,
 		sessions.EventError,
 	}) {
 		t.Fatalf("unexpected event sequence after cancel: %#v", got)
 	}
-	assertPayloadField(t, events[1], "message", "Run cancelled.")
+	assertPayloadField(t, events[2], "message", "Run cancelled.")
 	if next.pending {
 		t.Fatal("expected Esc to clear pending state")
 	}

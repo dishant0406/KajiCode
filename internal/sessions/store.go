@@ -27,6 +27,7 @@ type EventType string
 
 const (
 	EventMessage            EventType = "message"
+	EventComposerInput      EventType = "composer_input"
 	EventToolCall           EventType = "tool_call"
 	EventPermission         EventType = "permission"
 	EventPermissionRequest  EventType = "permission_request"

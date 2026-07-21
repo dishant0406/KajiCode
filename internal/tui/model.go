@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 	"unicode"
@@ -64,7 +65,8 @@ type model struct {
 	cwd                         string
 	appVersion                  string
 	userCommands                []usercommands.Command // file-sourced /commands (.kajicode/commands)
-	loadSkills                  func() []skills.Skill  // lazy installed-skills loader for /skills + /<skill-name>
+	userCommandPaths            usercommands.Paths
+	loadSkills                  func() []skills.Skill // lazy installed-skills loader for /skills + /<skill-name>
 	userConfigPath              string
 	doctorUserConfigPath        string
 	projectConfigPath           string
@@ -192,6 +194,7 @@ type model struct {
 	composerSelection     composerSelectionState
 	dictation             dictationController
 	sttKeyPrompt          *sttKeyPromptState
+	promptEditor          *promptEditorState
 	// plan holds the sticky plan panel state (steps, expansion, timings)
 	// synced from the update_plan tool. See plan_panel.go.
 	plan            planPanelState
@@ -341,10 +344,10 @@ type model struct {
 	lastImageLabels []string
 	lastDocuments   []pendingDocument
 	// historyIdx == len(inputHistory) means "not navigating"; historyDraft
-	// preserves whatever was typed before recall started.
-	inputHistory []string
+	// preserves the exact multiline composer state from before recall started.
+	inputHistory []composerHistoryEntry
 	historyIdx   int
-	historyDraft string
+	historyDraft composerState
 
 	// streamingText is the live assistant text for the current segment, accumulated
 	// as []byte so each delta is an O(1) amortized append instead of the O(n²) that
@@ -737,7 +740,11 @@ func newModel(ctx context.Context, options Options) model {
 	}
 
 	userConfigDir, _ := config.UserConfigDir()
-	loadedUserCommands := usercommands.Load(usercommands.DefaultPaths(cwd, userConfigDir))
+	userCommandPaths := usercommands.DefaultPaths(cwd, userConfigDir)
+	if options.UserConfigPath != "" {
+		userCommandPaths.UserDir = filepath.Join(filepath.Dir(options.UserConfigPath), "commands")
+	}
+	loadedUserCommands := usercommands.Load(userCommandPaths)
 
 	registry := options.Registry
 	if registry == nil {
@@ -804,6 +811,7 @@ func newModel(ctx context.Context, options Options) model {
 		appVersion:                  strings.TrimSpace(options.Version),
 		swarmDoneAt:                 map[string]time.Time{},
 		userCommands:                loadedUserCommands,
+		userCommandPaths:            userCommandPaths,
 		loadSkills:                  options.LoadSkills,
 		composerCursorVisible:       true,
 		terminalFocused:             true,
@@ -861,6 +869,7 @@ func newModel(ctx context.Context, options Options) model {
 		setupSave:                   options.Setup.Save,
 		dictation:                   newDictationController(options),
 	}
+	m.refreshComposerHistory()
 	// Apply an explicit theme immediately; auto stays on the dark default until
 	// Init's terminal background probe resolves it (see Init / BackgroundColorMsg).
 	if m.themeMode != themeAuto {
@@ -1009,7 +1018,7 @@ func (m *model) stopPRWatcher() {
 func (m model) noBlockingModal() bool {
 	return m.pendingPermission == nil && m.pendingAskUser == nil && m.pendingSpecReview == nil &&
 		m.providerWizard == nil && m.mcpAddWizard == nil && m.mcpManager == nil && m.picker == nil &&
-		m.sttKeyPrompt == nil
+		m.sttKeyPrompt == nil && m.promptEditor == nil
 }
 
 func (m model) quit() (tea.Model, tea.Cmd) {
@@ -1240,6 +1249,9 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.sttKeyPrompt.input += strings.TrimSpace(msg.Content)
 			return m, nil
 		}
+		if m.promptEditor != nil {
+			return m.handlePromptEditorPaste(msg.Content), nil
+		}
 		return m.routePaste(msg.Content)
 	case dictationStartedMsg:
 		return m.handleDictationStarted(msg)
@@ -1291,6 +1303,9 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// input) until Enter saves or Esc cancels.
 		if m.sttKeyPrompt != nil {
 			return m.handleSTTKeyPromptKey(msg)
+		}
+		if m.promptEditor != nil {
+			return m.handlePromptEditorKey(msg)
 		}
 		m.transcriptSelection = transcriptSelectionState{}
 		m.composerSelection = composerSelectionState{}
@@ -2643,7 +2658,7 @@ func (m model) homePresentationActive() bool {
 	return m.transcriptEmpty() && !m.pending && m.pendingAskUser == nil &&
 		!m.helpOverlay && !m.leaderHelpOverlay && m.providerWizard == nil &&
 		m.mcpAddWizard == nil && m.mcpManager == nil && m.picker == nil &&
-		m.sttKeyPrompt == nil && !m.suggestionsActive() && !m.transcriptDetailed
+		m.sttKeyPrompt == nil && m.promptEditor == nil && !m.suggestionsActive() && !m.transcriptDetailed
 }
 
 // transcriptView renders the visible chat surface: in inline mode this is the
@@ -2692,8 +2707,11 @@ func (m model) transcriptView() string {
 	mcpOverlay := m.mcpManagerOverlay(width)
 	pickerOverlay := m.pickerOverlay(width)
 	sttKeyOverlay := m.sttKeyPromptOverlay(width)
+	promptEditorOverlay := m.promptEditorOverlay(width)
 	viewportOverlay := ""
 	switch {
+	case promptEditorOverlay != "":
+		viewportOverlay = promptEditorOverlay
 	case sttKeyOverlay != "":
 		viewportOverlay = sttKeyOverlay
 	case helpOverlayContent != "":
@@ -4182,9 +4200,11 @@ func (m model) chooseSuggestion() (tea.Model, tea.Cmd) {
 	}
 	wasFiles := m.suggestionsAreFiles
 	wasDirectory := m.selectedSuggestionIsDirectory()
+	selected := clampInt(m.suggestionIdx, 0, len(m.suggestions)-1)
+	wasUserCommand := !wasFiles && m.suggestions[selected].UserCommand
 	requiresInput := m.selectedCommandSuggestionRequiresInput()
 	next := m.completeSuggestion()
-	if !wasFiles {
+	if !wasFiles && !wasUserCommand {
 		next.resetComposerFromInput()
 	}
 	if wasFiles && wasDirectory {
@@ -4192,7 +4212,7 @@ func (m model) chooseSuggestion() (tea.Model, tea.Cmd) {
 		return next, nil
 	}
 	if !wasFiles {
-		if requiresInput {
+		if requiresInput || wasUserCommand {
 			return next, nil
 		}
 		return next.handleSubmit()
@@ -4233,6 +4253,15 @@ func (m model) handleSubmit() (tea.Model, tea.Cmd) {
 			text: "Compact\nstatus: warning\nCompaction is running. Your next prompt will use the compacted context when this finishes.",
 		})
 		return m, nil
+	}
+	if command.kind == commandUnknown {
+		if name, _ := splitUserCommand(command.text); name != "" {
+			if _, ok := m.lookupUserCommand(name); ok {
+				m.clearComposer()
+				next, cmd, _ := m.handleUserCommand(command.text)
+				return next, cmd
+			}
+		}
 	}
 	m.rememberInput(input)
 	m.clearComposer()
@@ -4328,6 +4357,8 @@ func (m model) dispatchCommand(command parsedCommand) (tea.Model, tea.Cmd) {
 	case commandTools:
 		m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: m.toolsText()})
 		return m, nil
+	case commandPromptEditor:
+		return m.openPromptEditor(), nil
 	case commandSkills:
 		// With skills installed, /skills opens a searchable picker (like /model);
 		// the text card remains only as the no-skills install hint.
@@ -4674,6 +4705,7 @@ func (m model) executeSlash(input string) (tea.Model, tea.Cmd) {
 // composer. Queued prompts use this path too, so session and image behavior
 // stays identical to immediate submissions.
 func (m model) launchPrompt(prompt string) (model, tea.Cmd) {
+	composerInput := prompt
 	// Remember the verbatim prompt (before specialist/document expansion) so /retry
 	// and /edit can act on exactly what the user submitted. Snapshot the staged
 	// attachments too: launchPrompt clears the pending queues below, so /retry
@@ -4713,16 +4745,15 @@ func (m model) launchPrompt(prompt string) (model, tea.Cmd) {
 		})
 	} else {
 		agentPrompt := m.sessionPrompt(prompt)
-		m, err = m.appendSessionEvent(sessions.EventMessage, map[string]any{
-			"role":    "user",
-			"content": prompt,
+		var sessionRows []transcriptRow
+		m, sessionRows = m.appendSessionEvents([]pendingSessionEvent{
+			{Type: sessions.EventComposerInput, Payload: map[string]any{"text": composerInput}},
+			{Type: sessions.EventMessage, Payload: map[string]any{
+				"role":    "user",
+				"content": prompt,
+			}},
 		})
-		if err != nil {
-			m.transcript = reduceTranscript(m.transcript, transcriptAction{
-				kind: actionAppendError,
-				text: "session record error: " + err.Error(),
-			})
-		}
+		m.transcript = appendTranscriptRowsDedup(m.transcript, sessionRows)
 		prompt = agentPrompt
 	}
 	// Re-check vision support against the CURRENT effective model at submit
@@ -4814,43 +4845,6 @@ func (m model) launchQueuedMessageIfReady() (model, tea.Cmd) {
 func (m model) historyRecallActive() bool {
 	return len(m.inputHistory) > 0 &&
 		m.pendingAskUser == nil && m.pendingPermission == nil && m.pendingSpecReview == nil
-}
-
-// recallHistory steps through submitted inputs (-1 = older, +1 = newer),
-// stashing the in-progress draft so stepping back past the newest recalled
-// entry restores whatever was being typed.
-func (m model) recallHistory(direction int) model {
-	if m.historyIdx == len(m.inputHistory) {
-		if direction > 0 {
-			return m
-		}
-		m.historyDraft = m.composerValue()
-	}
-	next := clamp(m.historyIdx+direction, 0, len(m.inputHistory))
-	if next == m.historyIdx {
-		return m
-	}
-	m.historyIdx = next
-	if next == len(m.inputHistory) {
-		m.input.SetValue(m.historyDraft)
-	} else {
-		m.input.SetValue(m.inputHistory[next])
-	}
-	m.input.CursorEnd()
-	m.resetComposerFromInput()
-	m.recomputeSuggestions()
-	return m
-}
-
-// rememberInput records a submitted composer value for ↑ recall and resets the
-// navigation cursor past the newest entry.
-func (m *model) rememberInput(value string) {
-	trimmed := strings.TrimSpace(value)
-	if trimmed != "" && (len(m.inputHistory) == 0 || m.inputHistory[len(m.inputHistory)-1] != trimmed) {
-		m.inputHistory = append(m.inputHistory, trimmed)
-	}
-	m.historyIdx = len(m.inputHistory)
-	m.historyDraft = ""
 }
 
 func (m *model) cancelRun() {

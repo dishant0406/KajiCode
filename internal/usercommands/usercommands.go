@@ -17,10 +17,13 @@
 package usercommands
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/dishant0406/KajiCode/internal/fsutil"
 )
 
 // Command is a user-defined slash command parsed from a markdown file.
@@ -93,7 +96,7 @@ func loadDir(dir string, project bool) []Command {
 			continue
 		}
 		name := strings.ToLower(strings.TrimSuffix(entry.Name(), filepath.Ext(entry.Name())))
-		if !validCommandName(name) {
+		if ValidateName(name) != nil {
 			continue
 		}
 		cmds = append(cmds, parseCommand(name, path, project, string(raw)))
@@ -101,19 +104,80 @@ func loadDir(dir string, project bool) []Command {
 	return cmds
 }
 
-// validCommandName keeps file-sourced names to a safe slash-command shape so a
-// stray file can't shadow a builtin via odd characters: lowercase letters,
-// digits, and hyphens, non-empty.
-func validCommandName(name string) bool {
+// ValidateName checks that a file-sourced command has a safe slash-command
+// shape: lowercase letters, digits, and hyphens, non-empty.
+func ValidateName(name string) error {
 	if name == "" {
-		return false
+		return fmt.Errorf("slug is required")
 	}
 	for _, r := range name {
 		if !(r >= 'a' && r <= 'z') && !(r >= '0' && r <= '9') && r != '-' {
-			return false
+			return fmt.Errorf("slug may contain only lowercase letters, numbers, and hyphens")
 		}
 	}
-	return true
+	return nil
+}
+
+// Save writes a personal command atomically. Existing commands are protected
+// unless overwrite is explicitly true.
+func Save(userDir, name, template string, overwrite bool) (Command, error) {
+	name = strings.TrimSpace(name)
+	if err := ValidateName(name); err != nil {
+		return Command{}, err
+	}
+	template = strings.TrimSpace(strings.ReplaceAll(template, "\r\n", "\n"))
+	if template == "" {
+		return Command{}, fmt.Errorf("prompt is required")
+	}
+	if strings.TrimSpace(userDir) == "" {
+		return Command{}, fmt.Errorf("personal commands directory is not configured")
+	}
+	if err := os.MkdirAll(userDir, 0o700); err != nil {
+		return Command{}, fmt.Errorf("create commands directory: %w", err)
+	}
+	path := filepath.Join(userDir, name+".md")
+	if !overwrite {
+		if _, err := os.Stat(path); err == nil {
+			return Command{}, os.ErrExist
+		} else if !os.IsNotExist(err) {
+			return Command{}, fmt.Errorf("check existing prompt: %w", err)
+		}
+	}
+	tmp, err := os.CreateTemp(userDir, ".prompt-*.tmp")
+	if err != nil {
+		return Command{}, fmt.Errorf("create prompt file: %w", err)
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+	if err := tmp.Chmod(0o600); err != nil {
+		_ = tmp.Close()
+		return Command{}, fmt.Errorf("secure prompt file: %w", err)
+	}
+	if _, err := tmp.WriteString(template + "\n"); err != nil {
+		_ = tmp.Close()
+		return Command{}, fmt.Errorf("write prompt: %w", err)
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return Command{}, fmt.Errorf("sync prompt: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return Command{}, fmt.Errorf("close prompt: %w", err)
+	}
+	if overwrite {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return Command{}, fmt.Errorf("replace prompt: %w", err)
+		}
+		if err := fsutil.RenameWithRetry(tmpPath, path, nil); err != nil {
+			return Command{}, fmt.Errorf("save prompt: %w", err)
+		}
+	} else if err := os.Link(tmpPath, path); err != nil {
+		if os.IsExist(err) {
+			return Command{}, os.ErrExist
+		}
+		return Command{}, fmt.Errorf("save prompt: %w", err)
+	}
+	return parseCommand(name, path, false, template), nil
 }
 
 func parseCommand(name, path string, project bool, raw string) Command {

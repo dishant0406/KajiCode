@@ -104,6 +104,7 @@ func (m model) startNewSession() model {
 		m = updated
 		m.homeNotice += fmt.Sprintf(" · stopped %d previous-session loop(s)", cleared)
 	}
+	m.refreshComposerHistory()
 	return m
 }
 
@@ -251,6 +252,7 @@ func (m model) handleResumeCommand(args string) (model, string) {
 	// frontier sends the whole resumed history to native scrollback in one
 	// batch — scrollable, selectable, and O(1) for every later frame.
 	m.resetFlushFrontier("· resumed ·")
+	m.refreshComposerHistory()
 	return m, ""
 }
 

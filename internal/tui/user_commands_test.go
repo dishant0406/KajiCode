@@ -20,7 +20,7 @@ func writeUserCommand(t *testing.T, root, name, content string) {
 	}
 }
 
-func TestUserCommandExpandsAndSubmits(t *testing.T) {
+func TestUserCommandExpandsIntoComposerWithoutSubmitting(t *testing.T) {
 	root := t.TempDir()
 	writeUserCommand(t, root, "greet.md", "Say hello to $1 from the team.")
 
@@ -33,11 +33,14 @@ func TestUserCommandExpandsAndSubmits(t *testing.T) {
 	updated, _ := m.Update(testKey(tea.KeyEnter))
 	next := updated.(model)
 
-	if transcriptContains(next.transcript, "unknown command") {
-		t.Fatalf("a defined user command must not be 'unknown', got %#v", next.transcript)
+	if got := next.composerValue(); got != "Say hello to world from the team." {
+		t.Fatalf("expanded user-command prompt should be editable in the composer, got %q", got)
 	}
-	if !transcriptContains(next.transcript, "Say hello to world from the team.") {
-		t.Fatalf("expanded user-command prompt should appear in the transcript, got %#v", next.transcript)
+	if transcriptContains(next.transcript, "Say hello to world from the team.") {
+		t.Fatalf("expanding a prompt must not submit it, got %#v", next.transcript)
+	}
+	if len(next.inputHistory) != 0 {
+		t.Fatalf("temporary slash invocation must not enter composer history, got %#v", next.inputHistory)
 	}
 }
 

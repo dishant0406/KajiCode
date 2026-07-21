@@ -49,6 +49,7 @@ const (
 	commandNew
 	commandBTW
 	commandSkills
+	commandPromptEditor
 	commandLoop
 	commandVoice
 	commandSTTModel
@@ -157,6 +158,13 @@ var commandDefinitions = []commandDefinition{
 		group:       commandGroupTools,
 		description: "List installed skills; run one directly with /<skill-name> [args].",
 		kind:        commandSkills,
+	},
+	{
+		name:        "/prompt",
+		usage:       "/prompt",
+		group:       commandGroupTools,
+		description: "Create a reusable personal prompt snippet.",
+		kind:        commandPromptEditor,
 	},
 	{
 		name:        "/context",

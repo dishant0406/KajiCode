@@ -17,8 +17,9 @@ import (
 // commandSuggestion is one row in the slash-command autocomplete overlay: the
 // canonical command name and its short description.
 type commandSuggestion struct {
-	Name string
-	Desc string
+	Name        string
+	Desc        string
+	UserCommand bool
 }
 
 const (
@@ -54,7 +55,7 @@ var fileSuggestionIndexCache = struct {
 // handling. A slash-command palette stays active even with zero matches so the
 // query remains in the palette instead of leaking back into the composer.
 func (m model) suggestionsActive() bool {
-	if m.pendingPermission != nil || m.pendingAskUser != nil || m.pendingSpecReview != nil || m.providerWizard != nil || m.mcpManager != nil {
+	if m.pendingPermission != nil || m.pendingAskUser != nil || m.pendingSpecReview != nil || m.providerWizard != nil || m.mcpManager != nil || m.promptEditor != nil {
 		return false
 	}
 	if len(m.suggestions) > 0 {
@@ -77,7 +78,7 @@ func (m *model) clearSuggestions() {
 // disappear once the user starts typing arguments. Modals suppress matching
 // entirely. The selected index is preserved when still in range, otherwise reset.
 func (m *model) recomputeSuggestions() {
-	if m.pendingPermission != nil || m.pendingAskUser != nil || m.pendingSpecReview != nil || m.providerWizard != nil || m.mcpManager != nil {
+	if m.pendingPermission != nil || m.pendingAskUser != nil || m.pendingSpecReview != nil || m.providerWizard != nil || m.mcpManager != nil || m.promptEditor != nil {
 		m.clearSuggestions()
 		return
 	}
@@ -250,7 +251,7 @@ func (m model) matchUserCommandSuggestions(token string) []commandSuggestion {
 	var out []commandSuggestion
 	for _, cmd := range m.userCommands {
 		if strings.HasPrefix(cmd.Name, prefix) {
-			out = append(out, commandSuggestion{Name: "/" + cmd.Name, Desc: cmd.Description})
+			out = append(out, commandSuggestion{Name: "/" + cmd.Name, Desc: cmd.Description, UserCommand: true})
 			if len(out) >= maxCommandSuggestions {
 				break
 			}
@@ -329,12 +330,19 @@ func (m model) completeSuggestion() model {
 		isDir := fileSuggestionIsDirectory(m.suggestions[idx])
 		m = m.completeFileSuggestion(chosen, !isDir)
 	default:
-		if commandSelectionRequiresInput(chosen) {
-			m.input.SetValue(chosen)
+		if m.suggestions[idx].UserCommand {
+			name := strings.TrimPrefix(chosen, "/")
+			if cmd, ok := m.lookupUserCommand(name); ok {
+				m.setComposerState(composerState{text: cmd.Template, cursor: len([]rune(cmd.Template))})
+			}
 		} else {
-			m.input.SetValue(chosen + " ")
+			if commandSelectionRequiresInput(chosen) {
+				m.input.SetValue(chosen)
+			} else {
+				m.input.SetValue(chosen + " ")
+			}
+			m.input.CursorEnd()
 		}
-		m.input.CursorEnd()
 	}
 	m.suggestions = nil
 	m.suggestionIdx = 0

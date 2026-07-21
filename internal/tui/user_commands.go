@@ -9,10 +9,9 @@ import (
 )
 
 // handleUserCommand resolves a "/name args" that wasn't a builtin command
-// against the file-sourced user commands (.kajicode/commands/<name>.md). When a
-// match is found it expands the command's template with the args and launches a
-// normal agent turn, returning handled=true. handled=false means no user
-// command matched, so the caller falls through to "unknown command".
+// against the file-sourced user commands (.kajicode/commands/<name>.md). A match
+// expands into the composer for review and editing; it never launches a turn
+// until the user explicitly submits the expanded prompt.
 //
 // raw is the full slash input as parseCommand captured it for commandUnknown
 // (e.g. "/release v1.2"), so we re-split it here rather than thread the parsed
@@ -30,9 +29,9 @@ func (m model) handleUserCommand(raw string) (model, tea.Cmd, bool) {
 	if strings.TrimSpace(prompt) == "" {
 		return m, nil, false
 	}
-	// Same run-state guards as a plain prompt: a user command invoked mid-run is
-	// queued (as its expanded prompt), not raced into a second concurrent turn.
-	return m.launchOrDeferExpandedPrompt(raw, prompt)
+	m.setComposerState(composerState{text: prompt, cursor: len([]rune(prompt))})
+	m.clearSuggestions()
+	return m, nil, true
 }
 
 // lookupUserCommand returns the loaded user command with the given (lowercased)

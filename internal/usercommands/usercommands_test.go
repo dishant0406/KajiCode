@@ -83,6 +83,60 @@ func TestLoadMissingDirsAreEmpty(t *testing.T) {
 	}
 }
 
+func TestValidateName(t *testing.T) {
+	for _, name := range []string{"review", "pr-2", "0"} {
+		if err := ValidateName(name); err != nil {
+			t.Fatalf("ValidateName(%q): %v", name, err)
+		}
+	}
+	for _, name := range []string{"", "Review", "two words", "../escape", "ümlaut"} {
+		if err := ValidateName(name); err == nil {
+			t.Fatalf("ValidateName(%q) unexpectedly succeeded", name)
+		}
+	}
+}
+
+func TestSaveCreatesSecurePersonalCommandAndProtectsOverwrite(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "commands")
+	cmd, err := Save(dir, "review", "Review this carefully.\r\nThen summarize.", false)
+	if err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	if cmd.Name != "review" || cmd.Project || cmd.Template != "Review this carefully.\nThen summarize." {
+		t.Fatalf("saved command = %#v", cmd)
+	}
+	info, err := os.Stat(filepath.Join(dir, "review.md"))
+	if err != nil {
+		t.Fatalf("stat saved command: %v", err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("saved mode = %o, want 600", info.Mode().Perm())
+	}
+	if _, err := Save(dir, "review", "replacement", false); !os.IsExist(err) {
+		t.Fatalf("non-overwrite Save error = %v, want os.ErrExist", err)
+	}
+	cmd, err = Save(dir, "review", "replacement", true)
+	if err != nil {
+		t.Fatalf("overwrite Save: %v", err)
+	}
+	if cmd.Template != "replacement" {
+		t.Fatalf("overwritten template = %q", cmd.Template)
+	}
+}
+
+func TestSaveRejectsInvalidOrEmptyInput(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := Save(dir, "Bad Name", "body", false); err == nil {
+		t.Fatal("invalid slug should fail")
+	}
+	if _, err := Save(dir, "valid", "  \n", false); err == nil {
+		t.Fatal("empty body should fail")
+	}
+	if _, err := Save("", "valid", "body", false); err == nil {
+		t.Fatal("empty directory should fail")
+	}
+}
+
 func TestExpandPlaceholders(t *testing.T) {
 	cases := []struct {
 		name     string

@@ -13,7 +13,7 @@ func TestMouseWheelScrollsChatWithoutRecallingInputHistory(t *testing.T) {
 	m.width = 90
 	m.height = 14
 	m.mouseCapture = true
-	m.inputHistory = []string{"old prompt"}
+	m.inputHistory = []composerHistoryEntry{{text: "old prompt"}}
 	m.historyIdx = len(m.inputHistory)
 	for index := 0; index < 12; index++ {
 		m.transcript = appendRow(m.transcript, rowAssistant, "message "+string(rune('A'+index)))
