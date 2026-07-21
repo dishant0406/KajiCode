@@ -76,9 +76,13 @@ func TestMouseWheelOverWrappedComposerMovesComposerCursor(t *testing.T) {
 	m.mouseCapture = true
 	m.input.SetValue(text)
 	m.input.CursorEnd()
-	startCursor := len([]rune(text))
+	startCursor := m.currentComposerState().cursor
+	if want := len([]rune(text)); startCursor != want {
+		t.Fatalf("starting composer cursor = %d, want end cursor %d", startCursor, want)
+	}
 
-	updated, cmd := m.Update(testMouseWheel(tea.MouseWheelUp, 0, 14))
+	x, y := composerMousePoint(t, m, 0)
+	updated, cmd := m.Update(testMouseWheel(tea.MouseWheelUp, x, y))
 	next := updated.(model)
 	if cmd != nil {
 		t.Fatal("mouse wheel over composer should not return a command")
@@ -89,6 +93,15 @@ func TestMouseWheelOverWrappedComposerMovesComposerCursor(t *testing.T) {
 	if got := next.currentComposerState().cursor; got >= startCursor {
 		t.Fatalf("composer cursor = %d, want moved before end cursor %d", got, startCursor)
 	}
+
+	updated, cmd = next.Update(testMouseWheel(tea.MouseWheelDown, x, y))
+	next = updated.(model)
+	if cmd != nil {
+		t.Fatal("mouse wheel over composer should not return a command")
+	}
+	if got := next.currentComposerState().cursor; got != startCursor {
+		t.Fatalf("composer cursor = %d, want restored end cursor %d", got, startCursor)
+	}
 }
 
 func TestMouseWheelOnClippedFooterStatusDoesNotMoveComposerCursor(t *testing.T) {
@@ -97,11 +110,17 @@ func TestMouseWheelOnClippedFooterStatusDoesNotMoveComposerCursor(t *testing.T) 
 	m.width = 44
 	m.height = 3
 	m.mouseCapture = true
+	m.transcript = appendRow(m.transcript, rowUser, "existing conversation")
 	m.input.SetValue(text)
 	m.input.CursorEnd()
 	startCursor := len([]rune(text))
 
-	updated, cmd := m.Update(testMouseWheel(tea.MouseWheelUp, 0, m.height-1))
+	width := m.chatColumnWidth()
+	frame := m.scrollableTranscriptFrame(m.pinnedTitleBar(width), m.footerView(width))
+	if frame.statusRect.height != 1 {
+		t.Fatalf("expected visible status rect, frame=%#v", frame)
+	}
+	updated, cmd := m.Update(testMouseWheel(tea.MouseWheelUp, frame.statusRect.x, frame.statusRect.y))
 	next := updated.(model)
 	if cmd != nil {
 		t.Fatal("mouse wheel on clipped footer should not return a command")
