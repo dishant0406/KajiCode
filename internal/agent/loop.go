@@ -2150,6 +2150,12 @@ func executeRequestPermissions(ctx context.Context, call ToolCall, args map[stri
 			Output:     "Error: Invalid permissions for request_permissions: " + err.Error(),
 		}, nil
 	}
+	if permissionMode == PermissionModeBypassAll {
+		return requestPermissionsResult(call, sandbox.RequestPermissionsResponse{
+			Permissions: grantProfile,
+			Scope:       sandbox.PermissionGrantScopeTurn,
+		}, false), nil
+	}
 
 	request := requestPermissionsPrompt(call, parsed, grantProfile, permissionMode, options)
 	if options.OnPermissionRequest == nil {

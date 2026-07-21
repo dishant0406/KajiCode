@@ -261,13 +261,21 @@ func (m model) composerPositionAtMouse(msg tea.MouseMsg) (int, bool) {
 		return 0, false
 	}
 	width := m.chatColumnWidth()
-	frame := m.scrollableTranscriptFrame(m.pinnedTitleBar(width), m.footerView(width))
-	localX, localY, ok := frame.composerRect.local(mouseX(msg), mouseY(msg))
+	composerWidth := width
+	composerRect := tuiRect{}
+	if m.homePresentationActive() {
+		composerWidth = homeComposerWidth(width)
+		composerRect = m.homeComposerRect(width)
+	} else {
+		frame := m.scrollableTranscriptFrame(m.pinnedTitleBar(width), m.footerView(width))
+		composerRect = frame.composerRect
+	}
+	localX, localY, ok := composerRect.local(mouseX(msg), mouseY(msg))
 	if !ok {
 		return 0, false
 	}
-	if width < 8 {
-		return m.composerPositionAtVisualCell(localX, localY, width)
+	if composerWidth < 8 {
+		return m.composerPositionAtVisualCell(localX, localY, composerWidth)
 	}
 	contentY := localY - 1
 	if renderAttachmentChips(m.pendingImageLabels, m.pendingDocuments) != "" {
@@ -276,7 +284,7 @@ func (m model) composerPositionAtMouse(msg tea.MouseMsg) (int, bool) {
 	if contentY < 0 {
 		return 0, false
 	}
-	return m.composerPositionAtVisualCell(localX-2, contentY, maxInt(1, width-4))
+	return m.composerPositionAtVisualCell(localX-2, contentY, maxInt(1, composerWidth-4))
 }
 
 func (m model) composerMouseSelectionBlocked() bool {

@@ -5,7 +5,11 @@ import (
 	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+
+	"github.com/dishant0406/KajiCode/internal/agent"
+	"github.com/dishant0406/KajiCode/internal/config"
 )
 
 func TestEmptyStateShowsBrandAndTaglineOnly(t *testing.T) {
@@ -13,8 +17,10 @@ func TestEmptyStateShowsBrandAndTaglineOnly(t *testing.T) {
 	m.width, m.height = 120, 30
 
 	view := plainRender(t, m.View())
-	assertContains(t, view, "█████   ████   █████████")
-	assertContains(t, view, emptyStateTagline)
+	assertContains(t, view, "██  ██   ████     ██  █████")
+	assertContains(t, view, composerPlaceholder)
+	assertContains(t, view, "Shift+Tab mode")
+	assertNotContains(t, view, emptyStateTagline)
 	assertNotContains(t, view, "running kajicode against ")
 	assertNotContains(t, view, "add a --version flag")
 	assertNotContains(t, view, "explain internal/agent/loop.go")
@@ -41,11 +47,11 @@ func TestWordmarkIsPlain(t *testing.T) {
 }
 
 func TestEmptyStateUsesCompactWordmarkWhenNarrow(t *testing.T) {
-	width := widestLine(kajicodeWordmarkLines) - 1
+	width := widestLine(kajicodeHomeWordmarkLines) - 1
 
 	lines := plainRender(t, strings.Join(themedWordmarkLines(width), "\n"))
 	assertContains(t, lines, "KajiCode")
-	assertNotContains(t, lines, "█████   ████   █████████")
+	assertNotContains(t, lines, "██  ██   ████     ██  █████")
 }
 
 func TestEmptyStateShowsVersion(t *testing.T) {
@@ -54,6 +60,48 @@ func TestEmptyStateShowsVersion(t *testing.T) {
 
 	view := plainRender(t, m.View())
 	assertContains(t, view, "v0.2.0")
+}
+
+func TestEmptyStateCentersComposerAndShowsRuntimeContext(t *testing.T) {
+	m := newModel(context.Background(), Options{
+		Cwd:       "/workspace/kajicode",
+		Version:   "0.0.5",
+		ModelName: "gpt-5.6-sol",
+		MCPConfig: config.MCPConfig{Servers: map[string]config.MCPServerConfig{
+			"docs":     {},
+			"disabled": {Disabled: true},
+		}},
+	})
+	m.width, m.height = 100, 30
+	m.gitBranch = "main"
+
+	view := plainRender(t, m.View())
+	assertContains(t, view, "/workspace/kajicode:main  ·  ● MCP 1  ·  v0.0.5")
+	assertContains(t, view, "gpt-5.6-sol")
+	assertContains(t, view, "Shift+Tab mode: auto-approve  ·  Ctrl+X ? commands  ·  ? shortcuts")
+	if count := strings.Count(view, composerPlaceholder); count != 1 {
+		t.Fatalf("fresh home should contain one live composer, got %d in %q", count, view)
+	}
+	composerTop := strings.Index(view, "╭")
+	if composerTop < 0 {
+		t.Fatalf("fresh home composer missing from %q", view)
+	}
+	lineStart := strings.LastIndex(view[:composerTop], "\n") + 1
+	if got := composerTop - lineStart; got != (m.width-homeComposerWidth(m.width))/2 {
+		t.Fatalf("composer left edge = %d, want centered at %d", got, (m.width-homeComposerWidth(m.width))/2)
+	}
+}
+
+func TestEmptyStateShortcutsProvideVisibleFeedback(t *testing.T) {
+	m := newModel(context.Background(), Options{PermissionMode: agent.PermissionModeAuto})
+	m.width, m.height = 100, 30
+
+	updated, _ := m.Update(testKeyShift(tea.KeyTab))
+	next := updated.(model)
+	view := plainRender(t, next.View())
+
+	assertContains(t, view, "Shift+Tab mode: ask")
+	assertContains(t, view, "Ctrl+X ? commands")
 }
 
 func TestDisplayVersion(t *testing.T) {

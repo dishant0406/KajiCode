@@ -291,6 +291,9 @@ func (m model) mouseOverComposer(msg tea.MouseMsg) bool {
 		return false
 	}
 	width := m.chatColumnWidth()
+	if m.homePresentationActive() {
+		return m.homeComposerRect(width).contains(mouseX(msg), mouseY(msg))
+	}
 	frame := m.scrollableTranscriptFrame(m.pinnedTitleBar(width), m.footerView(width))
 	return frame.composerRect.contains(mouseX(msg), mouseY(msg))
 }

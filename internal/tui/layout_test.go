@@ -99,6 +99,7 @@ func TestFrameComposerRegionDrivesMouseHit(t *testing.T) {
 	m := mouseTestModel()
 	m.width = 44
 	m.height = 20
+	m.transcript = appendRow(m.transcript, rowUser, "existing conversation")
 	m.input.SetValue("Create a book library dashboard page with cards, filters, charts, and responsive behavior.")
 
 	width := m.chatColumnWidth()
@@ -111,6 +112,23 @@ func TestFrameComposerRegionDrivesMouseHit(t *testing.T) {
 	}
 	if m.mouseOverComposer(testMouseWheel(tea.MouseWheelUp, 0, frame.statusRect.y)) {
 		t.Fatalf("mouse over status y=%d should not hit composer rect %#v", frame.statusRect.y, frame.composerRect)
+	}
+}
+
+func TestHomeComposerRegionDrivesMouseHit(t *testing.T) {
+	m := mouseTestModel()
+	m.width = 100
+	m.height = 30
+
+	rect := m.homeComposerRect(m.chatColumnWidth())
+	if rect.width != homeComposerWidth(m.chatColumnWidth()) || rect.height <= 0 {
+		t.Fatalf("home composer rect = %#v, want centered visible composer", rect)
+	}
+	if !m.mouseOverComposer(testMouseWheel(tea.MouseWheelUp, rect.x+2, rect.y+1)) {
+		t.Fatalf("mouse inside home composer rect %#v should hit", rect)
+	}
+	if m.mouseOverComposer(testMouseWheel(tea.MouseWheelUp, 0, m.height-1)) {
+		t.Fatal("fresh home should not keep a phantom footer composer hit box")
 	}
 }
 

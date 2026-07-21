@@ -300,23 +300,17 @@ func providerDisplayNameIsGenericCustom(name string) bool {
 	}
 }
 
-// nextPermissionMode toggles between the two prompt-respecting modes:
-// Auto ⇄ Ask. Unsafe (which disables permission prompts entirely) is
-// deliberately NOT reachable by a casual keypress — a single shift+tab landing
-// on it would let prompt-required tools run with no decision. Unsafe stays an
-// explicit opt-in (the launch/--skip-permissions-unsafe path), not a UI toggle.
-// Unsafe is folded back to Ask so the toggle always lands somewhere safe.
+// nextPermissionMode cycles the same profiles exposed by /permissions. Legacy
+// modes land on ask-all so a persisted or externally supplied old value cannot
+// skip directly into a more permissive profile.
 func nextPermissionMode(mode agent.PermissionMode) agent.PermissionMode {
-	switch mode {
-	case agent.PermissionModeAuto:
-		return agent.PermissionModeAsk
-	case agent.PermissionModeAsk:
-		return agent.PermissionModeAuto
-	default:
-		// Anything else (incl. an externally-set Unsafe) folds to Ask — the stricter
-		// landing, so toggling never makes an Unsafe session less strict.
-		return agent.PermissionModeAsk
+	profiles := agent.PermissionProfiles()
+	for index, profile := range profiles {
+		if mode == profile {
+			return profiles[(index+1)%len(profiles)]
+		}
 	}
+	return agent.PermissionModeAskAll
 }
 
 func (m model) modeLabel() (string, lipgloss.Style) {

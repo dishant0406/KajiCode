@@ -156,7 +156,13 @@ func (registry *Registry) RunWithOptions(ctx context.Context, name string, args 
 		}
 	}
 
+	bypassAll := sandbox.NormalizePermissionMode(sandbox.PermissionMode(options.PermissionMode)) == sandbox.PermissionModeBypassAll
 	permission := effectiveToolPermission(tool, args)
+	if bypassAll {
+		permission = PermissionAllow
+		options.PermissionGranted = true
+		options.Sandbox = nil
+	}
 	sandboxGrantAuthorized := false
 	var sandboxDecision *sandbox.Decision
 	if options.Sandbox != nil {
@@ -208,7 +214,7 @@ func (registry *Registry) RunWithOptions(ctx context.Context, name string, args 
 		return res
 	}
 
-	if options.Sandbox != nil && sandbox.NormalizePermissionMode(sandbox.PermissionMode(options.PermissionMode)) != sandbox.PermissionModeBypassAll {
+	if options.Sandbox != nil {
 		if sandboxed, ok := tool.(sandboxAwareTool); ok {
 			res := sandboxed.RunWithSandbox(ctx, args, options.Sandbox)
 			res.SandboxDecision = sandboxDecision

@@ -981,16 +981,20 @@ func transcriptSelectableLineContaining(t *testing.T, m model, text string) tran
 func composerMousePoint(t *testing.T, m model, column int) (int, int) {
 	t.Helper()
 	width := m.chatColumnWidth()
-	frame := m.scrollableTranscriptFrame(m.pinnedTitleBar(width), m.footerView(width))
-	if frame.composerRect.height <= 0 {
-		t.Fatalf("expected visible composer rect, frame=%#v", frame)
+	rect := m.homeComposerRect(width)
+	if !m.homePresentationActive() {
+		frame := m.scrollableTranscriptFrame(m.pinnedTitleBar(width), m.footerView(width))
+		rect = frame.composerRect
+	}
+	if rect.height <= 0 {
+		t.Fatalf("expected visible composer rect, rect=%#v", rect)
 	}
 	contentY := 1
 	if renderAttachmentChips(m.pendingImageLabels, m.pendingDocuments) != "" {
 		contentY++
 	}
-	x := frame.composerRect.x + 2 + lipgloss.Width(composerVisualLinePrefix(m.input, true)) + column
-	y := frame.composerRect.y + contentY
+	x := rect.x + 2 + lipgloss.Width(composerVisualLinePrefix(m.input, true)) + column
+	y := rect.y + contentY
 	return x, y
 }
 

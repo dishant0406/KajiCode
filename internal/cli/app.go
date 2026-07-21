@@ -264,7 +264,7 @@ func runWithDeps(args []string, stdout io.Writer, stderr io.Writer, deps appDeps
 	addDirs = append(addDirs, moreDirs...)
 
 	if len(args) == 0 {
-		return runInteractiveTUI(stderr, deps, agent.PermissionModeAsk, addDirs, theme)
+		return runInteractiveTUI(stderr, deps, "", addDirs, theme)
 	}
 
 	// --add-dir grants an extra write root, and only the interactive TUI and
@@ -739,13 +739,9 @@ func runInteractiveTUIWithSetup(stderr io.Writer, deps appDeps, permissionMode a
 	// launch directory itself.
 	trustRoot := workspaceRoot
 	pluginActivation := activatePlugins(workspaceRoot, registry, deps, stderr, trustRoot)
-	// Ask (not Auto) is the interactive default: in Auto, ToolAdvertised exposes
-	// only PermissionAllow tools, so prompt-gated tools (write_file/edit_file/bash/
-	// apply_patch) would never be offered to the model — the TUI could neither edit
-	// files nor run shell. Ask advertises them and routes each through the existing
-	// OnPermissionRequest flow; shift+tab lets the user switch modes live. An
-	// explicit --skip-permissions-unsafe launch overrides this to unsafe (the only
-	// way to reach unsafe, since shift+tab deliberately cycles auto↔ask only).
+	// Resolve the saved interactive profile, defaulting to ask-all so prompt-gated
+	// tools remain advertised and route through the permission flow. An explicit
+	// --skip-permissions-unsafe launch still overrides the saved profile.
 	//
 	// Resolve the effective mode BEFORE the deferral gate below so the registration
 	// count uses the SAME permission mode the agent loop's partition will use; an

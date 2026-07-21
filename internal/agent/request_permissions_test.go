@@ -185,6 +185,44 @@ func TestInlineAdditionalPermissionsRequiresPromptUnderAutoAllow(t *testing.T) {
 	}
 }
 
+func TestRequestPermissionsBypassAllDoesNotPromptOrInstallGrant(t *testing.T) {
+	workspace := t.TempDir()
+	registry := tools.NewRegistry()
+	registry.Register(tools.NewRequestPermissionsTool())
+	provider := requestPermissionsOnlyProvider(`{"reason":"Need network.","permissions":{"network":{"enabled":true}}}`, "done")
+	prompted := false
+	var output string
+
+	result, err := Run(context.Background(), "request network", provider, Options{
+		Registry:       registry,
+		PermissionMode: PermissionModeBypassAll,
+		Cwd:            workspace,
+		Sandbox:        sandbox.NewEngine(sandbox.EngineOptions{WorkspaceRoot: workspace, Policy: sandbox.DefaultPolicy()}),
+		OnPermissionRequest: func(context.Context, PermissionRequest) (PermissionDecision, error) {
+			prompted = true
+			return PermissionDecision{Action: PermissionDecisionDeny}, nil
+		},
+		OnToolResult: func(result ToolResult) { output = result.Output },
+		MaxTurns:     2,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prompted {
+		t.Fatal("bypass-all must not invoke OnPermissionRequest")
+	}
+	if result.FinalAnswer != "done" {
+		t.Fatalf("final answer = %q, want done", result.FinalAnswer)
+	}
+	var response sandbox.RequestPermissionsResponse
+	if err := json.Unmarshal([]byte(output), &response); err != nil {
+		t.Fatalf("unmarshal response %q: %v", output, err)
+	}
+	if response.Permissions.Network == nil || response.Permissions.Network.Enabled == nil || !*response.Permissions.Network.Enabled {
+		t.Fatalf("bypass response permissions = %#v, want requested network access", response.Permissions)
+	}
+}
+
 func TestRequestPermissionsDenyReturnsEmptyGrantAndContinues(t *testing.T) {
 	workspace := t.TempDir()
 	registry := tools.NewRegistry()

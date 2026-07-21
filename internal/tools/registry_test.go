@@ -225,6 +225,53 @@ func TestRegistryReportsUnknownTools(t *testing.T) {
 	}
 }
 
+type bypassProbeTool struct {
+	baseTool
+	options *RunOptions
+}
+
+func (tool *bypassProbeTool) Run(context.Context, map[string]any) Result {
+	return errorResult("unexpected plain execution")
+}
+
+func (tool *bypassProbeTool) RunWithOptions(_ context.Context, _ map[string]any, options RunOptions) Result {
+	*tool.options = options
+	return okResult("executed")
+}
+
+func TestRegistryBypassAllOverridesDenyAndStripsSandbox(t *testing.T) {
+	var received RunOptions
+	probe := &bypassProbeTool{
+		baseTool: baseTool{
+			name: "denied_probe",
+			safety: Safety{
+				SideEffect: SideEffectShell,
+				Permission: PermissionDeny,
+				Reason:     "normally denied",
+			},
+		},
+		options: &received,
+	}
+	registry := NewRegistry()
+	registry.Register(probe)
+	engine := sandbox.NewEngine(sandbox.EngineOptions{WorkspaceRoot: t.TempDir(), Policy: sandbox.DefaultPolicy()})
+
+	result := registry.RunWithOptions(context.Background(), probe.Name(), nil, RunOptions{
+		PermissionMode: string(sandbox.PermissionModeBypassAll),
+		Sandbox:        engine,
+	})
+
+	if result.Status != StatusOK || result.Output != "executed" {
+		t.Fatalf("bypass-all result = %#v, want successful execution", result)
+	}
+	if !received.PermissionGranted {
+		t.Fatal("bypass-all must mark the tool call permission granted")
+	}
+	if received.Sandbox != nil {
+		t.Fatal("bypass-all must strip the sandbox before options-aware execution")
+	}
+}
+
 func TestRegistryAppliesSandboxBeforeToolExecution(t *testing.T) {
 	root := t.TempDir()
 	outside := filepath.Join(tempDirOutsideDefaultTemp(t), "escape.txt")

@@ -6,6 +6,24 @@ import (
 	"github.com/dishant0406/KajiCode/internal/agent"
 )
 
+func (m model) setPermissionProfile(mode agent.PermissionMode) (model, error) {
+	switch mode {
+	case agent.PermissionModeAskAll, agent.PermissionModeReadOnly,
+		agent.PermissionModeReadWrite, agent.PermissionModeBypassAll:
+	default:
+		return m, fmt.Errorf("invalid profile %s", mode)
+	}
+	previous := m.permissionMode
+	m.permissionMode = mode
+	if m.savePermissionProfile != nil {
+		if err := m.savePermissionProfile(mode); err != nil {
+			m.permissionMode = previous
+			return m, err
+		}
+	}
+	return m, nil
+}
+
 func (m model) newPermissionsPicker() *commandPicker {
 	items := []pickerItem{
 		{Label: "Ask for every action", Value: string(agent.PermissionModeAskAll), Meta: "reads · writes · shell · network"},
@@ -31,19 +49,10 @@ func (m model) newPermissionsPicker() *commandPicker {
 
 func (m model) choosePermissionProfile(value string) (model, string) {
 	mode := agent.PermissionMode(value)
-	switch mode {
-	case agent.PermissionModeAskAll, agent.PermissionModeReadOnly,
-		agent.PermissionModeReadWrite, agent.PermissionModeBypassAll:
-	default:
-		return m, "Permission profile was not changed: invalid profile " + value
-	}
-	previous := m.permissionMode
-	m.permissionMode = mode
-	if m.savePermissionProfile != nil {
-		if err := m.savePermissionProfile(mode); err != nil {
-			m.permissionMode = previous
-			return m, "Permission profile was not changed: " + err.Error()
-		}
+	var err error
+	m, err = m.setPermissionProfile(mode)
+	if err != nil {
+		return m, "Permission profile was not changed: " + err.Error()
 	}
 	warning := ""
 	if mode == agent.PermissionModeBypassAll {

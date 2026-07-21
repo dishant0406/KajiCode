@@ -172,6 +172,7 @@ type model struct {
 	turnTTFTSum        time.Duration
 	turnTTFTCount      int
 	transcript         []transcriptRow
+	homeNotice         string
 	transcriptDetailed bool
 	helpOverlay        bool // the `?` keyboard-shortcut overlay is open
 	helpOverlayScroll  int
@@ -1594,13 +1595,18 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.pendingAskUser != nil {
 				return m.moveAskUserTab(-1), nil
 			}
-			// shift+tab toggles the permission mode between Auto and Ask (Unsafe
-			// is intentionally not reachable by a casual keypress — see
-			// nextPermissionMode), but only when nothing modal is up: a permission
-			// prompt, ask_user questionnaire, or open picker all take precedence
-			// and let the key fall through to their own handlers below.
-			if m.noBlockingModal() {
-				m.permissionMode = nextPermissionMode(m.permissionMode)
+			// shift+tab cycles the user-selectable permission profiles, but only
+			// when nothing modal is up: a permission prompt, ask_user questionnaire,
+			// or open picker takes precedence and handles the key below.
+			if m.noBlockingModal() && !m.pending {
+				next := nextPermissionMode(m.permissionMode)
+				var err error
+				m, err = m.setPermissionProfile(next)
+				if err != nil {
+					m.homeNotice = "Permission profile was not changed: " + err.Error()
+				} else {
+					m.homeNotice = ""
+				}
 				return m, nil
 			}
 		case m.keyMatch(m.keyBindings.cycleReasoning, msg, func(tea.KeyMsg) bool { return keyCtrl(msg, 't') }):
@@ -2630,6 +2636,16 @@ func (m model) transcriptEmpty() bool {
 	return true
 }
 
+// homePresentationActive reports whether the fresh-session surface owns the
+// whole chat frame. Overlays keep the regular footer composer so their search
+// and selection UI remains usable; the centered composer returns when they close.
+func (m model) homePresentationActive() bool {
+	return m.transcriptEmpty() && !m.pending && m.pendingAskUser == nil &&
+		!m.helpOverlay && !m.leaderHelpOverlay && m.providerWizard == nil &&
+		m.mcpAddWizard == nil && m.mcpManager == nil && m.picker == nil &&
+		m.sttKeyPrompt == nil && !m.suggestionsActive() && !m.transcriptDetailed
+}
+
 // transcriptView renders the visible chat surface: in inline mode this is the
 // live tail not yet settled into native scrollback; in alt-screen mode it is
 // the managed conversation view. Streaming/modal blocks and composer chrome are
@@ -2702,6 +2718,9 @@ func (m model) transcriptView() string {
 	bodyItems := m.transcriptBodyItems(width, emptyOverlay, false)
 
 	footer := m.footerView(width)
+	if m.homePresentationActive() {
+		footer = ""
+	}
 
 	overlayForViewport := viewportOverlay
 	if m.transcriptEmpty() && !m.pending && viewportOverlay != "" {
@@ -2755,11 +2774,11 @@ func (m model) twoColumnTranscriptView() string {
 }
 
 func (m model) titleBarInTranscriptBody() bool {
-	return !m.altScreen && !m.headerPrinted
+	return !m.altScreen && !m.headerPrinted && !m.homePresentationActive()
 }
 
 func (m model) pinnedTitleBar(width int) string {
-	if !m.altScreen || m.height <= 0 {
+	if !m.altScreen || m.height <= 0 || m.homePresentationActive() {
 		return ""
 	}
 	// The file drill-in replaces the title bar with its nav line (path + key
@@ -2961,6 +2980,22 @@ func (m model) scrollableTranscriptFrame(header string, footer string) transcrip
 		frame.statusRect = frame.footerLineRect(len(fullFooterLines) - 1)
 	}
 	return frame
+}
+
+func (m model) homeComposerRect(width int) tuiRect {
+	if !m.homePresentationActive() || width <= 0 {
+		return tuiRect{}
+	}
+	blockLines := m.emptyStateLines(width)
+	composerLines := viewLines(m.composerBox(homeComposerWidth(width)))
+	composerTop := len(themedWordmarkLines(width)) + 1
+	gap := maxInt(0, (normalizedStartupHeight(m.height)-len(blockLines))/2)
+	return tuiRect{
+		x:      maxInt(0, (width-homeComposerWidth(width))/2),
+		y:      gap + composerTop,
+		width:  homeComposerWidth(width),
+		height: len(composerLines),
+	}
 }
 
 func (m model) helpOverlayMaxHeight() int {
@@ -4648,6 +4683,7 @@ func (m model) launchPrompt(prompt string) (model, tea.Cmd) {
 	m.lastImages = m.pendingImages
 	m.lastImageLabels = m.pendingImageLabels
 	m.lastDocuments = m.pendingDocuments
+	m.homeNotice = ""
 	m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendUser, text: prompt})
 	if m.provider == nil {
 		m.transcript = reduceTranscript(m.transcript, transcriptAction{

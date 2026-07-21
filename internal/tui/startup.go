@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"unicode/utf8"
 
@@ -24,22 +25,27 @@ var kajicodeWordmarkLines = []string{
 	`▒▒▒▒▒   ▒▒▒▒ ▒▒▒▒▒   ▒▒▒▒▒  ▒▒▒▒▒▒▒▒   ▒▒▒▒▒      ▒▒▒▒▒▒▒▒▒     ▒▒▒▒▒▒▒    ▒▒▒▒▒▒▒▒▒▒   ▒▒▒▒▒▒▒▒▒▒ `,
 }
 
+var kajicodeHomeWordmarkLines = []string{
+	`██  ██   ████     ██  █████   ████    ████   █████   █████`,
+	`██ ██   ██  ██    ██    ██   ██      ██  ██  ██  ██  ██   `,
+	`████    ██████    ██    ██   ██      ██  ██  ██  ██  ████ `,
+	`██ ██   ██  ██ ██ ██    ██   ██      ██  ██  ██  ██  ██   `,
+	`██  ██  ██  ██  ███   █████   ████    ████   █████   █████`,
+}
+
 var kajicodeCompactWordmarkLines = []string{
 	`KajiCode`,
 }
 
 const emptyStateTagline = "Any model. Every tool. KajiCode."
 
-// emptyState renders the centered stream-area block shown while the
-// transcript has no real content: the brand glyph and tagline.
+// emptyState renders the fresh-session home: brand, live composer, shortcuts,
+// and workspace orientation as one centered block.
 func (m model) emptyState(width int) string {
 	lines := m.emptyStateLines(width)
-
-	// Vertically center within the stream area: the frame around it (title bar,
-	// rules, composer, status line) occupies ~6 terminal rows.
 	height := normalizedStartupHeight(m.height)
-	gap := clamp((height-6-len(lines))/2, 0, 12)
-	return strings.Repeat("\n", gap) + strings.Join(lines, "\n") + strings.Repeat("\n", gap)
+	gap := maxInt(0, (height-len(lines))/2)
+	return strings.Repeat("\n", gap) + strings.Join(lines, "\n")
 }
 
 func (m model) emptyStateWithOverlay(width int, overlay string) string {
@@ -63,51 +69,72 @@ func (m model) emptyStateLines(width int) []string {
 	for _, glyph := range themedWordmarkLines(width) {
 		lines = append(lines, centerLine(glyph, width))
 	}
-	lines = append(lines, "")
-	lines = append(lines, centerLine(kajicodeTheme.muted.Render(emptyStateTagline), width))
-	// Orientation: where KajiCode is pointed (cwd · branch · model) so a returning user
-	// sees the context before typing instead of a blank brand screen.
+	if copyStatus := strings.TrimSpace(m.copyStatus); copyStatus != "" {
+		lines = append(lines, centerLine(kajicodeTheme.ink.Render(copyStatus), width))
+	} else {
+		lines = append(lines, "")
+	}
+
+	composerWidth := homeComposerWidth(width)
+	composer := viewLines(m.composerBox(composerWidth))
+	composerLeft := maxInt(0, (width-composerWidth)/2)
+	for _, line := range composer {
+		lines = append(lines, strings.Repeat(" ", composerLeft)+line)
+	}
+
+	mode, modeStyle := m.modeLabel()
+	shortcuts := kajicodeTheme.faint.Render("Shift+Tab mode: ") + modeStyle.Render(mode) +
+		kajicodeTheme.faint.Render("  ·  Ctrl+X ? commands  ·  ? shortcuts")
+	lines = append(lines, centerLine(shortcuts, width))
 	if orient := m.emptyStateOrientation(); orient != "" {
 		lines = append(lines, "")
 		lines = append(lines, centerLine(orient, width))
 	}
-	// A couple of example prompts to seed the first message.
-	lines = append(lines, "")
-	lines = append(lines, centerLine(kajicodeTheme.faint.Render(emptyStateExamples), width))
-	lines = append(lines, "")
-	lines = append(lines, centerLine(kajicodeTheme.faint.Render("Press ? for keyboard shortcuts · / for commands"), width))
-	// centerLine pads but never truncates; below ~62 cols the lines would exceed
-	// the frame without this fit.
+	if notice := strings.TrimSpace(m.homeNotice); notice != "" {
+		lines = append(lines, "")
+		lines = append(lines, centerLine(kajicodeTheme.muted.Render(notice), width))
+	}
 	for index := range lines {
 		lines[index] = fitStyledLine(lines[index], width)
 	}
 	return lines
 }
 
-// emptyStateExamples seeds the first prompt with a few representative asks.
-const emptyStateExamples = `Try  "explain this codebase"  ·  "fix the failing test"  ·  "add a --json flag"`
+// emptyStateOrientation renders the workspace and runtime context below the
+// home composer, omitting unknown pieces.
+func homeComposerWidth(width int) int {
+	return clamp(width-4, 8, 76)
+}
 
-// emptyStateOrientation renders a faint "version · cwd · branch · model" line
-// for the home screen, omitting any piece that's unknown. Empty when nothing
-// is known.
 func (m model) emptyStateOrientation() string {
-	parts := make([]string, 0, 4)
+	parts := make([]string, 0, 3)
+	workspace := shortenPath(strings.TrimSpace(m.cwd))
+	if branch := strings.TrimSpace(m.gitBranch); branch != "" {
+		workspace += ":" + branch
+	}
+	if workspace != "" {
+		parts = append(parts, workspace)
+	}
+	if count := m.enabledMCPServerCount(); count > 0 {
+		parts = append(parts, fmt.Sprintf("● MCP %d", count))
+	}
 	if version := displayVersion(m.appVersion); version != "" {
 		parts = append(parts, version)
-	}
-	if cwd := strings.TrimSpace(m.cwd); cwd != "" {
-		parts = append(parts, shortenPath(cwd))
-	}
-	if branch := strings.TrimSpace(m.gitBranch); branch != "" {
-		parts = append(parts, branch)
-	}
-	if model := strings.TrimSpace(m.modelName); model != "" {
-		parts = append(parts, model)
 	}
 	if len(parts) == 0 {
 		return ""
 	}
 	return kajicodeTheme.faint.Render(strings.Join(parts, "  ·  "))
+}
+
+func (m model) enabledMCPServerCount() int {
+	count := 0
+	for _, server := range m.mcpConfig.Servers {
+		if !server.Disabled {
+			count++
+		}
+	}
+	return count
 }
 
 // displayVersion formats the CLI build version for display: numeric releases
@@ -125,8 +152,8 @@ func displayVersion(version string) string {
 }
 
 func themedWordmarkLines(width int) []string {
-	source := kajicodeWordmarkLines
-	if width > 0 && width < widestLine(kajicodeWordmarkLines) {
+	source := kajicodeHomeWordmarkLines
+	if width > 0 && width < widestLine(kajicodeHomeWordmarkLines) {
 		source = kajicodeCompactWordmarkLines
 	}
 	lines := make([]string, 0, len(source))

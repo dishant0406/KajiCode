@@ -185,7 +185,7 @@ func TestRunNoArgsLaunchesSetupTUIWithNilProviderWhenNoProviderConfigured(t *tes
 		t.Fatalf("Setup.ConfigPath = %q, want %q", launchedOptions.Setup.ConfigPath, userConfigPath)
 	}
 	assertCoreRegistry(t, launchedOptions.Registry)
-	assertAgentOptions(t, launchedOptions, 12, agent.PermissionModeAsk)
+	assertAgentOptions(t, launchedOptions, 12, agent.PermissionModeAskAll)
 }
 
 type fakeMCPRuntimeWithSkips struct {
@@ -734,10 +734,41 @@ func TestRunNoArgsLaunchesTUIWithResolvedProviderMetadata(t *testing.T) {
 		t.Fatalf("expected empty stderr, got %q", stderr.String())
 	}
 	assertCoreRegistry(t, launchedOptions.Registry)
-	assertAgentOptions(t, launchedOptions, 5, agent.PermissionModeAsk)
+	assertAgentOptions(t, launchedOptions, 5, agent.PermissionModeAskAll)
 }
 
-func TestRunNoArgsLaunchesTUIInAskPermissionMode(t *testing.T) {
+func TestRunNoArgsUsesSavedPermissionProfile(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cwd := t.TempDir()
+	var launchedOptions tui.Options
+
+	exitCode := runWithDeps([]string{}, &stdout, &stderr, appDeps{
+		getwd: func() (string, error) { return cwd, nil },
+		resolveConfig: func(string, config.Overrides) (config.ResolvedConfig, error) {
+			return config.ResolvedConfig{
+				MaxTurns: 3,
+				Preferences: config.PreferencesConfig{
+					PermissionProfile: string(agent.PermissionModeBypassAll),
+				},
+			}, nil
+		},
+		runTUI: func(_ context.Context, options tui.Options) int {
+			launchedOptions = options
+			return 0
+		},
+	})
+
+	if exitCode != 0 {
+		t.Fatalf("expected exit code 0, got %d", exitCode)
+	}
+	if launchedOptions.PermissionMode != agent.PermissionModeBypassAll ||
+		launchedOptions.AgentOptions.PermissionMode != agent.PermissionModeBypassAll {
+		t.Fatalf("saved permission profile not propagated: TUI=%q agent=%q", launchedOptions.PermissionMode, launchedOptions.AgentOptions.PermissionMode)
+	}
+}
+
+func TestRunNoArgsLaunchesTUIWithDefaultPermissionProfile(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	cwd := t.TempDir()
@@ -759,14 +790,11 @@ func TestRunNoArgsLaunchesTUIInAskPermissionMode(t *testing.T) {
 	if exitCode != 0 {
 		t.Fatalf("expected exit code 0, got %d", exitCode)
 	}
-	// Auto only advertises PermissionAllow tools, so write_file/edit_file/bash/
-	// apply_patch (PermissionPrompt) would never be offered to the model. Ask
-	// advertises them and gates each through the permission flow.
-	if launchedOptions.PermissionMode != agent.PermissionModeAsk {
-		t.Fatalf("PermissionMode = %q, want %q", launchedOptions.PermissionMode, agent.PermissionModeAsk)
+	if launchedOptions.PermissionMode != agent.PermissionModeAskAll {
+		t.Fatalf("PermissionMode = %q, want %q", launchedOptions.PermissionMode, agent.PermissionModeAskAll)
 	}
-	if launchedOptions.AgentOptions.PermissionMode != agent.PermissionModeAsk {
-		t.Fatalf("AgentOptions.PermissionMode = %q, want %q", launchedOptions.AgentOptions.PermissionMode, agent.PermissionModeAsk)
+	if launchedOptions.AgentOptions.PermissionMode != agent.PermissionModeAskAll {
+		t.Fatalf("AgentOptions.PermissionMode = %q, want %q", launchedOptions.AgentOptions.PermissionMode, agent.PermissionModeAskAll)
 	}
 }
 

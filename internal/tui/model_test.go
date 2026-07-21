@@ -6,6 +6,7 @@ import (
 	"errors"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -263,8 +264,9 @@ func TestInitialRenderShowsLimeChatSurface(t *testing.T) {
 
 	view := viewString(model.View())
 	assertContains(t, view, `/workspace/kajicode`)
-	assertContains(t, view, "openai/gpt-4.1")
-	assertContains(t, view, emptyStateTagline)
+	assertContains(t, view, "gpt-4.1")
+	assertContains(t, view, "Shift+Tab mode")
+	assertNotContains(t, view, "openai/gpt-4.1")
 	assertNotContains(t, view, "running KajiCode against ")
 	assertNotContains(t, view, " 0 ")
 	assertContains(t, view, composerPlaceholder)
@@ -315,7 +317,8 @@ func TestEmptyStateStaysVisibleOnEmptySubmit(t *testing.T) {
 	next.height = m.height
 
 	view := viewString(next.View())
-	assertContains(t, view, emptyStateTagline)
+	assertContains(t, view, composerPlaceholder)
+	assertContains(t, view, "Shift+Tab mode")
 	assertNotContains(t, view, "❯ inspect")
 }
 
@@ -1855,16 +1858,24 @@ func TestToolResultRowTruncatesLongOutput(t *testing.T) {
 	}
 }
 
-func TestShiftTabCyclesPermissionMode(t *testing.T) {
-	m := newModel(context.Background(), Options{PermissionMode: agent.PermissionModeAuto})
+func TestShiftTabCyclesAndPersistsPermissionProfiles(t *testing.T) {
+	var saved []agent.PermissionMode
+	m := newModel(context.Background(), Options{
+		PermissionMode: agent.PermissionModeAskAll,
+		SavePermissionProfile: func(mode agent.PermissionMode) error {
+			saved = append(saved, mode)
+			return nil
+		},
+	})
 	m.width = 96
 
-	// shift+tab toggles Auto<->Ask only; Unsafe is intentionally NOT reachable by
-	// a casual keypress (it disables permission prompts).
-	for _, want := range []agent.PermissionMode{
-		agent.PermissionModeAsk,
-		agent.PermissionModeAuto,
-	} {
+	wantModes := []agent.PermissionMode{
+		agent.PermissionModeReadOnly,
+		agent.PermissionModeReadWrite,
+		agent.PermissionModeBypassAll,
+		agent.PermissionModeAskAll,
+	}
+	for _, want := range wantModes {
 		updated, cmd := m.Update(testKeyShift(tea.KeyTab))
 		m = updated.(model)
 		if cmd != nil {
@@ -1873,14 +1884,12 @@ func TestShiftTabCyclesPermissionMode(t *testing.T) {
 		if m.permissionMode != want {
 			t.Fatalf("expected permission mode %q after shift+tab, got %q", want, m.permissionMode)
 		}
-		if m.permissionMode == agent.PermissionModeUnsafe {
-			t.Fatalf("shift+tab must never land on Unsafe")
-		}
 	}
-
-	// The rendered status label tracks the cycled mode.
+	if !slices.Equal(saved, wantModes) {
+		t.Fatalf("saved profiles = %v, want %v", saved, wantModes)
+	}
 	label, _ := m.modeLabel()
-	if label != "auto-approve" {
+	if label != "ask-all" {
 		t.Fatalf("expected mode label to track cycled mode, got %q", label)
 	}
 }
@@ -2641,17 +2650,23 @@ func testSessionStore(t *testing.T) *sessions.Store {
 	})
 }
 
-func TestNextPermissionModeFoldsUnsafeToAsk(t *testing.T) {
-	if got := nextPermissionMode(agent.PermissionModeAuto); got != agent.PermissionModeAsk {
-		t.Fatalf("Auto -> %s, want Ask", got)
+func TestNextPermissionModeCyclesProfilesAndFoldsLegacyModesSafely(t *testing.T) {
+	tests := []struct {
+		mode agent.PermissionMode
+		want agent.PermissionMode
+	}{
+		{agent.PermissionModeAskAll, agent.PermissionModeReadOnly},
+		{agent.PermissionModeReadOnly, agent.PermissionModeReadWrite},
+		{agent.PermissionModeReadWrite, agent.PermissionModeBypassAll},
+		{agent.PermissionModeBypassAll, agent.PermissionModeAskAll},
+		{agent.PermissionModeAuto, agent.PermissionModeAskAll},
+		{agent.PermissionModeAsk, agent.PermissionModeAskAll},
+		{agent.PermissionModeUnsafe, agent.PermissionModeAskAll},
 	}
-	if got := nextPermissionMode(agent.PermissionModeAsk); got != agent.PermissionModeAuto {
-		t.Fatalf("Ask -> %s, want Auto", got)
-	}
-	// Unsafe must fold to the STRICTER Ask, never Auto (toggling an Unsafe session
-	// must not make it less strict).
-	if got := nextPermissionMode(agent.PermissionModeUnsafe); got != agent.PermissionModeAsk {
-		t.Fatalf("Unsafe -> %s, want Ask", got)
+	for _, test := range tests {
+		if got := nextPermissionMode(test.mode); got != test.want {
+			t.Errorf("nextPermissionMode(%s) = %s, want %s", test.mode, got, test.want)
+		}
 	}
 }
 

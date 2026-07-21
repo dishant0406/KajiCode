@@ -89,13 +89,11 @@ func (m model) startNewSession() model {
 	m.lastImageLabels = nil
 	m.lastDocuments = nil
 
-	note := "Started a new session."
+	m.homeNotice = "Started a new session."
 	if previousID != "" {
-		note = "New session started. Previous session saved as " + previousID +
-			" — resume it anytime with /resume " + previousID + "."
+		m.homeNotice = "Previous session saved as " + previousID + " · /resume " + previousID
 	}
 	m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionClear})
-	m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: note})
 	// Scrollback above can't be un-printed; a faint divider marks the boundary and
 	// the flush frontier restarts for the fresh transcript (mirrors /clear, /resume).
 	m.resetFlushFrontier("· new session ·")
@@ -103,7 +101,7 @@ func (m model) startNewSession() model {
 	// conversation's prompt into the fresh one.
 	if updated, cleared := m.clearLoopsForSessionSwitch(); cleared > 0 {
 		m = updated
-		m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: fmt.Sprintf("Stopped %d loop(s) tied to the previous session.", cleared)})
+		m.homeNotice += fmt.Sprintf(" · stopped %d previous-session loop(s)", cleared)
 	}
 	return m
 }
