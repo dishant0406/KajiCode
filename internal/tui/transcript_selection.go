@@ -2,6 +2,7 @@ package tui
 
 import (
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -542,10 +543,12 @@ func (m model) transcriptBodyItemsFromRows(rows []transcriptRow, width int) []tr
 			items = append(items, transcriptBlankBodyItem())
 		}
 		rowIndex, transcriptRow := index, row
+		heightCacheKey, heightCacheStable := m.transcriptRowBodyHeightCacheKeyOpts(transcriptRow, contentWidth, rc, cardBodyMaxLines)
 		items = append(items, transcriptBodyItem{
-			kind:           transcriptBodyItemRow,
-			rowIndex:       rowIndex,
-			heightCacheKey: "subchat:" + strconv.Itoa(index) + ":" + strconv.Itoa(contentWidth),
+			kind:              transcriptBodyItemRow,
+			rowIndex:          rowIndex,
+			heightCacheKey:    "subchat:" + heightCacheKey,
+			heightCacheStable: heightCacheStable,
 			render: func(startBodyY int) transcriptBodyRenderedItem {
 				rendered, selectable := m.renderTranscriptRow(rowIndex, transcriptRow, contentWidth, rc, startBodyY)
 				return m.finalizeTranscriptBodyRow(rendered, selectable, gutter, startBodyY)
@@ -577,6 +580,15 @@ func layoutTranscriptBodyItems(items []transcriptBodyItem) transcriptBodyLayout 
 
 func measureTranscriptBodyItems(items []transcriptBodyItem, cache *transcriptBodyHeightCache) transcriptBodyLayout {
 	layout := transcriptBodyLayout{}
+	if cache != nil {
+		stableKeys := make(map[string]struct{}, len(items))
+		for _, item := range items {
+			if item.heightCacheStable && item.heightCacheKey != "" {
+				stableKeys[item.heightCacheKey] = struct{}{}
+			}
+		}
+		cache.retain(stableKeys)
+	}
 	startY := 0
 	for _, item := range items {
 		height := transcriptBodyItemHeight(item, cache)
@@ -596,14 +608,16 @@ func layoutVisibleTranscriptBodyItems(items []transcriptBodyItem, metrics transc
 	if window.end <= window.start {
 		return layout
 	}
-	for index, item := range items {
-		if index >= len(metrics.spans) {
-			break
-		}
+	limit := minInt(len(items), len(metrics.spans))
+	first := sort.Search(limit, func(index int) bool {
 		span := metrics.spans[index]
-		spanEnd := span.startY + span.height
-		if spanEnd <= window.start || span.startY >= window.end {
-			continue
+		return span.startY+span.height > window.start
+	})
+	for index := first; index < limit; index++ {
+		item := items[index]
+		span := metrics.spans[index]
+		if span.startY >= window.end {
+			break
 		}
 		rendered := renderTranscriptBodyItem(item, span.startY)
 		localStart := clampInt(window.start-span.startY, 0, len(rendered.lines))
@@ -921,11 +935,11 @@ func (m model) renderSelectableUserRow(rowIndex int, row transcriptRow, width in
 }
 
 func (m model) renderSelectableAssistantRow(rowIndex int, row transcriptRow, width int, startBodyY int) (string, []transcriptSelectableLine) {
-	tableMeasure := width
-	measure := assistantMeasure(width)
 	textStart := 0
-	// Committed/selectable row: highlight (the result is cached per row).
-	wrapped := renderAssistantMarkdownText(row.text, measure, tableMeasure, true)
+	// Reuse the cached display render for selection metadata. Parsing the same
+	// Markdown again here made every visible assistant row pay twice per render.
+	rendered := m.renderRow(row, width, rowContext{})
+	wrapped := viewLines(rendered)
 	selectable := make([]transcriptSelectableLine, 0, len(wrapped))
 	for index, line := range wrapped {
 		plainLine := stripMarkdownRenderControls(line)
@@ -941,7 +955,7 @@ func (m model) renderSelectableAssistantRow(rowIndex int, row transcriptRow, wid
 	// reading-column gutter shift (finalizeTranscriptBodyRow) — in the same shifted
 	// coordinate the mouse maps to. Self-painting here (unshifted) double-painted the
 	// highlight gutter cells off from the finalize pass (the "two highlights" bug).
-	return m.renderRow(row, width, rowContext{}), selectable
+	return rendered, selectable
 }
 
 func (m model) renderSelectableReasoningRow(rowIndex int, row transcriptRow, width int, startBodyY int) (string, []transcriptSelectableLine) {

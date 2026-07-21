@@ -1,6 +1,9 @@
 package tui
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+)
 
 func TestTranscriptBodyItemsRepresentEmptyState(t *testing.T) {
 	m := mouseTestModel()
@@ -190,6 +193,119 @@ func TestScrollableTranscriptItemsViewMatchesFullLayout(t *testing.T) {
 	if got != want {
 		t.Fatalf("visible item view changed output\nwant:\n%s\n\ngot:\n%s", want, got)
 	}
+}
+
+func TestMeasureTranscriptBodyItemsKeepsLongActiveLayoutResident(t *testing.T) {
+	const itemCount = defaultTranscriptBodyHeightCacheMaxEntries + 128
+	cache := newTranscriptBodyHeightCache(defaultTranscriptBodyHeightCacheMaxEntries)
+	renders := make([]int, itemCount)
+	items := make([]transcriptBodyItem, 0, itemCount)
+	for index := range itemCount {
+		items = append(items, countingTranscriptBodyItem(stringKey(index), []string{"row"}, &renders[index]))
+	}
+
+	first := measureTranscriptBodyItems(items, cache)
+	second := measureTranscriptBodyItems(items, cache)
+
+	if first.totalLines() != itemCount || second.totalLines() != itemCount {
+		t.Fatalf("total lines = %d/%d, want %d", first.totalLines(), second.totalLines(), itemCount)
+	}
+	for index, count := range renders {
+		if count != 1 {
+			t.Fatalf("item %d rendered %d times, want one measurement across repeated layouts", index, count)
+		}
+	}
+}
+
+func TestMeasureTranscriptBodyItemsOnlyMeasuresAppendedTail(t *testing.T) {
+	const initialCount = defaultTranscriptBodyHeightCacheMaxEntries + 128
+	cache := newTranscriptBodyHeightCache(defaultTranscriptBodyHeightCacheMaxEntries)
+	renders := make([]int, initialCount+1)
+	items := make([]transcriptBodyItem, 0, initialCount+1)
+	for index := range initialCount {
+		items = append(items, countingTranscriptBodyItem(stringKey(index), []string{"row"}, &renders[index]))
+	}
+	_ = measureTranscriptBodyItems(items, cache)
+	items = append(items, countingTranscriptBodyItem(stringKey(initialCount), []string{"new"}, &renders[initialCount]))
+
+	layout := measureTranscriptBodyItems(items, cache)
+
+	if layout.totalLines() != initialCount+1 {
+		t.Fatalf("total lines = %d, want %d", layout.totalLines(), initialCount+1)
+	}
+	for index, count := range renders {
+		if count != 1 {
+			t.Fatalf("item %d rendered %d times, want historical rows cached and appended row measured once", index, count)
+		}
+	}
+}
+
+func TestMeasureTranscriptBodyItemsReclaimsObsoleteLayout(t *testing.T) {
+	cache := newTranscriptBodyHeightCache(2)
+	large := make([]transcriptBodyItem, 0, 8)
+	for index := range 8 {
+		large = append(large, countingTranscriptBodyItem(stringKey(index), []string{"row"}, new(int)))
+	}
+	_ = measureTranscriptBodyItems(large, cache)
+
+	current := []transcriptBodyItem{countingTranscriptBodyItem("current", []string{"row"}, new(int))}
+	_ = measureTranscriptBodyItems(current, cache)
+
+	cache.mu.Lock()
+	defer cache.mu.Unlock()
+	if cache.maxEntries != 2 {
+		t.Fatalf("max entries = %d, want base capacity 2 after layout shrinks", cache.maxEntries)
+	}
+	if len(cache.items) != 1 {
+		t.Fatalf("cached entries = %d, want only the current layout", len(cache.items))
+	}
+	if _, ok := cache.items["current"]; !ok {
+		t.Fatalf("current layout key missing from cache: %#v", cache.items)
+	}
+}
+
+func TestMeasureTranscriptBodyItemsRemeasuresOnlyDynamicTail(t *testing.T) {
+	cache := newTranscriptBodyHeightCache(1)
+	stableRenders := 0
+	dynamicRenders := 0
+	items := []transcriptBodyItem{
+		countingTranscriptBodyItem("stable", []string{"history"}, &stableRenders),
+		{
+			kind: transcriptBodyItemPendingInterim,
+			render: func(int) transcriptBodyRenderedItem {
+				dynamicRenders++
+				return transcriptBodyRenderedItem{lines: []string{"streaming"}}
+			},
+		},
+	}
+
+	_ = measureTranscriptBodyItems(items, cache)
+	_ = measureTranscriptBodyItems(items, cache)
+
+	if stableRenders != 1 || dynamicRenders != 2 {
+		t.Fatalf("renders stable/dynamic = %d/%d, want 1/2", stableRenders, dynamicRenders)
+	}
+}
+
+func BenchmarkMeasureTranscriptBodyItemsLongThread(b *testing.B) {
+	for _, itemCount := range []int{100, 1000, 10000} {
+		b.Run(stringKey(itemCount), func(b *testing.B) {
+			cache := newTranscriptBodyHeightCache(defaultTranscriptBodyHeightCacheMaxEntries)
+			items := make([]transcriptBodyItem, 0, itemCount)
+			for index := range itemCount {
+				items = append(items, countingTranscriptBodyItem(stringKey(index), []string{"row"}, new(int)))
+			}
+			_ = measureTranscriptBodyItems(items, cache)
+			b.ResetTimer()
+			for range b.N {
+				_ = measureTranscriptBodyItems(items, cache)
+			}
+		})
+	}
+}
+
+func stringKey(value int) string {
+	return fmt.Sprintf("item-%d", value)
 }
 
 func countingTranscriptBodyItem(key string, lines []string, renders *int) transcriptBodyItem {

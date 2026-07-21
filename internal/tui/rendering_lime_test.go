@@ -319,6 +319,128 @@ func TestMarkdownInlineKeepsCodingLiterals(t *testing.T) {
 	}
 }
 
+func TestMarkdownInlineUsesGlamourForExtendedSyntax(t *testing.T) {
+	tests := map[string]string{
+		"~~removed~~":             "removed",
+		"escaped \\*asterisks\\*": "escaped *asterisks*",
+	}
+	for input, want := range tests {
+		rendered := renderMarkdownInline(input)
+		if len(rendered) > 256 {
+			t.Fatalf("inline markdown for %q produced %d bytes, want bounded output", input, len(rendered))
+		}
+		got := ansiPattern.ReplaceAllString(rendered, "")
+		if got != want {
+			t.Fatalf("inline markdown for %q = %q, want %q", input, got, want)
+		}
+	}
+	if got := renderMarkdownInline("~~removed~~"); !strings.Contains(got, markdownStrikeStart) {
+		t.Fatalf("strikethrough markdown should retain terminal styling, got %q", got)
+	}
+	if got := ansiPattern.ReplaceAllString(renderMarkdownInline("~~你好 👋~~"), ""); got != "你好 👋" {
+		t.Fatalf("wide strikethrough markdown = %q, want %q", got, "你好 👋")
+	}
+}
+
+func TestAssistantMarkdownUsesGlamourForExtendedSyntax(t *testing.T) {
+	lines := renderAssistantMarkdownText(strings.Join([]string{
+		"This is ~~removed~~ and escaped \\*literally\\* in a paragraph that wraps.",
+		"",
+		"| Value |",
+		"|---|",
+		"| ~~old~~ |",
+	}, "\n"), 28, 28, true)
+	rendered := strings.Join(lines, "\n")
+	plain := ansiPattern.ReplaceAllString(rendered, "")
+	for _, marker := range []string{"~~", `\*`} {
+		if strings.Contains(plain, marker) {
+			t.Fatalf("assistant Markdown leaked extended marker %q in:\n%s", marker, plain)
+		}
+	}
+	for _, want := range []string{"removed", "*literally*", "old"} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("assistant Markdown missing %q in:\n%s", want, plain)
+		}
+	}
+	for index, line := range lines {
+		if width := lipgloss.Width(line); width > 28 {
+			t.Fatalf("line %d width = %d, want <= 28: %q", index, width, line)
+		}
+	}
+}
+
+func TestAssistantMarkdownUsesGlamourForLinksAndLists(t *testing.T) {
+	lines := renderAssistantMarkdownText(strings.Join([]string{
+		"Read the [installation guide](https://example.com/install) before continuing.",
+		"",
+		"- first item",
+		"  - nested item",
+		"- [x] completed item",
+	}, "\n"), 72, 72, true)
+	plain := ansiPattern.ReplaceAllString(strings.Join(lines, "\n"), "")
+
+	for _, unwanted := range []string{"[installation guide]", "](https://example.com/install)", "\n- first item", "\n  - nested item"} {
+		if strings.Contains(plain, unwanted) {
+			t.Fatalf("assistant Markdown leaked source syntax %q in:\n%s", unwanted, plain)
+		}
+	}
+	for _, want := range []string{"installation guide", "• first item", "  • nested item", "[x] completed item"} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("assistant Markdown missing %q in:\n%s", want, plain)
+		}
+	}
+}
+
+func TestAssistantMarkdownListsKeepHangingIndentAndLooseContent(t *testing.T) {
+	lines := renderAssistantMarkdownText(strings.Join([]string{
+		"- a long list item that must wrap onto another display line",
+		"",
+		"    continuation paragraph",
+		"    - nested item",
+	}, "\n"), 24, 24, true)
+	plainLines := strings.Split(ansiPattern.ReplaceAllString(strings.Join(lines, "\n"), ""), "\n")
+
+	if len(plainLines) < 4 || plainLines[0] != "• a long list item that" || !strings.HasPrefix(plainLines[1], "  must wrap") {
+		t.Fatalf("wrapped list item should retain a hanging indent, got:\n%s", strings.Join(plainLines, "\n"))
+	}
+	plain := strings.Join(plainLines, "\n")
+	if !strings.Contains(plain, "continuation paragraph") || !strings.Contains(plain, "  • nested item") {
+		t.Fatalf("loose list content should remain in the list block, got:\n%s", plain)
+	}
+	for index, line := range lines {
+		if width := lipgloss.Width(line); width > 24 {
+			t.Fatalf("line %d width = %d, want <= 24: %q", index, width, line)
+		}
+	}
+}
+
+func TestStreamingAssistantMarkdownMatchesCommittedLinksAndLists(t *testing.T) {
+	text := strings.Join([]string{
+		"See [the docs](https://example.com/docs).",
+		"",
+		"- alpha",
+		"- beta",
+	}, "\n")
+	streaming := strings.Join(renderStreamingAssistantMarkdownText(text, 72, 72), "\n")
+	committed := strings.Join(renderAssistantMarkdownText(text, 72, 72, true), "\n")
+	if streaming != committed {
+		t.Fatalf("streaming Markdown must match committed rendering:\nstreaming: %q\ncommitted: %q", streaming, committed)
+	}
+}
+
+func TestExtendedMarkdownInlineRouting(t *testing.T) {
+	for _, input := range []string{"~~removed~~", `escaped \*asterisks\*`} {
+		if !hasExtendedMarkdownInline(input) {
+			t.Fatalf("extended Markdown %q was not routed through Glamour", input)
+		}
+	}
+	for _, input := range []string{"keep a*b*c literal", "glob *.go outside code too", "**bold `code` bold**"} {
+		if hasExtendedMarkdownInline(input) {
+			t.Fatalf("legacy Markdown %q should retain KajiCode rendering", input)
+		}
+	}
+}
+
 func TestMarkdownHorizontalRulesRenderAsDividers(t *testing.T) {
 	lines := renderAssistantMarkdownText(strings.Join([]string{
 		"Before",
@@ -343,7 +465,7 @@ func TestMarkdownHorizontalRulesDoNotEatListsOrDiffHeaders(t *testing.T) {
 		"+++ b/file.go",
 	}, "\n"), 60, 60, false)
 	got := plainRender(t, strings.Join(lines, "\n"))
-	for _, want := range []string{"- item", "--- a/file.go", "+++ b/file.go"} {
+	for _, want := range []string{"• item", "--- a/file.go", "+++ b/file.go"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("markdown rule parser should leave %q alone, got:\n%s", want, got)
 		}

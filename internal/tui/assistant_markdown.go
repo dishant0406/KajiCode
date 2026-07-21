@@ -18,6 +18,8 @@ const (
 	markdownTableRuleBodyRows    = 4
 	markdownBoldStart            = "\x1b[1m"
 	markdownBoldEnd              = "\x1b[22m"
+	markdownStrikeStart          = "\x1b[9m"
+	markdownStrikeEnd            = "\x1b[29m"
 )
 
 type markdownDisplayStyle int
@@ -132,7 +134,44 @@ func renderAssistantMarkdownText(text string, proseMeasure int, tableMeasure int
 			continue
 		}
 
-		if isMarkdownListLine(trimmed) || strings.HasPrefix(trimmed, ">") {
+		if isMarkdownListLine(trimmed) {
+			block := []string{}
+			for index < len(raw) {
+				next := raw[index]
+				nextTrimmed := strings.TrimSpace(next)
+				if nextTrimmed == "" {
+					probe := index
+					for probe < len(raw) && strings.TrimSpace(raw[probe]) == "" {
+						probe++
+					}
+					if probe >= len(raw) || len(raw[probe])-len(strings.TrimLeft(raw[probe], " \t")) == 0 {
+						break
+					}
+					block = append(block, next)
+					index++
+					continue
+				}
+				if !isMarkdownListLine(nextTrimmed) && len(next)-len(strings.TrimLeft(next, " \t")) == 0 {
+					break
+				}
+				block = append(block, next)
+				index++
+			}
+			if rendered, ok := glamourInline.renderBlock(strings.Join(normalizeMarkdownListBlock(block), "\n")); ok {
+				for _, renderedLine := range strings.Split(rendered, "\n") {
+					prefix, body := markdownRenderedListLineParts(renderedLine)
+					continuation := strings.Repeat(" ", lipgloss.Width(prefix))
+					lines = append(lines, wrapANSITextWithPrefixes(prefix, continuation, body, proseMeasure)...)
+				}
+				continue
+			}
+			for _, listLine := range block {
+				lines = append(lines, wrapMarkdownInline(renderMarkdownStandaloneLine(listLine), proseMeasure)...)
+			}
+			continue
+		}
+
+		if strings.HasPrefix(trimmed, ">") {
 			lines = append(lines, wrapMarkdownInline(renderMarkdownStandaloneLine(line), proseMeasure)...)
 			index++
 			continue
@@ -179,14 +218,62 @@ func renderAssistantMarkdownText(text string, proseMeasure int, tableMeasure int
 
 func renderStreamingAssistantMarkdownText(text string, proseMeasure int, tableMeasure int) []string {
 	stablePrefix := streamingMarkdownStablePrefix(text)
-	if defaultRenderCache == nil {
-		return renderAssistantMarkdownText(stablePrefix, proseMeasure, tableMeasure, true)
+	completed, active, separatorLines := splitStreamingMarkdownCompleted(stablePrefix)
+	lines := []string{}
+	if completed != "" {
+		render := func() string {
+			return strings.Join(renderAssistantMarkdownText(completed, proseMeasure, tableMeasure, true), "\n")
+		}
+		rendered := render()
+		if defaultRenderCache != nil {
+			key := streamingMarkdownRenderCacheKey(completed, proseMeasure, tableMeasure)
+			rendered = defaultRenderCache.render(key, true, render)
+		}
+		lines = append(lines, viewLines(rendered)...)
 	}
-	key := streamingMarkdownRenderCacheKey(stablePrefix, proseMeasure, tableMeasure)
-	rendered := defaultRenderCache.render(key, true, func() string {
-		return strings.Join(renderAssistantMarkdownText(stablePrefix, proseMeasure, tableMeasure, true), "\n")
-	})
-	return viewLines(rendered)
+	if completed != "" && active != "" {
+		lines = append(lines, make([]string, separatorLines)...)
+	}
+	if active != "" || len(lines) == 0 {
+		lines = append(lines, renderAssistantMarkdownText(active, proseMeasure, tableMeasure, true)...)
+	}
+	return lines
+}
+
+func splitStreamingMarkdownCompleted(text string) (string, string, int) {
+	openFence := ""
+	lastBoundary := -1
+	separatorLines := 0
+	lineStart := 0
+	for lineStart <= len(text) {
+		lineEnd := strings.IndexByte(text[lineStart:], '\n')
+		if lineEnd < 0 {
+			break
+		}
+		lineEnd += lineStart
+		trimmed := strings.TrimSpace(text[lineStart:lineEnd])
+		if fence, ok := markdownFenceMarker(trimmed); ok {
+			if openFence == "" {
+				openFence = fence
+			} else if openFence == fence {
+				openFence = ""
+			}
+		}
+		nextStart := lineEnd + 1
+		if openFence == "" && trimmed == "" {
+			if lastBoundary == lineStart {
+				separatorLines++
+			} else {
+				separatorLines = 1
+			}
+			lastBoundary = nextStart
+		}
+		lineStart = nextStart
+	}
+	if lastBoundary < 0 {
+		return "", text, 0
+	}
+	return strings.TrimRight(text[:lastBoundary], "\n"), strings.TrimLeft(text[lastBoundary:], "\n"), separatorLines
 }
 
 func streamingMarkdownRenderCacheKey(text string, proseMeasure int, tableMeasure int) string {
@@ -977,9 +1064,50 @@ func renderMarkdownStandaloneLine(line string) string {
 	return strings.TrimRight(line, " ")
 }
 
+func normalizeMarkdownListBlock(lines []string) []string {
+	normalized := make([]string, 0, len(lines))
+	for index, line := range lines {
+		if strings.TrimSpace(line) == "" && index+1 < len(lines) {
+			next := lines[index+1]
+			if len(next)-len(strings.TrimLeft(next, " \t")) > 0 {
+				continue
+			}
+		}
+		normalized = append(normalized, line)
+	}
+	return normalized
+}
+
+func markdownRenderedListLineParts(line string) (string, string) {
+	plain := ansi.Strip(line)
+	indent := len(plain) - len(strings.TrimLeft(plain, " "))
+	trimmed := plain[indent:]
+	markerWidth := 0
+	switch {
+	case strings.HasPrefix(trimmed, "• "):
+		markerWidth = len("• ")
+	default:
+		if dot := strings.IndexByte(trimmed, '.'); dot > 0 && dot+1 < len(trimmed) && trimmed[dot+1] == ' ' {
+			markerWidth = dot + 2
+			for _, r := range trimmed[:dot] {
+				if r < '0' || r > '9' {
+					markerWidth = 0
+					break
+				}
+			}
+		}
+	}
+	if markerWidth == 0 {
+		return strings.Repeat(" ", indent), strings.TrimLeft(line, " ")
+	}
+	bodyStart := len(line) - len(strings.TrimLeft(line, " ")) + markerWidth
+	return strings.Repeat(" ", indent) + trimmed[:markerWidth], line[bodyStart:]
+}
+
 type markdownInlineSegment struct {
-	text string
-	bold bool
+	text   string
+	bold   bool
+	strike bool
 }
 
 func wrapMarkdownInline(text string, measure int) []string {
@@ -1003,6 +1131,11 @@ func wrapMarkdownInline(text string, measure int) []string {
 }
 
 func wrapMarkdownInlineWithPrefixes(firstPrefix string, continuationPrefix string, text string, measure int) []string {
+	if shouldUseGlamourInline(text) {
+		if rendered, ok := glamourInline.render(text); ok {
+			return wrapANSITextWithPrefixes(firstPrefix, continuationPrefix, rendered, measure)
+		}
+	}
 	words := markdownInlineWords(parseMarkdownInline(text))
 	if len(words) == 0 {
 		return []string{firstPrefix}
@@ -1028,7 +1161,7 @@ func wrapMarkdownInlineWithPrefixes(firstPrefix string, continuationPrefix strin
 				flush()
 			}
 			head, tail := splitAtWidth(word.text, available)
-			lines = append(lines, prefix+renderMarkdownInlineSegment(markdownInlineSegment{text: head, bold: word.bold}))
+			lines = append(lines, prefix+renderMarkdownInlineSegment(markdownInlineSegment{text: head, bold: word.bold, strike: word.strike}))
 			word.text = tail
 			prefix = continuationPrefix
 			available = maxInt(1, measure-lipgloss.Width(prefix))
@@ -1060,11 +1193,24 @@ func wrapMarkdownInlineWithPrefixes(firstPrefix string, continuationPrefix strin
 	return lines
 }
 
+func wrapANSITextWithPrefixes(firstPrefix string, continuationPrefix string, text string, measure int) []string {
+	available := measure - maxInt(lipgloss.Width(firstPrefix), lipgloss.Width(continuationPrefix))
+	wrapped := strings.Split(ansi.Wordwrap(text, maxInt(1, available), ""), "\n")
+	for index := range wrapped {
+		prefix := continuationPrefix
+		if index == 0 {
+			prefix = firstPrefix
+		}
+		wrapped[index] = prefix + wrapped[index]
+	}
+	return wrapped
+}
+
 func markdownInlineWords(segments []markdownInlineSegment) []markdownInlineSegment {
 	words := []markdownInlineSegment{}
 	for _, segment := range segments {
 		for _, word := range strings.Fields(segment.text) {
-			words = append(words, markdownInlineSegment{text: word, bold: segment.bold})
+			words = append(words, markdownInlineSegment{text: word, bold: segment.bold, strike: segment.strike})
 		}
 	}
 	return words
@@ -1075,6 +1221,11 @@ func joinsPreviousMarkdownWord(text string) bool {
 }
 
 func renderMarkdownInline(text string) string {
+	if shouldUseGlamourInline(text) {
+		if rendered, ok := glamourInline.render(text); ok {
+			return rendered
+		}
+	}
 	segments := parseMarkdownInline(text)
 	var builder strings.Builder
 	for _, segment := range segments {
@@ -1087,10 +1238,14 @@ func renderMarkdownInlineSegment(segment markdownInlineSegment) string {
 	if segment.text == "" {
 		return ""
 	}
+	text := segment.text
 	if segment.bold {
-		return renderMarkdownBoldText(segment.text)
+		text = renderMarkdownBoldText(text)
 	}
-	return segment.text
+	if segment.strike {
+		text = markdownStrikeStart + text + markdownStrikeEnd
+	}
+	return text
 }
 
 func renderMarkdownBoldText(text string) string {
@@ -1098,6 +1253,11 @@ func renderMarkdownBoldText(text string) string {
 }
 
 func markdownInlinePlain(text string) string {
+	if shouldUseGlamourInline(text) {
+		if rendered, ok := glamourInline.render(text); ok {
+			return strings.TrimSpace(ansi.Strip(rendered))
+		}
+	}
 	segments := parseMarkdownInline(text)
 	var builder strings.Builder
 	for _, segment := range segments {
@@ -1112,16 +1272,28 @@ func parseMarkdownInline(text string) []markdownInlineSegment {
 	bold := false
 	emphasis := false
 	code := false
+	strike := false
 	flush := func() {
 		if builder.Len() == 0 {
 			return
 		}
-		segments = append(segments, markdownInlineSegment{text: builder.String(), bold: bold && !code})
+		segments = append(segments, markdownInlineSegment{text: builder.String(), bold: bold && !code, strike: strike && !code})
 		builder.Reset()
 	}
 
 	for index := 0; index < len(text); {
 		switch {
+		case text[index] == '\\' && index+1 < len(text) && strings.ContainsRune("\\`*_{}[]()#+-.!>|~", rune(text[index+1])):
+			builder.WriteByte(text[index+1])
+			index += 2
+			continue
+		case strings.HasPrefix(text[index:], "~~"):
+			if !code && (strike || strings.Contains(text[index+2:], "~~")) {
+				flush()
+				strike = !strike
+				index += 2
+				continue
+			}
 		case strings.HasPrefix(text[index:], "**"):
 			if !code && ((bold && canCloseMarkdownDelimiter(text, index, "**")) || (!bold && canOpenMarkdownDelimiter(text, index, "**") && hasClosingMarkdownDelimiter(text, index+2, "**"))) {
 				flush()

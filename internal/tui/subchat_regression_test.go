@@ -56,6 +56,62 @@ func TestTranscriptSelectionInSubchatUsesChildSessionRows(t *testing.T) {
 	}
 }
 
+func TestLongSubchatRowsUseStableHeightCache(t *testing.T) {
+	m := mouseTestModel()
+	rows := make([]transcriptRow, 0, defaultTranscriptBodyHeightCacheMaxEntries+64)
+	for index := range defaultTranscriptBodyHeightCacheMaxEntries + 64 {
+		rows = appendRow(rows, rowUser, stringKey(index))
+	}
+	items := m.transcriptBodyItemsFromRows(rows, m.chatColumnWidth())
+	stableRows := 0
+	for _, item := range items {
+		if item.kind == transcriptBodyItemRow && item.heightCacheStable && item.heightCacheKey != "" {
+			stableRows++
+		}
+	}
+	if stableRows != len(rows) {
+		t.Fatalf("stable subchat rows = %d, want %d", stableRows, len(rows))
+	}
+
+	first := measureTranscriptBodyItems(items, m.transcriptBodyHeights)
+	second := measureTranscriptBodyItems(items, m.transcriptBodyHeights)
+	if first.totalLines() != second.totalLines() || first.totalLines() == 0 {
+		t.Fatalf("subchat total lines = %d/%d, want matching positive layouts", first.totalLines(), second.totalLines())
+	}
+}
+
+func TestLongSubchatScrollUsesChildViewport(t *testing.T) {
+	m := mouseTestModel()
+	m.transcript = appendRow(m.transcript, rowUser, "short parent")
+	m.subchat.active = true
+	m.subchat.childSessionID = "child-1"
+	for index := range defaultTranscriptBodyHeightCacheMaxEntries + 64 {
+		m.subchat.childRows = appendRow(m.subchat.childRows, rowUser, stringKey(index))
+	}
+
+	viewport, ok := m.chatTranscriptViewport()
+	if !ok {
+		t.Fatal("expected an alt-screen subchat viewport")
+	}
+	if viewport.maxOffset() <= 0 {
+		t.Fatalf("subchat max offset = %d, want child transcript to overflow", viewport.maxOffset())
+	}
+	if viewport.totalLines <= len(m.transcript)*2 {
+		t.Fatalf("viewport total lines = %d, looks like short parent transcript was measured", viewport.totalLines)
+	}
+
+	scrolled := m.scrollChat(m.chatPageScrollLines())
+	if scrolled.chatScrollOffset <= 0 {
+		t.Fatalf("subchat scroll offset = %d, want child transcript to scroll", scrolled.chatScrollOffset)
+	}
+	_, _ = scrolled.chatTranscriptViewport()
+	scrolled.transcriptBodyHeights.mu.Lock()
+	defer scrolled.transcriptBodyHeights.mu.Unlock()
+	if len(scrolled.transcriptBodyHeights.items) <= defaultTranscriptBodyHeightCacheMaxEntries {
+		t.Fatalf("cached child heights = %d, want full long child layout retained", len(scrolled.transcriptBodyHeights.items))
+	}
+}
+
 func TestTranscriptSelectionExtendsAcrossWheelScroll(t *testing.T) {
 	m := mouseTestModel()
 	m.mouseCapture = true

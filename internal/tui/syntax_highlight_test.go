@@ -74,13 +74,22 @@ func TestBareCodeHighlightRequiresBlockSignal(t *testing.T) {
 
 func TestStreamingMarkdownStablePrefixUsesRenderCache(t *testing.T) {
 	defaultRenderCache.clear()
-	text := "Here is the script:\n```go\nfunc main() {}\n```\nDone."
+	text := "Here is the script:\n```go\nfunc main() {}\n```\n\nDone."
 	_ = renderStreamingAssistantMarkdownText(text, 90, 90)
 	before := defaultRenderCache.stats()
 	_ = renderStreamingAssistantMarkdownText(text, 90, 90)
 	after := defaultRenderCache.stats()
 	if after.Hits <= before.Hits {
 		t.Fatalf("streaming stable markdown should reuse highlighted cache, before=%+v after=%+v", before, after)
+	}
+}
+
+func TestStreamingMarkdownPreservesBlankLineSeparators(t *testing.T) {
+	text := "First paragraph.\n\n\nNext paragraph."
+	streaming := renderStreamingAssistantMarkdownText(text, 90, 90)
+	committed := renderAssistantMarkdownText(text, 90, 90, true)
+	if got, want := strings.Join(streaming, "\n"), strings.Join(committed, "\n"); got != want {
+		t.Fatalf("streaming markdown spacing = %q, want committed spacing %q", got, want)
 	}
 }
 

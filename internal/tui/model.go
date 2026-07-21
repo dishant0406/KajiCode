@@ -3292,18 +3292,13 @@ func (m model) chatTranscriptViewport() (transcriptViewport, bool) {
 	if !m.altScreen || m.height <= 0 {
 		return transcriptViewport{}, false
 	}
-	width := m.chatColumnWidth()
+	header, items, width := m.transcriptHitTestSource()
+	footer := m.footerView(width)
 	if m.transcriptDetailed {
-		items := m.transcriptBodyItems(width, "", true)
-		body := measureTranscriptBodyItems(items, m.transcriptBodyHeights)
-		header := detailedTranscriptHeader(width) + "\n" + kajicodeTheme.line.Render(strings.Repeat("-", width))
-		footer := m.detailedTranscriptFooter(width)
-		frame := m.scrollableTranscriptFrame(header, footer)
-		return transcriptViewportForLayout(body, frame, m.chatScrollOffset), true
+		footer = m.detailedTranscriptFooter(width)
 	}
-	items := m.transcriptBodyItems(width, "", false)
 	body := measureTranscriptBodyItems(items, m.transcriptBodyHeights)
-	frame := m.scrollableTranscriptFrame(m.pinnedTitleBar(width), m.footerView(width))
+	frame := m.scrollableTranscriptFrame(header, footer)
 	return transcriptViewportForLayout(body, frame, m.chatScrollOffset), true
 }
 
