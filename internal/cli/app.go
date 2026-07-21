@@ -262,9 +262,30 @@ func runWithDeps(args []string, stdout io.Writer, stderr io.Writer, deps appDeps
 		return writeAppError(stderr, err.Error(), 1)
 	}
 	addDirs = append(addDirs, moreDirs...)
+	permissionMode, args, err := splitLeadingPermissionFlag(args)
+	if err != nil {
+		return writeAppError(stderr, err.Error(), 1)
+	}
+	moreDirs, args, err = splitLeadingAddDirFlags(args)
+	if err != nil {
+		return writeAppError(stderr, err.Error(), 1)
+	}
+	addDirs = append(addDirs, moreDirs...)
+	trailingTheme, args, err := splitLeadingThemeFlag(args)
+	if err != nil {
+		return writeAppError(stderr, err.Error(), 1)
+	}
+	if trailingTheme != "" {
+		theme = trailingTheme
+	}
+	moreDirs, args, err = splitLeadingAddDirFlags(args)
+	if err != nil {
+		return writeAppError(stderr, err.Error(), 1)
+	}
+	addDirs = append(addDirs, moreDirs...)
 
 	if len(args) == 0 {
-		return runInteractiveTUI(stderr, deps, "", addDirs, theme)
+		return runInteractiveTUI(stderr, deps, permissionMode, addDirs, theme)
 	}
 
 	// --add-dir grants an extra write root, and only the interactive TUI and
@@ -279,6 +300,14 @@ func runWithDeps(args []string, stdout io.Writer, stderr io.Writer, deps appDeps
 			// Forwarded by the matching case below.
 		default:
 			return writeAppError(stderr, "--add-dir is only supported for the interactive TUI and exec", 1)
+		}
+	}
+	if permissionMode != "" {
+		switch args[0] {
+		case "-p", "--prompt", "exec":
+			// Forwarded by the matching case below.
+		default:
+			return writeAppError(stderr, "--permissions is only supported for the interactive TUI and exec", 1)
 		}
 	}
 
@@ -362,12 +391,14 @@ func runWithDeps(args []string, stdout io.Writer, stderr io.Writer, deps appDeps
 		// Use the inline --prompt=<value> form so a prompt whose first character is a
 		// dash (e.g. `kajicode -p "-foo"`) is taken verbatim instead of being mistaken for
 		// a flag and rejected with "--prompt requires a value" (matches the cron path).
-		execArgs := append(addDirFlagArgs(addDirs), "--prompt="+args[1])
+		execArgs := append(addDirFlagArgs(addDirs), permissionFlagArgs(permissionMode)...)
+		execArgs = append(execArgs, "--prompt="+args[1])
 		execArgs = append(execArgs, args[2:]...)
 		return runExec(execArgs, stdout, stderr, deps)
 	case "exec":
-		// Forward leading --add-dir occurrences so exec's own parser collects them.
-		return runExec(append(addDirFlagArgs(addDirs), args[1:]...), stdout, stderr, deps)
+		// Forward root agent flags so exec's own parser applies one precedence model.
+		execArgs := append(addDirFlagArgs(addDirs), permissionFlagArgs(permissionMode)...)
+		return runExec(append(execArgs, args[1:]...), stdout, stderr, deps)
 	case "daemon":
 		return runDaemon(args[1:], stdout, stderr, deps)
 	case "config":
@@ -1199,6 +1230,7 @@ Flags:
   -v, --version                  Print version
   -p, --prompt                   Run a one-shot prompt
       --add-dir <path>           Allow writes in an extra directory (repeatable)
+      --permissions <profile>    Set ask-all, read-only, read-write, or bypass-all
       --skip-permissions-unsafe  Launch the interactive shell in unsafe mode (enables the ! shell escape)
 `)
 	return err
@@ -1213,6 +1245,39 @@ func addDirFlagArgs(addDirs []string) []string {
 		flags = append(flags, "--add-dir", dir)
 	}
 	return flags
+}
+
+func permissionFlagArgs(mode agent.PermissionMode) []string {
+	if mode == "" {
+		return nil
+	}
+	return []string{"--permissions", string(mode)}
+}
+
+func splitLeadingPermissionFlag(args []string) (agent.PermissionMode, []string, error) {
+	mode := agent.PermissionMode("")
+	for len(args) > 0 {
+		var value string
+		switch {
+		case args[0] == "--permissions":
+			if len(args) < 2 || strings.HasPrefix(strings.TrimSpace(args[1]), "-") {
+				return "", nil, errors.New("--permissions requires ask-all, read-only, read-write, or bypass-all")
+			}
+			value = args[1]
+			args = args[2:]
+		case strings.HasPrefix(args[0], "--permissions="):
+			value = strings.TrimPrefix(args[0], "--permissions=")
+			args = args[1:]
+		default:
+			return mode, args, nil
+		}
+		parsed, err := parsePermissionProfile(value)
+		if err != nil {
+			return "", nil, err
+		}
+		mode = parsed
+	}
+	return mode, args, nil
 }
 
 // splitLeadingAddDirFlags strips leading --add-dir flags from the root
@@ -1348,6 +1413,7 @@ Flags:
                                     posture only (turn budget, effort, self-correction, escalation);
                                     composes with --mode (which picks the model) and explicit flags win
       --auto <low|medium|high>       Set exec autonomy; high enables unsafe tools
+      --permissions <profile>        Set ask-all, read-only, read-write, or bypass-all
       --enabled-tools <tools>        Only expose these comma or space separated tools
       --disabled-tools <tools>       Hide these comma or space separated tools
       --list-tools                   List model-visible tools and exit

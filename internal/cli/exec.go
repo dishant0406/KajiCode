@@ -87,6 +87,9 @@ type execOptions struct {
 	inputFormat           execInputFormat
 	outputFormat          execOutputFormat
 	autonomy              string
+	autonomyExplicit      bool
+	permissionProfile     agent.PermissionMode
+	permissionExplicit    bool
 	enabledTools          []string
 	disabledTools         []string
 	listTools             bool
@@ -234,6 +237,13 @@ func runExec(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) in
 	permissionMode, err := resolveExecPermissionMode(options)
 	if err != nil {
 		return writeExecFormatUsageError(stdout, stderr, options.outputFormat, err.Error())
+	}
+	storedPermissionMode, err := storedExecPermissionProfile(options)
+	if err != nil {
+		return writeExecFormatUsageError(stdout, stderr, options.outputFormat, err.Error())
+	}
+	if storedPermissionMode != "" {
+		permissionMode = storedPermissionMode
 	}
 	if options.useSpec {
 		permissionMode = agent.PermissionModeSpecDraft
@@ -518,23 +528,31 @@ func runExec(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) in
 	agentPrompt := prompt
 	if shouldUseExecSession(options) {
 		preparedSession, err = sessions.PrepareExec(sessions.PrepareExecOptions{
-			SessionID:        options.initSessionID,
-			Title:            sessionTitle,
-			Cwd:              workspaceRoot,
-			ModelID:          resolved.Provider.Model,
-			Provider:         runMetadata.Provider,
-			Tag:              options.tag,
-			Depth:            options.depth,
-			CallingSessionID: options.callingSessionID,
-			CallingToolUseID: options.callingToolUseID,
-			AgentName:        specialistAgentName(options.sessionTitle),
-			TaskID:           options.initSessionID,
-			Resume:           options.resume,
-			ResumeLatest:     options.resumeLatest,
-			Fork:             options.fork,
+			SessionID:         options.initSessionID,
+			Title:             sessionTitle,
+			Cwd:               workspaceRoot,
+			ModelID:           resolved.Provider.Model,
+			Provider:          runMetadata.Provider,
+			PermissionProfile: string(permissionMode),
+			Tag:               options.tag,
+			Depth:             options.depth,
+			CallingSessionID:  options.callingSessionID,
+			CallingToolUseID:  options.callingToolUseID,
+			AgentName:         specialistAgentName(options.sessionTitle),
+			TaskID:            options.initSessionID,
+			Resume:            options.resume,
+			ResumeLatest:      options.resumeLatest,
+			Fork:              options.fork,
 		})
 		if err != nil {
 			return writeExecFormatUsageError(stdout, stderr, options.outputFormat, err.Error())
+		}
+		if preparedSession.Mode == sessions.ModeResume && (options.permissionExplicit || options.skipPermissionsUnsafe || options.autonomyExplicit) {
+			updated, updateErr := preparedSession.Store.UpdatePermissionProfile(preparedSession.Session.SessionID, string(permissionMode))
+			if updateErr != nil {
+				return writeExecFormatUsageError(stdout, stderr, options.outputFormat, updateErr.Error())
+			}
+			preparedSession.Session = updated
 		}
 		agentPrompt = sessions.FormatExecPrompt(prompt, preparedSession)
 	}

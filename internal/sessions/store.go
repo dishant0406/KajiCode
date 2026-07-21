@@ -72,6 +72,7 @@ type Metadata struct {
 	Cwd                 string      `json:"cwd,omitempty"`
 	ModelID             string      `json:"modelId,omitempty"`
 	Provider            string      `json:"provider,omitempty"`
+	PermissionProfile   string      `json:"permissionProfile,omitempty"`
 	Tag                 string      `json:"tag,omitempty"`
 	Depth               int         `json:"depth,omitempty"`
 	ParentSessionID     string      `json:"parentSessionId,omitempty"`
@@ -104,6 +105,7 @@ type CreateInput struct {
 	Cwd                 string
 	ModelID             string
 	Provider            string
+	PermissionProfile   string
 	Tag                 string
 	Depth               int
 	ParentSessionID     string
@@ -126,13 +128,14 @@ type CreateInput struct {
 }
 
 type ForkInput struct {
-	SessionID   string
-	SessionKind SessionKind
-	Title       string
-	Cwd         string
-	ModelID     string
-	Provider    string
-	Tag         string
+	SessionID         string
+	SessionKind       SessionKind
+	Title             string
+	Cwd               string
+	ModelID           string
+	Provider          string
+	PermissionProfile string
+	Tag               string
 }
 
 type ChildInput struct {
@@ -260,6 +263,7 @@ func (store *Store) Create(input CreateInput) (Metadata, error) {
 		Cwd:                 strings.TrimSpace(input.Cwd),
 		ModelID:             strings.TrimSpace(input.ModelID),
 		Provider:            strings.TrimSpace(input.Provider),
+		PermissionProfile:   strings.TrimSpace(input.PermissionProfile),
 		Tag:                 strings.TrimSpace(input.Tag),
 		Depth:               input.Depth,
 		ParentSessionID:     strings.TrimSpace(input.ParentSessionID),
@@ -434,6 +438,7 @@ func (store *Store) Fork(parentSessionID string, input ForkInput) (Metadata, err
 		Cwd:                firstNonEmpty(input.Cwd, parent.Cwd),
 		ModelID:            firstNonEmpty(input.ModelID, parent.ModelID),
 		Provider:           firstNonEmpty(input.Provider, parent.Provider),
+		PermissionProfile:  firstNonEmpty(input.PermissionProfile, parent.PermissionProfile),
 		Tag:                input.Tag,
 		ParentSessionID:    parent.SessionID,
 		RootSessionID:      firstNonEmpty(parent.RootSessionID, parent.SessionID),
@@ -716,6 +721,33 @@ func (store *Store) UpdateTitle(sessionID string, title string) (Metadata, error
 		return session, nil
 	}
 	session.Title = trimmed
+	if err := store.writeMetadata(session); err != nil {
+		return Metadata{}, err
+	}
+	return session, nil
+}
+
+// UpdatePermissionProfile records the profile restored when this session resumes.
+// Empty remains valid for sessions created before permission profiles were stored.
+func (store *Store) UpdatePermissionProfile(sessionID string, profile string) (Metadata, error) {
+	if !ValidSessionID(sessionID) {
+		return Metadata{}, fmt.Errorf("invalid kajicode session id %q", sessionID)
+	}
+	profile = strings.TrimSpace(profile)
+	unlock, err := store.lockSession(sessionID)
+	if err != nil {
+		return Metadata{}, err
+	}
+	defer unlock()
+
+	session, err := store.readMetadata(sessionID)
+	if err != nil {
+		return Metadata{}, err
+	}
+	if session.PermissionProfile == profile {
+		return session, nil
+	}
+	session.PermissionProfile = profile
 	if err := store.writeMetadata(session); err != nil {
 		return Metadata{}, err
 	}

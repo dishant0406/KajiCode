@@ -29,10 +29,11 @@ func (m model) ensureActiveSession(prompt string) (model, error) {
 	}
 
 	session, err := m.sessionStore.Create(sessions.CreateInput{
-		Title:    tuiSessionTitle(prompt),
-		Cwd:      m.cwd,
-		ModelID:  m.modelName,
-		Provider: m.providerName,
+		Title:             tuiSessionTitle(prompt),
+		Cwd:               m.cwd,
+		ModelID:           m.modelName,
+		Provider:          m.providerName,
+		PermissionProfile: string(m.permissionMode),
 	})
 	if err != nil {
 		return m, err
@@ -184,6 +185,16 @@ func flushableSessionEvents(events []pendingSessionEvent) []pendingSessionEvent 
 	return flushable
 }
 
+func resumedPermissionProfile(profile string) agent.PermissionMode {
+	mode := agent.PermissionMode(strings.TrimSpace(profile))
+	for _, candidate := range agent.PermissionProfiles() {
+		if mode == candidate {
+			return mode
+		}
+	}
+	return ""
+}
+
 func tuiSessionTitle(prompt string) string {
 	// cutRunes keeps the cut on a rune boundary — a bare byte slice could split
 	// a multi-byte rune and persist invalid UTF-8 into the session metadata.
@@ -220,6 +231,9 @@ func (m model) handleResumeCommand(args string) (model, string) {
 	}
 	if m.modelName == "" {
 		m.modelName = session.ModelID
+	}
+	if mode := resumedPermissionProfile(session.PermissionProfile); mode != "" {
+		m.permissionMode = mode
 	}
 	loopsCleared := 0
 	if session.SessionID != previousID {

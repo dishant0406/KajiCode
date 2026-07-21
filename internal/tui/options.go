@@ -60,8 +60,9 @@ type Options struct {
 	// without a restart. Nil means the session has no skills wiring (skills stay
 	// model-pulled via the skill tool only).
 	LoadSkills            func() []skills.Skill
-	PermissionMode        agent.PermissionMode
-	SavePermissionProfile func(agent.PermissionMode) error
+	PermissionMode          agent.PermissionMode
+	PermissionModeExplicit bool
+	SavePermissionProfile   func(agent.PermissionMode) error
 	ReasoningEffort       modelregistry.ReasoningEffort
 	ResponseStyle         string
 	// Theme is the operator's palette preference: "auto" (default), a built-in

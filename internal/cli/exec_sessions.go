@@ -46,6 +46,35 @@ func shouldUseExecSession(options execOptions) bool {
 		options.initSessionID != ""
 }
 
+func storedExecPermissionProfile(options execOptions) (agent.PermissionMode, error) {
+	if options.permissionExplicit || options.skipPermissionsUnsafe || options.autonomyExplicit {
+		return "", nil
+	}
+	store := sessions.NewStore(sessions.StoreOptions{})
+	var session *sessions.Metadata
+	var err error
+	switch {
+	case options.resume != "":
+		session, err = store.Get(options.resume)
+	case options.resumeLatest:
+		session, err = store.LatestResumable()
+	case options.fork != "":
+		session, err = store.Get(options.fork)
+	default:
+		return "", nil
+	}
+	if err != nil || session == nil {
+		return "", err
+	}
+	mode := agent.PermissionMode(strings.TrimSpace(session.PermissionProfile))
+	for _, profile := range agent.PermissionProfiles() {
+		if mode == profile {
+			return mode, nil
+		}
+	}
+	return "", nil
+}
+
 func preflightExecSession(options execOptions) error {
 	if options.resume == "" && !options.resumeLatest && options.fork == "" {
 		return nil

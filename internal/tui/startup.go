@@ -157,12 +157,8 @@ func themedWordmarkLines(width int) []string {
 		source = kajicodeCompactWordmarkLines
 	}
 	lines := make([]string, 0, len(source))
-	for index, line := range source {
-		style := kajicodeTheme.ink
-		if index >= len(source)/2 {
-			style = kajicodeTheme.accent
-		}
-		lines = append(lines, style.Render(line))
+	for _, line := range source {
+		lines = append(lines, kajicodeTheme.ink.Render(line))
 	}
 	return lines
 }

@@ -72,6 +72,16 @@ func toolListContains(names []string, want string) bool {
 	return false
 }
 
+func parsePermissionProfile(value string) (agent.PermissionMode, error) {
+	mode := agent.PermissionMode(strings.ToLower(strings.TrimSpace(value)))
+	for _, profile := range agent.PermissionProfiles() {
+		if mode == profile {
+			return mode, nil
+		}
+	}
+	return "", execUsageError{fmt.Sprintf("Invalid permission profile %q. Expected ask-all, read-only, read-write, or bypass-all.", value)}
+}
+
 func resolveExecPermissionMode(options execOptions) (agent.PermissionMode, error) {
 	// Validate --auto first, regardless of --skip-permissions-unsafe, so an
 	// invalid autonomy value is always rejected. (Previously the unsafe path
@@ -93,6 +103,9 @@ func resolveExecPermissionMode(options execOptions) (agent.PermissionMode, error
 	}
 	if options.skipPermissionsUnsafe {
 		return agent.PermissionModeUnsafe, nil
+	}
+	if options.permissionExplicit {
+		return options.permissionProfile, nil
 	}
 	return mode, nil
 }

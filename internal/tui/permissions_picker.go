@@ -21,6 +21,14 @@ func (m model) setPermissionProfile(mode agent.PermissionMode) (model, error) {
 			return m, err
 		}
 	}
+	if m.activeSession.SessionID != "" && m.sessionStore != nil {
+		updated, err := m.sessionStore.UpdatePermissionProfile(m.activeSession.SessionID, string(mode))
+		if err != nil {
+			m.permissionMode = previous
+			return m, err
+		}
+		m.activeSession = updated
+	}
 	return m, nil
 }
 

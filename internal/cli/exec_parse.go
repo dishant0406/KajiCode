@@ -22,6 +22,27 @@ func parseExecArgs(args []string) (execOptions, bool, error) {
 			return options, true, nil
 		case arg == "--skip-permissions-unsafe":
 			options.skipPermissionsUnsafe = true
+		case arg == "--permissions":
+			value, next, err := nextFlagValue(args, index, arg)
+			if err != nil {
+				return options, false, err
+			}
+			options.permissionProfile, err = parsePermissionProfile(value)
+			if err != nil {
+				return options, false, err
+			}
+			options.permissionExplicit = true
+			index = next
+		case strings.HasPrefix(arg, "--permissions="):
+			value, err := requiredInlineFlagValue(arg, "--permissions")
+			if err != nil {
+				return options, false, err
+			}
+			options.permissionProfile, err = parsePermissionProfile(value)
+			if err != nil {
+				return options, false, err
+			}
+			options.permissionExplicit = true
 		case arg == "--list-tools":
 			options.listTools = true
 		case arg == "--allow-escalation":
@@ -60,9 +81,11 @@ func parseExecArgs(args []string) (execOptions, bool, error) {
 				return options, false, err
 			}
 			options.autonomy = value
+			options.autonomyExplicit = true
 			index = next
 		case strings.HasPrefix(arg, "--auto="):
 			options.autonomy = strings.TrimSpace(strings.TrimPrefix(arg, "--auto="))
+			options.autonomyExplicit = true
 		case arg == "--enabled-tools":
 			value, next, err := nextFlagValue(args, index, arg)
 			if err != nil {

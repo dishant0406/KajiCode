@@ -25,21 +25,22 @@ func (err ExecError) Error() string {
 }
 
 type PrepareExecOptions struct {
-	Store            *Store
-	SessionID        string
-	Title            string
-	Cwd              string
-	ModelID          string
-	Provider         string
-	Tag              string
-	Depth            int
-	CallingSessionID string
-	CallingToolUseID string
-	AgentName        string
-	TaskID           string
-	Resume           string
-	ResumeLatest     bool
-	Fork             string
+	Store             *Store
+	SessionID         string
+	Title             string
+	Cwd               string
+	ModelID           string
+	Provider          string
+	PermissionProfile string
+	Tag               string
+	Depth             int
+	CallingSessionID  string
+	CallingToolUseID  string
+	AgentName         string
+	TaskID            string
+	Resume            string
+	ResumeLatest      bool
+	Fork              string
 }
 
 type PreparedExec struct {
@@ -74,11 +75,12 @@ func PrepareExec(options PrepareExecOptions) (PreparedExec, error) {
 			return PreparedExec{}, err
 		}
 		session, err := store.Fork(parent.SessionID, ForkInput{
-			SessionID: options.SessionID,
-			Title:     firstNonEmpty(options.Title, forkTitle(parent.Title)),
-			Cwd:       options.Cwd,
-			ModelID:   options.ModelID,
-			Provider:  options.Provider,
+			SessionID:         options.SessionID,
+			Title:             firstNonEmpty(options.Title, forkTitle(parent.Title)),
+			Cwd:               options.Cwd,
+			ModelID:           options.ModelID,
+			Provider:          options.Provider,
+			PermissionProfile: options.PermissionProfile,
 		})
 		if err != nil {
 			return PreparedExec{}, err
@@ -116,13 +118,14 @@ func PrepareExec(options PrepareExecOptions) (PreparedExec, error) {
 	}
 
 	createInput := CreateInput{
-		SessionID: options.SessionID,
-		Title:     options.Title,
-		Cwd:       options.Cwd,
-		ModelID:   options.ModelID,
-		Provider:  options.Provider,
-		Tag:       options.Tag,
-		Depth:     options.Depth,
+		SessionID:         options.SessionID,
+		Title:             options.Title,
+		Cwd:               options.Cwd,
+		ModelID:           options.ModelID,
+		Provider:          options.Provider,
+		PermissionProfile: options.PermissionProfile,
+		Tag:               options.Tag,
+		Depth:             options.Depth,
 	}
 	if strings.TrimSpace(options.CallingSessionID) != "" {
 		parentSessionID := strings.TrimSpace(options.CallingSessionID)
