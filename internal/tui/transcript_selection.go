@@ -1317,12 +1317,15 @@ func (m model) handleTranscriptSelectionMouse(msg tea.MouseMsg) (model, tea.Cmd,
 			// The subchat drill-in owns the whole (single-column) view; a file
 			// drill-in can't meaningfully stay open behind it.
 			m = m.exitFileView()
-			if errMsg := m.subchat.enter(m.sessionStore, hit.sessionID, hit.title, m.chatScrollOffset); errMsg != "" {
+			var cmd tea.Cmd
+			var errMsg string
+			m, cmd, errMsg = m.startSubchat(hit.sessionID, hit.title, m.chatScrollOffset)
+			if errMsg != "" {
 				m = m.appendSystemNotice(errMsg)
 			}
 			m.chatScrollOffset = 0
 			m = m.clearHover() // bodyY numbering differs between subchat and the parent transcript
-			return m, nil, true
+			return m, cmd, true
 		}
 		// A click on a PLAN step row drops a transcript card listing the file
 		// changes captured while that step was in progress.
@@ -1361,12 +1364,15 @@ func (m model) handleTranscriptSelectionMouse(msg tea.MouseMsg) (model, tea.Cmd,
 		if line.specialistCard {
 			// Click on a specialist card drills into its child session.
 			title := m.specialistTitleFor(line.specialistID)
-			if errMsg := m.subchat.enter(m.sessionStore, line.specialistID, title, m.chatScrollOffset); errMsg != "" {
+			var cmd tea.Cmd
+			var errMsg string
+			m, cmd, errMsg = m.startSubchat(line.specialistID, title, m.chatScrollOffset)
+			if errMsg != "" {
 				m = m.appendSystemNotice(errMsg)
 			}
 			m.chatScrollOffset = 0
 			m = m.clearHover() // bodyY numbering differs between subchat and the parent transcript
-			return m, nil, true
+			return m, cmd, true
 		}
 		if line.toggle {
 			if line.live {

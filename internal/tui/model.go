@@ -105,6 +105,10 @@ type model struct {
 	doctorFrame          int
 	activeSession        sessions.Metadata
 	sessionEvents        []sessions.Event
+	resumeSeq            int
+	resumeInFlight       bool
+	resumePrefixRows     int
+	resumePendingRows    []transcriptRow
 	btw                  btwState
 	// btwRunIDSeq is the highest run ID issued by any completed or abandoned BTW
 	// surface. It survives returning to the parent so a late message from an old
@@ -186,6 +190,7 @@ type model struct {
 	leaderPending         bool
 	leaderSeq             int
 	transcriptBodyHeights *transcriptBodyHeightCache
+	transcriptBodyCache   *transcriptBodyItemCache
 	input                 textinput.Model
 	composer              composerState
 	composerActive        bool
@@ -854,6 +859,7 @@ func newModel(ctx context.Context, options Options) model {
 		usageTracker:                usageTracker,
 		transcript:                  initialTranscript(),
 		transcriptBodyHeights:       newTranscriptBodyHeightCache(defaultTranscriptBodyHeightCacheMaxEntries),
+		transcriptBodyCache:         newTranscriptBodyItemCache(),
 		prService:                   prService,
 		prState:                     prService.GetState(),
 		input:                       input,
@@ -1104,7 +1110,8 @@ func (m model) disarmCancelConfirmation() model {
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if _, ok := msg.(flushedMsg); ok {
 		m.printInFlight = false
-		return m.drainFlushQueue()
+		m, cmd := m.settleTranscript()
+		return m, cmd
 	}
 	next, cmd := m.updateModel(msg)
 	nm, ok := next.(model)
@@ -1142,6 +1149,14 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return next, cmd
 	}
 	switch msg := msg.(type) {
+	case resumePreparedMsg:
+		return m.applyResumePrepared(msg)
+	case resumeContinueMsg:
+		return m.continueResumeTranscript(msg)
+	case subchatPreparedMsg:
+		return m.applySubchatPrepared(msg)
+	case subchatContinueMsg:
+		return m.continueSubchatTranscript(msg)
 	case composerBlinkMsg:
 		switch {
 		case !m.terminalFocused:
@@ -2733,7 +2748,7 @@ func (m model) transcriptView() string {
 	if m.transcriptEmpty() && !m.pending && viewportOverlay != "" {
 		emptyOverlay = viewportOverlay
 	}
-	bodyItems := m.transcriptBodyItems(width, emptyOverlay, false)
+	bodySet := m.transcriptBodyItemSet(width, emptyOverlay, false)
 
 	footer := m.footerView(width)
 	if m.homePresentationActive() {
@@ -2750,10 +2765,10 @@ func (m model) transcriptView() string {
 	// chat message, the way todo/plan updates render inline.
 	if m.altScreen && m.height > 0 {
 		header := m.pinnedTitleBar(width)
-		return m.scrollableTranscriptItemsView(header, bodyItems, footer, width, overlayForViewport)
+		return m.scrollableTranscriptItemSetView(header, bodySet, footer, width, overlayForViewport)
 	}
 
-	bodyLayout := layoutTranscriptBodyItems(bodyItems)
+	bodyLayout := layoutTranscriptBodyItems(bodySet.items)
 	body := bodyLayout.String()
 	if overlayForViewport != "" {
 		body += "\n" + overlayForViewport + "\n"
@@ -2776,7 +2791,7 @@ func (m model) twoColumnTranscriptView() string {
 	width := chatW
 
 	suggestionOverlay := m.suggestionOverlay(width)
-	bodyItems := m.transcriptBodyItems(width, "", false)
+	bodySet := m.transcriptBodyItemSet(width, "", false)
 	footer := m.footerView(width)
 	overlayForViewport := suggestionOverlay
 	if m.transcriptEmpty() && !m.pending {
@@ -2784,7 +2799,7 @@ func (m model) twoColumnTranscriptView() string {
 	}
 
 	header := m.pinnedTitleBar(width)
-	chatBlock := viewLines(m.scrollableTranscriptItemsView(header, bodyItems, footer, width, overlayForViewport))
+	chatBlock := viewLines(m.scrollableTranscriptItemSetView(header, bodySet, footer, width, overlayForViewport))
 
 	sidebar := m.renderContextSidebar(sidebarW, len(chatBlock))
 	rows := joinColumns(chatBlock, sidebar, chatW, sidebarW)
@@ -3126,10 +3141,14 @@ func (m model) scrollableTranscriptLayoutView(header string, body transcriptBody
 }
 
 func (m model) scrollableTranscriptItemsView(header string, items []transcriptBodyItem, footer string, width int, overlay string) string {
+	return m.scrollableTranscriptItemSetView(header, transcriptBodyItemSet{items: items}, footer, width, overlay)
+}
+
+func (m model) scrollableTranscriptItemSetView(header string, set transcriptBodyItemSet, footer string, width int, overlay string) string {
 	frame := m.scrollableTranscriptFrame(header, footer)
-	metrics := measureTranscriptBodyItems(items, m.transcriptBodyHeights)
+	metrics := m.measureTranscriptBodyItemSet(set)
 	window := transcriptViewportForLayout(metrics, frame, m.chatScrollOffset).window()
-	body := layoutVisibleTranscriptBodyItems(items, metrics, window)
+	body := layoutVisibleTranscriptBodyItems(set.items, metrics, window)
 
 	return m.renderScrollableTranscriptWindow(frame, body.lines, window, width, overlay)
 }
@@ -4144,10 +4163,8 @@ func (m model) choosePicker() (tea.Model, tea.Cmd) {
 		m, text = m.handleEffortCommand(item.Value)
 		m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: text})
 	case pickerSession:
-		// item.Value is the chosen session id; handleResumeCommand hydrates it and
-		// rebuilds the transcript (returning "" on success, an error note on failure).
 		text := ""
-		m, text = m.handleResumeCommand(item.Value)
+		m, text, cmd = m.startResumeCommand(item.Value)
 		if text != "" {
 			m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: text})
 		}
@@ -4242,6 +4259,9 @@ func (m model) handleSubmit() (tea.Model, tea.Cmd) {
 	if command.kind == commandPrompt && m.pending {
 		return m.queueMessage(command.text), nil
 	}
+	if m.resumeInFlight && command.kind != commandEmpty && command.kind != commandClear && command.kind != commandNew && command.kind != commandExit {
+		return m, nil
+	}
 	if command.kind == commandPrompt && m.compactInFlight {
 		m.transcript = reduceTranscript(m.transcript, transcriptAction{
 			kind: actionAppendSystem,
@@ -4304,6 +4324,7 @@ func (m model) dispatchCommand(command parsedCommand) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.loopLeavePrompt = commandEmpty
+		m = m.cancelResumeLoading()
 		m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionClear})
 		// Clearing wipes the visible transcript only — the session's context is
 		// intact, so the next prompt still replays the full history. Say so, and
@@ -4460,7 +4481,8 @@ func (m model) dispatchCommand(command parsedCommand) (tea.Model, tea.Cmd) {
 			}
 		}
 		text := ""
-		m, text = m.handleResumeCommand(command.text)
+		var cmd tea.Cmd
+		m, text, cmd = m.startResumeCommand(command.text)
 		if strings.HasPrefix(text, sessionsCardsPrefix) {
 			// The list payload renders as stacked session cards, not a note.
 			m.transcript = appendTranscriptRow(m.transcript, transcriptRow{
@@ -4471,7 +4493,7 @@ func (m model) dispatchCommand(command parsedCommand) (tea.Model, tea.Cmd) {
 		} else if text != "" {
 			m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: text})
 		}
-		return m, nil
+		return m, cmd
 	case commandRetitle:
 		if m.pending {
 			m.transcript = reduceTranscript(m.transcript, transcriptAction{

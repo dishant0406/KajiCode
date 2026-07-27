@@ -35,6 +35,8 @@ import (
 // order, swapping rows in the permanent history.
 type flushedMsg struct{}
 
+const settledRowsPerFlush = 32
+
 // settledRow reports whether a row's visual can never change again, making it
 // safe to print to native scrollback exactly once.
 func (m model) settledRow(row transcriptRow, rc rowContext) bool {
@@ -91,8 +93,10 @@ func (m model) settleTranscript() (model, tea.Cmd) {
 	width := chatWidth(m.width)
 	batch := []string{}
 	previousKind, havePreviousKind := previousVisibleTranscriptKind(m.transcript, m.flushed, rc)
-	for m.flushed < len(m.transcript) {
+	processed := 0
+	for m.flushed < len(m.transcript) && processed < settledRowsPerFlush {
 		row := m.transcript[m.flushed]
+		processed++
 		if !m.settledRow(row, rc) {
 			break
 		}

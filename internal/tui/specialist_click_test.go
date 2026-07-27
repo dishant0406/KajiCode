@@ -61,15 +61,20 @@ func TestSpecialistCardClickDrillsIntoSubchat(t *testing.T) {
 	}
 
 	click := testMouseClick(tea.MouseLeft, x, y)
-	updated, _, handled := m.handleTranscriptSelectionMouse(click)
+	updated, cmd, handled := m.handleTranscriptSelectionMouse(click)
 	if !handled {
 		t.Fatal("click on specialist card should be handled")
 	}
 	m2 := updated
-	if !m2.subchat.active {
-		t.Fatal("subchat should be active after clicking specialist card")
+	if !m2.subchat.active || !m2.subchat.loading || cmd == nil {
+		t.Fatal("subchat should enter asynchronous loading state after click")
 	}
 	if m2.subchat.childSessionID != childID {
 		t.Errorf("subchat childSessionID = %q, want %q", m2.subchat.childSessionID, childID)
+	}
+	loaded, _ := m2.Update(execCmd(cmd))
+	m2 = loaded.(model)
+	if m2.subchat.loading {
+		t.Fatal("empty child session should finish loading after its command completes")
 	}
 }

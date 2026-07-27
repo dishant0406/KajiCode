@@ -59,6 +59,11 @@ type transcriptRow struct {
 	final       bool
 	turnTools   int
 	turnElapsed time.Duration
+
+	// renderFingerprint is a compact, immutable identity for render-affecting row
+	// content. Long transcripts rebuild cache keys on every keypress; storing this
+	// once keeps that path proportional to row count instead of transcript bytes.
+	renderFingerprint string
 }
 
 type transcriptActionKind int
@@ -77,10 +82,10 @@ type transcriptAction struct {
 }
 
 func initialTranscript() []transcriptRow {
-	return []transcriptRow{{
+	return []transcriptRow{prepareTranscriptRow(transcriptRow{
 		kind: rowWelcome,
 		text: "Welcome to KajiCode. Type /help for commands.",
-	}}
+	})}
 }
 
 func reduceTranscript(rows []transcriptRow, action transcriptAction) []transcriptRow {
@@ -105,6 +110,7 @@ func appendRow(rows []transcriptRow, kind rowKind, text string) []transcriptRow 
 }
 
 func appendTranscriptRow(rows []transcriptRow, row transcriptRow) []transcriptRow {
+	row = prepareTranscriptRow(row)
 	if hasTranscriptRow(rows, row) {
 		return rows
 	}
@@ -133,6 +139,7 @@ func appendTranscriptRowsDedup(rows []transcriptRow, newRows []transcriptRow) []
 		}
 	}
 	for _, row := range newRows {
+		row = prepareTranscriptRow(row)
 		if key := transcriptRowKey(row); key != "" {
 			if _, dup := seen[key]; dup {
 				continue

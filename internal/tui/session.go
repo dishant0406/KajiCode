@@ -53,6 +53,7 @@ func (m model) ensureActiveSession(prompt string) (model, error) {
 // clean conversation, not a clean configuration.
 func (m model) startNewSession() model {
 	previousID := m.activeSession.SessionID
+	m = m.cancelResumeLoading()
 
 	m.activeSession = sessions.Metadata{}
 	m.sessionEvents = nil
@@ -204,56 +205,6 @@ func tuiSessionTitle(prompt string) string {
 		return "KajiCode TUI session"
 	}
 	return title
-}
-
-func (m model) handleResumeCommand(args string) (model, string) {
-	args = strings.TrimSpace(args)
-	if args == "" {
-		return m, m.resumeText()
-	}
-
-	session, err := m.resolveResumeSession(args)
-	if err != nil {
-		return m, "Sessions\n" + err.Error()
-	}
-	events, err := m.resumeEvents(session.SessionID)
-	if err != nil {
-		return m, "Sessions\nerror: " + err.Error()
-	}
-
-	// Capture the current session id before switching so loops are only torn down
-	// on a real change — `/resume latest` or `/resume <currentID>` can resolve to
-	// the already-active session, whose loops belong to it, not a "previous" one.
-	previousID := m.activeSession.SessionID
-	m.activeSession = *session
-	m.sessionEvents = append([]sessions.Event{}, events...)
-	if m.providerName == "" {
-		m.providerName = session.Provider
-	}
-	if m.modelName == "" {
-		m.modelName = session.ModelID
-	}
-	if mode := resumedPermissionProfile(session.PermissionProfile); mode != "" {
-		m.permissionMode = mode
-	}
-	loopsCleared := 0
-	if session.SessionID != previousID {
-		m, loopsCleared = m.clearLoopsForSessionSwitch()
-	}
-
-	rows := initialTranscript()
-	rows = appendRow(rows, rowSystem, m.formatResumeSummary(*session, len(events)))
-	if loopsCleared > 0 {
-		rows = appendRow(rows, rowSystem, fmt.Sprintf("Stopped %d loop(s) tied to the previous session.", loopsCleared))
-	}
-	rows = appendTranscriptRowsDedup(rows, transcriptRowsFromSessionEvents(events))
-	m.transcript = rows
-	// Every rehydrated row is settled by construction, so resetting the flush
-	// frontier sends the whole resumed history to native scrollback in one
-	// batch — scrollable, selectable, and O(1) for every later frame.
-	m.resetFlushFrontier("· resumed ·")
-	m.refreshComposerHistory()
-	return m, ""
 }
 
 func (m model) sessionPrompt(prompt string) string {
@@ -473,11 +424,11 @@ func sessionMatchesWorkspace(sessionCwd, workspaceCwd string) bool {
 }
 
 func (m model) sessionHasResumableContent(sessionID string) bool {
-	events, err := m.sessionStore.ReadEvents(sessionID)
+	ok, err := m.sessionStore.HasMatchingEvent(sessionID, eventHasResumableContent)
 	if err != nil {
 		return true
 	}
-	return eventsHaveResumableContent(events)
+	return ok
 }
 
 // eventsHaveResumableContent reports whether already-loaded events contain
@@ -487,19 +438,24 @@ func (m model) sessionHasResumableContent(sessionID string) bool {
 // /retitle scan) don't re-read them.
 func eventsHaveResumableContent(events []sessions.Event) bool {
 	for _, event := range events {
-		switch event.Type {
-		case sessions.EventToolCall, sessions.EventToolResult:
+		if eventHasResumableContent(event) {
 			return true
-		case sessions.EventMessage:
-			payload := sessionPayload(event)
-			if strings.EqualFold(payloadString(payload, "role"), "user") {
-				continue
-			}
-			content := strings.TrimSpace(payloadString(payload, "content"))
-			if content != "" && !agent.IsNoProgressStop(content) {
-				return true
-			}
 		}
+	}
+	return false
+}
+
+func eventHasResumableContent(event sessions.Event) bool {
+	switch event.Type {
+	case sessions.EventToolCall, sessions.EventToolResult:
+		return true
+	case sessions.EventMessage:
+		payload := sessionPayload(event)
+		if strings.EqualFold(payloadString(payload, "role"), "user") {
+			return false
+		}
+		content := strings.TrimSpace(payloadString(payload, "content"))
+		return content != "" && !agent.IsNoProgressStop(content)
 	}
 	return false
 }

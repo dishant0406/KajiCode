@@ -184,15 +184,15 @@ func TestSubchatEntryClosesFileView(t *testing.T) {
 		t.Fatal("expected a clickable agent row")
 	}
 	click := testMouseClick(tea.MouseLeft, m.chatColumnWidth()+3, agents[0].lineOffset)
-	updated, _, handled := m.handleTranscriptSelectionMouse(click)
+	updated, cmd, handled := m.handleTranscriptSelectionMouse(click)
 	if !handled {
 		t.Fatal("agent row click should be handled")
 	}
 	if updated.fileView.active {
 		t.Fatal("entering the subchat should close the file view")
 	}
-	if !updated.subchat.active {
-		t.Fatal("subchat should be active")
+	if !updated.subchat.active || !updated.subchat.loading || cmd == nil {
+		t.Fatal("subchat should start loading asynchronously")
 	}
 }
 

@@ -2,7 +2,6 @@ package tui
 
 import (
 	"container/list"
-	"fmt"
 	"strconv"
 	"strings"
 	"sync"
@@ -152,18 +151,7 @@ func (m model) renderRowCacheKey(row transcriptRow, width int, rc rowContext, op
 	appendRenderCacheField(&b, strconv.Itoa(opts.bodyCap))
 	appendRenderCacheField(&b, strconv.FormatBool(opts.expanded))
 	appendRenderCacheField(&b, opts.cwd)
-	appendRenderCacheField(&b, strconv.Itoa(int(row.kind)))
-	appendRenderCacheField(&b, row.id)
-	appendRenderCacheField(&b, row.text)
-	appendRenderCacheField(&b, row.tool)
-	appendRenderCacheField(&b, fmt.Sprint(row.status))
-	appendRenderCacheField(&b, row.detail)
-	appendRenderCacheField(&b, row.arg)
-	appendRenderCacheField(&b, strconv.Itoa(row.runID))
-	appendRenderCacheField(&b, strconv.FormatBool(row.expanded))
-	appendRenderCacheField(&b, strconv.FormatBool(row.final))
-	appendRenderCacheField(&b, strconv.Itoa(row.turnTools))
-	appendRenderCacheField(&b, strconv.FormatInt(int64(row.turnElapsed), 10))
+	appendRenderCacheField(&b, transcriptRowRenderFingerprint(row))
 	// The FILES selection tints this row's card border, so selecting/deselecting
 	// a file must miss the cache entry rendered under the other state.
 	appendRenderCacheField(&b, strconv.FormatBool(m.rowTouchesSelectedFile(row)))
@@ -172,8 +160,6 @@ func (m model) renderRowCacheKey(row transcriptRow, width int, rc rowContext, op
 	appendRenderCacheField(&b, rc.hints[key])
 	appendRenderCacheField(&b, rc.args[key])
 	appendRenderCacheField(&b, strconv.FormatBool(rc.auto[key]))
-	appendRenderCacheField(&b, permissionCacheFingerprint(row.permission))
-	appendRenderCacheField(&b, askUserCacheFingerprint(row.askUser))
 	return b.String(), stable
 }
 

@@ -1,10 +1,12 @@
 package sessions
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -799,6 +801,46 @@ func (store *Store) ReadEvents(sessionID string) ([]Event, error) {
 		events = append(events, event)
 	}
 	return events, nil
+}
+
+func (store *Store) HasMatchingEvent(sessionID string, match func(Event) bool) (bool, error) {
+	if !ValidSessionID(sessionID) {
+		return false, fmt.Errorf("invalid kajicode session id %q", sessionID)
+	}
+	file, err := os.Open(store.eventsPath(sessionID))
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return false, nil
+		}
+		return false, fmt.Errorf("read kajicode session events: %w", err)
+	}
+	defer file.Close()
+
+	reader := bufio.NewReader(file)
+	for {
+		line, err := reader.ReadBytes('\n')
+		if err != nil && !errors.Is(err, io.EOF) {
+			return false, fmt.Errorf("read kajicode session events: %w", err)
+		}
+		finalLine := errors.Is(err, io.EOF)
+		line = bytes.TrimSpace(line)
+		if len(line) > 0 {
+			var event Event
+			if decodeErr := json.Unmarshal(line, &event); decodeErr != nil {
+				if finalLine {
+					return false, nil
+				}
+				return false, fmt.Errorf("decode kajicode session event: %w", decodeErr)
+			}
+			if match == nil || match(event) {
+				return true, nil
+			}
+		}
+		if finalLine {
+			break
+		}
+	}
+	return false, nil
 }
 
 func (store *Store) timestamp() string {

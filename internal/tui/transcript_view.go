@@ -24,16 +24,16 @@ func (m model) toggleDetailedTranscript() model {
 // Tool output that would be truncated in the live view appears in full here.
 func (m model) detailedTranscriptView() string {
 	width := chatWidth(m.width)
-	items := m.transcriptBodyItems(width, "", true)
+	set := m.transcriptBodyItemSet(width, "", true)
 
 	header := detailedTranscriptHeader(width) + "\n" + kajicodeTheme.line.Render(strings.Repeat("-", width))
 	footer := m.detailedTranscriptFooter(width)
 
 	if m.altScreen && m.height > 0 {
-		return m.scrollableTranscriptItemsView(header, items, footer, width, "")
+		return m.scrollableTranscriptItemSetView(header, set, footer, width, "")
 	}
 	// Popup/fallback: render the full body without viewport clipping.
-	layout := layoutTranscriptBodyItems(items)
+	layout := layoutTranscriptBodyItems(set.items)
 	return header + "\n" + layout.String() + "\n" + footer
 }
 

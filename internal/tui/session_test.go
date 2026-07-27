@@ -619,6 +619,25 @@ func nthSessionEvent(t *testing.T, events []sessions.Event, eventType sessions.E
 	return sessions.Event{}
 }
 
+func applyResumeCommand(t *testing.T, m model, cmd tea.Cmd) model {
+	t.Helper()
+	if cmd == nil {
+		t.Fatal("expected asynchronous resume command")
+	}
+	msg := execCmd(cmd)
+	prepared, ok := msg.(resumePreparedMsg)
+	if !ok {
+		t.Fatalf("resume command returned %T, want resumePreparedMsg", msg)
+	}
+	updated, nextCmd := m.Update(prepared)
+	m = updated.(model)
+	for m.resumeInFlight && nextCmd != nil {
+		updated, nextCmd = m.Update(execCmd(nextCmd))
+		m = updated.(model)
+	}
+	return m
+}
+
 func TestResumeCommandHydratesSessionTranscript(t *testing.T) {
 	store := testSessionStore(t)
 	session, err := store.Create(sessions.CreateInput{Title: "Hydrate me", Cwd: "repo", ModelID: "gpt-4.1", Provider: "openai"})
@@ -647,10 +666,13 @@ func TestResumeCommandHydratesSessionTranscript(t *testing.T) {
 
 	updated, cmd := m.Update(testKey(tea.KeyEnter))
 	next := updated.(model)
-
-	if cmd != nil {
-		t.Fatal("expected /resume to hydrate synchronously")
+	if cmd == nil || !next.resumeInFlight {
+		t.Fatal("expected /resume to start asynchronous hydration")
 	}
+	if !transcriptContains(next.transcript, "loading "+session.SessionID) {
+		t.Fatalf("expected immediate loading status, got %#v", next.transcript)
+	}
+	next = applyResumeCommand(t, next, cmd)
 	for _, want := range []string{"Resumed KajiCode session", session.SessionID, "previous request", "tool call: grep", "permission: grep allow", "tool result: grep error matches", "previous answer", "old error"} {
 		if !transcriptContains(next.transcript, want) {
 			t.Fatalf("expected resumed transcript to contain %q, got %#v", want, next.transcript)
@@ -676,6 +698,142 @@ func TestResumeCommandHydratesSessionTranscript(t *testing.T) {
 	}
 }
 
+func TestResumeLongTranscriptLoadsTailFirstInPages(t *testing.T) {
+	m := newModel(context.Background(), Options{})
+	m.altScreen = true
+	m.resumeSeq = 1
+	m.resumeInFlight = true
+	rows := make([]transcriptRow, 0, resumeTranscriptPageRows*10+5)
+	for i := 0; i < cap(rows); i++ {
+		rows = appendRow(rows, rowAssistant, stringKey(i))
+	}
+
+	m, cmd := m.applyResumePrepared(resumePreparedMsg{
+		seq:     1,
+		session: &sessions.Metadata{SessionID: "session-1", Title: "Long thread"},
+		rows:    rows,
+	})
+	if cmd == nil || !m.resumeInFlight {
+		t.Fatal("large resume should schedule another bounded page")
+	}
+	if got := len(m.transcript) - m.resumePrefixRows; got != resumeTranscriptPageRows {
+		t.Fatalf("initial history rows = %d, want %d", got, resumeTranscriptPageRows)
+	}
+	if m.transcript[m.resumePrefixRows].text != stringKey(len(rows)-resumeTranscriptPageRows) {
+		t.Fatal("initial page must be the newest transcript tail")
+	}
+
+	continuations := 0
+	for cmd != nil {
+		updated, nextCmd := m.Update(execCmd(cmd))
+		m = updated.(model)
+		cmd = nextCmd
+		continuations++
+	}
+	if continuations > 4 {
+		t.Fatalf("resume paging used %d continuations, want logarithmic growth", continuations)
+	}
+	if m.resumeInFlight || len(m.resumePendingRows) != 0 {
+		t.Fatal("all resume pages should finish materializing")
+	}
+	if !transcriptContains(m.transcript, stringKey(0)) || !transcriptContains(m.transcript, stringKey(len(rows)-1)) {
+		t.Fatal("paged resume must preserve the complete transcript")
+	}
+}
+
+func TestResumeLoadingBlocksCommandsThatCouldRaceHydration(t *testing.T) {
+	for _, command := range []parsedCommand{
+		{kind: commandPrompt, text: "new prompt"},
+		{kind: commandRetry},
+		{kind: commandSpec, text: "new spec"},
+		{kind: commandBTW, text: "side question"},
+		{kind: commandHelp},
+	} {
+		m := newModel(context.Background(), Options{})
+		m.resumeInFlight = true
+		before := append([]transcriptRow(nil), m.transcript...)
+		m.input.SetValue(commandInput(command))
+
+		updated, cmd := m.Update(testKey(tea.KeyEnter))
+		next := updated.(model)
+		if cmd != nil || next.pending || next.btw.active {
+			t.Fatalf("command %v must not launch while resume is loading", command.kind)
+		}
+		if len(next.transcript) != len(before) {
+			t.Fatalf("command %v mutated transcript during resume loading", command.kind)
+		}
+	}
+}
+
+func commandInput(command parsedCommand) string {
+	switch command.kind {
+	case commandPrompt:
+		return command.text
+	case commandRetry:
+		return "/retry"
+	case commandSpec:
+		return "/spec " + command.text
+	case commandBTW:
+		return "/btw " + command.text
+	case commandHelp:
+		return "/help"
+	default:
+		return ""
+	}
+}
+
+func TestNewSessionCancelsPendingResume(t *testing.T) {
+	m := newModel(context.Background(), Options{})
+	m.resumeSeq = 4
+	m.resumeInFlight = true
+	m.resumePrefixRows = 1
+	m.resumePendingRows = appendRow(nil, rowAssistant, "old history")
+
+	m = m.startNewSession()
+	m, cmd := m.applyResumePrepared(resumePreparedMsg{
+		seq:     4,
+		session: &sessions.Metadata{SessionID: "old-session"},
+		rows:    appendRow(nil, rowAssistant, "late result"),
+	})
+	if cmd != nil || m.resumeInFlight || m.activeSession.SessionID != "" {
+		t.Fatal("late resume result must not replace a new session")
+	}
+	if transcriptContains(m.transcript, "late result") {
+		t.Fatal("late resume history must remain discarded")
+	}
+}
+
+func TestClearCancelsPendingResumePages(t *testing.T) {
+	m := newModel(context.Background(), Options{})
+	m.resumeSeq = 2
+	m.resumeInFlight = true
+	m.resumePrefixRows = len(m.transcript)
+	m.resumePendingRows = appendRow(nil, rowAssistant, "older history")
+
+	updated, cmd := m.dispatchCommand(parsedCommand{kind: commandClear})
+	m = updated.(model)
+	if cmd != nil || m.resumeInFlight || len(m.resumePendingRows) != 0 {
+		t.Fatal("clear must cancel pending resume materialization")
+	}
+	m, cmd = m.continueResumeTranscript(resumeContinueMsg{seq: 2})
+	if cmd != nil || transcriptContains(m.transcript, "older history") {
+		t.Fatal("stale continuation must not restore cleared history")
+	}
+}
+
+func TestResumeContinuationFailsClosedAfterTranscriptReplacement(t *testing.T) {
+	m := newModel(context.Background(), Options{})
+	m.resumeSeq = 3
+	m.resumeInFlight = true
+	m.resumePrefixRows = len(m.transcript) + 1
+	m.resumePendingRows = appendRow(nil, rowAssistant, "older history")
+
+	m, cmd := m.continueResumeTranscript(resumeContinueMsg{seq: 3})
+	if cmd != nil || m.resumeInFlight || len(m.resumePendingRows) != 0 {
+		t.Fatal("invalid paging frontier must cancel resume loading")
+	}
+}
+
 // Regression: after /rewind the in-memory session state must be reloaded so the
 // rewound-away events don't linger in the transcript or get re-sent to the agent
 // as ContextEvents on the next prompt.
@@ -692,8 +850,8 @@ func TestRewindRefreshesInMemorySessionState(t *testing.T) {
 
 	m := newModel(context.Background(), Options{SessionStore: store})
 	m.input.SetValue("/resume " + session.SessionID)
-	updated, _ := m.Update(testKey(tea.KeyEnter))
-	m = updated.(model)
+	updated, cmd := m.Update(testKey(tea.KeyEnter))
+	m = applyResumeCommand(t, updated.(model), cmd)
 	if !transcriptContains(m.transcript, "DROPPED-AFTER-CHECKPOINT") {
 		t.Fatalf("setup: resumed transcript should include the post-checkpoint message")
 	}
@@ -790,8 +948,8 @@ func TestResumeLatestHydratesNewestSession(t *testing.T) {
 	m := newModel(context.Background(), Options{SessionStore: store})
 	m.input.SetValue("/resume latest")
 
-	updated, _ := m.Update(testKey(tea.KeyEnter))
-	next := updated.(model)
+	updated, cmd := m.Update(testKey(tea.KeyEnter))
+	next := applyResumeCommand(t, updated.(model), cmd)
 
 	if !transcriptContains(next.transcript, "Newer") || !transcriptContains(next.transcript, "new answer") {
 		t.Fatalf("expected latest session to hydrate, got %#v", next.transcript)
@@ -1036,8 +1194,8 @@ func TestResumedPromptIncludesSessionContext(t *testing.T) {
 		SessionStore: store,
 	})
 	m.input.SetValue("/resume " + session.SessionID)
-	updated, _ := m.Update(testKey(tea.KeyEnter))
-	next := updated.(model)
+	updated, resumeCmd := m.Update(testKey(tea.KeyEnter))
+	next := applyResumeCommand(t, updated.(model), resumeCmd)
 	next.input.SetValue("continue")
 
 	updated, cmd := next.Update(testKey(tea.KeyEnter))
@@ -1066,8 +1224,8 @@ func TestResumeCommandReportsMissingSession(t *testing.T) {
 	m := newModel(context.Background(), Options{SessionStore: testSessionStore(t)})
 	m.input.SetValue("/resume missing_session")
 
-	updated, _ := m.Update(testKey(tea.KeyEnter))
-	next := updated.(model)
+	updated, cmd := m.Update(testKey(tea.KeyEnter))
+	next := applyResumeCommand(t, updated.(model), cmd)
 
 	if !transcriptContains(next.transcript, "kajicode session not found: missing_session") {
 		t.Fatalf("expected missing session error, got %#v", next.transcript)

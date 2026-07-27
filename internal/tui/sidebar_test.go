@@ -134,14 +134,18 @@ func TestSidebarMemberClickRoutesToSubchatDrillIn(t *testing.T) {
 	m := swarmSidebarTestModel(t, map[string]string{"subagent-1": session.SessionID})
 	m.sessionStore = store
 	x := m.chatColumnWidth() + 3 + 2
-	next, _, handled := m.handleTranscriptSelectionMouse(testMouseClick(tea.MouseLeft, x, 1))
+	next, cmd, handled := m.handleTranscriptSelectionMouse(testMouseClick(tea.MouseLeft, x, 1))
 	if !handled {
 		t.Fatal("clicking a clickable member row should be handled")
 	}
-	// It must actually enter the member's subchat session, not merely consume the click.
-	if !next.subchat.active || next.subchat.childSessionID != session.SessionID {
-		t.Fatalf("click should drill into member session %q, got active=%v id=%q",
-			session.SessionID, next.subchat.active, next.subchat.childSessionID)
+	if !next.subchat.active || !next.subchat.loading || cmd == nil || next.subchat.childSessionID != session.SessionID {
+		t.Fatalf("click should start loading member session %q, got active=%v loading=%v id=%q",
+			session.SessionID, next.subchat.active, next.subchat.loading, next.subchat.childSessionID)
+	}
+	loaded, _ := next.Update(execCmd(cmd))
+	next = loaded.(model)
+	if next.subchat.loading || !transcriptContains(next.subchat.childRows, "member work output") {
+		t.Fatalf("member session should hydrate asynchronously, got %#v", next.subchat.childRows)
 	}
 }
 

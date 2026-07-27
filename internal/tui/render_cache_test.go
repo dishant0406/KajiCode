@@ -2,9 +2,11 @@ package tui
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/dishant0406/KajiCode/internal/agent"
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
 func TestStaticRenderCacheHitMiss(t *testing.T) {
@@ -155,6 +157,42 @@ func TestRenderRowCacheSkipsPendingPermissionPromptRows(t *testing.T) {
 
 	if stats := cache.stats(); stats != (renderCacheStats{}) {
 		t.Fatalf("stats = %#v, want pending permission prompts to bypass cache", stats)
+	}
+}
+
+func TestRenderRowCacheKeyUsesCompactRowFingerprint(t *testing.T) {
+	m := newModel(context.Background(), Options{})
+	row := prepareTranscriptRow(transcriptRow{
+		kind:   rowToolResult,
+		id:     "call_1",
+		tool:   "bash",
+		status: tools.StatusOK,
+		text:   strings.Repeat("assistant text ", 4000),
+		detail: strings.Repeat("tool output\n", 4000),
+	})
+
+	key, stable := m.renderRowCacheKey(row, 100, rowContext{}, cardRenderOptions{bodyCap: cardBodyMaxLines}, false)
+
+	if !stable || key == "" {
+		t.Fatalf("key=%q stable=%v, want stable compact key", key, stable)
+	}
+	if len(key) > 256 {
+		t.Fatalf("render cache key length = %d, want compact key under 256 bytes", len(key))
+	}
+	if strings.Contains(key, "tool output") || strings.Contains(key, "assistant text") {
+		t.Fatalf("render cache key leaked row content: %q", key)
+	}
+}
+
+func TestTranscriptRowFingerprintChangesWithRenderedContent(t *testing.T) {
+	base := prepareTranscriptRow(transcriptRow{kind: rowAssistant, text: "done", final: true})
+	changed := prepareTranscriptRow(transcriptRow{kind: rowAssistant, text: "done!", final: true})
+
+	if base.renderFingerprint == "" {
+		t.Fatal("prepared row missing render fingerprint")
+	}
+	if base.renderFingerprint == changed.renderFingerprint {
+		t.Fatalf("fingerprints matched for different content: %q", base.renderFingerprint)
 	}
 }
 

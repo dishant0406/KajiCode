@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -287,6 +288,43 @@ func TestMeasureTranscriptBodyItemsRemeasuresOnlyDynamicTail(t *testing.T) {
 	}
 }
 
+func TestTranscriptBodyItemSetCachesStableComposerRedraw(t *testing.T) {
+	m := mouseTestModel()
+	m.transcript = appendRow(m.transcript, rowUser, "hello")
+	width := m.chatColumnWidth()
+
+	first := m.transcriptBodyItemSet(width, "", false)
+	firstMetrics := m.measureTranscriptBodyItemSet(first)
+	m.input.SetValue("/")
+	second := m.transcriptBodyItemSet(width, "", false)
+	secondMetrics := m.measureTranscriptBodyItemSet(second)
+
+	if !first.cacheable || !second.cacheable {
+		t.Fatalf("stable transcript item sets should be cacheable: first=%v second=%v", first.cacheable, second.cacheable)
+	}
+	if first.cacheKey == "" || first.cacheKey != second.cacheKey {
+		t.Fatalf("cache keys = %q then %q, want same non-empty key", first.cacheKey, second.cacheKey)
+	}
+	if len(first.items) == 0 || len(second.items) == 0 || &first.items[0] != &second.items[0] {
+		t.Fatal("composer-only redraw should reuse cached transcript body items")
+	}
+	if firstMetrics.totalLines() != secondMetrics.totalLines() {
+		t.Fatalf("metrics changed across composer-only redraw: %d vs %d", firstMetrics.totalLines(), secondMetrics.totalLines())
+	}
+}
+
+func TestTranscriptBodyItemSetBypassesCacheDuringSelection(t *testing.T) {
+	m := mouseTestModel()
+	m.transcript = appendRow(m.transcript, rowUser, "hello")
+	m.transcriptSelection = transcriptSelectionState{active: true}
+
+	set := m.transcriptBodyItemSet(m.chatColumnWidth(), "", false)
+
+	if set.cacheable {
+		t.Fatal("selection rendering depends on current highlight state and must bypass body item cache")
+	}
+}
+
 func BenchmarkMeasureTranscriptBodyItemsLongThread(b *testing.B) {
 	for _, itemCount := range []int{100, 1000, 10000} {
 		b.Run(stringKey(itemCount), func(b *testing.B) {
@@ -299,6 +337,33 @@ func BenchmarkMeasureTranscriptBodyItemsLongThread(b *testing.B) {
 			b.ResetTimer()
 			for range b.N {
 				_ = measureTranscriptBodyItems(items, cache)
+			}
+		})
+	}
+}
+
+func BenchmarkCachedTranscriptBodyItemsLongAssistantRows(b *testing.B) {
+	for _, rowCount := range []int{100, 1000} {
+		b.Run(stringKey(rowCount), func(b *testing.B) {
+			m := mouseTestModel()
+			m.transcript = initialTranscript()
+			text := strings.Repeat("This is a rendered markdown paragraph with bold words. ", 8)
+			for index := range rowCount {
+				m.transcript = appendTranscriptRow(m.transcript, transcriptRow{
+					kind:  rowAssistant,
+					id:    stringKey(index),
+					text:  text,
+					final: true,
+				})
+			}
+			width := m.chatColumnWidth()
+			warm := m.transcriptBodyItemSet(width, "", false)
+			_ = m.measureTranscriptBodyItemSet(warm)
+			m.input.SetValue("/")
+			b.ResetTimer()
+			for range b.N {
+				items := m.transcriptBodyItemSet(width, "", false)
+				_ = m.measureTranscriptBodyItemSet(items)
 			}
 		})
 	}

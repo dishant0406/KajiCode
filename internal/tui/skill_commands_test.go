@@ -413,3 +413,27 @@ func TestSkillPaletteReadsThroughLoader(t *testing.T) {
 		t.Fatalf("mid-session skill should appear via the loader, got %#v", got)
 	}
 }
+
+func TestSkillPaletteUsesAgentSkillMetadataBeforeLoader(t *testing.T) {
+	loads := 0
+	m := newModel(context.Background(), Options{
+		Cwd: t.TempDir(),
+		LoadSkills: func() []skills.Skill {
+			loads++
+			return []skills.Skill{{Name: "slow-body", Description: "should not load", Content: strings.Repeat("x", 10000)}}
+		},
+		AgentOptions: agent.Options{Skills: []agent.SkillInfo{{
+			Name:        "fast-meta",
+			Description: "metadata only",
+		}}},
+	})
+
+	got := m.matchSkillSuggestions("/fast")
+
+	if len(got) != 1 || got[0].Name != "/fast-meta" {
+		t.Fatalf("metadata skill should be suggested without body load, got %#v", got)
+	}
+	if loads != 0 {
+		t.Fatalf("skill autocomplete loaded full skill bodies %d time(s), want 0", loads)
+	}
+}

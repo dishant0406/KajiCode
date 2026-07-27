@@ -955,12 +955,13 @@ func TestResumePickerSelectionHydratesSession(t *testing.T) {
 
 	updated, cmd := m.Update(testKey(tea.KeyEnter)) // choosePicker
 	next := updated.(model)
-	if cmd != nil {
-		t.Fatal("selecting a session to resume should not start an agent run")
+	if cmd == nil || !next.resumeInFlight {
+		t.Fatal("selecting a session should start asynchronous hydration")
 	}
 	if next.picker != nil {
 		t.Fatal("picker should close after a selection")
 	}
+	next = applyResumeCommand(t, next, cmd)
 	if next.activeSession.SessionID != target.SessionID {
 		t.Fatalf("active session = %q, want %q", next.activeSession.SessionID, target.SessionID)
 	}
@@ -1048,7 +1049,9 @@ func TestResumeHonorsPriorCompaction(t *testing.T) {
 	}
 
 	m := newModel(context.Background(), Options{SessionStore: store})
-	next, _ := m.handleResumeCommand(session.SessionID)
+	next, _, cmd := m.startResumeCommand(session.SessionID)
+	updated, _ := next.Update(execCmd(cmd))
+	next = updated.(model)
 	// Resume must load the rehydrated (compaction-aware) context, not the raw log —
 	// matching the CLI's --resume and the in-TUI /compact reload. Compare contents,
 	// not just length: a regression that returned a same-length but reordered or
@@ -1063,8 +1066,8 @@ func TestResumeCommandWithUnknownIDReportsMissingSession(t *testing.T) {
 	m := newModel(context.Background(), Options{SessionStore: testSessionStore(t)})
 	m.input.SetValue("/resume zero_123")
 
-	updated, _ := m.Update(testKey(tea.KeyEnter))
-	next := updated.(model)
+	updated, cmd := m.Update(testKey(tea.KeyEnter))
+	next := applyResumeCommand(t, updated.(model), cmd)
 
 	if !transcriptContains(next.transcript, "kajicode session not found: zero_123") {
 		t.Fatalf("expected missing session message, got %#v", next.transcript)

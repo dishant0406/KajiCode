@@ -207,15 +207,12 @@ func (m model) matchCommandSuggestions(token string) []commandSuggestion {
 // dispatch time, so it must not be advertised at all.
 func (m model) matchSkillSuggestions(token string) []commandSuggestion {
 	prefix := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(token, "/")))
-	if prefix == "" || m.loadSkills == nil {
+	if prefix == "" {
 		return nil
 	}
 	taken := m.takenSlashNames()
 	var out []commandSuggestion
-	// Read through the loader (not the startup snapshot in agentOptions) so the
-	// palette matches what dispatch will actually resolve — a skill installed or
-	// removed mid-session appears/disappears without a restart.
-	for _, skill := range m.installedSkills() {
+	for _, skill := range m.skillSuggestionInfos() {
 		name := skillSlashName(skill.Name)
 		if name == "" || taken[name] || !strings.HasPrefix(name, prefix) {
 			continue
@@ -237,6 +234,21 @@ func (m model) matchSkillSuggestions(token string) []commandSuggestion {
 		}
 	}
 	return out
+}
+
+func (m model) skillSuggestionInfos() []agent.SkillInfo {
+	if len(m.agentOptions.Skills) > 0 {
+		return m.agentOptions.Skills
+	}
+	if m.loadSkills == nil {
+		return nil
+	}
+	installed := m.installedSkills()
+	infos := make([]agent.SkillInfo, 0, len(installed))
+	for _, skill := range installed {
+		infos = append(infos, agent.SkillInfo{Name: skill.Name, Description: skill.Description})
+	}
+	return infos
 }
 
 // matchUserCommandSuggestions returns file-sourced /commands whose name has the

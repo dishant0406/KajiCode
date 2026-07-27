@@ -3,6 +3,7 @@ package sessions
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"reflect"
 	"strings"
 	"sync"
@@ -56,6 +57,77 @@ func TestStoreAppendEventsBatchesSequencesAndMetadata(t *testing.T) {
 	}
 	if !reflect.DeepEqual(eventTypesForTest(events), []EventType{EventMessage, EventToolCall, EventToolResult}) {
 		t.Fatalf("unexpected event types: %#v", events)
+	}
+}
+
+func TestStoreHasMatchingEventStopsAtFirstMatch(t *testing.T) {
+	store := NewStore(StoreOptions{RootDir: t.TempDir()})
+	session, err := store.Create(CreateInput{SessionID: "scan"})
+	if err != nil {
+		t.Fatalf("Create returned error: %v", err)
+	}
+	for i := 0; i < 20; i++ {
+		eventType := EventMessage
+		if i == 2 {
+			eventType = EventToolCall
+		}
+		if _, err := store.AppendEvent(session.SessionID, AppendEventInput{
+			Type:    eventType,
+			Payload: map[string]any{"index": i},
+		}); err != nil {
+			t.Fatalf("AppendEvent %d returned error: %v", i, err)
+		}
+	}
+
+	visited := 0
+	ok, err := store.HasMatchingEvent(session.SessionID, func(event Event) bool {
+		visited++
+		return event.Type == EventToolCall
+	})
+
+	if err != nil {
+		t.Fatalf("HasMatchingEvent returned error: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected to find matching tool-call event")
+	}
+	if visited != 3 {
+		t.Fatalf("visited %d events, want stop after first match at third event", visited)
+	}
+}
+
+func TestStoreHasMatchingEventToleratesTornTail(t *testing.T) {
+	store := NewStore(StoreOptions{RootDir: t.TempDir()})
+	session, err := store.Create(CreateInput{SessionID: "torn"})
+	if err != nil {
+		t.Fatalf("Create returned error: %v", err)
+	}
+	if _, err := store.AppendEvent(session.SessionID, AppendEventInput{
+		Type:    EventMessage,
+		Payload: map[string]any{"content": "complete"},
+	}); err != nil {
+		t.Fatalf("AppendEvent returned error: %v", err)
+	}
+	file, err := os.OpenFile(store.eventsPath(session.SessionID), os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatalf("OpenFile returned error: %v", err)
+	}
+	if _, err := file.WriteString(`{"type":"message"`); err != nil {
+		t.Fatalf("WriteString returned error: %v", err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatalf("Close returned error: %v", err)
+	}
+
+	ok, err := store.HasMatchingEvent(session.SessionID, func(event Event) bool {
+		return event.Type == EventToolResult
+	})
+
+	if err != nil {
+		t.Fatalf("HasMatchingEvent should tolerate torn tail, got %v", err)
+	}
+	if ok {
+		t.Fatal("unexpected match in session with only a complete message and torn tail")
 	}
 }
 

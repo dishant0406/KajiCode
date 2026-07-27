@@ -38,10 +38,12 @@ func TestSessionPermissionProfileCreateChangeAndResume(t *testing.T) {
 		SessionStore:   store,
 		PermissionMode: agent.PermissionModeAskAll,
 	})
-	other, message := other.handleResumeCommand(m.activeSession.SessionID)
+	other, message, cmd := other.startResumeCommand(m.activeSession.SessionID)
 	if message != "" {
-		t.Fatalf("handleResumeCommand message = %q", message)
+		t.Fatalf("startResumeCommand message = %q", message)
 	}
+	updated, _ := other.Update(cmd())
+	other = updated.(model)
 	if other.permissionMode != agent.PermissionModeBypassAll {
 		t.Fatalf("resumed mode = %q, want bypass-all", other.permissionMode)
 	}
@@ -57,10 +59,12 @@ func TestResumeLegacySessionKeepsCurrentPermissionProfile(t *testing.T) {
 		SessionStore:   store,
 		PermissionMode: agent.PermissionModeReadWrite,
 	})
-	m, message := m.handleResumeCommand(session.SessionID)
+	m, message, cmd := m.startResumeCommand(session.SessionID)
 	if message != "" {
-		t.Fatalf("handleResumeCommand message = %q", message)
+		t.Fatalf("startResumeCommand message = %q", message)
 	}
+	updated, _ := m.Update(cmd())
+	m = updated.(model)
 	if m.permissionMode != agent.PermissionModeReadWrite {
 		t.Fatalf("legacy resume mode = %q, want read-write", m.permissionMode)
 	}
