@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/rand"
 	"strings"
@@ -12,26 +13,23 @@ import (
 	"github.com/dishant0406/KajiCode/internal/trace"
 )
 
-// Mid-stream reconnect: a long autonomous task (a big refactor, a swarm member,
-// a headless/cron run) should survive a single transient upstream hiccup
-// instead of dying and re-burning every token on a restart. When the initial
-// StreamCompletion connect fails with a disconnect-shaped error — before any
-// content has been forwarded — re-issue the same request with backoff a few
-// times. We retry ONLY the connect (not a partially-consumed stream), so no
-// already-forwarded OnText is ever duplicated.
+// Provider reconnect: a long autonomous task (a big refactor, a swarm member,
+// a headless/cron run) should survive transient upstream/API hiccups instead of
+// dying and re-burning every token on a manual restart. Retrying is restricted
+// to pre-content failures: either StreamCompletion fails before returning a
+// stream, or the stream terminates with a retryable API error before answer text
+// has been committed. That keeps visible OnText output from being duplicated.
 const (
 	// maxStreamReconnects is how many times the connect is re-issued after a
-	// transient disconnect. 4 (not 2): with jittered exponential backoff this rides
-	// out a multi-second network blip (~0.5s + 1s + 2s + 4s worst case) instead of
-	// dying on a 2s hiccup and re-burning every token on a restart.
-	maxStreamReconnects = 4
+	// transient upstream/API failure. 15 gives provider outages and rate limits a
+	// real recovery window while still staying bounded by streamReconnectMax.
+	maxStreamReconnects = 15
 	// streamReconnectMax caps a single backoff so the tail attempts don't wait
 	// minutes on a long outage.
 	streamReconnectMax = 8 * time.Second
 )
 
-// streamReconnectBase is the first-retry delay (doubled each subsequent attempt).
-// A var, not a const, so tests can shrink it to keep the exhaustion path fast.
+// streamReconnectBase is a var so tests can shrink exhaustion paths.
 var streamReconnectBase = 500 * time.Millisecond
 
 // reconnectNotifier is called before each retry with the 1-based attempt number
@@ -69,9 +67,9 @@ func stallRetryNoticeFor(options Options) reconnectNotifier {
 }
 
 // streamWithReconnect issues request via provider.StreamCompletion and, on a
-// transient disconnect error, retries the connect up to maxStreamReconnects
+// transient upstream/API error, retries the connect up to maxStreamReconnects
 // times with exponential backoff. It returns the live stream on success, or the
-// last error. A context-cancellation, a non-disconnect error, or a context
+// last error. A context-cancellation, a non-transient error, or a context
 // already past its deadline is returned immediately (no retry) — those have
 // their own handling (compaction for context-limit, image-rejection, etc.).
 func streamWithReconnect(ctx context.Context, provider Provider, request kajicoderuntime.CompletionRequest, notify reconnectNotifier) (<-chan kajicoderuntime.StreamEvent, error) {
@@ -107,10 +105,9 @@ func streamWithReconnect(ctx context.Context, provider Provider, request kajicod
 	return nil, err
 }
 
-// shouldReconnect reports whether err is a transient disconnect worth retrying.
-// It excludes context cancellation/expiry (caller is shutting down) and
-// context-limit errors (the compactor recovers those), so the reconnect path
-// never fights the existing handlers.
+// shouldReconnect reports whether err is a transient upstream/API failure worth
+// retrying. It excludes cancellation and context-limit errors, so reconnects
+// never fight the existing handlers.
 func shouldReconnect(ctx context.Context, err error) bool {
 	if err == nil || ctx.Err() != nil {
 		return false
@@ -119,19 +116,17 @@ func shouldReconnect(ctx context.Context, err error) bool {
 	if isContextLimitError(msg) || isImageRejectionError(err) {
 		return false
 	}
-	// HTTP 5xx statuses are non-reconnectable and must be excluded BEFORE the
-	// transport substring match below — otherwise "504 Gateway Timeout" would slip
-	// through on the generic "timeout" needle. 503 already exhausted
-	// providerio.SendWithRetry (retrying is a redundant double-retry); 500/502/504
-	// are non-idempotent by providerio's rule — the completion POST may already
-	// have reached the model before the upstream/gateway gave up, so replaying the
-	// connect risks duplicate billable work. Digit-boundary matched so an
-	// incidental "504" inside a latency/id number is not mistaken for a status.
-	if errhint.HasStatusCode(msg, "500", "502", "503", "504") {
-		return false
+	// Retry rate limits and upstream 5xx responses when they surface before any
+	// answer text has been committed. Digit-boundary matched so an incidental
+	// "500" inside a latency/id number is not mistaken for a status.
+	if errhint.HasStatusCode(msg, "408", "409", "425", "429", "500", "502", "503", "504", "529") {
+		return true
 	}
-	// Transport-level disconnects only. A genuine transport failure (EOF, reset,
-	// refused, timeout) means no response was received, which is safe to reconnect.
+	switch errhint.Classify(err) {
+	case errhint.RateLimit, errhint.Connectivity:
+		return true
+	}
+	// Transport-level disconnects/timeouts.
 	for _, needle := range []string{
 		"eof",
 		"connection reset",
@@ -144,12 +139,28 @@ func shouldReconnect(ctx context.Context, err error) bool {
 		"i/o timeout",
 		"server closed",
 		"unexpected end",
+		"rate limit",
+		"rate_limit",
+		"too many requests",
+		"quota",
+		"resource_exhausted",
+		"overloaded",
+		"service unavailable",
+		"bad gateway",
+		"gateway timeout",
+		"internal server error",
 	} {
 		if strings.Contains(msg, needle) {
 			return true
 		}
 	}
 	return false
+}
+
+func shouldRetryPreContentStreamError(ctx context.Context, collected kajicoderuntime.CollectedStream, forwardedVisibleText bool) bool {
+	return !forwardedVisibleText &&
+		strings.TrimSpace(collected.Text) == "" &&
+		shouldReconnect(ctx, errors.New(collected.Error))
 }
 
 // backoffFor is the deterministic exponential base delay for a 1-based attempt,

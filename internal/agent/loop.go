@@ -464,6 +464,41 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 			result.Messages = copyMessages(messages)
 			return result, ctx.Err()
 		}
+		for attempt := 1; attempt <= maxStreamReconnects && shouldRetryPreContentStreamError(ctx, collected, forwardedVisibleText); attempt++ {
+			if notify := reconnectNoticeFor(options); notify != nil {
+				notify(attempt, maxStreamReconnects)
+			}
+			if err := sleepWithContext(ctx, jitteredBackoff(attempt)); err != nil {
+				result.Messages = copyMessages(messages)
+				return result, err
+			}
+			retryRequest := kajicoderuntime.CompletionRequest{
+				Messages:        copyMessages(messages),
+				Tools:           exposed,
+				ReasoningEffort: options.ReasoningEffort,
+				PromptCacheKey:  options.SessionID,
+			}
+			retryStream, retryErr := streamWithReconnect(ctx, provider, retryRequest, reconnectNoticeFor(options))
+			if retryErr != nil {
+				result.Messages = copyMessages(messages)
+				return result, retryErr
+			}
+			retryGenSpan := options.Trace.Span(trace.SpanGeneration)
+			collected = kajicoderuntime.CollectStreamWithOptions(ctx, retryStream, forwardingOpts)
+			retryGenSpan.End()
+			if collected.Error != "" {
+				updated, stop := recoverStreamError(collected)
+				collected = updated
+				if stop != nil {
+					result.Messages = copyMessages(messages)
+					return result, stop
+				}
+			}
+			if ctx.Err() != nil {
+				result.Messages = copyMessages(messages)
+				return result, ctx.Err()
+			}
+		}
 		// A stream idle/stall timeout is safely re-issued when the turn committed NO
 		// answer text — no forwarded visible prose (forwardedVisibleText) and no
 		// collected final text (collected.Text). This covers two cases:
