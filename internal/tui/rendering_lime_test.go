@@ -391,6 +391,17 @@ func TestAssistantMarkdownUsesGlamourForLinksAndLists(t *testing.T) {
 	}
 }
 
+func TestAssistantMarkdownSimpleLinksStayOnLocalInlinePath(t *testing.T) {
+	input := "Read the [installation guide](https://example.com/install) before continuing."
+	if shouldUseGlamourInline(input) {
+		t.Fatal("simple inline links should not route through the heavyweight Glamour renderer")
+	}
+	plain := ansiPattern.ReplaceAllString(strings.Join(renderAssistantMarkdownText(input, 72, 72, true), "\n"), "")
+	if strings.Contains(plain, "https://example.com/install") || !strings.Contains(plain, "installation guide") {
+		t.Fatalf("link label render = %q", plain)
+	}
+}
+
 func TestAssistantMarkdownListsKeepHangingIndentAndLooseContent(t *testing.T) {
 	lines := renderAssistantMarkdownText(strings.Join([]string{
 		"- a long list item that must wrap onto another display line",

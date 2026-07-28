@@ -67,16 +67,25 @@ func (c *staticRenderCache) render(key string, stable bool, render func() string
 		return render()
 	}
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	if element, ok := c.items[key]; ok {
 		c.statsData.Hits++
 		c.lru.MoveToFront(element)
-		return element.Value.(*staticRenderCacheEntry).value
+		value := element.Value.(*staticRenderCacheEntry).value
+		c.mu.Unlock()
+		return value
 	}
 
 	c.statsData.Misses++
+	c.mu.Unlock()
 	value := render()
 	chars := utf8.RuneCountInString(value)
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if element, ok := c.items[key]; ok {
+		c.lru.MoveToFront(element)
+		return element.Value.(*staticRenderCacheEntry).value
+	}
 	if c.maxEntries <= 0 || c.maxCharacters <= 0 || chars > c.maxCharacters {
 		c.statsData.SkippedOversized++
 		return value

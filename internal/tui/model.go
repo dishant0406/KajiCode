@@ -109,6 +109,8 @@ type model struct {
 	resumeInFlight       bool
 	resumePrefixRows     int
 	resumePendingRows    []transcriptRow
+	resumeHistorySeq     int
+	resumeHistoryLoading bool
 	btw                  btwState
 	// btwRunIDSeq is the highest run ID issued by any completed or abandoned BTW
 	// surface. It survives returning to the parent so a late message from an old
@@ -191,6 +193,7 @@ type model struct {
 	leaderSeq             int
 	transcriptBodyHeights *transcriptBodyHeightCache
 	transcriptBodyCache   *transcriptBodyItemCache
+	sidebarDerivedCache   *sidebarDerivedCache
 	input                 textinput.Model
 	composer              composerState
 	composerActive        bool
@@ -860,6 +863,7 @@ func newModel(ctx context.Context, options Options) model {
 		transcript:                  initialTranscript(),
 		transcriptBodyHeights:       newTranscriptBodyHeightCache(defaultTranscriptBodyHeightCacheMaxEntries),
 		transcriptBodyCache:         newTranscriptBodyItemCache(),
+		sidebarDerivedCache:         newSidebarDerivedCache(),
 		prService:                   prService,
 		prState:                     prService.GetState(),
 		input:                       input,
@@ -1151,8 +1155,8 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case resumePreparedMsg:
 		return m.applyResumePrepared(msg)
-	case resumeContinueMsg:
-		return m.continueResumeTranscript(msg)
+	case resumeHistoryPreparedMsg:
+		return m.applyResumeHistoryPrepared(msg)
 	case subchatPreparedMsg:
 		return m.applySubchatPrepared(msg)
 	case subchatContinueMsg:
@@ -1743,10 +1747,10 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case keyIs(msg, tea.KeyPgUp):
 			m = m.clearHover()
-			return m.scrollChat(m.chatPageScrollLines()), nil
+			return m.scrollChatWithCommand(m.chatPageScrollLines())
 		case keyIs(msg, tea.KeyPgDown):
 			m = m.clearHover()
-			return m.scrollChat(-m.chatPageScrollLines()), nil
+			return m.scrollChatWithCommand(-m.chatPageScrollLines())
 		case keyShift(msg) && keyIs(msg, tea.KeyUp):
 			// Shift+Up scrolls the transcript up one line. Must be checked before
 			// plain KeyUp so shifted arrows aren't consumed by the composer-path.
@@ -1765,7 +1769,7 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 				break // let the input handle multiline navigation
 			}
 			m = m.clearHover()
-			return m.scrollChat(1), nil
+			return m.scrollChatWithCommand(1)
 		case keyShift(msg) && keyIs(msg, tea.KeyDown):
 			// Shift+Down scrolls the transcript down one line. Must be checked
 			// before plain KeyDown so shifted arrows aren't consumed.
@@ -1782,11 +1786,11 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 				break // let the input handle multiline navigation
 			}
 			m = m.clearHover()
-			return m.scrollChat(-1), nil
+			return m.scrollChatWithCommand(-1)
 		case keyIs(msg, tea.KeyDown):
 			if m.transcriptDetailed {
 				m = m.clearHover()
-				return m.scrollChat(-1), nil
+				return m.scrollChatWithCommand(-1)
 			}
 			if next, cmd, ok := m.moveModalSelection(1); ok {
 				return next, cmd
@@ -1806,7 +1810,7 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if m.transcriptDetailed {
 				m = m.clearHover()
-				return m.scrollChat(1), nil
+				return m.scrollChatWithCommand(1)
 			}
 			if next, cmd, ok := m.moveModalSelection(-1); ok {
 				return next, cmd
@@ -1842,7 +1846,7 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 				break // let the input handle its own Ctrl+U (delete-to-bol)
 			}
 			m = m.clearHover()
-			return m.scrollChat(m.chatPageScrollLines()), nil
+			return m.scrollChatWithCommand(m.chatPageScrollLines())
 		case keyCtrl(msg, 'd'):
 			// Ctrl+D scrolls down half a page, or moves the cursor down in
 			// permission/ask-user prompts. Falls through to the active modal
@@ -1863,7 +1867,7 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 				break // let the input handle its own Ctrl+D (delete-next-char)
 			}
 			m = m.clearHover()
-			return m.scrollChat(-m.chatPageScrollLines()), nil
+			return m.scrollChatWithCommand(-m.chatPageScrollLines())
 		}
 		if m.transcriptDetailed {
 			return m, nil
@@ -3294,6 +3298,26 @@ func (m model) scrollChat(delta int) model {
 	return m
 }
 
+func (m model) scrollChatWithCommand(delta int) (model, tea.Cmd) {
+	if !m.altScreen || delta == 0 {
+		return m, nil
+	}
+	viewport, ok := m.chatTranscriptViewport()
+	if !ok {
+		return m, nil
+	}
+	if delta > 0 && m.hasResumeHistoryBacklog() && viewport.maxOffset()-m.chatScrollOffset < delta {
+		top := viewport.maxOffset()
+		m.chatScrollOffset = top
+		return m.startResumeHistoryLoad(delta, top)
+	}
+	m.chatScrollOffset = viewport.scroll(delta).offset
+	if m.chatScrollOffset == 0 {
+		m.chatBodyLines = 0
+	}
+	return m, nil
+}
+
 func (m model) chatMaxScrollOffset() int {
 	_, maxOffset := m.chatScrollMetrics()
 	return maxOffset
@@ -3311,12 +3335,12 @@ func (m model) chatTranscriptViewport() (transcriptViewport, bool) {
 	if !m.altScreen || m.height <= 0 {
 		return transcriptViewport{}, false
 	}
-	header, items, width := m.transcriptHitTestSource()
+	header, set, width := m.transcriptHitTestItemSet()
 	footer := m.footerView(width)
 	if m.transcriptDetailed {
 		footer = m.detailedTranscriptFooter(width)
 	}
-	body := measureTranscriptBodyItems(items, m.transcriptBodyHeights)
+	body := m.measureTranscriptBodyItemSet(set)
 	frame := m.scrollableTranscriptFrame(header, footer)
 	return transcriptViewportForLayout(body, frame, m.chatScrollOffset), true
 }

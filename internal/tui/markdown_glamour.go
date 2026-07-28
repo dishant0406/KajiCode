@@ -85,7 +85,7 @@ func hasExtendedMarkdownInline(text string) bool {
 }
 
 func shouldUseGlamourInline(text string) bool {
-	return hasExtendedMarkdownInline(text) || strings.Contains(text, "](")
+	return hasExtendedMarkdownInline(text)
 }
 
 func stringPointer(value string) *string {

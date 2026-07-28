@@ -313,6 +313,43 @@ func TestTranscriptBodyItemSetCachesStableComposerRedraw(t *testing.T) {
 	}
 }
 
+func TestTranscriptBodyItemSetCachesCompletedSpecialistRows(t *testing.T) {
+	m := mouseTestModel()
+	m.transcript = append(m.transcript, transcriptRow{
+		kind: rowSpecialist,
+		specialistInfo: &specialistInfo{
+			name:           "worker",
+			childSessionID: "child-1",
+			status:         specialistCompleted,
+			tokenCount:     1200,
+		},
+	})
+
+	set := m.transcriptBodyItemSet(m.chatColumnWidth(), "", false)
+
+	if !set.cacheable {
+		t.Fatal("completed specialist rows should not disable transcript body caching")
+	}
+}
+
+func TestTranscriptBodyItemSetBypassesRunningSpecialistRows(t *testing.T) {
+	m := mouseTestModel()
+	m.transcript = append(m.transcript, transcriptRow{
+		kind: rowSpecialist,
+		specialistInfo: &specialistInfo{
+			name:           "worker",
+			childSessionID: "child-1",
+			status:         specialistRunning,
+		},
+	})
+
+	set := m.transcriptBodyItemSet(m.chatColumnWidth(), "", false)
+
+	if set.cacheable {
+		t.Fatal("running specialist rows are dynamic and must bypass transcript body caching")
+	}
+}
+
 func TestTranscriptBodyItemSetBypassesCacheDuringSelection(t *testing.T) {
 	m := mouseTestModel()
 	m.transcript = appendRow(m.transcript, rowUser, "hello")

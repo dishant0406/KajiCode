@@ -1267,6 +1267,7 @@ func markdownInlinePlain(text string) string {
 }
 
 func parseMarkdownInline(text string) []markdownInlineSegment {
+	text = stripMarkdownLinkDestinations(text)
 	segments := []markdownInlineSegment{}
 	var builder strings.Builder
 	bold := false
@@ -1333,6 +1334,59 @@ func parseMarkdownInline(text string) []markdownInlineSegment {
 	}
 	flush()
 	return segments
+}
+
+func stripMarkdownLinkDestinations(text string) string {
+	if !strings.Contains(text, "](") {
+		return text
+	}
+	var builder strings.Builder
+	for index := 0; index < len(text); {
+		if text[index] == '!' && index+1 < len(text) && text[index+1] == '[' {
+			if label, end, ok := markdownLinkLabel(text, index+1); ok {
+				builder.WriteString(label)
+				index = end
+				continue
+			}
+		}
+		if text[index] == '[' {
+			if label, end, ok := markdownLinkLabel(text, index); ok {
+				builder.WriteString(label)
+				index = end
+				continue
+			}
+		}
+		builder.WriteByte(text[index])
+		index++
+	}
+	return builder.String()
+}
+
+func markdownLinkLabel(text string, open int) (string, int, bool) {
+	close := findUnescapedByte(text, open+1, ']')
+	if close < 0 || close+1 >= len(text) || text[close+1] != '(' {
+		return "", 0, false
+	}
+	destinationEnd := findUnescapedByte(text, close+2, ')')
+	if destinationEnd < 0 {
+		return "", 0, false
+	}
+	return text[open+1 : close], destinationEnd + 1, true
+}
+
+func findUnescapedByte(text string, start int, want byte) int {
+	escaped := false
+	for index := start; index < len(text); index++ {
+		switch {
+		case escaped:
+			escaped = false
+		case text[index] == '\\':
+			escaped = true
+		case text[index] == want:
+			return index
+		}
+	}
+	return -1
 }
 
 func hasClosingMarkdownDelimiter(text string, start int, marker string) bool {

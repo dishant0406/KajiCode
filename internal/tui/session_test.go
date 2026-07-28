@@ -698,14 +698,16 @@ func TestResumeCommandHydratesSessionTranscript(t *testing.T) {
 	}
 }
 
-func TestResumeLongTranscriptLoadsTailFirstInPages(t *testing.T) {
+func TestResumeLongTranscriptLoadsTailAndDefersOlderRows(t *testing.T) {
 	m := newModel(context.Background(), Options{})
 	m.altScreen = true
+	m.chatScrollOffset = 9
+	m.chatBodyLines = 123
 	m.resumeSeq = 1
 	m.resumeInFlight = true
 	rows := make([]transcriptRow, 0, resumeTranscriptPageRows*10+5)
 	for i := 0; i < cap(rows); i++ {
-		rows = appendRow(rows, rowAssistant, stringKey(i))
+		rows = appendRow(rows, rowAssistant, "row:"+stringKey(i)+":")
 	}
 
 	m, cmd := m.applyResumePrepared(resumePreparedMsg{
@@ -713,31 +715,77 @@ func TestResumeLongTranscriptLoadsTailFirstInPages(t *testing.T) {
 		session: &sessions.Metadata{SessionID: "session-1", Title: "Long thread"},
 		rows:    rows,
 	})
-	if cmd == nil || !m.resumeInFlight {
-		t.Fatal("large resume should schedule another bounded page")
+	if cmd != nil || m.resumeInFlight {
+		t.Fatal("large resume should paint the tail, unblock input, and avoid hidden backfill commands")
 	}
 	if got := len(m.transcript) - m.resumePrefixRows; got != resumeTranscriptPageRows {
 		t.Fatalf("initial history rows = %d, want %d", got, resumeTranscriptPageRows)
 	}
-	if m.transcript[m.resumePrefixRows].text != stringKey(len(rows)-resumeTranscriptPageRows) {
+	if got, want := len(m.resumePendingRows), len(rows)-resumeTranscriptPageRows; got != want {
+		t.Fatalf("deferred rows = %d, want %d", got, want)
+	}
+	if m.chatScrollOffset != 0 || m.chatBodyLines != 0 {
+		t.Fatalf("resume should pin the hydrated tail at bottom, offset=%d bodyLines=%d", m.chatScrollOffset, m.chatBodyLines)
+	}
+	if m.transcript[m.resumePrefixRows].text != "row:"+stringKey(len(rows)-resumeTranscriptPageRows)+":" {
 		t.Fatal("initial page must be the newest transcript tail")
 	}
+	if transcriptContains(m.transcript, "row:0:") {
+		t.Fatal("oldest transcript rows must not materialize before the user scrolls up")
+	}
+}
 
-	continuations := 0
-	for cmd != nil {
-		updated, nextCmd := m.Update(execCmd(cmd))
-		m = updated.(model)
-		cmd = nextCmd
-		continuations++
+func TestResumeScrollLoadsOlderHistoryOnDemand(t *testing.T) {
+	m := newModel(context.Background(), Options{})
+	m.altScreen = true
+	m.width = 120
+	m.height = 24
+	m.resumeSeq = 1
+	m.resumeInFlight = true
+	rows := make([]transcriptRow, 0, resumeTranscriptPageRows*3+5)
+	for i := 0; i < cap(rows); i++ {
+		rows = appendRow(rows, rowAssistant, "row:"+stringKey(i)+":")
 	}
-	if continuations > 4 {
-		t.Fatalf("resume paging used %d continuations, want logarithmic growth", continuations)
+
+	m, cmd := m.applyResumePrepared(resumePreparedMsg{
+		seq:     1,
+		session: &sessions.Metadata{SessionID: "session-1", Title: "Long thread"},
+		rows:    rows,
+	})
+	if cmd != nil || m.resumeInFlight {
+		t.Fatal("large resume should not schedule hidden backfill")
 	}
-	if m.resumeInFlight || len(m.resumePendingRows) != 0 {
-		t.Fatal("all resume pages should finish materializing")
+	beforePending := len(m.resumePendingRows)
+	oldPageStart := beforePending - resumeTranscriptScrollGapRows
+	if transcriptContains(m.transcript, "row:"+stringKey(oldPageStart)+":") {
+		t.Fatal("older page was loaded before scroll demand")
 	}
-	if !transcriptContains(m.transcript, stringKey(0)) || !transcriptContains(m.transcript, stringKey(len(rows)-1)) {
-		t.Fatal("paged resume must preserve the complete transcript")
+
+	m.chatScrollOffset = m.chatMaxScrollOffset()
+	m, cmd = m.scrollChatWithCommand(m.chatPageScrollLines())
+	if cmd == nil || !m.resumeHistoryLoading {
+		t.Fatal("scrolling past the loaded top should schedule async history preparation")
+	}
+	if got := len(m.resumePendingRows); got != beforePending {
+		t.Fatalf("scroll event changed pending rows before preparation: %d, want %d", got, beforePending)
+	}
+	if transcriptContains(m.transcript, "row:"+stringKey(oldPageStart)+":") {
+		t.Fatal("scroll event should not synchronously materialize older rows")
+	}
+	updated, nextCmd := m.Update(execCmd(cmd))
+	m = updated.(model)
+	if nextCmd != nil || m.resumeHistoryLoading {
+		t.Fatal("prepared history page should apply without scheduling hidden work")
+	}
+
+	if got, want := len(m.resumePendingRows), beforePending-resumeTranscriptScrollGapRows; got != want {
+		t.Fatalf("deferred rows after scroll = %d, want %d", got, want)
+	}
+	if !transcriptContains(m.transcript, "row:"+stringKey(oldPageStart)+":") {
+		t.Fatal("scrolling past the loaded top should materialize the next older page")
+	}
+	if transcriptContains(m.transcript, "row:"+stringKey(oldPageStart-1)+":") {
+		t.Fatal("scroll demand should load one bounded page, not the full backlog")
 	}
 }
 
@@ -815,22 +863,9 @@ func TestClearCancelsPendingResumePages(t *testing.T) {
 	if cmd != nil || m.resumeInFlight || len(m.resumePendingRows) != 0 {
 		t.Fatal("clear must cancel pending resume materialization")
 	}
-	m, cmd = m.continueResumeTranscript(resumeContinueMsg{seq: 2})
-	if cmd != nil || transcriptContains(m.transcript, "older history") {
-		t.Fatal("stale continuation must not restore cleared history")
-	}
-}
-
-func TestResumeContinuationFailsClosedAfterTranscriptReplacement(t *testing.T) {
-	m := newModel(context.Background(), Options{})
-	m.resumeSeq = 3
-	m.resumeInFlight = true
-	m.resumePrefixRows = len(m.transcript) + 1
-	m.resumePendingRows = appendRow(nil, rowAssistant, "older history")
-
-	m, cmd := m.continueResumeTranscript(resumeContinueMsg{seq: 3})
-	if cmd != nil || m.resumeInFlight || len(m.resumePendingRows) != 0 {
-		t.Fatal("invalid paging frontier must cancel resume loading")
+	m = m.scrollChat(m.chatPageScrollLines())
+	if transcriptContains(m.transcript, "older history") {
+		t.Fatal("scrolling after clear must not restore cleared history")
 	}
 }
 

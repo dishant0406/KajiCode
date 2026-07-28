@@ -39,11 +39,13 @@ type touchedFile struct {
 }
 
 // touchedFiles recovers the session's touched-file roster from the transcript,
-// most recently touched first. Recomputed on demand (the value-receiver model
-// can't persist a registry from View), mirroring swarmSpawnedAgents; the scan is
-// a single pass over the transcript per render, same order as the sidebar's
-// other sections.
+// most recently touched first, caching the derived roster across composer-only
+// renders so the sidebar does not rescan long transcripts on each keypress.
 func (m model) touchedFiles() []touchedFile {
+	return m.cachedTouchedFiles()
+}
+
+func (m model) computeTouchedFiles() []touchedFile {
 	var files []touchedFile
 	index := map[string]int{}
 	for i, row := range m.transcript {

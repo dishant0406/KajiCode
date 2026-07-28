@@ -10,6 +10,7 @@ import (
 )
 
 func TestLoadProviderCommandSuccess(t *testing.T) {
+	allowSlowProviderCommand(t)
 	command := writeCommand(t, commandScript{
 		Stdout: `{"name":"cmd","provider":"openai","apiKey":"sk-command","model":"gpt-command"}`,
 	})
@@ -29,6 +30,7 @@ func TestLoadProviderCommandSuccess(t *testing.T) {
 }
 
 func TestLoadProviderCommandDoesNotResolveAPIKeyEnvFromProcess(t *testing.T) {
+	allowSlowProviderCommand(t)
 	t.Setenv("KAJICODE_CMD_API_KEY", "sk-process")
 	command := writeCommand(t, commandScript{
 		Stdout: `{"name":"cmd","provider":"openai","apiKeyEnv":"KAJICODE_CMD_API_KEY","model":"gpt-command"}`,
@@ -49,6 +51,7 @@ func TestLoadProviderCommandDoesNotResolveAPIKeyEnvFromProcess(t *testing.T) {
 }
 
 func TestLoadProviderCommandFailureIncludesExitAndRedactsOutput(t *testing.T) {
+	allowSlowProviderCommand(t)
 	command := writeCommand(t, commandScript{
 		Stderr:   "failed with sk-command-secret",
 		ExitCode: 7,
@@ -87,7 +90,22 @@ func TestLoadProviderCommandTimeout(t *testing.T) {
 	}
 }
 
+func TestProviderCommandTimeoutDurationUsesValidOverride(t *testing.T) {
+	t.Setenv(providerCommandTimeoutEnv, "12s")
+	if got := providerCommandTimeoutDuration(); got != 12*time.Second {
+		t.Fatalf("timeout = %s, want 12s", got)
+	}
+}
+
+func TestProviderCommandTimeoutDurationIgnoresInvalidOverride(t *testing.T) {
+	t.Setenv(providerCommandTimeoutEnv, "nope")
+	if got := providerCommandTimeoutDuration(); got != providerCommandTimeout {
+		t.Fatalf("timeout = %s, want default %s", got, providerCommandTimeout)
+	}
+}
+
 func TestLoadProviderCommandInvalidJSON(t *testing.T) {
+	allowSlowProviderCommand(t)
 	command := writeCommand(t, commandScript{Stdout: `{not-json`})
 
 	_, err := LoadProviderCommand(command)
@@ -100,6 +118,7 @@ func TestLoadProviderCommandInvalidJSON(t *testing.T) {
 }
 
 func TestLoadProviderCommandMissingModel(t *testing.T) {
+	allowSlowProviderCommand(t)
 	command := writeCommand(t, commandScript{
 		Stdout: `{"name":"cmd","provider":"openai","apiKey":"sk-command"}`,
 	})
@@ -111,6 +130,11 @@ func TestLoadProviderCommandMissingModel(t *testing.T) {
 	if !strings.Contains(err.Error(), "provider cmd requires model") {
 		t.Fatalf("error = %q, want missing model", err.Error())
 	}
+}
+
+func allowSlowProviderCommand(t *testing.T) {
+	t.Helper()
+	t.Setenv(providerCommandTimeoutEnv, "20s")
 }
 
 type commandScript struct {

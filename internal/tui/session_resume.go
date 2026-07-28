@@ -3,14 +3,16 @@ package tui
 import (
 	"fmt"
 	"strings"
-	"time"
 
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/dishant0406/KajiCode/internal/sessions"
 )
 
-const resumeTranscriptPageRows = 96
+const (
+	resumeTranscriptPageRows      = 96
+	resumeTranscriptScrollGapRows = 12
+)
 
 type resumePreparedMsg struct {
 	seq     int
@@ -18,10 +20,6 @@ type resumePreparedMsg struct {
 	events  []sessions.Event
 	rows    []transcriptRow
 	err     error
-}
-
-type resumeContinueMsg struct {
-	seq int
 }
 
 func (m model) startResumeCommand(args string) (model, string, tea.Cmd) {
@@ -37,6 +35,10 @@ func (m model) startResumeCommand(args string) (model, string, tea.Cmd) {
 	m.resumeInFlight = true
 	m.resumePrefixRows = 0
 	m.resumePendingRows = nil
+	m.resumeHistorySeq++
+	m.resumeHistoryLoading = false
+	m.chatScrollOffset = 0
+	m.chatBodyLines = 0
 	seq := m.resumeSeq
 	m.transcript = reduceTranscript(m.transcript, transcriptAction{
 		kind: actionAppendSystem,
@@ -66,6 +68,8 @@ func (m model) cancelResumeLoading() model {
 	m.resumeInFlight = false
 	m.resumePrefixRows = 0
 	m.resumePendingRows = nil
+	m.resumeHistorySeq++
+	m.resumeHistoryLoading = false
 	return m
 }
 
@@ -77,6 +81,8 @@ func (m model) applyResumePrepared(msg resumePreparedMsg) (model, tea.Cmd) {
 		m.resumeInFlight = false
 		m.resumePrefixRows = 0
 		m.resumePendingRows = nil
+		m.resumeHistorySeq++
+		m.resumeHistoryLoading = false
 		text := "unknown resume error"
 		if msg.err != nil {
 			text = msg.err.Error()
@@ -112,12 +118,16 @@ func (m model) applyResumePrepared(msg resumePreparedMsg) (model, tea.Cmd) {
 	}
 	m.resumePrefixRows = len(prefix)
 	m.resetFlushFrontier("· resumed ·")
+	m.chatScrollOffset = 0
+	m.chatBodyLines = 0
 
 	if !m.altScreen || len(msg.rows) <= resumeTranscriptPageRows {
 		m.transcript = append(prefix, msg.rows...)
 		m.resumeInFlight = false
 		m.resumePrefixRows = 0
 		m.resumePendingRows = nil
+		m.resumeHistorySeq++
+		m.resumeHistoryLoading = false
 		m.refreshComposerHistory()
 		return m, nil
 	}
@@ -125,32 +135,33 @@ func (m model) applyResumePrepared(msg resumePreparedMsg) (model, tea.Cmd) {
 	split := len(msg.rows) - resumeTranscriptPageRows
 	m.resumePendingRows = append([]transcriptRow(nil), msg.rows[:split]...)
 	m.transcript = append(prefix, msg.rows[split:]...)
-	return m, resumeContinueCmd(msg.seq)
+	m.resumeInFlight = false
+	m.resumeHistorySeq++
+	m.resumeHistoryLoading = false
+	m.refreshComposerHistory()
+	return m, nil
 }
 
-func (m model) continueResumeTranscript(msg resumeContinueMsg) (model, tea.Cmd) {
-	if msg.seq != m.resumeSeq || !m.resumeInFlight {
-		return m, nil
-	}
-	if len(m.resumePendingRows) == 0 {
-		m.resumeInFlight = false
-		m.resumePrefixRows = 0
-		m.refreshComposerHistory()
-		return m, nil
+func (m model) hasResumeHistoryBacklog() bool {
+	return !m.resumeInFlight && len(m.resumePendingRows) > 0
+}
+
+func (m model) loadResumeHistoryPage(pageRows int) model {
+	if !m.hasResumeHistoryBacklog() {
+		return m
 	}
 	if m.resumePrefixRows < 0 || m.resumePrefixRows > len(m.transcript) {
-		return m.cancelResumeLoading(), nil
+		m.resumePrefixRows = 0
+		m.resumePendingRows = nil
+		return m
 	}
-
-	pageRows := resumeTranscriptPageRows
-	visibleRows := len(m.transcript) - m.resumePrefixRows
-	if visibleRows > pageRows {
-		pageRows = visibleRows
+	if pageRows <= 0 {
+		pageRows = resumeTranscriptPageRows
+	}
+	if pageRows > len(m.resumePendingRows) {
+		pageRows = len(m.resumePendingRows)
 	}
 	start := len(m.resumePendingRows) - pageRows
-	if start < 0 {
-		start = 0
-	}
 	page := append([]transcriptRow(nil), m.resumePendingRows[start:]...)
 	m.resumePendingRows = m.resumePendingRows[:start]
 	prefix := append([]transcriptRow(nil), m.transcript[:m.resumePrefixRows]...)
@@ -158,16 +169,21 @@ func (m model) continueResumeTranscript(msg resumeContinueMsg) (model, tea.Cmd) 
 	m.transcript = append(prefix, page...)
 	m.transcript = append(m.transcript, tail...)
 	if len(m.resumePendingRows) == 0 {
-		m.resumeInFlight = false
 		m.resumePrefixRows = 0
-		m.refreshComposerHistory()
-		return m, nil
 	}
-	return m, resumeContinueCmd(msg.seq)
+	return m
 }
 
-func resumeContinueCmd(seq int) tea.Cmd {
-	return tea.Tick(time.Millisecond, func(time.Time) tea.Msg {
-		return resumeContinueMsg{seq: seq}
-	})
+func (m model) insertResumeHistoryPage(page []transcriptRow) model {
+	if len(page) == 0 {
+		return m
+	}
+	prefix := append([]transcriptRow(nil), m.transcript[:m.resumePrefixRows]...)
+	tail := append([]transcriptRow(nil), m.transcript[m.resumePrefixRows:]...)
+	m.transcript = append(prefix, page...)
+	m.transcript = append(m.transcript, tail...)
+	if len(m.resumePendingRows) == 0 {
+		m.resumePrefixRows = 0
+	}
+	return m
 }

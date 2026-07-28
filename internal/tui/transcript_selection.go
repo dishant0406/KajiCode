@@ -1086,18 +1086,24 @@ func splitPlainAtDisplayWidth(text string, width int) (string, string) {
 // selection previously resolved against transcript rows that weren't even
 // visible while viewing a subagent/swarm child session.
 func (m model) transcriptHitTestSource() (header string, items []transcriptBodyItem, width int) {
+	header, set, width := m.transcriptHitTestItemSet()
+	return header, set.items, width
+}
+
+func (m model) transcriptHitTestItemSet() (header string, set transcriptBodyItemSet, width int) {
 	if m.transcriptDetailed {
 		width = chatWidth(m.width)
 		header = detailedTranscriptHeader(width) + "\n" + kajicodeTheme.line.Render(strings.Repeat("-", width))
-		items = m.transcriptBodyItems(width, "", true)
-		return
+		return header, m.transcriptBodyItemSet(width, "", true), width
 	}
 	if m.subchat.active {
 		width = chatWidth(m.width)
-		return renderSubchatNavBar(m.subchat.childSessionTitle, width), m.transcriptBodyItemsFromRows(m.subchat.childRows, width), width
+		return renderSubchatNavBar(m.subchat.childSessionTitle, width), transcriptBodyItemSet{
+			items: m.transcriptBodyItemsFromRows(m.subchat.childRows, width),
+		}, width
 	}
 	width = m.chatColumnWidth()
-	return m.pinnedTitleBar(width), m.transcriptBodyItems(width, "", false), width
+	return m.pinnedTitleBar(width), m.transcriptBodyItemSet(width, "", false), width
 }
 
 // transcriptHitTestBlocked reports whether mouse hit-testing must be skipped
@@ -1110,15 +1116,15 @@ func (m model) transcriptHitTestBlocked() bool {
 // shared by transcriptLineAtMouse (exact match) and nearestTranscriptLineAtMouse
 // (nearest-line fallback for scroll-driven selection extension).
 func (m model) transcriptHitTestLayout() (frame transcriptFrameLayout, window transcriptViewportWindow, layout transcriptBodyLayout) {
-	header, items, width := m.transcriptHitTestSource()
+	header, set, width := m.transcriptHitTestItemSet()
 	footer := m.footerView(width)
 	if m.transcriptDetailed {
 		footer = m.detailedTranscriptFooter(width)
 	}
 	frame = m.scrollableTranscriptFrame(header, footer)
-	metrics := measureTranscriptBodyItems(items, m.transcriptBodyHeights)
+	metrics := m.measureTranscriptBodyItemSet(set)
 	window = transcriptViewportForLayout(metrics, frame, m.chatScrollOffset).window()
-	layout = layoutVisibleTranscriptBodyItems(items, metrics, window)
+	layout = layoutVisibleTranscriptBodyItems(set.items, metrics, window)
 	return frame, window, layout
 }
 

@@ -94,12 +94,13 @@ func (m model) sidebarAvailable() bool {
 	if widthTier(m.width) < tierMedium {
 		return false
 	}
-	// Full-screen overlays (setup, wizards, pickers, the empty-state suggestion
-	// list) take over the chat column and render at full width; suppress the
-	// second column while any is active so their geometry and mouse hit-testing
-	// stay full-width as before.
+	// Full-screen overlays (setup, wizards, pickers) take over the chat column and
+	// render at full width; suppress the second column while any is active so their
+	// geometry and mouse hit-testing stay full-width. Autocomplete is intentionally
+	// excluded: keeping the sidebar width stable avoids re-rendering long history
+	// at a different chat width on the first "/" keypress.
 	if m.setup.visible || m.helpOverlay || m.leaderHelpOverlay || m.providerWizard != nil || m.mcpAddWizard != nil ||
-		m.mcpManager != nil || m.promptEditor != nil || m.picker != nil || m.suggestionsActive() {
+		m.mcpManager != nil || m.promptEditor != nil || m.picker != nil {
 		return false
 	}
 	// Home/welcome screen: stay single-column until there's real conversation, so

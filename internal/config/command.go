@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -12,12 +13,14 @@ import (
 )
 
 const providerCommandTimeout = 5 * time.Second
+const providerCommandTimeoutEnv = "KAJICODE_PROVIDER_COMMAND_TIMEOUT"
 
 func LoadProviderCommand(command string) (FileConfig, error) {
-	stdout, stderr, err := runProviderCommand(command, providerCommandTimeout)
+	timeout := providerCommandTimeoutDuration()
+	stdout, stderr, err := runProviderCommand(command, timeout)
 	if err != nil {
 		if errors.Is(err, errProviderCommandTimeout) {
-			return FileConfig{}, fmt.Errorf("provider command timed out after 5s")
+			return FileConfig{}, fmt.Errorf("provider command timed out after %s", timeout)
 		}
 		return FileConfig{}, fmt.Errorf("provider command failed: %w%s", err, commandOutput(stderr))
 	}
@@ -39,6 +42,18 @@ func LoadProviderCommand(command string) (FileConfig, error) {
 }
 
 var errProviderCommandTimeout = errors.New("provider command timeout")
+
+func providerCommandTimeoutDuration() time.Duration {
+	value := strings.TrimSpace(os.Getenv(providerCommandTimeoutEnv))
+	if value == "" {
+		return providerCommandTimeout
+	}
+	timeout, err := time.ParseDuration(value)
+	if err != nil || timeout <= 0 {
+		return providerCommandTimeout
+	}
+	return timeout
+}
 
 func runProviderCommand(command string, timeout time.Duration) ([]byte, []byte, error) {
 	cmd := shellCommand(command)

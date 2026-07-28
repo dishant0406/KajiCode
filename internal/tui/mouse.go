@@ -52,15 +52,15 @@ type mouseSelectionTarget struct {
 // distinct message type that never reaches that code, so scrolling while
 // selecting left the selection frozen at whatever line the mouse last physically
 // moved over — capped at the viewport that was visible before the scroll.
-func (m model) scrollChatExtendingSelection(delta int, msg tea.MouseMsg) model {
-	m = m.scrollChat(delta)
+func (m model) scrollChatExtendingSelection(delta int, msg tea.MouseMsg) (model, tea.Cmd) {
+	m, cmd := m.scrollChatWithCommand(delta)
 	if !m.transcriptSelection.active {
-		return m
+		return m, cmd
 	}
 	if line, ok := m.nearestTranscriptLineAtMouse(msg); ok {
 		m.transcriptSelection.cursor = transcriptSelectionPointForMouse(line, mouseX(msg))
 	}
-	return m
+	return m, cmd
 }
 
 func (m model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
@@ -181,7 +181,7 @@ func (m model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 				return next, nil
 			}
 		}
-		return m.scrollChatExtendingSelection(chatWheelScrollLines, msg), nil
+		return m.scrollChatExtendingSelection(chatWheelScrollLines, msg)
 	case mouseWheelDown(msg):
 		m.clearMouseSelection()
 		m = m.clearHover()
@@ -213,7 +213,7 @@ func (m model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 				return next, nil
 			}
 		}
-		return m.scrollChatExtendingSelection(-chatWheelScrollLines, msg), nil
+		return m.scrollChatExtendingSelection(-chatWheelScrollLines, msg)
 	default:
 		return m, nil
 	}

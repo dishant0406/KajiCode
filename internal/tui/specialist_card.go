@@ -485,8 +485,15 @@ func renderSpecialistSummary(specialists []specialistInfo, spinnerView string) s
 			errors++
 		}
 	}
+	icon := "✓"
+	if errors > 0 {
+		icon = "✗"
+	}
+	if running > 0 {
+		icon = spinnerView
+	}
 	summary := fmt.Sprintf("  %s %d specialists · %d running · %d done",
-		spinnerView, len(specialists), running, completed)
+		icon, len(specialists), running, completed)
 	if errors > 0 {
 		summary += fmt.Sprintf(" · %d error", errors)
 		if errors > 1 {
@@ -498,6 +505,13 @@ func renderSpecialistSummary(specialists []specialistInfo, spinnerView string) s
 	// at byte offset 2 (after the 2-space indent), so the muted tail must skip
 	// both the indent and the spinner's bytes to avoid splitting a multi-byte
 	// rune and losing the indent.
-	tailStart := 2 + len(spinnerView)
-	return kajicodeTheme.accent.Render(spinnerView) + kajicodeTheme.muted.Render(summary[tailStart:])
+	tailStart := 2 + len(icon)
+	iconStyle := kajicodeTheme.green
+	if errors > 0 {
+		iconStyle = kajicodeTheme.red
+	}
+	if running > 0 {
+		iconStyle = kajicodeTheme.accent
+	}
+	return iconStyle.Render(icon) + kajicodeTheme.muted.Render(summary[tailStart:])
 }

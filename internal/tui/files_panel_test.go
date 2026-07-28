@@ -57,6 +57,29 @@ func TestTouchedFilesAggregates(t *testing.T) {
 	}
 }
 
+func TestTouchedFilesCacheSurvivesComposerOnlyRedraw(t *testing.T) {
+	m := filesPanelTestModel()
+	first := m.touchedFiles()
+	m.input.SetValue("/")
+	second := m.touchedFiles()
+
+	if len(first) == 0 || len(second) == 0 {
+		t.Fatal("expected touched files")
+	}
+	if &first[0] != &second[0] {
+		t.Fatal("composer-only redraw should reuse cached touched-file roster")
+	}
+
+	m.transcript = append(m.transcript, transcriptRow{
+		kind: rowToolResult, tool: "edit_file", id: "new-file", status: tools.StatusOK,
+		changedFiles: []string{"new.go"},
+	})
+	third := m.touchedFiles()
+	if len(third) == 0 || third[0].path != "new.go" {
+		t.Fatalf("new file result should invalidate touched-file cache, got %+v", third)
+	}
+}
+
 // TestSidebarFileLinesRenderAndOverflow: rows carry the badge + left-truncated
 // path + diffstat; beyond maxSidebarFiles the tail collapses into "+N more";
 // hits index only real file rows.

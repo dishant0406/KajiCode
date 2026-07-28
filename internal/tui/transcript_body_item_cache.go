@@ -66,7 +66,7 @@ func (m model) transcriptBodyItemCacheKey(width int, emptyOverlay string, detail
 	writeFingerprintField(&hash, m.cwd)
 	writeFingerprintField(&hash, strconv.Itoa(len(m.transcript)))
 	for _, row := range m.transcript {
-		if row.kind == rowSpecialist {
+		if row.kind == rowSpecialist && row.specialistInfo != nil && row.specialistInfo.status == specialistRunning {
 			return "", false
 		}
 		writeFingerprintField(&hash, transcriptRowRenderFingerprint(row))
