@@ -18,8 +18,33 @@ const (
 	markdownTableRuleBodyRows    = 4
 	markdownBoldStart            = "\x1b[1m"
 	markdownBoldEnd              = "\x1b[22m"
+	markdownItalicStart          = "\x1b[3m"
+	markdownItalicEnd            = "\x1b[23m"
+	markdownLinkStart            = "\x1b[4m"
+	markdownLinkEnd              = "\x1b[24m"
+	markdownCodeStart            = "\x1b[7m"
+	markdownCodeEnd              = "\x1b[27m"
 	markdownStrikeStart          = "\x1b[9m"
 	markdownStrikeEnd            = "\x1b[29m"
+	markdownAccentStart          = "\x1b[95m"
+	markdownAccentEnd            = "\x1b[39m"
+	markdownGreenStart           = "\x1b[92m"
+	markdownGreenEnd             = "\x1b[39m"
+	markdownAmberStart           = "\x1b[93m"
+	markdownAmberEnd             = "\x1b[39m"
+	markdownRedStart             = "\x1b[91m"
+	markdownRedEnd               = "\x1b[39m"
+	markdownMutedStart           = "\x1b[90m"
+	markdownMutedEnd             = "\x1b[39m"
+)
+
+var markdownBreakReplacer = strings.NewReplacer(
+	"<br />", "\n",
+	"<br/>", "\n",
+	"<br>", "\n",
+	"<BR />", "\n",
+	"<BR/>", "\n",
+	"<BR>", "\n",
 )
 
 type markdownDisplayStyle int
@@ -27,7 +52,16 @@ type markdownDisplayStyle int
 const (
 	markdownDisplayNormal markdownDisplayStyle = iota
 	markdownDisplayBold
+	markdownDisplayItalic
+	markdownDisplayLink
+	markdownDisplayCode
+	markdownDisplayStrike
 	markdownDisplayRule
+	markdownDisplayAccent
+	markdownDisplayGreen
+	markdownDisplayAmber
+	markdownDisplayRed
+	markdownDisplayMuted
 )
 
 type markdownTableAlignment int
@@ -121,15 +155,9 @@ func renderAssistantMarkdownText(text string, proseMeasure int, tableMeasure int
 			continue
 		}
 
-		if heading := markdownHeadingText(trimmed); heading != "" {
+		if level, heading := markdownHeading(line); heading != "" {
 			blankBefore()
-			// Headings are distinguished by weight + underline, not a bright colour —
-			// calm for dark-mode terminals (ink, the body colour, not the lime accent).
-			headingStyle := kajicodeTheme.ink.Bold(true).Underline(true)
-			plain := strings.ReplaceAll(strings.ReplaceAll(heading, "**", ""), "`", "")
-			for _, hl := range wrapPlainText(plain, proseMeasure) {
-				lines = append(lines, headingStyle.Render(hl))
-			}
+			lines = append(lines, renderMarkdownHeading(level, heading, proseMeasure)...)
 			index++
 			continue
 		}
@@ -157,23 +185,21 @@ func renderAssistantMarkdownText(text string, proseMeasure int, tableMeasure int
 				block = append(block, next)
 				index++
 			}
-			if rendered, ok := glamourInline.renderBlock(strings.Join(normalizeMarkdownListBlock(block), "\n")); ok {
-				for _, renderedLine := range strings.Split(rendered, "\n") {
-					prefix, body := markdownRenderedListLineParts(renderedLine)
-					continuation := strings.Repeat(" ", lipgloss.Width(prefix))
-					lines = append(lines, wrapANSITextWithPrefixes(prefix, continuation, body, proseMeasure)...)
-				}
-				continue
-			}
-			for _, listLine := range block {
-				lines = append(lines, wrapMarkdownInline(renderMarkdownStandaloneLine(listLine), proseMeasure)...)
-			}
+			lines = append(lines, renderMarkdownListBlock(block, proseMeasure)...)
 			continue
 		}
 
 		if strings.HasPrefix(trimmed, ">") {
-			lines = append(lines, wrapMarkdownInline(renderMarkdownStandaloneLine(line), proseMeasure)...)
-			index++
+			block := []string{}
+			for index < len(raw) {
+				nextTrimmed := strings.TrimSpace(raw[index])
+				if nextTrimmed == "" || !strings.HasPrefix(nextTrimmed, ">") {
+					break
+				}
+				block = append(block, raw[index])
+				index++
+			}
+			lines = append(lines, renderMarkdownQuoteBlock(block, proseMeasure)...)
 			continue
 		}
 
@@ -353,10 +379,27 @@ func styleAssistantMarkdownLine(line string, base lipgloss.Style) string {
 		text := run.String()
 		switch style {
 		case markdownDisplayBold:
-			// Emphasis is weight-only (no colour) — dark-mode-friendly and calm.
 			builder.WriteString(kajicodeTheme.ink.Bold(true).Render(text))
+		case markdownDisplayItalic:
+			builder.WriteString(kajicodeTheme.muted.Italic(true).Render(text))
+		case markdownDisplayLink:
+			builder.WriteString(kajicodeTheme.blue.Underline(true).Render(text))
+		case markdownDisplayCode:
+			builder.WriteString(kajicodeTheme.accent.Render(text))
+		case markdownDisplayStrike:
+			builder.WriteString(kajicodeTheme.faint.Strikethrough(true).Render(text))
 		case markdownDisplayRule:
 			builder.WriteString(kajicodeTheme.lineStrong.Render(text))
+		case markdownDisplayAccent:
+			builder.WriteString(kajicodeTheme.accent.Bold(true).Render(text))
+		case markdownDisplayGreen:
+			builder.WriteString(kajicodeTheme.green.Bold(true).Render(text))
+		case markdownDisplayAmber:
+			builder.WriteString(kajicodeTheme.amber.Bold(true).Render(text))
+		case markdownDisplayRed:
+			builder.WriteString(kajicodeTheme.red.Bold(true).Render(text))
+		case markdownDisplayMuted:
+			builder.WriteString(kajicodeTheme.faint.Render(text))
 		default:
 			builder.WriteString(base.Render(text))
 		}
@@ -364,18 +407,19 @@ func styleAssistantMarkdownLine(line string, base lipgloss.Style) string {
 	}
 
 	for index := 0; index < len(line); {
-		switch {
-		case strings.HasPrefix(line[index:], markdownBoldStart):
+		if markdownStyle, markerLen, ok := markdownSemanticStyleStart(line[index:]); ok {
 			flush()
-			style = markdownDisplayBold
-			index += len(markdownBoldStart)
+			style = markdownStyle
+			index += markerLen
 			continue
-		case strings.HasPrefix(line[index:], markdownBoldEnd):
+		}
+		if markerLen, ok := markdownSemanticStyleEnd(line[index:]); ok {
 			flush()
 			style = markdownDisplayNormal
-			index += len(markdownBoldEnd)
+			index += markerLen
 			continue
-		case line[index] == '\x1b':
+		}
+		if line[index] == '\x1b' {
 			// Already-styled input (highlighted code, headings, tables) carries real
 			// ANSI. Emit each escape verbatim instead of treating its bytes as runes
 			// and re-Render()ing them: re-wrapping doubles the SGR density and a
@@ -418,12 +462,63 @@ func hasExternalANSIStyle(line string) bool {
 			continue
 		}
 		seq := line[index:end]
-		if seq != markdownBoldStart && seq != markdownBoldEnd {
+		if !isMarkdownSemanticControl(seq) {
 			return true
 		}
 		index = end
 	}
 	return false
+}
+
+func markdownSemanticStyleStart(text string) (markdownDisplayStyle, int, bool) {
+	for _, marker := range []struct {
+		seq   string
+		style markdownDisplayStyle
+	}{
+		{markdownBoldStart, markdownDisplayBold},
+		{markdownItalicStart, markdownDisplayItalic},
+		{markdownLinkStart, markdownDisplayLink},
+		{markdownCodeStart, markdownDisplayCode},
+		{markdownStrikeStart, markdownDisplayStrike},
+		{markdownAccentStart, markdownDisplayAccent},
+		{markdownGreenStart, markdownDisplayGreen},
+		{markdownAmberStart, markdownDisplayAmber},
+		{markdownRedStart, markdownDisplayRed},
+		{markdownMutedStart, markdownDisplayMuted},
+	} {
+		if strings.HasPrefix(text, marker.seq) {
+			return marker.style, len(marker.seq), true
+		}
+	}
+	return markdownDisplayNormal, 0, false
+}
+
+func markdownSemanticStyleEnd(text string) (int, bool) {
+	for _, marker := range []string{
+		markdownBoldEnd,
+		markdownItalicEnd,
+		markdownLinkEnd,
+		markdownCodeEnd,
+		markdownStrikeEnd,
+		markdownAccentEnd,
+		markdownGreenEnd,
+		markdownAmberEnd,
+		markdownRedEnd,
+		markdownMutedEnd,
+	} {
+		if strings.HasPrefix(text, marker) {
+			return len(marker), true
+		}
+	}
+	return 0, false
+}
+
+func isMarkdownSemanticControl(seq string) bool {
+	if _, _, ok := markdownSemanticStyleStart(seq); ok {
+		return true
+	}
+	_, ok := markdownSemanticStyleEnd(seq)
+	return ok
 }
 
 func markdownDisplayStyleForRune(r rune, current markdownDisplayStyle) markdownDisplayStyle {
@@ -673,15 +768,7 @@ func parseMarkdownTableRow(line string) []string {
 }
 
 func normalizeMarkdownTableCell(cell string) string {
-	replacer := strings.NewReplacer(
-		"<br />", "\n",
-		"<br/>", "\n",
-		"<br>", "\n",
-		"<BR />", "\n",
-		"<BR/>", "\n",
-		"<BR>", "\n",
-	)
-	return strings.TrimSpace(replacer.Replace(cell))
+	return strings.TrimSpace(markdownBreakReplacer.Replace(cell))
 }
 
 func isMarkdownTableSeparatorCell(cell string) bool {
@@ -1070,49 +1157,21 @@ func renderMarkdownStandaloneLine(line string) string {
 	return strings.TrimRight(line, " ")
 }
 
-func normalizeMarkdownListBlock(lines []string) []string {
-	normalized := make([]string, 0, len(lines))
-	for index, line := range lines {
-		if strings.TrimSpace(line) == "" && index+1 < len(lines) {
-			next := lines[index+1]
-			if len(next)-len(strings.TrimLeft(next, " \t")) > 0 {
-				continue
-			}
-		}
-		normalized = append(normalized, line)
-	}
-	return normalized
-}
+type markdownInlineKind int
 
-func markdownRenderedListLineParts(line string) (string, string) {
-	plain := ansi.Strip(line)
-	indent := len(plain) - len(strings.TrimLeft(plain, " "))
-	trimmed := plain[indent:]
-	markerWidth := 0
-	switch {
-	case strings.HasPrefix(trimmed, "• "):
-		markerWidth = len("• ")
-	default:
-		if dot := strings.IndexByte(trimmed, '.'); dot > 0 && dot+1 < len(trimmed) && trimmed[dot+1] == ' ' {
-			markerWidth = dot + 2
-			for _, r := range trimmed[:dot] {
-				if r < '0' || r > '9' {
-					markerWidth = 0
-					break
-				}
-			}
-		}
-	}
-	if markerWidth == 0 {
-		return strings.Repeat(" ", indent), strings.TrimLeft(line, " ")
-	}
-	bodyStart := len(line) - len(strings.TrimLeft(line, " ")) + markerWidth
-	return strings.Repeat(" ", indent) + trimmed[:markerWidth], line[bodyStart:]
-}
+const (
+	markdownInlineText markdownInlineKind = iota
+	markdownInlineCode
+	markdownInlineLink
+	markdownInlineMark
+	markdownInlineInsert
+)
 
 type markdownInlineSegment struct {
 	text   string
+	kind   markdownInlineKind
 	bold   bool
+	italic bool
 	strike bool
 }
 
@@ -1120,6 +1179,7 @@ func wrapMarkdownInline(text string, measure int) []string {
 	if measure < 1 {
 		measure = 1
 	}
+	text = normalizeMarkdownInlineBreaks(text)
 	out := []string{}
 	for _, paragraph := range strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n") {
 		if strings.TrimSpace(paragraph) == "" {
@@ -1137,11 +1197,6 @@ func wrapMarkdownInline(text string, measure int) []string {
 }
 
 func wrapMarkdownInlineWithPrefixes(firstPrefix string, continuationPrefix string, text string, measure int) []string {
-	if shouldUseGlamourInline(text) {
-		if rendered, ok := glamourInline.render(text); ok {
-			return wrapANSITextWithPrefixes(firstPrefix, continuationPrefix, rendered, measure)
-		}
-	}
 	words := markdownInlineWords(parseMarkdownInline(text))
 	if len(words) == 0 {
 		return []string{firstPrefix}
@@ -1167,7 +1222,7 @@ func wrapMarkdownInlineWithPrefixes(firstPrefix string, continuationPrefix strin
 				flush()
 			}
 			head, tail := splitAtWidth(word.text, available)
-			lines = append(lines, prefix+renderMarkdownInlineSegment(markdownInlineSegment{text: head, bold: word.bold, strike: word.strike}))
+			lines = append(lines, prefix+renderMarkdownInlineSegment(markdownInlineSegment{text: head, kind: word.kind, bold: word.bold, italic: word.italic, strike: word.strike}))
 			word.text = tail
 			prefix = continuationPrefix
 			available = maxInt(1, measure-lipgloss.Width(prefix))
@@ -1216,7 +1271,7 @@ func markdownInlineWords(segments []markdownInlineSegment) []markdownInlineSegme
 	words := []markdownInlineSegment{}
 	for _, segment := range segments {
 		for _, word := range strings.Fields(segment.text) {
-			words = append(words, markdownInlineSegment{text: word, bold: segment.bold, strike: segment.strike})
+			words = append(words, markdownInlineSegment{text: word, kind: segment.kind, bold: segment.bold, italic: segment.italic, strike: segment.strike})
 		}
 	}
 	return words
@@ -1227,11 +1282,6 @@ func joinsPreviousMarkdownWord(text string) bool {
 }
 
 func renderMarkdownInline(text string) string {
-	if shouldUseGlamourInline(text) {
-		if rendered, ok := glamourInline.render(text); ok {
-			return rendered
-		}
-	}
 	segments := parseMarkdownInline(text)
 	var builder strings.Builder
 	for _, segment := range segments {
@@ -1245,10 +1295,23 @@ func renderMarkdownInlineSegment(segment markdownInlineSegment) string {
 		return ""
 	}
 	text := segment.text
-	if segment.bold {
+	switch segment.kind {
+	case markdownInlineCode:
+		text = markdownCodeStart + text + markdownCodeEnd
+	case markdownInlineLink:
+		text = markdownLinkStart + text + markdownLinkEnd
+	case markdownInlineMark:
+		text = markdownAmberStart + text + markdownAmberEnd
+	case markdownInlineInsert:
+		text = markdownGreenStart + text + markdownGreenEnd
+	}
+	if segment.bold && segment.kind != markdownInlineCode {
 		text = renderMarkdownBoldText(text)
 	}
-	if segment.strike {
+	if segment.italic && segment.kind != markdownInlineCode {
+		text = markdownItalicStart + text + markdownItalicEnd
+	}
+	if segment.strike && segment.kind != markdownInlineCode {
 		text = markdownStrikeStart + text + markdownStrikeEnd
 	}
 	return text
@@ -1259,11 +1322,6 @@ func renderMarkdownBoldText(text string) string {
 }
 
 func markdownInlinePlain(text string) string {
-	if shouldUseGlamourInline(text) {
-		if rendered, ok := glamourInline.render(text); ok {
-			return strings.TrimSpace(ansi.Strip(rendered))
-		}
-	}
 	segments := parseMarkdownInline(text)
 	var builder strings.Builder
 	for _, segment := range segments {
@@ -1273,23 +1331,157 @@ func markdownInlinePlain(text string) string {
 }
 
 func parseMarkdownInline(text string) []markdownInlineSegment {
-	text = stripMarkdownLinkDestinations(text)
+	text = normalizeMarkdownInlineBreaks(text)
 	segments := []markdownInlineSegment{}
 	var builder strings.Builder
 	bold := false
 	emphasis := false
 	code := false
 	strike := false
+	mark := false
+	insert := false
 	flush := func() {
 		if builder.Len() == 0 {
 			return
 		}
-		segments = append(segments, markdownInlineSegment{text: builder.String(), bold: bold && !code, strike: strike && !code})
+		segments = append(segments, markdownInlineSegment{
+			text:   builder.String(),
+			kind:   markdownInlineKindForState(code, mark, insert),
+			bold:   bold && !code,
+			italic: emphasis && !code,
+			strike: strike && !code,
+		})
 		builder.Reset()
 	}
 
 	for index := 0; index < len(text); {
+		if text[index] == '<' {
+			switch {
+			case !code && markdownHasPrefixFold(text[index:], "<kbd>"):
+				flush()
+				code = true
+				index += len("<kbd>")
+				continue
+			case code && markdownHasPrefixFold(text[index:], "</kbd>"):
+				flush()
+				code = false
+				index += len("</kbd>")
+				continue
+			case !code && markdownHasPrefixFold(text[index:], "<code>"):
+				flush()
+				code = true
+				index += len("<code>")
+				continue
+			case code && markdownHasPrefixFold(text[index:], "</code>"):
+				flush()
+				code = false
+				index += len("</code>")
+				continue
+			case !code && markdownHasPrefixFold(text[index:], "<strong>"):
+				flush()
+				bold = true
+				index += len("<strong>")
+				continue
+			case !code && markdownHasPrefixFold(text[index:], "</strong>"):
+				flush()
+				bold = false
+				index += len("</strong>")
+				continue
+			case !code && markdownHasPrefixFold(text[index:], "<b>"):
+				flush()
+				bold = true
+				index += len("<b>")
+				continue
+			case !code && markdownHasPrefixFold(text[index:], "</b>"):
+				flush()
+				bold = false
+				index += len("</b>")
+				continue
+			case !code && markdownHasPrefixFold(text[index:], "<em>"):
+				flush()
+				emphasis = true
+				index += len("<em>")
+				continue
+			case !code && markdownHasPrefixFold(text[index:], "</em>"):
+				flush()
+				emphasis = false
+				index += len("</em>")
+				continue
+			case !code && markdownHasPrefixFold(text[index:], "<i>"):
+				flush()
+				emphasis = true
+				index += len("<i>")
+				continue
+			case !code && markdownHasPrefixFold(text[index:], "</i>"):
+				flush()
+				emphasis = false
+				index += len("</i>")
+				continue
+			case !code && markdownHasPrefixFold(text[index:], "<mark>"):
+				flush()
+				mark = true
+				index += len("<mark>")
+				continue
+			case !code && markdownHasPrefixFold(text[index:], "</mark>"):
+				flush()
+				mark = false
+				index += len("</mark>")
+				continue
+			case !code && markdownHasPrefixFold(text[index:], "<ins>"):
+				flush()
+				insert = true
+				index += len("<ins>")
+				continue
+			case !code && markdownHasPrefixFold(text[index:], "</ins>"):
+				flush()
+				insert = false
+				index += len("</ins>")
+				continue
+			case !code && markdownHasPrefixFold(text[index:], "<del>"):
+				flush()
+				strike = true
+				index += len("<del>")
+				continue
+			case !code && markdownHasPrefixFold(text[index:], "</del>"):
+				flush()
+				strike = false
+				index += len("</del>")
+				continue
+			case !code && markdownHasPrefixFold(text[index:], "<s>"):
+				flush()
+				strike = true
+				index += len("<s>")
+				continue
+			case !code && markdownHasPrefixFold(text[index:], "</s>"):
+				flush()
+				strike = false
+				index += len("</s>")
+				continue
+			case !code:
+				if label, end, ok := markdownAutolinkLabel(text, index); ok {
+					flush()
+					segments = append(segments, markdownInlineSegment{text: label, kind: markdownInlineLink})
+					index = end
+					continue
+				}
+			}
+		}
+
 		switch {
+		case !code && text[index] == '!' && index+1 < len(text) && text[index+1] == '[':
+			if label, end, ok := markdownLinkLabel(text, index+1); ok {
+				flush()
+				segments = append(segments, markdownInlineSegment{text: "image: " + label, italic: true})
+				index = end
+				continue
+			}
+		case !code && text[index] == '[':
+			if label, end, ok := markdownLinkLabel(text, index); ok {
+				flush()
+				segments = append(segments, markdownInlineSegment{text: label, kind: markdownInlineLink})
+				index = end
+				continue
+			}
 		case text[index] == '\\' && index+1 < len(text) && strings.ContainsRune("\\`*_{}[]()#+-.!>|~", rune(text[index+1])):
 			builder.WriteByte(text[index+1])
 			index += 2
@@ -1298,6 +1490,20 @@ func parseMarkdownInline(text string) []markdownInlineSegment {
 			if !code && (strike || strings.Contains(text[index+2:], "~~")) {
 				flush()
 				strike = !strike
+				index += 2
+				continue
+			}
+		case strings.HasPrefix(text[index:], "=="):
+			if !code && (mark || strings.Contains(text[index+2:], "==")) {
+				flush()
+				mark = !mark
+				index += 2
+				continue
+			}
+		case strings.HasPrefix(text[index:], "++"):
+			if !code && (insert || strings.Contains(text[index+2:], "++")) {
+				flush()
+				insert = !insert
 				index += 2
 				continue
 			}
@@ -1342,30 +1548,25 @@ func parseMarkdownInline(text string) []markdownInlineSegment {
 	return segments
 }
 
-func stripMarkdownLinkDestinations(text string) string {
-	if !strings.Contains(text, "](") {
-		return text
+func markdownInlineKindForState(code bool, mark bool, insert bool) markdownInlineKind {
+	switch {
+	case code:
+		return markdownInlineCode
+	case mark:
+		return markdownInlineMark
+	case insert:
+		return markdownInlineInsert
+	default:
+		return markdownInlineText
 	}
-	var builder strings.Builder
-	for index := 0; index < len(text); {
-		if text[index] == '!' && index+1 < len(text) && text[index+1] == '[' {
-			if label, end, ok := markdownLinkLabel(text, index+1); ok {
-				builder.WriteString(label)
-				index = end
-				continue
-			}
-		}
-		if text[index] == '[' {
-			if label, end, ok := markdownLinkLabel(text, index); ok {
-				builder.WriteString(label)
-				index = end
-				continue
-			}
-		}
-		builder.WriteByte(text[index])
-		index++
-	}
-	return builder.String()
+}
+
+func normalizeMarkdownInlineBreaks(text string) string {
+	return markdownBreakReplacer.Replace(text)
+}
+
+func markdownHasPrefixFold(text string, prefix string) bool {
+	return len(text) >= len(prefix) && strings.EqualFold(text[:len(prefix)], prefix)
 }
 
 func markdownLinkLabel(text string, open int) (string, int, bool) {
@@ -1378,6 +1579,19 @@ func markdownLinkLabel(text string, open int) (string, int, bool) {
 		return "", 0, false
 	}
 	return text[open+1 : close], destinationEnd + 1, true
+}
+
+func markdownAutolinkLabel(text string, open int) (string, int, bool) {
+	close := findUnescapedByte(text, open+1, '>')
+	if close < 0 {
+		return "", 0, false
+	}
+	label := strings.TrimSpace(text[open+1 : close])
+	lower := strings.ToLower(label)
+	if strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") || strings.Contains(label, "@") {
+		return label, close + 1, true
+	}
+	return "", 0, false
 }
 
 func findUnescapedByte(text string, start int, want byte) int {

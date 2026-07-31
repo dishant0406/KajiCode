@@ -319,7 +319,7 @@ func TestMarkdownInlineKeepsCodingLiterals(t *testing.T) {
 	}
 }
 
-func TestMarkdownInlineUsesGlamourForExtendedSyntax(t *testing.T) {
+func TestMarkdownInlineHandlesExtendedSyntaxLocally(t *testing.T) {
 	tests := map[string]string{
 		"~~removed~~":             "removed",
 		"escaped \\*asterisks\\*": "escaped *asterisks*",
@@ -342,7 +342,7 @@ func TestMarkdownInlineUsesGlamourForExtendedSyntax(t *testing.T) {
 	}
 }
 
-func TestAssistantMarkdownUsesGlamourForExtendedSyntax(t *testing.T) {
+func TestAssistantMarkdownHandlesExtendedSyntaxLocally(t *testing.T) {
 	lines := renderAssistantMarkdownText(strings.Join([]string{
 		"This is ~~removed~~ and escaped \\*literally\\* in a paragraph that wraps.",
 		"",
@@ -369,7 +369,7 @@ func TestAssistantMarkdownUsesGlamourForExtendedSyntax(t *testing.T) {
 	}
 }
 
-func TestAssistantMarkdownUsesGlamourForLinksAndLists(t *testing.T) {
+func TestAssistantMarkdownFormatsLinksAndLists(t *testing.T) {
 	lines := renderAssistantMarkdownText(strings.Join([]string{
 		"Read the [installation guide](https://example.com/install) before continuing.",
 		"",
@@ -393,9 +393,6 @@ func TestAssistantMarkdownUsesGlamourForLinksAndLists(t *testing.T) {
 
 func TestAssistantMarkdownSimpleLinksStayOnLocalInlinePath(t *testing.T) {
 	input := "Read the [installation guide](https://example.com/install) before continuing."
-	if shouldUseGlamourInline(input) {
-		t.Fatal("simple inline links should not route through the heavyweight Glamour renderer")
-	}
 	plain := ansiPattern.ReplaceAllString(strings.Join(renderAssistantMarkdownText(input, 72, 72, true), "\n"), "")
 	if strings.Contains(plain, "https://example.com/install") || !strings.Contains(plain, "installation guide") {
 		t.Fatalf("link label render = %q", plain)
@@ -439,15 +436,15 @@ func TestStreamingAssistantMarkdownMatchesCommittedLinksAndLists(t *testing.T) {
 	}
 }
 
-func TestExtendedMarkdownInlineRouting(t *testing.T) {
-	for _, input := range []string{"~~removed~~", `escaped \*asterisks\*`} {
-		if !hasExtendedMarkdownInline(input) {
-			t.Fatalf("extended Markdown %q was not routed through Glamour", input)
+func TestExtendedMarkdownInlineHandledWithoutRawMarkers(t *testing.T) {
+	for input, want := range map[string]string{"~~removed~~": "removed", `escaped \*asterisks\*`: "escaped *asterisks*"} {
+		if got := ansiPattern.ReplaceAllString(renderMarkdownInline(input), ""); got != want {
+			t.Fatalf("extended Markdown %q = %q, want %q", input, got, want)
 		}
 	}
 	for _, input := range []string{"keep a*b*c literal", "glob *.go outside code too", "**bold `code` bold**"} {
-		if hasExtendedMarkdownInline(input) {
-			t.Fatalf("legacy Markdown %q should retain KajiCode rendering", input)
+		if got := ansiPattern.ReplaceAllString(renderMarkdownInline(input), ""); strings.Contains(got, "~~") || strings.Contains(got, `\*`) {
+			t.Fatalf("legacy Markdown %q leaked raw extended markers as %q", input, got)
 		}
 	}
 }
