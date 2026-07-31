@@ -84,6 +84,7 @@ const (
 type transcriptBodyItem struct {
 	kind              transcriptBodyItemKind
 	rowIndex          int
+	fixedHeight       int
 	heightCacheKey    string
 	heightCacheStable bool
 	render            func(startBodyY int) transcriptBodyRenderedItem
@@ -379,7 +380,7 @@ func (m model) transcriptBodyItems(width int, emptyOverlay string, detailed bool
 	}
 
 	if m.pending {
-		pendingShowsAssistantText := m.pendingPermission == nil && m.pendingAskUser == nil && strings.TrimSpace(m.streamingTextString()) != ""
+		pendingShowsAssistantText := m.pendingPermission == nil && m.pendingAskUser == nil && m.streamingTextHasVisibleContent()
 		if pendingShowsAssistantText && havePreviousKind && shouldRuleBeforeTurn(previousKind, rowAssistant) {
 			items = append(items, transcriptRuleBodyItem(contentWidth, gutter))
 		} else {
@@ -414,13 +415,15 @@ func (m model) transcriptBodyItems(width int, emptyOverlay string, detailed bool
 			// The ask-user questionnaire renders in the composer/footer region
 			// (footerView), not as a scrolling transcript card — nothing to emit here.
 		default:
+			block := m.interimBlock(contentWidth)
 			items = append(items, transcriptBodyItem{
-				kind:     transcriptBodyItemPendingInterim,
-				rowIndex: -1,
+				kind:        transcriptBodyItemPendingInterim,
+				rowIndex:    -1,
+				fixedHeight: len(viewLines(block)),
 				render: func(startBodyY int) transcriptBodyRenderedItem {
 					// Streaming text shares the reading column so it doesn't snap
 					// width when the turn finalizes into a row.
-					return m.finalizeTranscriptBodyRow(m.interimBlock(contentWidth), m.renderSelectableStreamingReasoning(contentWidth, startBodyY), gutter, startBodyY)
+					return m.finalizeTranscriptBodyRow(block, m.renderSelectableStreamingReasoning(contentWidth, startBodyY), gutter, startBodyY)
 				},
 			})
 		}
@@ -633,6 +636,9 @@ func layoutVisibleTranscriptBodyItems(items []transcriptBodyItem, metrics transc
 }
 
 func transcriptBodyItemHeight(item transcriptBodyItem, cache *transcriptBodyHeightCache) int {
+	if item.fixedHeight > 0 {
+		return item.fixedHeight
+	}
 	if item.heightCacheStable {
 		if height, ok := cache.get(item.heightCacheKey); ok {
 			return height
@@ -964,7 +970,21 @@ func (m model) renderSelectableReasoningRow(rowIndex int, row transcriptRow, wid
 }
 
 func (m model) renderSelectableStreamingReasoning(width int, startBodyY int) []transcriptSelectableLine {
-	_, selectable := m.renderSelectableReasoningBlock(-1, m.streamingReasoning, m.streamingReasoningExpanded, true, 0, width, startBodyY)
+	if !m.streamingReasoningExpanded && m.streamingReasoningHasVisibleContent() {
+		return []transcriptSelectableLine{{
+			bodyY:     startBodyY,
+			rowIndex:  -1,
+			textStart: 0,
+			text:      reasoningHeaderText("", false, true, 0),
+			toggle:    true,
+			live:      true,
+		}}
+	}
+	reasoning := m.streamingReasoningString()
+	if m.pending && m.streamRenderSeq > 0 {
+		reasoning = m.streamingReasoningTail
+	}
+	_, selectable := m.renderSelectableReasoningBlock(-1, reasoning, m.streamingReasoningExpanded, true, 0, width, startBodyY)
 	for index := range selectable {
 		selectable[index].live = true
 	}
@@ -1383,6 +1403,9 @@ func (m model) handleTranscriptSelectionMouse(msg tea.MouseMsg) (model, tea.Cmd,
 		if line.toggle {
 			if line.live {
 				m.streamingReasoningExpanded = !m.streamingReasoningExpanded
+				var cmd tea.Cmd
+				m, cmd = m.requestStreamRender(m.chatColumnWidth())
+				return m, cmd, true
 			} else {
 				m = m.toggleTranscriptRow(line.rowIndex)
 			}

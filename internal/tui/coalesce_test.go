@@ -70,6 +70,46 @@ func TestCoalescerBatchesDeltas(t *testing.T) {
 	}
 }
 
+func TestCoalescerBatchesReasoningDeltas(t *testing.T) {
+	rec := &recorder{}
+	c := newTextCoalescer(rec.forward)
+	c.afterFunc = func(func()) coalesceTimer { return &manualTimer{} }
+
+	c.send(agentReasoningMsg{runID: 1, delta: "think "})
+	c.send(agentReasoningMsg{runID: 1, delta: "more"})
+	c.flush()
+
+	got := rec.snapshot()
+	if len(got) != 1 {
+		t.Fatalf("expected 1 coalesced reasoning message, got %d: %#v", len(got), got)
+	}
+	reasoning, ok := got[0].(agentReasoningMsg)
+	if !ok || reasoning.delta != "think more" || reasoning.runID != 1 {
+		t.Fatalf("coalesced message = %#v, want agentReasoningMsg{1, \"think more\"}", got[0])
+	}
+}
+
+func TestCoalescerFlushesOnStreamKindSwitch(t *testing.T) {
+	rec := &recorder{}
+	c := newTextCoalescer(rec.forward)
+	c.afterFunc = func(func()) coalesceTimer { return &manualTimer{} }
+
+	c.send(agentReasoningMsg{runID: 1, delta: "thinking"})
+	c.send(agentTextMsg{runID: 1, delta: "answer"})
+	c.flush()
+
+	got := rec.snapshot()
+	if len(got) != 2 {
+		t.Fatalf("expected reasoning then text, got %d: %#v", len(got), got)
+	}
+	if first, ok := got[0].(agentReasoningMsg); !ok || first.delta != "thinking" {
+		t.Fatalf("first message = %#v, want flushed reasoning", got[0])
+	}
+	if second, ok := got[1].(agentTextMsg); !ok || second.delta != "answer" {
+		t.Fatalf("second message = %#v, want text", got[1])
+	}
+}
+
 // A non-text message flushes buffered text first, so ordering (text before the
 // tool call it precedes) is preserved.
 func TestCoalescerFlushesTextBeforeOtherMessages(t *testing.T) {

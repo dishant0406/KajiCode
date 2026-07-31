@@ -742,7 +742,7 @@ func TestMouseClickTogglesStreamingReasoning(t *testing.T) {
 	m.mouseCapture = true
 	m.pending = true
 	m.activeRunID = 1
-	m.streamingReasoning = "private **thought**"
+	m.streamingReasoning = []byte("private **thought**")
 
 	width := m.chatColumnWidth()
 	body, selectable := m.transcriptBody(width, "")
@@ -760,12 +760,18 @@ func TestMouseClickTogglesStreamingReasoning(t *testing.T) {
 
 	updated, cmd := m.Update(testMouseClick(tea.MouseLeft, target.textStart, top+target.bodyY-start))
 	next := updated.(model)
-	if cmd != nil {
-		t.Fatal("streaming reasoning toggle click should not return a command")
+	if cmd == nil {
+		t.Fatal("streaming reasoning toggle click should schedule a render command")
+	}
+	msg := cmd()
+	if _, ok := msg.(streamRenderReadyMsg); !ok {
+		t.Fatalf("streaming reasoning toggle command = %T, want streamRenderReadyMsg", msg)
 	}
 	if !next.streamingReasoningExpanded {
 		t.Fatal("streaming reasoning should expand after click")
 	}
+	updated, _ = next.Update(msg)
+	next = updated.(model)
 	view := plainRender(t, next.interimBlock(width))
 	if !strings.Contains(view, "private thought") || strings.Contains(view, "**") {
 		t.Fatalf("expanded streaming reasoning should render markdown-clean text, got:\n%s", view)

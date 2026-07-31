@@ -84,6 +84,25 @@ func TestStreamingMarkdownStablePrefixUsesRenderCache(t *testing.T) {
 	}
 }
 
+func TestStreamingMarkdownStablePrefixDoesNotRenderOnCacheHit(t *testing.T) {
+	defaultRenderCache.clear()
+	text := "Completed paragraph.\n\n"
+	calls := 0
+	render := func(text string, proseMeasure int, tableMeasure int, allowHighlight bool) []string {
+		calls++
+		return []string{text}
+	}
+
+	_ = renderStreamingAssistantMarkdownTextWith(text, 90, 90, render)
+	if calls != 1 {
+		t.Fatalf("first render calls = %d, want 1", calls)
+	}
+	_ = renderStreamingAssistantMarkdownTextWith(text, 90, 90, render)
+	if calls != 1 {
+		t.Fatalf("cache hit rendered completed prefix again: calls = %d, want 1", calls)
+	}
+}
+
 func TestStreamingMarkdownPreservesBlankLineSeparators(t *testing.T) {
 	text := "First paragraph.\n\n\nNext paragraph."
 	streaming := renderStreamingAssistantMarkdownText(text, 90, 90)

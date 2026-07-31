@@ -217,17 +217,23 @@ func renderAssistantMarkdownText(text string, proseMeasure int, tableMeasure int
 }
 
 func renderStreamingAssistantMarkdownText(text string, proseMeasure int, tableMeasure int) []string {
+	return renderStreamingAssistantMarkdownTextWith(text, proseMeasure, tableMeasure, renderAssistantMarkdownText)
+}
+
+func renderStreamingAssistantMarkdownTextWith(text string, proseMeasure int, tableMeasure int, renderMarkdown func(string, int, int, bool) []string) []string {
 	stablePrefix := streamingMarkdownStablePrefix(text)
 	completed, active, separatorLines := splitStreamingMarkdownCompleted(stablePrefix)
 	lines := []string{}
 	if completed != "" {
 		render := func() string {
-			return strings.Join(renderAssistantMarkdownText(completed, proseMeasure, tableMeasure, true), "\n")
+			return strings.Join(renderMarkdown(completed, proseMeasure, tableMeasure, true), "\n")
 		}
-		rendered := render()
+		rendered := ""
 		if defaultRenderCache != nil {
 			key := streamingMarkdownRenderCacheKey(completed, proseMeasure, tableMeasure)
 			rendered = defaultRenderCache.render(key, true, render)
+		} else {
+			rendered = render()
 		}
 		lines = append(lines, viewLines(rendered)...)
 	}
@@ -235,7 +241,7 @@ func renderStreamingAssistantMarkdownText(text string, proseMeasure int, tableMe
 		lines = append(lines, make([]string, separatorLines)...)
 	}
 	if active != "" || len(lines) == 0 {
-		lines = append(lines, renderAssistantMarkdownText(active, proseMeasure, tableMeasure, true)...)
+		lines = append(lines, renderMarkdown(active, proseMeasure, tableMeasure, true)...)
 	}
 	return lines
 }

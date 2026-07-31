@@ -78,11 +78,13 @@ func applyTheme(mode themeMode, hasDarkBackground bool) themeMode {
 	if !ok {
 		entry, _ = lookupTheme(string(themeDark))
 	}
-	kajicodeTheme = buildTheme(entry.Palette)
-	rebuildStreamingFadePalette()
-	if defaultRenderCache != nil {
-		defaultRenderCache.clear() // old-palette entries must not be reused
-	}
+	withThemeWriteLock(func() {
+		kajicodeTheme = buildTheme(entry.Palette)
+		rebuildStreamingFadePalette()
+		if defaultRenderCache != nil {
+			defaultRenderCache.clear() // old-palette entries must not be reused
+		}
+	})
 	return resolved
 }
 

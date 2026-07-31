@@ -357,14 +357,26 @@ type model struct {
 	historyIdx   int
 	historyDraft composerState
 
-	// streamingText is the live assistant text for the current segment, accumulated
-	// as []byte so each delta is an O(1) amortized append instead of the O(n²) that
-	// string += delta incurs across a long generation. Read via streamingTextString().
+	// streamingText and streamingReasoning are the live text for the current
+	// segment, accumulated as []byte so each delta is an O(1) amortized append
+	// instead of the O(n²) that string += delta incurs across a long generation.
+	// Read via streamingTextString()/streamingReasoningString().
 	// A []byte (not strings.Builder) because the model is copied by value on every
 	// Update, which would trip strings.Builder's copy check.
 	streamingText              []byte
-	streamingReasoning         string // live provider reasoning for the current segment
+	streamingTextHasContent    bool
+	streamingTextTail          string
+	streamingReasoning         []byte // live provider reasoning for the current segment
+	streamingReasoningHasText  bool
+	streamingReasoningTail     string
 	streamingReasoningExpanded bool
+	streamRenderSeq            int
+	streamRenderInFlight       bool
+	streamRenderDirty          bool
+	streamRenderWakeSeq        int
+	streamRenderWakeScheduled  bool
+	streamRenderLastStarted    time.Time
+	streamRenderResult         streamRenderResult
 	// turnStreamedRunes accumulates every reasoning+answer rune streamed in the
 	// current turn so the working line can show a live, monotonic token estimate.
 	// It is NOT reset at segment boundaries (where streamingText/Reasoning clear),
@@ -1681,7 +1693,7 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.sidebarHidden = !m.sidebarHidden
 				m.lineAges = nil
 				m.input.SetWidth(maxInt(20, m.chatColumnWidth()-14))
-				return m, nil
+				return m.requestStreamRender(m.chatColumnWidth())
 			}
 		case keyCtrl(msg, 'f'):
 			if m.picker != nil && m.picker.kind == pickerModel {
@@ -1985,6 +1997,10 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// live "writing" block so it doesn't linger over new prose.
 		m.clearStreamingToolCall()
 		m.streamingText = append(m.streamingText, msg.delta...)
+		if containsNonSpace(msg.delta) {
+			m.streamingTextHasContent = true
+		}
+		m.streamingTextTail = appendBoundedStreamingTail(m.streamingTextTail, msg.delta)
 		m.turnStreamedRunes += utf8.RuneCountInString(msg.delta)
 		// recordStreamingDelta appends a time.Time to lineAges for every
 		// newline in the delta and bumps lastStreamActivity. It also
@@ -1998,26 +2014,34 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// When the fade is disabled (KAJICODE_NO_FADE / SSH / tmux / low-color),
 		// fadeActive stays false so styleStreamingLine renders streaming text
 		// statically at base ink, and no self-perpetuating tick is scheduled.
+		var cmds []tea.Cmd
 		if !m.fadeDisabled {
 			startTick := !m.fadeActive
 			m.fadeActive = true
 			if startTick {
-				return m, streamingFadeTick()
+				cmds = append(cmds, streamingFadeTick())
 			}
 		}
-		return m, nil
+		var renderCmd tea.Cmd
+		m, renderCmd = m.requestStreamRender(m.chatColumnWidth())
+		cmds = append(cmds, renderCmd)
+		return m, tea.Batch(cmds...)
 	case agentReasoningMsg:
 		if msg.runID != m.activeRunID {
 			return m, nil
 		}
-		m.streamingReasoning += msg.delta
+		m.streamingReasoning = append(m.streamingReasoning, msg.delta...)
+		if containsNonSpace(msg.delta) {
+			m.streamingReasoningHasText = true
+		}
+		m.streamingReasoningTail = appendBoundedStreamingTail(m.streamingReasoningTail, msg.delta)
 		m.turnStreamedRunes += utf8.RuneCountInString(msg.delta)
 		// Reasoning IS live provider output, so refresh the activity clock — else the
 		// quiet-generation hint can wrongly read "still generating…" mid-think.
 		if msg.delta != "" {
 			m.lastStreamActivity = m.now()
 		}
-		return m, nil
+		return m.requestStreamRender(m.chatColumnWidth())
 	case spinner.TickMsg:
 		// Record when swarm members first finish so the sidebar can linger them
 		// with a fading ✓ before removal. Cheap (the tick only fires while a run is
@@ -2079,6 +2103,10 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m, streamingFadeTick()
+	case streamRenderReadyMsg:
+		return m.handleStreamRenderReady(msg)
+	case streamRenderTickMsg:
+		return m.handleStreamRenderTick(msg)
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
@@ -2104,7 +2132,9 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// A resumed/idle session may already hold sidebar agents now that geometry
 		// (and thus sidebarActive) is known; kick the ripple tick loop if so. No-op
 		// when the loop is already running or there is nothing to animate.
-		return m, m.ensureSpinnerTick()
+		var renderCmd tea.Cmd
+		m, renderCmd = m.requestStreamRender(m.chatColumnWidth())
+		return m, tea.Batch(m.ensureSpinnerTick(), renderCmd)
 	case permissionRequestMsg:
 		// The agent goroutine that raised this request is BLOCKED waiting on the
 		// decision callback, so every branch below must resolve it exactly once —
@@ -2281,8 +2311,7 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		for _, row := range msg.rows {
 			if row.kind == rowReasoning {
-				m.streamingReasoning = ""
-				m.streamingReasoningExpanded = false
+				m.clearStreamingReasoning()
 			}
 			m.transcript = appendTranscriptRow(m.transcript, row)
 		}
@@ -2290,7 +2319,7 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// A failed turn has no final answer row to supersede the streamed
 			// text the user already watched — keep the partial answer instead of
 			// letting it vanish from history.
-			if row, ok := reasoningTranscriptRow("", msg.runID, m.streamingReasoning); ok {
+			if row, ok := reasoningTranscriptRow("", msg.runID, m.streamingReasoningString()); ok {
 				m.transcript = appendTranscriptRow(m.transcript, row)
 			}
 			if text := strings.TrimRight(m.streamingTextString(), "\n"); strings.TrimSpace(text) != "" {
@@ -2314,9 +2343,8 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.transcript = appendTranscriptRow(m.transcript, transcriptRow{kind: rowSystem, text: notice})
 			}
 		}
-		m.streamingText = nil
-		m.streamingReasoning = ""
-		m.streamingReasoningExpanded = false
+		m.clearStreamingText()
+		m.clearStreamingReasoning()
 		// Roll the completed run's wall-time into the session's rolling average so
 		// /context can surface typical turn latency, not just token counts.
 		if msg.turnElapsed > 0 {
@@ -2493,18 +2521,16 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if msg.row.kind == rowReasoning {
-			m.streamingReasoning = ""
-			m.streamingReasoningExpanded = false
+			m.clearStreamingReasoning()
 		}
 		// A tool call ends the current streamed text segment. The segment is the
 		// assistant's working narration ("Let me check X…") — append it as a
 		// non-final assistant row so it stays in history instead of silently
 		// vanishing when the tool card replaces the interim block.
 		if msg.row.kind == rowToolCall {
-			if row, ok := reasoningTranscriptRow("", msg.runID, m.streamingReasoning); ok {
+			if row, ok := reasoningTranscriptRow("", msg.runID, m.streamingReasoningString()); ok {
 				m.transcript = appendTranscriptRow(m.transcript, row)
-				m.streamingReasoning = ""
-				m.streamingReasoningExpanded = false
+				m.clearStreamingReasoning()
 			}
 			if text := strings.TrimRight(m.streamingTextString(), "\n"); strings.TrimSpace(text) != "" {
 				m.transcript = appendTranscriptRow(m.transcript, transcriptRow{kind: rowAssistant, text: text})
@@ -2513,7 +2539,7 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// can replay the agent's own account of the work.
 				m = m.captureStepNarration(text)
 			}
-			m.streamingText = nil
+			m.clearStreamingText()
 			// The tool call has finalized into its card — drop the live "writing"
 			// preview so it doesn't linger or duplicate beneath the card.
 			m.clearStreamingToolCall()
@@ -3401,13 +3427,30 @@ func (m model) liveReasoningBodyCap() int {
 }
 
 func (m model) interimBlock(width int) string {
-	text := strings.TrimRight(m.streamingTextString(), "\n")
-	reasoning := strings.TrimRight(m.streamingReasoning, "\n")
-	blocks := []string{}
-	if strings.TrimSpace(reasoning) != "" {
-		blocks = append(blocks, renderReasoningBlock(reasoning, m.streamingReasoningExpanded, width, true, 0, m.liveReasoningBodyCap()))
+	textVisible := m.streamingTextHasVisibleContent()
+	reasoningVisible := m.streamingReasoningHasVisibleContent()
+	text := ""
+	reasoning := ""
+	if !m.pending || m.streamRenderSeq == 0 {
+		text = strings.TrimRight(m.streamingTextString(), "\n")
+		reasoning = strings.TrimRight(m.streamingReasoningString(), "\n")
+	} else {
+		text = strings.TrimRight(m.streamingTextTail, "\n")
+		reasoning = strings.TrimRight(m.streamingReasoningTail, "\n")
 	}
-	if strings.TrimSpace(text) == "" {
+	rendered, renderedOK := m.validStreamRender(width)
+	blocks := []string{}
+	if reasoningVisible {
+		switch {
+		case renderedOK && len(rendered.reasoningBlockLines) > 0:
+			blocks = append(blocks, strings.Join(rendered.reasoningBlockLines, "\n"))
+		case !m.pending || m.streamRenderSeq == 0:
+			blocks = append(blocks, renderReasoningBlock(reasoning, m.streamingReasoningExpanded, width, true, 0, m.liveReasoningBodyCap()))
+		default:
+			blocks = append(blocks, fitStyledLine(reasoningHeaderLine(reasoning, false, true, 0), width))
+		}
+	}
+	if !textVisible {
 		if writing := m.streamingToolCallView(width); writing != "" {
 			blocks = append(blocks, writing)
 		}
@@ -3416,15 +3459,30 @@ func (m model) interimBlock(width int) string {
 		// show a live tail of the streaming reasoning beneath the working line so
 		// the screen keeps changing (never looks stuck) and the user can see WHAT
 		// the model is reasoning about. Skipped when expanded (the full body shows).
-		if reasoning != "" && !m.streamingReasoningExpanded {
-			blocks = append(blocks, reasoningPreviewLines(reasoning, width)...)
+		if reasoningVisible && !m.streamingReasoningExpanded {
+			if renderedOK && len(rendered.reasoningPreviewLine) > 0 {
+				blocks = append(blocks, rendered.reasoningPreviewLine...)
+			} else {
+				blocks = append(blocks, reasoningPreviewLines(reasoning, width)...)
+			}
 		}
 		return strings.Join(blocks, "\n")
 	}
 	// Live streaming block: prose streams normally, but an open fenced code block
 	// is buffered until its closing fence arrives so the code appears as one
 	// highlighted block instead of recoloring token-by-token.
-	lines := renderStreamingAssistantMarkdownText(text, assistantMeasure(width), width)
+	var lines []string
+	switch {
+	case renderedOK && len(rendered.answerLines) > 0:
+		lines = append([]string(nil), rendered.answerLines...)
+		if suffix := m.streamingTextSuffixAfter(rendered.textBytes); suffix != "" {
+			lines = append(lines, plainStreamingPreviewLines(suffix, width)...)
+		}
+	case !m.pending || m.streamRenderSeq == 0:
+		lines = renderStreamingAssistantMarkdownText(text, assistantMeasure(width), width)
+	default:
+		lines = plainStreamingPreviewLines(m.streamingTextTail, width)
+	}
 	for index, line := range lines {
 		// styleStreamingLine fades plain prose but leaves already-highlighted
 		// markdown/code lines alone, so live colors match the committed row.
@@ -3465,7 +3523,7 @@ func (m model) spinnerGlyph() string {
 // (reasoning, waiting on the model, or a tool in flight). Cheap and robust — no
 // transcript scan — so it can't misreport on a long, output-less step.
 func (m model) workingActivity() string {
-	if strings.TrimSpace(m.streamingTextString()) != "" {
+	if m.streamingTextHasVisibleContent() {
 		return "writing"
 	}
 	return "thinking"
@@ -4836,6 +4894,7 @@ func (m model) beginRun(cancel context.CancelFunc) model {
 	m.activeRunID = m.runID
 	m.runCancel = cancel
 	m.pending = true
+	m.clearStreamRender()
 	// Clear per-run tracking state so stale specialists and plans from the
 	// previous turn don't bleed into the new one.
 	m.specialists.clear()
@@ -4924,7 +4983,7 @@ func (m *model) cancelRun() {
 		// A cancelled run must terminate visibly in the transcript: first the
 		// partial streamed answer (if any), then the cancellation marker — the
 		// session log gets the same marker below.
-		if row, ok := reasoningTranscriptRow("", m.activeRunID, m.streamingReasoning); ok {
+		if row, ok := reasoningTranscriptRow("", m.activeRunID, m.streamingReasoningString()); ok {
 			m.transcript = appendTranscriptRow(m.transcript, row)
 		}
 		if text := strings.TrimRight(m.streamingTextString(), "\n"); strings.TrimSpace(text) != "" {
@@ -4948,9 +5007,8 @@ func (m *model) cancelRun() {
 	m.pendingAskUser = nil
 	// The interim block renders streamingText live; a cancelled run's partial
 	// answer must not leak into (and concatenate with) the next turn's stream.
-	m.streamingText = nil
-	m.streamingReasoning = ""
-	m.streamingReasoningExpanded = false
+	m.clearStreamingText()
+	m.clearStreamingReasoning()
 	// Hard-stop the fade and drop the per-line age map. The next turn's
 	// first agentTextMsg will seed a fresh lineAges slice and restart
 	// the tick.
@@ -5503,6 +5561,10 @@ func (m model) sendAgentText(runID int, delta string) {
 // by the segment length, the same cost the renderer already pays.
 func (m model) streamingTextString() string {
 	return string(m.streamingText)
+}
+
+func (m model) streamingReasoningString() string {
+	return string(m.streamingReasoning)
 }
 
 func (m model) sendToolCallStreamStart(runID int, id, name string) {

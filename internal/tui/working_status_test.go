@@ -240,7 +240,7 @@ func TestWorkingTokenIndicatorAccumulatesAcrossSegmentClears(t *testing.T) {
 
 	// Simulate the segment boundary that clears the live buffers, then stream
 	// answer text in the next segment.
-	m.streamingReasoning = ""
+	m.streamingReasoning = nil
 	m.streamingText = nil
 	updated, _ = m.Update(agentTextMsg{runID: rid, delta: strings.Repeat("b", 40)})
 	m = updated.(model)
@@ -287,7 +287,7 @@ func TestInterimBlockShowsReasoningPreviewWhileThinking(t *testing.T) {
 	base := time.Date(2026, 6, 18, 23, 0, 0, 0, time.UTC)
 	m.now = func() time.Time { return base.Add(90 * time.Second) }
 	m.turnStartedAt = base
-	m.streamingReasoning = "analyzing the layout\nthe patch was corrupt so re-planning the css edits"
+	m.streamingReasoning = []byte("analyzing the layout\nthe patch was corrupt so re-planning the css edits")
 	m.streamingText = nil // thinking phase: no answer yet
 
 	got := plainRender(t, m.interimBlock(96))
@@ -306,7 +306,7 @@ func TestInterimBlockNoPreviewWhenReasoningExpanded(t *testing.T) {
 	m.width = 100
 	m.now = func() time.Time { return time.Date(2026, 6, 18, 23, 0, 0, 0, time.UTC) }
 	m.streamingReasoningExpanded = true
-	m.streamingReasoning = "only line of reasoning here"
+	m.streamingReasoning = []byte("only line of reasoning here")
 	m.streamingText = nil
 	got := plainRender(t, m.interimBlock(96))
 	if strings.Count(got, "only line of reasoning here") != 1 {

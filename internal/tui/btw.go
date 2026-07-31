@@ -143,9 +143,8 @@ func (m model) handleBTWCommand(question string) (model, tea.Cmd) {
 	side.specialists.clear()
 	side.plan.clear()
 	side.planDetailGen++
-	side.streamingText = nil
-	side.streamingReasoning = ""
-	side.streamingReasoningExpanded = false
+	side.clearStreamingText()
+	side.clearStreamingReasoning()
 	side.clearStreamingToolCall()
 	side.resetStreamingFade()
 	side.btw = btwState{
