@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -68,7 +67,7 @@ func Apply(ctx context.Context, options Options) (ApplyResult, error) {
 	method := DetectInstallMethod(executablePath)
 	switch method {
 	case InstallMethodNpm:
-		if err := applyNpmUpdate(ctx); err != nil {
+		if err := applyNpmUpdate(ctx, executablePath); err != nil {
 			return ApplyResult{}, err
 		}
 		return ApplyResult{
@@ -107,20 +106,6 @@ func FormatApply(result ApplyResult) string {
 		lines = append(lines, "Warning: "+warning)
 	}
 	return strings.Join(lines, "\n")
-}
-
-func applyNpmUpdate(ctx context.Context) error {
-	npmPath, err := exec.LookPath("npm")
-	if err != nil {
-		return fmt.Errorf("npm not found on PATH: reinstall with `npm install -g %s@latest`", npmPackageName)
-	}
-	command := exec.CommandContext(ctx, npmPath, "install", "-g", npmPackageName+"@latest")
-	command.Stdout = os.Stdout
-	command.Stderr = os.Stderr
-	if err := command.Run(); err != nil {
-		return fmt.Errorf("npm install -g %s@latest: %w", npmPackageName, err)
-	}
-	return nil
 }
 
 func applyStandaloneUpdate(ctx context.Context, result Result, executablePath string) ([]string, error) {

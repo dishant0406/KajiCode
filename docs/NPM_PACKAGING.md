@@ -130,9 +130,12 @@ one is user-visible immediately.
    `id-token: write` and publishes with `--provenance` so npm can attach
    GitHub Actions provenance when supported.
 
-`kajicode update` keeps working unchanged: it detects an npm install by finding a
-`package.json` named `@dishant0406/kajicode` next to the running binary — true inside
-a platform payload too — and updates via `npm install -g @dishant0406/kajicode@latest`.
+`kajicode update` detects an npm install from the running binary path — true inside
+the wrapper package and inside a platform payload. It derives the owning npm
+global prefix from that path and updates with
+`npm install -g --prefix <that-prefix> @dishant0406/kajicode@latest`, so NVM,
+Homebrew, and other side-by-side Node installs do not update the wrong global
+tree.
 
 ## Runbook: bumping the vendored helpers
 
