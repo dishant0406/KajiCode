@@ -37,7 +37,7 @@ the next model turn.
 | Area | Owner | Responsibility |
 | --- | --- | --- |
 | Binary entrypoint | `cmd/kajicode` | Minimal main package calling `internal/cli.Run`. |
-| CLI composition | `internal/cli` | Argument parsing, config resolution, provider creation, registry setup, sandbox/session/plugin/MCP wiring, and launch routing. |
+| CLI composition | `internal/cli` | Argument parsing, config resolution, provider creation, registry setup, prompt/harness inspection commands, sandbox/session/plugin/MCP wiring, and launch routing. |
 | Interactive UI | `internal/tui` | Bubble Tea model/update/view state, transcript rendering, composer, modals, slash commands, setup, and runtime callbacks. |
 | Agent loop | `internal/agent` | Prompt assembly, provider turns, tool execution, compaction, retries, completion policy, self-correction, and callback emission. |
 | Provider contract | `internal/kajicoderuntime` | Provider-neutral messages, tool calls, stream events, usage, images, and turn sessions. |
@@ -105,13 +105,18 @@ Interactive-only assumptions must not leak into exec.
 `internal/agent.Run` is the runtime authority for a model turn. Its loop:
 
 1. Builds system/user prompt messages with guidelines, skills, images, runtime
-   context, and the provider/model harness profile.
+   context, the provider/model harness profile, and configured harness addenda.
+   `internal/agent/model_family.go`, `harness_profile.go`, and
+   `harness_prompt_addenda.go` keep model-family prompt tuning out of provider
+   adapters: each profile can adjust planning, tool-use, context, validation,
+   final-response guidance, and compaction defaults while the common prompt stays
+   provider-neutral.
 2. Partitions visible tools from the registry, including deferred-tool exposure.
 3. Plans context pressure from messages plus tool schemas, then prunes or
    compacts context when the request approaches the context window.
 4. Streams provider output through `kajicoderuntime.Provider`.
-5. Decodes tool calls and applies filters, permission mode, sandbox evaluation,
-   and hooks.
+5. Decodes tool calls and applies filters, harness permission rules, permission
+   mode, sandbox evaluation, and hooks.
 6. Executes tools and appends tool results to the conversation.
 7. Runs diagnostics, self-correction, retry, completion-gate, and guardrail logic.
 8. Returns a final result or explicit stop/error reason.

@@ -12,6 +12,7 @@ const (
 	promptSectionWorkspaceSeed   promptSectionRole = "workspace-seed"
 	promptSectionUserGuidelines  promptSectionRole = "user-guidelines"
 	promptSectionProjectContext  promptSectionRole = "project-context"
+	promptSectionHarnessConfig   promptSectionRole = "harness-config"
 	promptSectionModeContract    promptSectionRole = "mode-contract"
 	promptSectionSpecialists     promptSectionRole = "specialists"
 	promptSectionSkills          promptSectionRole = "skills"

@@ -213,8 +213,12 @@ flowchart TD
 Key responsibilities of the loop:
 
 1. **Build prompt state** — combines the system prompt, provider/model harness
-   profile, project/user guidelines, loaded skills/specialist instructions, the
-   current user prompt, and images. The resulting message list is the
+   profile, project/user guidelines, configured harness prompt addenda, loaded
+   skills/specialist instructions, the current user prompt, and images. The
+   harness profile is selected by provider/model family and carries the
+   model-facing planning, tool-use, context, validation, and final-response
+   posture for OpenAI/Codex, Gemini, Claude, open-weight, or generic compatible
+   models. The resulting message list is the
    model-facing context that later tool results are appended to. Resumed session
    history is replayed by the caller before a new run, not passed as a separate
    `agent.Run` history field.
@@ -225,9 +229,9 @@ Key responsibilities of the loop:
 3. **Call provider** — sends a provider-neutral `kajicoderuntime.CompletionRequest`.
 4. **Stream events** — forwards text, reasoning, tool-call deltas, and usage to
    the caller via callbacks.
-5. **Execute tools** — decodes tool arguments, checks filters, applies
-   permissions and sandbox policy, dispatches hooks, runs the registered tool,
-   redacts output, and appends a tool message. See
+5. **Execute tools** — decodes tool arguments, checks filters, applies harness
+   permission rules, permissions and sandbox policy, dispatches hooks, runs the
+   registered tool, redacts output, and appends a tool message. See
    [Tool Execution Lifecycle](#tool-execution-lifecycle).
 6. **Recover and guard** — handles malformed tool calls, repeated failures,
    empty turns, context pressure, stream reconnect/retry, and max-turn fallback.
@@ -293,9 +297,9 @@ Conceptually, one requested tool goes through these phases:
    tool calls. KajiCode can show the partial tool arguments in the TUI while they are
    still streaming, but nothing has executed yet.
 2. **Decode and gate** — the agent validates JSON arguments, checks whether the
-   tool is enabled, applies permission mode, asks the sandbox engine about path,
-   network, shell, or command-prefix constraints, and may invoke permission
-   callbacks.
+   tool is enabled, applies configured harness rules, applies permission mode,
+   asks the sandbox engine about path, network, shell, or command-prefix
+   constraints, and may invoke permission callbacks.
 3. **Execute** — the selected registry entry runs locally, through MCP, as a
    specialist/sub-agent, or through a plugin/local-control helper. Hooks can run
    before or after this step.
@@ -651,9 +655,12 @@ immediately.
 
 KajiCode has two related but separate checks:
 
-1. **Tool permission metadata** says whether a tool is allowed, denied, or needs
+1. **Harness permission rules** are optional operator config that can allow,
+   ask, or deny matching tools/commands before normal approval routing. User
+   config may widen with `allow`; project config may only `ask` or `deny`.
+2. **Tool permission metadata** says whether a tool is allowed, denied, or needs
    approval.
-2. **Sandbox policy** evaluates the actual request: path scope, network access,
+3. **Sandbox policy** evaluates the actual request: path scope, network access,
    destructive shell patterns, explicit escalation, persistent/session grants,
    and platform isolation availability.
 
@@ -686,6 +693,13 @@ The sandbox engine can:
 The user-facing TUI and `kajicode exec` mode both route permission requests through
 callbacks, but the TUI can show interactive modals while headless mode generally
 returns non-interactive fallback behavior unless a protocol/client handles it.
+
+The operator-facing CLI exposes this layer through `kajicode prompt inspect`,
+`kajicode prompt edit`, and `kajicode harness ...`. Prompt inspection reports the
+same system-prompt sections the runtime sends to the provider, including token
+estimates and optional full content. Harness commands persist prompt addenda and
+permission rules in user or project config; project rules are deliberately
+restricted so a repository cannot silently grant itself more authority.
 
 ## Session Storage and History
 

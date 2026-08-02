@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 
+	"github.com/dishant0406/KajiCode/internal/config"
 	"github.com/dishant0406/KajiCode/internal/hooks"
 	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
 	"github.com/dishant0406/KajiCode/internal/sandbox"
@@ -280,6 +281,7 @@ type Options struct {
 	ReasoningEffort  string
 	Cwd              string
 	SystemPrompt     string
+	Harness          config.HarnessConfig
 	// ResponseStyle is the operator-selected reply style from the TUI /style
 	// command (e.g. "concise", "explanatory", "review"). It is rendered into the
 	// system prompt as a short directive. Empty or "balanced" adds nothing — the

@@ -140,6 +140,9 @@ func Resolve(options ResolveOptions) (ResolvedConfig, error) {
 	if err := validateSTTConfig(cfg.STT); err != nil {
 		return ResolvedConfig{}, err
 	}
+	if issues := validateHarnessConfig(cfg.Harness); len(issues) > 0 {
+		return ResolvedConfig{}, fmt.Errorf("%s: %s", issues[0].FieldPath, issues[0].Message)
+	}
 
 	providers, active, err := normalizeProviders(cfg.Providers, cfg.ActiveProvider, options.Env)
 	if err != nil {
@@ -160,6 +163,7 @@ func Resolve(options ResolveOptions) (ResolvedConfig, error) {
 		Notify:         cfg.Notify,
 		Tools:          cfg.Tools,
 		Swarm:          cfg.Swarm,
+		Harness:        cfg.Harness,
 		Preferences:    cfg.Preferences,
 		KeyBindings:    cfg.KeyBindings,
 		LocalControl:   cfg.LocalControl,
@@ -246,6 +250,7 @@ func mergeConfig(dst *FileConfig, src FileConfig) {
 	if src.Swarm.MaxTeamSize != 0 {
 		dst.Swarm.MaxTeamSize = src.Swarm.MaxTeamSize
 	}
+	mergeHarnessConfig(&dst.Harness, src.Harness)
 	if src.Preferences.FavoriteModels != nil {
 		dst.Preferences.FavoriteModels = normalizeFavoriteModels(src.Preferences.FavoriteModels)
 	}
@@ -317,6 +322,9 @@ func mergeProjectConfig(dst *FileConfig, src FileConfig) error {
 	}
 	if src.Swarm.MaxTeamSize != 0 {
 		dst.Swarm.MaxTeamSize = src.Swarm.MaxTeamSize
+	}
+	if err := mergeProjectHarnessConfig(&dst.Harness, src.Harness); err != nil {
+		return err
 	}
 	mergeKeyBindings(&dst.KeyBindings, src.KeyBindings)
 	// Local control is intentionally user-config/override only. A cloned project
@@ -733,6 +741,7 @@ func applyOverrides(cfg *FileConfig, overrides Overrides) {
 		cfg.Tools.DeferThreshold = overrides.Tools.DeferThreshold
 		cfg.Tools.deferThresholdSet = true
 	}
+	mergeHarnessConfig(&cfg.Harness, overrides.Harness)
 	mergeLocalControlConfig(&cfg.LocalControl, overrides.LocalControl)
 	mergeKeyBindings(&cfg.KeyBindings, overrides.KeyBindings)
 	mergeSTTConfig(&cfg.STT, overrides.STT)

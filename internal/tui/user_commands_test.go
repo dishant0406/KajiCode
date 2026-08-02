@@ -21,6 +21,7 @@ func writeUserCommand(t *testing.T, root, name, content string) {
 }
 
 func TestUserCommandExpandsIntoComposerWithoutSubmitting(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	root := t.TempDir()
 	writeUserCommand(t, root, "greet.md", "Say hello to $1 from the team.")
 
@@ -45,6 +46,7 @@ func TestUserCommandExpandsIntoComposerWithoutSubmitting(t *testing.T) {
 }
 
 func TestUnknownSlashStillReportsUnknown(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	m := newModel(context.Background(), Options{Cwd: t.TempDir()})
 	m.input.SetValue("/definitelynotacommand")
 
@@ -57,6 +59,7 @@ func TestUnknownSlashStillReportsUnknown(t *testing.T) {
 }
 
 func TestUserCommandAppearsInAutocomplete(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	root := t.TempDir()
 	writeUserCommand(t, root, "deploy.md", "Deploy it.")
 	m := newModel(context.Background(), Options{Cwd: root})

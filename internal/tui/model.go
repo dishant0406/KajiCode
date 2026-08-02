@@ -4459,8 +4459,16 @@ func (m model) dispatchCommand(command parsedCommand) (tea.Model, tea.Cmd) {
 	case commandTools:
 		m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: m.toolsText()})
 		return m, nil
+	case commandHarness:
+		text := ""
+		m, text = m.handleHarnessCommand(command.text)
+		m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: text})
+		return m, nil
 	case commandPromptEditor:
 		return m.openPromptEditor(), nil
+	case commandPromptInspect:
+		m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: m.promptInspectText(command.text)})
+		return m, nil
 	case commandSkills:
 		// With skills installed, /skills opens a searchable picker (like /model);
 		// the text card remains only as the no-skills install hint.

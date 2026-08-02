@@ -68,6 +68,53 @@ func TestBuildSystemPromptAppendsHarnessProfile(t *testing.T) {
 	}
 }
 
+func TestHarnessProfileCarriesProviderStrategies(t *testing.T) {
+	cases := []struct {
+		name    string
+		options Options
+		want    []string
+	}{
+		{
+			name:    "openai",
+			options: Options{Model: "gpt-5"},
+			want: []string{
+				"Model family: OpenAI/Codex",
+				"Planning strategy: Keep a short live checklist",
+				"Validation strategy: Run the narrow validator first",
+				"Provider posture: OpenAI/Codex.",
+			},
+		},
+		{
+			name:    "gemini",
+			options: Options{ProviderName: "google-genai", Model: "house-model"},
+			want: []string{
+				"Model family: Gemini",
+				"Planning strategy: State the current hypothesis",
+				"Provider posture: Gemini.",
+			},
+		},
+		{
+			name:    "generic",
+			options: Options{ProviderName: "openai-compatible", Model: "house-model"},
+			want: []string{
+				"Model family: generic OpenAI-compatible",
+				"Use conservative step-by-step tool use",
+				"Provider posture: generic OpenAI-compatible model.",
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			prompt := buildSystemPrompt(tc.options)
+			for _, want := range tc.want {
+				if !strings.Contains(prompt, want) {
+					t.Fatalf("expected prompt to contain %q, got:\n%s", want, prompt)
+				}
+			}
+		})
+	}
+}
+
 func TestBuildSystemPromptIncludesActiveSessionRuntime(t *testing.T) {
 	prompt := buildSystemPrompt(Options{
 		ProviderName: "ollama-cloud",

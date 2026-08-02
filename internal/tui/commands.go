@@ -13,6 +13,7 @@ const (
 	commandClear
 	commandExit
 	commandTools
+	commandHarness
 	commandMCP
 	commandPermissions
 	commandPS
@@ -50,6 +51,7 @@ const (
 	commandBTW
 	commandSkills
 	commandPromptEditor
+	commandPromptInspect
 	commandLoop
 	commandVoice
 	commandSTTModel
@@ -153,6 +155,13 @@ var commandDefinitions = []commandDefinition{
 		kind:        commandTools,
 	},
 	{
+		name:        "/harness",
+		usage:       "/harness [list|prompt|rule]",
+		group:       commandGroupTools,
+		description: "Inspect or edit harness prompt addenda and permission rules.",
+		kind:        commandHarness,
+	},
+	{
 		name:        "/skills",
 		usage:       "/skills",
 		group:       commandGroupTools,
@@ -165,6 +174,14 @@ var commandDefinitions = []commandDefinition{
 		group:       commandGroupTools,
 		description: "Create a reusable personal prompt snippet.",
 		kind:        commandPromptEditor,
+	},
+	{
+		name:        "/prompt-inspect",
+		aliases:     []string{"/prompt-report"},
+		usage:       "/prompt-inspect [--full|--summary]",
+		group:       commandGroupTools,
+		description: "Inspect runtime prompt sections, size, and token estimates.",
+		kind:        commandPromptInspect,
 	},
 	{
 		name:        "/context",

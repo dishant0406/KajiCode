@@ -668,6 +668,7 @@ func runExec(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) in
 		Registry:             registry,
 		PermissionMode:       permissionMode,
 		Autonomy:             options.autonomy,
+		Harness:              resolved.Harness,
 		SelfCorrect:          selfCorrector,
 		FileDiagnostics:      fileDiagnostics,
 		Profile:              execProfile.Policy(displacedMaxTurns, execProfileFilledEffort),

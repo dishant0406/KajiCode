@@ -1182,6 +1182,7 @@ func executeToolCall(ctx context.Context, registry *tools.Registry, call ToolCal
 		permissionGranted = true
 	}
 
+	forcePermissionPrompt := false
 	decisionReason := ""
 	var decisionAction PermissionDecisionAction
 	var decisionCommandPrefix []string
@@ -1207,16 +1208,43 @@ func executeToolCall(ctx context.Context, registry *tools.Registry, call ToolCal
 		}
 	}
 
+	if toolFound {
+		if ruleDecision, ok := evaluatePermissionRules(call, tool, args, permissionMode, options); ok {
+			decisionReason = ruleDecision.reason
+			switch ruleDecision.action {
+			case PermissionActionDeny:
+				requestEvent := policyPermissionEvent(call, tool, args, permissionMode, options, nil, PermissionActionDeny, ruleDecision.reason)
+				emitDeniedPermission(options, call, requestEvent, ruleDecision.reason)
+				return deniedPermissionResult(call, ruleDecision.reason, requestEvent), nil
+			case PermissionActionAllow:
+				permissionGranted = true
+				decisionAction = PermissionDecisionAllow
+			case PermissionActionPrompt:
+				permissionGranted = false
+				forcePermissionPrompt = true
+			}
+		}
+	}
+
 	var preflightDecision *sandbox.Decision
 	if toolFound && options.Sandbox != nil {
 		decision := options.Sandbox.Evaluate(ctx, sandboxRequest(call.Name, tool, args, permissionGranted, permissionMode, options))
 		preflightDecision = &decision
 	}
 
-	if toolFound && options.OnPermissionRequest != nil && shouldRequestPermission(tool, args, permissionGranted, preflightDecision) {
+	if toolFound && forcePermissionPrompt && options.OnPermissionRequest == nil {
+		requestEvent := policyPermissionEvent(call, tool, args, permissionMode, options, preflightDecision, PermissionActionPrompt, decisionReason)
+		emitDeniedPermission(options, call, requestEvent, decisionReason)
+		return deniedPermissionResult(call, decisionReason, requestEvent), nil
+	}
+
+	if toolFound && options.OnPermissionRequest != nil && shouldRequestPermission(tool, args, permissionGranted, preflightDecision, forcePermissionPrompt) {
 		requestEvent, ok := buildPermissionEvent(call, tool, args, permissionGranted, permissionMode, options, preflightDecision)
 		if !ok {
 			requestEvent = fallbackPermissionEvent(call, tool, args, permissionMode, options)
+		}
+		if forcePermissionPrompt {
+			requestEvent = policyPermissionEvent(call, tool, args, permissionMode, options, preflightDecision, PermissionActionPrompt, decisionReason)
 		}
 		request := permissionRequestFromEvent(requestEvent, args, options)
 		decision, err := requestPermission(ctx, request, options)
@@ -2093,7 +2121,10 @@ func effectivePermission(tool tools.Tool, args map[string]any) tools.Permission 
 	return tool.Safety().Permission
 }
 
-func shouldRequestPermission(tool tools.Tool, args map[string]any, permissionGranted bool, decision *sandbox.Decision) bool {
+func shouldRequestPermission(tool tools.Tool, args map[string]any, permissionGranted bool, decision *sandbox.Decision, forcePrompt bool) bool {
+	if forcePrompt {
+		return true
+	}
 	if decision != nil && decision.Action == sandbox.ActionPrompt {
 		return true
 	}
@@ -2666,6 +2697,37 @@ func grantDecisionAction(grant *sandbox.Grant) PermissionDecisionAction {
 
 func fallbackPermissionEvent(call ToolCall, tool tools.Tool, args map[string]any, permissionMode PermissionMode, options Options) PermissionEvent {
 	event, _ := buildPermissionEvent(call, tool, args, false, permissionMode, options, nil)
+	return event
+}
+
+func policyPermissionEvent(call ToolCall, tool tools.Tool, args map[string]any, permissionMode PermissionMode, options Options, decision *sandbox.Decision, action PermissionAction, reason string) PermissionEvent {
+	event, ok := buildPermissionEvent(call, tool, args, false, permissionMode, options, decision)
+	if !ok {
+		safety := tool.Safety()
+		risk := sandbox.Classify(sandboxRequest(call.Name, tool, args, false, permissionMode, options))
+		var block *sandbox.Block
+		if decision != nil {
+			risk = decision.Risk
+			block = decision.Block
+		}
+		event = PermissionEvent{
+			ToolCallID:     call.ID,
+			ToolName:       call.Name,
+			Permission:     string(effectivePermission(tool, args)),
+			PermissionMode: permissionMode,
+			Autonomy:       options.Autonomy,
+			SideEffect:     string(safety.SideEffect),
+			Scope:          permissionScope(call.Name, args),
+			Risk:           risk,
+			Block:          block,
+			CommandPrefix:  proposedCommandPrefix(call.Name, args),
+		}
+	}
+	event.Action = action
+	event.PermissionGranted = false
+	if reason = strings.TrimSpace(reason); reason != "" {
+		event.Reason = reason
+	}
 	return event
 }
 

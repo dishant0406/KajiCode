@@ -320,6 +320,28 @@ type SwarmConfig struct {
 	MaxTeamSize int `json:"maxTeamSize,omitempty"`
 }
 
+type HarnessConfig struct {
+	PromptAddenda   []HarnessPromptAddendum `json:"promptAddenda,omitempty"`
+	PermissionRules []HarnessPermissionRule `json:"permissionRules,omitempty"`
+}
+
+type HarnessPromptAddendum struct {
+	ID      string `json:"id,omitempty"`
+	Text    string `json:"text,omitempty"`
+	Enabled *bool  `json:"enabled,omitempty"`
+}
+
+type HarnessPermissionRule struct {
+	ID              string   `json:"id,omitempty"`
+	Match           string   `json:"match,omitempty"`
+	Action          string   `json:"action,omitempty"`
+	SideEffect      string   `json:"sideEffect,omitempty"`
+	MinRisk         string   `json:"minRisk,omitempty"`
+	CommandContains []string `json:"commandContains,omitempty"`
+	Reason          string   `json:"reason,omitempty"`
+	Enabled         *bool    `json:"enabled,omitempty"`
+}
+
 // ToolsOverride builds a ToolsConfig that explicitly overrides the deferred-tool
 // threshold (including to 0, which disables deferral). Use this for programmatic
 // Overrides — a bare ToolsConfig{DeferThreshold: 0} is indistinguishable from
@@ -354,6 +376,7 @@ type FileConfig struct {
 	Notify         NotifyConfig       `json:"notify,omitempty"`
 	Tools          ToolsConfig        `json:"tools,omitempty"`
 	Swarm          SwarmConfig        `json:"swarm,omitempty"`
+	Harness        HarnessConfig      `json:"harness,omitempty"`
 	Preferences    PreferencesConfig  `json:"preferences,omitempty"`
 	KeyBindings    KeyBindingsConfig  `json:"keybindings,omitempty"`
 	LocalControl   LocalControlConfig `json:"localControl,omitempty"`
@@ -370,6 +393,7 @@ func (cfg FileConfig) MarshalJSON() ([]byte, error) {
 		Notify         NotifyConfig        `json:"notify,omitempty"`
 		Tools          ToolsConfig         `json:"tools,omitempty"`
 		Swarm          SwarmConfig         `json:"swarm,omitempty"`
+		Harness        *HarnessConfig      `json:"harness,omitempty"`
 		Preferences    PreferencesConfig   `json:"preferences,omitempty"`
 		KeyBindings    KeyBindingsConfig   `json:"keybindings,omitempty"`
 		LocalControl   *LocalControlConfig `json:"localControl,omitempty"`
@@ -386,6 +410,9 @@ func (cfg FileConfig) MarshalJSON() ([]byte, error) {
 		Swarm:          cfg.Swarm,
 		Preferences:    cfg.Preferences,
 		KeyBindings:    cfg.KeyBindings,
+	}
+	if !cfg.Harness.Empty() {
+		raw.Harness = &cfg.Harness
 	}
 	if !cfg.LocalControl.Empty() {
 		raw.LocalControl = &cfg.LocalControl
@@ -418,6 +445,7 @@ type Overrides struct {
 	Sandbox        SandboxConfig
 	Notify         NotifyConfig
 	Tools          ToolsConfig
+	Harness        HarnessConfig
 	KeyBindings    KeyBindingsConfig
 	LocalControl   LocalControlConfig
 	STT            STTConfig
@@ -433,6 +461,7 @@ type ResolvedConfig struct {
 	Notify         NotifyConfig
 	Tools          ToolsConfig
 	Swarm          SwarmConfig
+	Harness        HarnessConfig
 	Preferences    PreferencesConfig
 	KeyBindings    KeyBindingsConfig
 	LocalControl   LocalControlConfig
@@ -494,6 +523,7 @@ func (cfg *FileConfig) UnmarshalJSON(data []byte) error {
 		Notify          NotifyConfig               `json:"notify"`
 		Tools           ToolsConfig                `json:"tools"`
 		Swarm           SwarmConfig                `json:"swarm"`
+		Harness         HarnessConfig              `json:"harness"`
 		Preferences     PreferencesConfig          `json:"preferences"`
 		KeyBindings     KeyBindingsConfig          `json:"keybindings"`
 		LocalControl    LocalControlConfig         `json:"localControl"`
@@ -522,6 +552,7 @@ func (cfg *FileConfig) UnmarshalJSON(data []byte) error {
 	cfg.Notify = raw.Notify
 	cfg.Tools = raw.Tools
 	cfg.Swarm = raw.Swarm
+	cfg.Harness = raw.Harness
 	cfg.Preferences = raw.Preferences
 	cfg.KeyBindings = raw.KeyBindings
 	cfg.LocalControl = raw.LocalControl

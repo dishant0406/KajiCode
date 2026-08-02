@@ -131,6 +131,7 @@ func runExecSpecDraft(run execSpecDraftRun) int {
 		Registry:        run.registry,
 		PermissionMode:  agent.PermissionModeSpecDraft,
 		Autonomy:        "low",
+		Harness:         run.resolved.Harness,
 		Sandbox:         run.sandboxEngine,
 		FileTracker:     tools.NewFileTracker(),
 		Hooks:           hookDispatcher,

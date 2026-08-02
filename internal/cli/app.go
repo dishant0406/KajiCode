@@ -413,6 +413,10 @@ func runWithDeps(args []string, stdout io.Writer, stderr io.Writer, deps appDeps
 		return runSetup(args[1:], stdout, stderr, deps)
 	case "context":
 		return runContext(args[1:], stdout, stderr, deps)
+	case "prompt":
+		return runPrompt(args[1:], stdout, stderr, deps)
+	case "harness":
+		return runHarness(args[1:], stdout, stderr, deps)
 	case "repo-map", "repomap":
 		return runRepoMap(args[1:], stdout, stderr, deps)
 	case "search", "find":
@@ -876,6 +880,7 @@ func runInteractiveTUIWithSetup(stderr io.Writer, deps appDeps, permissionMode a
 			Registry:       registry,
 			PermissionMode: permissionMode,
 			Autonomy:       "low",
+			Harness:        resolved.Harness,
 			Sandbox:        sandboxEngine,
 			FileTracker:    fileTracker,
 			Hooks:          hookDispatcher,
@@ -1198,6 +1203,8 @@ Commands:
   providers  Inspect resolved provider profiles
   doctor     Run backend health checks for config and provider setup
   context    Report workspace context budget usage
+  prompt     Inspect or edit runtime prompt instructions
+  harness    Inspect and configure prompt addenda and permission rules
   repo-map   Build a deterministic repository map for agent context
   search     Search persisted local KajiCode session events
   find       Alias for search

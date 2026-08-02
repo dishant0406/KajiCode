@@ -119,6 +119,9 @@ func buildSystemPromptParts(options Options) systemPromptParts {
 	if project != "" {
 		builder.add(promptSectionProjectContext, project)
 	}
+	if harness := harnessConfigContext(options.Harness); harness != "" {
+		builder.add(promptSectionHarnessConfig, harness)
+	}
 	if mode := modeContractContext(options); mode != "" {
 		builder.add(promptSectionModeContract, mode)
 	}

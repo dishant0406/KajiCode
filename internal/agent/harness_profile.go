@@ -3,18 +3,6 @@ package agent
 import "strings"
 
 const (
-	familyOpenAI    = "openai"
-	familyGemini    = "gemini"
-	familyAnthropic = "anthropic"
-	familyQwen      = "qwen"
-	familyKimi      = "kimi"
-	familyDeepSeek  = "deepseek"
-	familyMiniMax   = "minimax"
-	familyGLM       = "glm"
-	familyGeneric   = "generic"
-)
-
-const (
 	editStrategyPatch      = "patch-first"
 	editStrategyStructured = "structured-edit"
 	editStrategyCareful    = "careful-verified-edit"
@@ -29,7 +17,11 @@ type harnessProfile struct {
 	DisplayName            string
 	PromptAddendum         string
 	EditStrategy           string
+	PlanningStrategy       string
 	ToolUseStrategy        string
+	ContextStrategy        string
+	VerificationStrategy   string
+	FinalResponseStrategy  string
 	CompactionTriggerRatio float64
 	PreserveRecentMessages int
 }
@@ -51,7 +43,11 @@ func baseHarnessProfile(family string) harnessProfile {
 			DisplayName:            "OpenAI/Codex",
 			PromptAddendum:         openAIPromptAddendum,
 			EditStrategy:           editStrategyPatch,
-			ToolUseStrategy:        "Use exact tool schemas, prefer apply_patch/edit_file for edits, and keep tool calls small enough to stream cleanly.",
+			PlanningStrategy:       "Keep a short live checklist for multi-step work, then act without extra handoffs once the next step is clear.",
+			ToolUseStrategy:        "Use exact tool schemas, prefer apply_patch/edit_file for edits, and keep calls small enough to stream cleanly.",
+			ContextStrategy:        "Cache the current working set mentally, prune stale tool output before summarizing, and load deferred tools with tool_search only when needed.",
+			VerificationStrategy:   "Run the narrow validator first, then broaden only when the touched surface or release risk requires it.",
+			FinalResponseStrategy:  "Lead with what changed and what passed; keep prose compact and cite files when useful.",
 			CompactionTriggerRatio: 0.68,
 			PreserveRecentMessages: 8,
 		}
@@ -61,7 +57,11 @@ func baseHarnessProfile(family string) harnessProfile {
 			DisplayName:            "Gemini",
 			PromptAddendum:         geminiPromptAddendum,
 			EditStrategy:           editStrategyStructured,
+			PlanningStrategy:       "State the current hypothesis, inspect before mutation, and close each loop with explicit evidence.",
 			ToolUseStrategy:        "Prefer explicit read/search before mutation, use tool_search for deferred schemas, and keep each tool request independently answerable.",
+			ContextStrategy:        "Restate only the freshest facts, avoid carrying obsolete branches of analysis, and summarize large reads before moving on.",
+			VerificationStrategy:   "Prefer deterministic commands with bounded output; if a command fails, use the error text as the next hypothesis.",
+			FinalResponseStrategy:  "Separate confirmed facts from assumptions and keep the final answer direct.",
 			CompactionTriggerRatio: 0.66,
 			PreserveRecentMessages: 8,
 		}
@@ -71,7 +71,11 @@ func baseHarnessProfile(family string) harnessProfile {
 			DisplayName:            "Claude",
 			PromptAddendum:         anthropicPromptAddendum,
 			EditStrategy:           editStrategyStructured,
+			PlanningStrategy:       "Use concise, ordered plans for substantial work and update them when a file or validator changes state.",
 			ToolUseStrategy:        "Keep preambles short, ground claims in tool results, and avoid re-reading large files already summarized in context.",
+			ContextStrategy:        "Prefer summaries over repeated large reads; re-open exact bytes only when editing, citing, or resolving a contradiction.",
+			VerificationStrategy:   "Treat validation failures as actionable evidence and fix the root cause before summarizing.",
+			FinalResponseStrategy:  "Give a terse outcome, tests, and any remaining risk without extra narration.",
 			CompactionTriggerRatio: 0.7,
 			PreserveRecentMessages: 8,
 		}
@@ -81,7 +85,11 @@ func baseHarnessProfile(family string) harnessProfile {
 			DisplayName:            displayNameForFamily(family),
 			PromptAddendum:         openWeightPromptAddendum,
 			EditStrategy:           editStrategyCareful,
+			PlanningStrategy:       "Make the next action explicit before tool use, then verify assumptions from tool output instead of memory.",
 			ToolUseStrategy:        "Use exact tool names and JSON fields, repair uncertainty with tool_search instead of inventing calls, and verify after edits.",
+			ContextStrategy:        "Keep recent user intent and touched files in context; summarize noisy output early and compact before the model drifts.",
+			VerificationStrategy:   "Prefer small edits, then run focused tests or builds to catch schema and syntax mistakes quickly.",
+			FinalResponseStrategy:  "Report only observed outcomes and avoid claiming unrun validation.",
 			CompactionTriggerRatio: 0.64,
 			PreserveRecentMessages: 10,
 		}
@@ -89,90 +97,19 @@ func baseHarnessProfile(family string) harnessProfile {
 		return harnessProfile{
 			Family:                 familyGeneric,
 			DisplayName:            "generic OpenAI-compatible",
+			PromptAddendum:         genericPromptAddendum,
 			EditStrategy:           editStrategyCareful,
+			PlanningStrategy:       "Use conservative step-by-step tool use because provider quirks are unknown.",
 			ToolUseStrategy:        "Use exact advertised tool names and prefer dedicated file tools over shell for file reads and edits.",
+			ContextStrategy:        "Preserve the latest task state, trim stale logs, and avoid assuming provider-specific behavior.",
+			VerificationStrategy:   "Validate every edit path with the narrowest repeatable check available.",
+			FinalResponseStrategy:  "Be explicit about what was inspected, changed, and verified.",
 			CompactionTriggerRatio: compactionTriggerRatio,
 			PreserveRecentMessages: defaultCompactionPreserveLast,
 		}
 	default:
 		return harnessProfile{}
 	}
-}
-
-func displayNameForFamily(family string) string {
-	switch family {
-	case familyQwen:
-		return "Qwen"
-	case familyKimi:
-		return "Kimi"
-	case familyDeepSeek:
-		return "DeepSeek"
-	case familyMiniMax:
-		return "MiniMax"
-	case familyGLM:
-		return "GLM"
-	default:
-		return family
-	}
-}
-
-func modelFamily(model string) string {
-	return modelFamilyFromProvider("", model)
-}
-
-func modelFamilyFromProvider(provider string, model string) string {
-	provider = strings.ToLower(strings.TrimSpace(provider))
-	model = strings.ToLower(strings.TrimSpace(model))
-	haystack := strings.TrimSpace(provider + " " + model)
-	openAICompatible := strings.Contains(provider, "openai-compatible")
-	switch {
-	case haystack == "":
-		return ""
-	case isOpenAIModel(model):
-		return familyOpenAI
-	case containsModelMarker(model, "gemini", "google", "genai"):
-		return familyGemini
-	case containsModelMarker(model, "claude", "anthropic"):
-		return familyAnthropic
-	case strings.Contains(model, "qwen"):
-		return familyQwen
-	case strings.Contains(model, "kimi") || strings.Contains(model, "moonshot"):
-		return familyKimi
-	case strings.Contains(model, "deepseek"):
-		return familyDeepSeek
-	case strings.Contains(model, "minimax") || strings.Contains(model, "mini-max"):
-		return familyMiniMax
-	case strings.Contains(model, "glm") || strings.Contains(model, "zai-org"):
-		return familyGLM
-	case openAICompatible:
-		return familyGeneric
-	case containsModelMarker(provider, "azure", "openai", "chatgpt", "codex"):
-		return familyOpenAI
-	case containsModelMarker(provider, "gemini", "google", "genai"):
-		return familyGemini
-	case containsModelMarker(provider, "claude", "anthropic"):
-		return familyAnthropic
-	default:
-		return ""
-	}
-}
-
-func isOpenAIModel(model string) bool {
-	return strings.HasPrefix(model, "gpt") ||
-		strings.HasPrefix(model, "o1") ||
-		strings.HasPrefix(model, "o3") ||
-		strings.HasPrefix(model, "o4") ||
-		strings.Contains(model, "openai") ||
-		strings.Contains(model, "codex")
-}
-
-func containsModelMarker(value string, needles ...string) bool {
-	for _, needle := range needles {
-		if strings.Contains(value, needle) {
-			return true
-		}
-	}
-	return false
 }
 
 func modelPromptAddendum(model string) string {
@@ -188,12 +125,23 @@ func harnessProfileContext(options Options) string {
 	b.WriteString("<harness_profile>\n")
 	b.WriteString("Model family: " + profile.DisplayName + "\n")
 	b.WriteString("Edit strategy: " + profile.EditStrategy + "\n")
+	appendProfileLine(&b, "Planning strategy", profile.PlanningStrategy)
 	b.WriteString("Tool strategy: " + profile.ToolUseStrategy + "\n")
-	b.WriteString("Context strategy: preserve the recent working set, prune stale tool output before summarizing, and load deferred tools with tool_search only when needed.\n")
+	appendProfileLine(&b, "Context strategy", profile.ContextStrategy)
+	appendProfileLine(&b, "Validation strategy", profile.VerificationStrategy)
+	appendProfileLine(&b, "Final response strategy", profile.FinalResponseStrategy)
 	b.WriteString("</harness_profile>")
 	if profile.PromptAddendum != "" {
 		b.WriteString("\n\n")
 		b.WriteString(profile.PromptAddendum)
 	}
 	return b.String()
+}
+
+func appendProfileLine(b *strings.Builder, label string, value string) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return
+	}
+	b.WriteString(label + ": " + value + "\n")
 }
