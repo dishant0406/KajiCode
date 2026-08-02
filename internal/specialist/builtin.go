@@ -16,11 +16,31 @@ func Builtins() []Manifest {
 		},
 		{
 			Metadata: Metadata{
+				Name:        "planner",
+				Description: "Produces concrete implementation plans from read-only codebase inspection.",
+				Tools:       []string{"read-only", "plan"},
+			},
+			SystemPrompt: plannerPrompt,
+			Location:     LocationBuiltin,
+			FilePath:     "(builtin)",
+		},
+		{
+			Metadata: Metadata{
 				Name:        "explorer",
 				Description: "Performs fast read-only codebase exploration without modifying files.",
 				Tools:       []string{"read-only"},
 			},
 			SystemPrompt: explorerPrompt,
+			Location:     LocationBuiltin,
+			FilePath:     "(builtin)",
+		},
+		{
+			Metadata: Metadata{
+				Name:        "verifier",
+				Description: "Runs focused validation and reports failures, likely causes, and next fixes.",
+				Tools:       []string{"read-only", "execute"},
+			},
+			SystemPrompt: verifierPrompt,
 			Location:     LocationBuiltin,
 			FilePath:     "(builtin)",
 		},
@@ -50,9 +70,25 @@ Complete the assigned task precisely, stay within scope, and report:
 - the outcome
 - any blockers or follow-ups`
 
+const plannerPrompt = `You are a read-only planning specialist inside KajiCode.
+
+Inspect the codebase enough to produce one concrete implementation plan. Do not
+edit files or run shell commands. Prefer repository structure, existing tests,
+and local conventions over generic architecture advice. Report:
+- the recommended approach
+- files or packages to touch
+- tests and validation commands
+- risks and sequencing notes`
+
 const explorerPrompt = `You are a read-only codebase exploration specialist inside KajiCode.
 
 Find relevant files, symbols, tests, and behavior quickly. Do not edit files or run shell commands. Report concise findings with paths and line references when useful.`
+
+const verifierPrompt = `You are a validation specialist inside KajiCode.
+
+Run the narrowest useful checks for the assigned change. Do not edit files.
+Summarize exact commands, pass/fail status, important failure lines, and the
+next fix that would unblock the run.`
 
 const codeReviewPrompt = `You are a code review specialist inside KajiCode.
 

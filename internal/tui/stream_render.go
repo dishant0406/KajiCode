@@ -10,16 +10,18 @@ import (
 const streamRenderMinInterval = 120 * time.Millisecond
 
 type streamRenderSnapshot struct {
-	seq               int
-	runID             int
-	width             int
-	bodyCap           int
-	themeGen          uint64
-	textBytes         int
-	reasoningBytes    int
-	text              string
-	reasoning         string
-	reasoningExpanded bool
+	seq                 int
+	runID               int
+	width               int
+	bodyCap             int
+	themeGen            uint64
+	textStartBytes      int
+	textBytes           int
+	reasoningStartBytes int
+	reasoningBytes      int
+	text                string
+	reasoning           string
+	reasoningExpanded   bool
 }
 
 type streamRenderResult struct {
@@ -27,7 +29,11 @@ type streamRenderResult struct {
 	runID                int
 	width                int
 	themeGen             uint64
+	textStartBytes       int
 	textBytes            int
+	textStableBytes      int
+	textSeparatorLines   int
+	reasoningStartBytes  int
 	reasoningBytes       int
 	answerLines          []string
 	reasoningBlockLines  []string
@@ -54,12 +60,14 @@ func streamRenderCmd(snapshot streamRenderSnapshot) tea.Cmd {
 
 func renderStreamSnapshot(snapshot streamRenderSnapshot) streamRenderResult {
 	result := streamRenderResult{
-		seq:            snapshot.seq,
-		runID:          snapshot.runID,
-		width:          snapshot.width,
-		themeGen:       snapshot.themeGen,
-		textBytes:      snapshot.textBytes,
-		reasoningBytes: snapshot.reasoningBytes,
+		seq:                 snapshot.seq,
+		runID:               snapshot.runID,
+		width:               snapshot.width,
+		themeGen:            snapshot.themeGen,
+		textStartBytes:      snapshot.textStartBytes,
+		textBytes:           snapshot.textBytes,
+		reasoningStartBytes: snapshot.reasoningStartBytes,
+		reasoningBytes:      snapshot.reasoningBytes,
 	}
 	withThemeReadLock(func() {
 		if strings.TrimSpace(snapshot.reasoning) != "" {
@@ -70,7 +78,10 @@ func renderStreamSnapshot(snapshot streamRenderSnapshot) streamRenderResult {
 			}
 		}
 		if strings.TrimSpace(snapshot.text) != "" {
-			result.answerLines = renderStreamingAssistantMarkdownText(snapshot.text, assistantMeasure(snapshot.width), snapshot.width)
+			frame := renderStreamingAssistantMarkdownFrame(snapshot.text, assistantMeasure(snapshot.width), snapshot.width)
+			result.textStableBytes = snapshot.textStartBytes + frame.stableBytes
+			result.textSeparatorLines = frame.separatorLines
+			result.answerLines = frame.stableLines
 		}
 	})
 	return result
@@ -81,31 +92,31 @@ func (m model) streamRenderSnapshot(width int) (streamRenderSnapshot, bool) {
 		return streamRenderSnapshot{}, false
 	}
 	text := ""
+	textStart := 0
 	if len(m.streamingText) > 0 {
-		text = m.streamingTextTail
-		if text == "" {
-			text = boundedUTF8TailBytes(m.streamingText, streamPreviewTailBytes)
-		}
-		text = strings.TrimRight(text, "\n")
+		window := boundedStreamingWindowBytes(m.streamingText, streamPreviewTailBytes)
+		text = window.text
+		textStart = window.start
 	}
 	reasoning := ""
+	reasoningStart := 0
 	if len(m.streamingReasoning) > 0 {
-		reasoning = m.streamingReasoningTail
-		if reasoning == "" {
-			reasoning = boundedUTF8TailBytes(m.streamingReasoning, streamPreviewTailBytes)
-		}
-		reasoning = strings.TrimRight(reasoning, "\n")
+		window := boundedStreamingWindowBytes(m.streamingReasoning, streamPreviewTailBytes)
+		reasoning = window.text
+		reasoningStart = window.start
 	}
 	return streamRenderSnapshot{
-		runID:             m.activeRunID,
-		width:             width,
-		bodyCap:           m.liveReasoningBodyCap(),
-		themeGen:          currentThemeGeneration(),
-		textBytes:         len(m.streamingText),
-		reasoningBytes:    len(m.streamingReasoning),
-		text:              text,
-		reasoning:         reasoning,
-		reasoningExpanded: m.streamingReasoningExpanded,
+		runID:               m.activeRunID,
+		width:               width,
+		bodyCap:             m.liveReasoningBodyCap(),
+		themeGen:            currentThemeGeneration(),
+		textStartBytes:      textStart,
+		textBytes:           len(m.streamingText),
+		reasoningStartBytes: reasoningStart,
+		reasoningBytes:      len(m.streamingReasoning),
+		text:                text,
+		reasoning:           reasoning,
+		reasoningExpanded:   m.streamingReasoningExpanded,
 	}, true
 }
 
@@ -166,7 +177,7 @@ func (m model) handleStreamRenderReady(msg streamRenderReadyMsg) (model, tea.Cmd
 	currentSeq := msg.snapshot.seq == m.streamRenderSeq
 	currentTheme := msg.snapshot.themeGen == currentThemeGeneration()
 	if currentSeq && currentTheme {
-		m.streamRenderResult = msg.result
+		m.streamRenderResult = preserveStreamRenderFrame(m.streamRenderResult, msg.result)
 	}
 	if m.streamRenderDirty {
 		return m.requestStreamRender(m.chatColumnWidth())

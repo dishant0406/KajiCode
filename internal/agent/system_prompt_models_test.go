@@ -13,6 +13,11 @@ func TestModelFamilyClassification(t *testing.T) {
 		"gemini-2.5-pro":         familyGemini,
 		"claude-opus-4-6":        familyAnthropic,
 		"anthropic/claude-haiku": familyAnthropic,
+		"qwen3-coder":            familyQwen,
+		"kimi-k2-thinking":       familyKimi,
+		"deepseek-v3.2":          familyDeepSeek,
+		"MiniMax-M3":             familyMiniMax,
+		"zai-org/glm-5-maas":     familyGLM,
 		"some-unknown-model":     "",
 		"":                       "",
 	}
@@ -23,27 +28,43 @@ func TestModelFamilyClassification(t *testing.T) {
 	}
 }
 
-func TestBuildSystemPromptAppendsModelAddendum(t *testing.T) {
-	// Assert on the addendum constants themselves (the core prompt shares phrases
-	// like "one tool call per file", so substring checks can't distinguish them).
+func TestProviderNameContributesToHarnessFamily(t *testing.T) {
+	cases := []struct {
+		provider string
+		model    string
+		want     string
+	}{
+		{provider: "azure-openai", model: "deployment-name", want: familyOpenAI},
+		{provider: "openai-compatible", model: "house-model", want: familyGeneric},
+		{provider: "google-genai", model: "custom", want: familyGemini},
+	}
+	for _, tc := range cases {
+		if got := modelFamilyFromProvider(tc.provider, tc.model); got != tc.want {
+			t.Fatalf("modelFamilyFromProvider(%q, %q) = %q, want %q", tc.provider, tc.model, got, tc.want)
+		}
+	}
+}
+
+func TestBuildSystemPromptAppendsHarnessProfile(t *testing.T) {
 	if got := buildSystemPrompt(Options{Model: "gpt-5"}); !strings.Contains(got, openAIPromptAddendum) {
 		t.Fatalf("expected the OpenAI addendum in the gpt-5 prompt")
 	}
-	// Claude is aligned with the core prompt and gets no family addendum now that
-	// comment discipline is universal; it must not pick up another family's block.
 	claude := buildSystemPrompt(Options{Model: "claude-opus-4-6"})
-	if strings.Contains(claude, "<model_guidance>") {
-		t.Fatalf("expected no model_guidance block for Claude (aligned with core prompt)")
+	if !strings.Contains(claude, "Model family: Claude") {
+		t.Fatalf("expected Claude harness profile in prompt")
 	}
 	if strings.Contains(claude, openAIPromptAddendum) {
 		t.Fatalf("the claude prompt must not contain the OpenAI addendum")
 	}
-	// Unknown / unset model gets no family block.
+	openWeight := buildSystemPrompt(Options{Model: "qwen3-coder"})
+	if !strings.Contains(openWeight, openWeightPromptAddendum) {
+		t.Fatalf("expected open-weight guidance for qwen")
+	}
 	if got := modelPromptAddendum(""); got != "" {
 		t.Fatalf("expected no addendum without a model, got %q", got)
 	}
-	if strings.Contains(buildSystemPrompt(Options{}), "<model_guidance>") {
-		t.Fatalf("expected no <model_guidance> block without a model")
+	if strings.Contains(buildSystemPrompt(Options{}), "<harness_profile>") {
+		t.Fatalf("expected no harness profile block without a provider/model")
 	}
 }
 

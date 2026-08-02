@@ -150,10 +150,17 @@ func estimateToolDefTokens(tools []kajicoderuntime.ToolDefinition) int {
 // compactionThreshold is the estimated-token level at which proactive
 // compaction triggers for a given context window.
 func compactionThreshold(contextWindow int) int {
+	return compactionThresholdForRatio(contextWindow, compactionTriggerRatio)
+}
+
+func compactionThresholdForRatio(contextWindow int, ratio float64) int {
 	if contextWindow <= 0 {
 		return 0
 	}
-	return int(float64(contextWindow) * compactionTriggerRatio)
+	if ratio <= 0 {
+		ratio = compactionTriggerRatio
+	}
+	return int(float64(contextWindow) * ratio)
 }
 
 // Compact summarizes the oldest middle of a conversation, keeping the leading
@@ -364,17 +371,14 @@ func (state *compactionState) calibrate(rawEstimate int, actualPromptTokens int)
 // calibratedTokens applies the learned ratio to a raw estimate. Before any sample
 // arrives (ratio unset) it returns the raw estimate unchanged.
 func (state *compactionState) calibratedTokens(raw int) int {
-	if state.calibrationRatio <= 0 {
-		return raw
-	}
-	return int(float64(raw) * state.calibrationRatio)
+	return calibrateTokenEstimate(raw, state.calibrationRatio)
 }
 
 func newCompactionState(options Options, task *taskState) *compactionState {
 	state := &compactionState{
 		enabled:      options.ContextWindow > 0,
-		threshold:    compactionThreshold(options.ContextWindow),
-		preserveLast: options.CompactionPreserveLast,
+		threshold:    compactionThresholdForRatio(options.ContextWindow, effectiveCompactionTriggerRatio(options)),
+		preserveLast: effectiveCompactionPreserveLast(options),
 		onUsage:      options.OnUsage,
 		task:         task,
 	}
@@ -394,12 +398,10 @@ func (state *compactionState) maybeCompact(
 	if !state.enabled {
 		return messages
 	}
-	// Tool definitions are part of every request's input, so count them alongside
-	// the messages; both the threshold check and the shrink check below use the
-	// same term so they stay consistent.
-	toolTokens := estimateToolDefTokens(tools)
-	size := state.calibratedTokens(estimateTokens(messages) + toolTokens)
-	if size <= state.threshold {
+	plan := planTurnContext(messages, tools, state.threshold, state.preserveLast, state.calibrationRatio)
+	toolTokens := plan.ToolTokens
+	size := plan.TotalTokens
+	if !plan.ShouldCompact {
 		return messages
 	}
 	// Only compact when the history has grown past where we last left it. This

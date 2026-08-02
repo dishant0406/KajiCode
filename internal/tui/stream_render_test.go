@@ -48,8 +48,8 @@ func TestStreamRenderLatestSnapshotWins(t *testing.T) {
 	}
 
 	ready := nextCmd().(streamRenderReadyMsg)
-	if !strings.Contains(strings.Join(ready.result.answerLines, "\n"), "second") {
-		t.Fatalf("latest render result = %#v, want second snapshot", ready.result.answerLines)
+	if !strings.Contains(ready.snapshot.text, "second") || ready.result.textBytes != len("second") {
+		t.Fatalf("latest render snapshot/result = %q/%+v, want second snapshot", ready.snapshot.text, ready.result)
 	}
 }
 
@@ -73,28 +73,32 @@ func TestPendingInterimItemUsesFixedHeight(t *testing.T) {
 	}
 }
 
-func TestInterimBlockKeepsRichRenderWhileNextRenderIsDirty(t *testing.T) {
+func TestInterimBlockReplacesStaleLiveTailWhileNextRenderIsDirty(t *testing.T) {
 	m := mouseTestModel()
 	m.pending = true
 	m.activeRunID = 1
 	m.width = 100
 	m.height = 30
-	m.streamingText = []byte("first paragraph")
+	m.streamingText = []byte("stable paragraph\n\nThe answer starts with **mar")
 	m.streamingTextHasContent = true
-	m.streamingTextTail = "first paragraph"
+	m.streamingTextTail = string(m.streamingText)
 	var cmd tea.Cmd
 	m, cmd = m.requestStreamRender(m.chatColumnWidth())
 	updated, _ := m.Update(cmd().(streamRenderReadyMsg))
 	m = updated.(model)
 
-	m.streamingText = append(m.streamingText, []byte(" and a newer live tail")...)
-	m.streamingTextTail = appendBoundedStreamingTail(m.streamingTextTail, " and a newer live tail")
+	m.streamingText = append(m.streamingText, []byte("kdown** tail")...)
+	m.streamingTextTail = appendBoundedStreamingTail(m.streamingTextTail, "kdown** tail")
 	m.streamRenderDirty = true
 	m.streamRenderInFlight = true
 
 	got := plainRender(t, m.interimBlock(m.chatColumnWidth()))
-	if !strings.Contains(got, "first paragraph") || !strings.Contains(got, "newer live tail") {
-		t.Fatalf("interim block should keep rich render and append bounded tail, got:\n%s", got)
+	if strings.Contains(got, "**mar\nkdown**") {
+		t.Fatalf("interim block split the stale active markdown tail across frames:\n%s", got)
+	}
+	joined := strings.Join(strings.Fields(got), " ")
+	if !strings.Contains(joined, "The answer starts with **markdown** tail") {
+		t.Fatalf("interim block should render the latest live tail once, got:\n%s", got)
 	}
 }
 

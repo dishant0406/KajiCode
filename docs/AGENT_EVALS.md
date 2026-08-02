@@ -14,7 +14,9 @@ live model calls when the supplied agent command does.
 ## Suite Format
 
 Sample suites live under `internal/agenteval/testdata/`. Tiny fixture
-workspaces live under `internal/agenteval/testdata/fixtures/`.
+workspaces live under `internal/agenteval/testdata/fixtures/`. The default
+`sample_suite.json` covers general local coding tasks; `harness_suite.json`
+covers prompt, harness-profile, mode, specialist, and tool-behavior regressions.
 
 Each suite JSON file contains:
 

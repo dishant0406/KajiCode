@@ -1,9 +1,6 @@
 package tui
 
-import (
-	"strings"
-	"time"
-)
+import "time"
 
 func (m *model) clearStreamRender() {
 	m.streamRenderSeq++
@@ -44,7 +41,7 @@ func (m model) streamingTextSuffixAfter(byteOffset int) string {
 	if byteOffset < 0 || byteOffset >= len(m.streamingText) {
 		return ""
 	}
-	return boundedUTF8TailBytes(m.streamingText[byteOffset:], streamPreviewSuffixBytes)
+	return boundedStreamingWindowBytes(m.streamingText[byteOffset:], streamPreviewSuffixBytes).text
 }
 
 func (m model) streamingTextHasVisibleContent() bool {
@@ -62,18 +59,5 @@ func (m model) streamingReasoningHasVisibleContent() bool {
 }
 
 func plainStreamingPreviewLines(text string, width int) []string {
-	text = strings.TrimSpace(boundedUTF8TailString(text, streamPreviewSuffixBytes))
-	if text == "" {
-		return nil
-	}
-	lines := strings.Split(text, "\n")
-	if len(lines) > 8 {
-		lines = lines[len(lines)-8:]
-	}
-	measure := assistantMeasure(width)
-	out := make([]string, 0, len(lines))
-	for _, line := range lines {
-		out = append(out, wrapANSITextWithPrefixes("", "", strings.TrimRight(line, "\r"), measure)...)
-	}
-	return out
+	return renderStreamingMarkdownLiveTail(text, assistantMeasure(width))
 }

@@ -8,7 +8,7 @@ Specialists can be built in, user-scoped, or project-scoped:
 
 | Scope | Path | Notes |
 | --- | --- | --- |
-| Built-in | compiled into KajiCode | `worker`, `explorer`, and `code-review` ship with the binary. |
+| Built-in | compiled into KajiCode | `worker`, `planner`, `explorer`, `verifier`, and `code-review` ship with the binary. |
 | User | `~/.config/kajicode/specialists/*.md` | Available across local workspaces. |
 | Project | `.kajicode/specialists/*.md` | Shared with the current repository when committed. |
 
@@ -71,9 +71,9 @@ Known categories:
 
 | Category | Tools |
 | --- | --- |
-| `read-only` | `read_file`, `list_directory`, `grep`, `glob` |
+| `read-only` | `read_file`, `read_minified_file`, `list_directory`, `grep`, `glob`, `lsp_navigate`, `skill` |
 | `edit` | read-only tools plus `write_file`, `edit_file`, `apply_patch` |
-| `execute` | read-only tools plus `bash` |
+| `execute` | read-only tools plus `exec_command`, `write_stdin`, `bash` |
 | `plan` | `update_plan` |
 
 Specialist manifests cannot enable `Task`, `TaskOutput`, `TaskStop`, or

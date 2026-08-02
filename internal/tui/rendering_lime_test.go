@@ -237,7 +237,7 @@ func TestInterimBlockShowsStreamingTextWithCursor(t *testing.T) {
 	}
 }
 
-func TestInterimBlockRendersStreamingMarkdownTable(t *testing.T) {
+func TestInterimBlockKeepsActiveMarkdownTablePlain(t *testing.T) {
 	m := limeTestModel()
 	m.pending = true
 	m.streamingText = []byte(strings.Join([]string{
@@ -250,15 +250,16 @@ func TestInterimBlockRendersStreamingMarkdownTable(t *testing.T) {
 
 	rendered := m.interimBlock(72)
 	got := plainRender(t, rendered)
-	for _, unwanted := range []string{"|---", "**Label**"} {
-		if strings.Contains(got, unwanted) {
-			t.Fatalf("streaming markdown table leaked source syntax %q in:\n%s", unwanted, got)
+	for _, want := range []string{"|---", "**Label**", "▌"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("active streaming markdown table should stay literal and include %q in:\n%s", want, got)
 		}
 	}
-	for _, want := range []string{"Category", "Label", " │ ", "─┼─", "▌"} {
-		if !strings.Contains(got, want) {
-			t.Fatalf("streaming markdown table missing %q in:\n%s", want, got)
+	for _, unwanted := range []string{" │ ", "─┼─"} {
+		if !strings.Contains(got, unwanted) {
+			continue
 		}
+		t.Fatalf("active streaming markdown table should not be promoted before a stable boundary, got:\n%s", got)
 	}
 	for index, line := range strings.Split(rendered, "\n") {
 		if gotWidth := lipgloss.Width(line); gotWidth > 72 {
@@ -422,7 +423,7 @@ func TestAssistantMarkdownListsKeepHangingIndentAndLooseContent(t *testing.T) {
 	}
 }
 
-func TestStreamingAssistantMarkdownMatchesCommittedLinksAndLists(t *testing.T) {
+func TestStreamingAssistantMarkdownRendersStablePrefixAndPlainActiveList(t *testing.T) {
 	text := strings.Join([]string{
 		"See [the docs](https://example.com/docs).",
 		"",
@@ -430,9 +431,14 @@ func TestStreamingAssistantMarkdownMatchesCommittedLinksAndLists(t *testing.T) {
 		"- beta",
 	}, "\n")
 	streaming := strings.Join(renderStreamingAssistantMarkdownText(text, 72, 72), "\n")
-	committed := strings.Join(renderAssistantMarkdownText(text, 72, 72, true), "\n")
-	if streaming != committed {
-		t.Fatalf("streaming Markdown must match committed rendering:\nstreaming: %q\ncommitted: %q", streaming, committed)
+	if !strings.Contains(streaming, "\x1b[4mthe\x1b[24m \x1b[4mdocs\x1b[24m") {
+		t.Fatalf("stable prefix should render links richly, got %q", streaming)
+	}
+	if strings.Contains(streaming, "\x1b[95m• \x1b[39m") {
+		t.Fatalf("active list should stay plain before a stable boundary, got %q", streaming)
+	}
+	if !strings.Contains(streaming, "- alpha\n- beta") {
+		t.Fatalf("active list markers should remain literal, got %q", streaming)
 	}
 }
 

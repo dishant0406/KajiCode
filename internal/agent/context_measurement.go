@@ -1,10 +1,6 @@
 package agent
 
-import (
-	"encoding/json"
-
-	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
-)
+import "github.com/dishant0406/KajiCode/internal/kajicoderuntime"
 
 // Context budget.
 //
@@ -37,7 +33,7 @@ func MeasureContext(messages []kajicoderuntime.Message, tools []kajicoderuntime.
 	breakdown := ContextBreakdown{
 		SystemTokens:  estimateTokens(messages[:systemEnd]),
 		MessageTokens: estimateTokens(messages[systemEnd:]),
-		ToolTokens:    estimateToolTokens(tools),
+		ToolTokens:    estimateToolDefTokens(tools),
 		ContextWindow: contextWindow,
 	}
 	breakdown.TotalTokens = breakdown.SystemTokens + breakdown.ToolTokens + breakdown.MessageTokens
@@ -45,22 +41,4 @@ func MeasureContext(messages []kajicoderuntime.Message, tools []kajicoderuntime.
 		breakdown.UsedFraction = float64(breakdown.TotalTokens) / float64(contextWindow)
 	}
 	return breakdown
-}
-
-// estimateToolTokens approximates the token footprint of advertised tool
-// definitions (name + description + JSON schema), using the same ApproxTextTokens
-// heuristic as estimateTokens so all categories share one scale.
-func estimateToolTokens(tools []kajicoderuntime.ToolDefinition) int {
-	total := 0
-	for _, tool := range tools {
-		total += ApproxTextTokens(tool.Name)
-		total += ApproxTextTokens(tool.Description)
-		if len(tool.Parameters) > 0 {
-			if encoded, err := json.Marshal(tool.Parameters); err == nil {
-				total += ApproxTextTokens(string(encoded))
-			}
-		}
-		total += 4 // per-tool overhead
-	}
-	return total
 }

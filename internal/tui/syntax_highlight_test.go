@@ -112,6 +112,47 @@ func TestStreamingMarkdownPreservesBlankLineSeparators(t *testing.T) {
 	}
 }
 
+func TestStreamingMarkdownStylesClosedActiveInlineMarkdown(t *testing.T) {
+	lines := renderStreamingAssistantMarkdownText("Working with **bold** and `code` text", 90, 90)
+	joined := strings.Join(lines, "\n")
+	if !strings.Contains(joined, markdownBoldStart+"**bold**"+markdownBoldEnd) {
+		t.Fatalf("closed active bold markdown should be preview-styled while streaming, got %q", joined)
+	}
+	if !strings.Contains(joined, markdownCodeStart+"`code`"+markdownCodeEnd) {
+		t.Fatalf("closed active code markdown should be preview-styled while streaming, got %q", joined)
+	}
+	plain := ansiPattern.ReplaceAllString(joined, "")
+	if !strings.Contains(plain, "**bold**") || !strings.Contains(plain, "`code`") {
+		t.Fatalf("streaming preview must preserve visible markdown markers, got %q", plain)
+	}
+}
+
+func TestStreamingMarkdownLeavesIncompleteActiveInlineMarkdownLiteral(t *testing.T) {
+	lines := renderStreamingAssistantMarkdownText("Working with **bol", 90, 90)
+	joined := strings.Join(lines, "\n")
+	if strings.Contains(joined, markdownBoldStart) {
+		t.Fatalf("incomplete active inline markdown should stay literal, got %q", joined)
+	}
+	if !strings.Contains(joined, "**bol") {
+		t.Fatalf("incomplete active inline markdown should keep raw marker, got %q", joined)
+	}
+}
+
+func TestStreamingMarkdownPromotesStablePrefixOnly(t *testing.T) {
+	text := "Stable **prefix**.\n\nWorking with **bold** text"
+	lines := renderStreamingAssistantMarkdownText(text, 90, 90)
+	joined := strings.Join(lines, "\n")
+	if !strings.Contains(joined, markdownBoldStart+"prefix"+markdownBoldEnd) {
+		t.Fatalf("stable prefix should render richly, got %q", joined)
+	}
+	if !strings.Contains(joined, markdownBoldStart+"**bold**"+markdownBoldEnd) {
+		t.Fatalf("active tail should receive width-stable preview styling, got %q", joined)
+	}
+	if !strings.Contains(joined, "**bold**") {
+		t.Fatalf("active tail should stay literal, got %q", joined)
+	}
+}
+
 func TestStreamingBuffersOpenFencedCodeBlock(t *testing.T) {
 	open := model{
 		streamingText: []byte("Here is the script:\n```python\nfrom datetime import datetime\nprint(datetime.now())"),

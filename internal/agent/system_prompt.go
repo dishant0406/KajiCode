@@ -83,6 +83,7 @@ type systemPromptParts struct {
 	confirmationPolicy string
 	projectContext     string
 	skills             string
+	sections           []promptSection
 }
 
 func buildSystemPromptParts(options Options) systemPromptParts {
@@ -93,51 +94,49 @@ func buildSystemPromptParts(options Options) systemPromptParts {
 	if core == "" {
 		core = fallbackSystemPrompt
 	}
-	sections := []string{core}
-	if addendum := modelPromptAddendum(options.Model); addendum != "" {
-		sections = append(sections, addendum)
+	var builder promptSectionBuilder
+	builder.add(promptSectionBase, core)
+	if profile := harnessProfileContext(options); profile != "" {
+		builder.add(promptSectionModel, profile)
 	}
 	if session := sessionRuntimeContext(options); session != "" {
-		sections = append(sections, session)
+		builder.add(promptSectionRuntime, session)
 	}
 	if prefixes := approvedCommandPrefixContext(options); prefixes != "" {
-		sections = append(sections, prefixes)
+		builder.add(promptSectionCommandPrefixes, prefixes)
 	}
 	if seed := workspaceSeedContext(options.Cwd); seed != "" {
-		sections = append(sections, seed)
+		builder.add(promptSectionWorkspaceSeed, seed)
 	}
 	// User guidelines are injected before workspace/project guidelines so the
 	// project's AGENTS.md/KAJICODE.md is the later, more specific instruction
 	// block. See userGuidelines for the explicit precedence note carried in
 	// the section text itself.
 	if user := userGuidelines(); user != "" {
-		sections = append(sections, user)
+		builder.add(promptSectionUserGuidelines, user)
 	}
 	project := workspaceContext(options.Cwd)
 	if project != "" {
-		sections = append(sections, project)
+		builder.add(promptSectionProjectContext, project)
+	}
+	if mode := modeContractContext(options); mode != "" {
+		builder.add(promptSectionModeContract, mode)
 	}
 	if delegation := specialistDelegationContext(options); delegation != "" {
-		sections = append(sections, delegation)
+		builder.add(promptSectionSpecialists, delegation)
 	}
 	skillsBlock := skillsContext(options)
 	if skillsBlock != "" {
-		sections = append(sections, skillsBlock)
+		builder.add(promptSectionSkills, skillsBlock)
 	}
 	if style := responseStyleContext(options); style != "" {
-		sections = append(sections, style)
+		builder.add(promptSectionResponseStyle, style)
 	}
 	policy := strings.TrimSpace(confirmationPolicy)
 	if policy != "" {
-		sections = append(sections, policy)
+		builder.add(promptSectionConfirmation, policy)
 	}
-	return systemPromptParts{
-		prompt:             strings.Join(sections, "\n\n"),
-		baseInstructions:   core,
-		confirmationPolicy: policy,
-		projectContext:     project,
-		skills:             skillsBlock,
-	}
+	return builder.build()
 }
 
 // responseStyleContext renders the operator-selected reply style (TUI /style) as

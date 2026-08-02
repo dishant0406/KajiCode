@@ -104,10 +104,11 @@ Interactive-only assumptions must not leak into exec.
 
 `internal/agent.Run` is the runtime authority for a model turn. Its loop:
 
-1. Builds system/user prompt messages with guidelines, skills, images, and
-   runtime context.
-2. Partitions visible tools from the registry.
-3. Compacts context when the request approaches the context window.
+1. Builds system/user prompt messages with guidelines, skills, images, runtime
+   context, and the provider/model harness profile.
+2. Partitions visible tools from the registry, including deferred-tool exposure.
+3. Plans context pressure from messages plus tool schemas, then prunes or
+   compacts context when the request approaches the context window.
 4. Streams provider output through `kajicoderuntime.Provider`.
 5. Decodes tool calls and applies filters, permission mode, sandbox evaluation,
    and hooks.

@@ -1,0 +1,80 @@
+{
+  "id": "kajicode-harness-behavior",
+  "name": "kajicode-harness-behavior",
+  "description": "Local fixture suite for prompt, mode, specialist, and verification harness behavior.",
+  "tasks": [
+    {
+      "id": "lock-spec-draft-readonly-contract",
+      "name": "Lock spec-draft readonly contract",
+      "description": "Regression task for planning mode tool visibility and mutation denial.",
+      "tags": ["agent", "spec-mode", "permissions"],
+      "difficulty": "medium",
+      "prompt": "Add focused local tests proving spec-draft mode advertises only read-only inspection tools plus submit_spec, denies write_file and bash if a model calls them anyway, and stops after submit_spec saves the review draft. Do not call a live provider.",
+      "workspaceFixture": "fixtures/kajicode-mini",
+      "expectedChangedFiles": ["internal/agent/spec_mode.go", "internal/agent/spec_mode_test.go"],
+      "forbiddenChangedFiles": ["go.mod", "package.json"],
+      "requiredTraceEvents": ["tool:read_file", "tool:grep", "tool:apply_patch"],
+      "contextChecks": {
+        "requiredFiles": ["internal/agent/spec_mode.go", "internal/agent/system_prompt.md"]
+      },
+      "verificationCommands": [
+        {
+          "id": "agent-tests",
+          "name": "Agent harness tests",
+          "command": ["go", "test", "./internal/agent"]
+        }
+      ]
+    },
+    {
+      "id": "strengthen-specialist-role-catalog",
+      "name": "Strengthen specialist role catalog",
+      "description": "Regression task for built-in specialist role metadata and read-only navigation tools.",
+      "tags": ["specialists", "subagents", "tools"],
+      "difficulty": "medium",
+      "prompt": "Add built-in specialist role coverage for planner, explorer, verifier, worker, and code-review. Ensure read-only specialists can use code-navigation and skill-loading tools without gaining write or shell authority.",
+      "workspaceFixture": "fixtures/kajicode-mini",
+      "expectedChangedFiles": ["docs/SPECIALISTS.md", "internal/specialist/builtin.go", "internal/specialist/builtin_test.go"],
+      "forbiddenChangedFiles": ["go.mod", "package.json"],
+      "requiredTraceEvents": ["tool:read_file", "tool:apply_patch"],
+      "contextChecks": {
+        "requiredFiles": ["docs/SPECIALISTS.md", "internal/specialist/builtin.go"]
+      },
+      "verificationCommands": [
+        {
+          "id": "specialist-tests",
+          "name": "Specialist fixture tests",
+          "command": ["go", "test", "./internal/specialist"]
+        }
+      ]
+    },
+    {
+      "id": "lock-provider-harness-profile-context-plan",
+      "name": "Lock provider harness profile and context plan",
+      "description": "Regression task for provider/model-specific prompt guidance, shared context budgeting, and weak-model tool-name repair.",
+      "tags": ["agent", "prompt", "context", "tools"],
+      "difficulty": "medium",
+      "prompt": "Add focused local tests proving the agent maps OpenAI, Gemini, Claude, Qwen, Kimi, DeepSeek, MiniMax, GLM, and generic OpenAI-compatible models to harness profiles; injects the active profile into the system prompt; counts tool schemas in the context plan before compaction; and repairs common weak-model tool aliases before replay. Do not call a live provider.",
+      "workspaceFixture": "fixtures/kajicode-mini",
+      "expectedChangedFiles": [
+        "internal/agent/harness_profile.go",
+        "internal/agent/harness_profile_test.go",
+        "internal/agent/context_plan.go",
+        "internal/agent/context_plan_test.go",
+        "internal/agent/tool_alias.go",
+        "internal/agent/tool_alias_test.go"
+      ],
+      "forbiddenChangedFiles": ["go.mod", "package.json"],
+      "requiredTraceEvents": ["tool:read_file", "tool:grep", "tool:apply_patch"],
+      "contextChecks": {
+        "requiredFiles": ["internal/agent/system_prompt.md"]
+      },
+      "verificationCommands": [
+        {
+          "id": "agent-tests",
+          "name": "Agent harness tests",
+          "command": ["go", "test", "./internal/agent"]
+        }
+      ]
+    }
+  ]
+}

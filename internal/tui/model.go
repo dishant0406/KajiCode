@@ -3475,13 +3475,17 @@ func (m model) interimBlock(width int) string {
 	switch {
 	case renderedOK && len(rendered.answerLines) > 0:
 		lines = append([]string(nil), rendered.answerLines...)
-		if suffix := m.streamingTextSuffixAfter(rendered.textBytes); suffix != "" {
-			lines = append(lines, plainStreamingPreviewLines(suffix, width)...)
+		if suffix := m.streamingTextSuffixAfter(rendered.textStableBytes); suffix != "" {
+			liveLines := renderStreamingMarkdownLiveTail(suffix, assistantMeasure(width))
+			if rendered.textSeparatorLines > 0 && len(liveLines) > 0 {
+				lines = append(lines, make([]string, rendered.textSeparatorLines)...)
+			}
+			lines = append(lines, liveLines...)
 		}
 	case !m.pending || m.streamRenderSeq == 0:
 		lines = renderStreamingAssistantMarkdownText(text, assistantMeasure(width), width)
 	default:
-		lines = plainStreamingPreviewLines(m.streamingTextTail, width)
+		lines = renderStreamingMarkdownLiveTail(m.streamingTextTail, assistantMeasure(width))
 	}
 	for index, line := range lines {
 		// styleStreamingLine fades plain prose but leaves already-highlighted

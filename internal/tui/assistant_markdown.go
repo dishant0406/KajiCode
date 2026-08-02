@@ -247,65 +247,7 @@ func renderStreamingAssistantMarkdownText(text string, proseMeasure int, tableMe
 }
 
 func renderStreamingAssistantMarkdownTextWith(text string, proseMeasure int, tableMeasure int, renderMarkdown func(string, int, int, bool) []string) []string {
-	stablePrefix := streamingMarkdownStablePrefix(text)
-	completed, active, separatorLines := splitStreamingMarkdownCompleted(stablePrefix)
-	lines := []string{}
-	if completed != "" {
-		render := func() string {
-			return strings.Join(renderMarkdown(completed, proseMeasure, tableMeasure, true), "\n")
-		}
-		rendered := ""
-		if defaultRenderCache != nil {
-			key := streamingMarkdownRenderCacheKey(completed, proseMeasure, tableMeasure)
-			rendered = defaultRenderCache.render(key, true, render)
-		} else {
-			rendered = render()
-		}
-		lines = append(lines, viewLines(rendered)...)
-	}
-	if completed != "" && active != "" {
-		lines = append(lines, make([]string, separatorLines)...)
-	}
-	if active != "" || len(lines) == 0 {
-		lines = append(lines, renderMarkdown(active, proseMeasure, tableMeasure, true)...)
-	}
-	return lines
-}
-
-func splitStreamingMarkdownCompleted(text string) (string, string, int) {
-	openFence := ""
-	lastBoundary := -1
-	separatorLines := 0
-	lineStart := 0
-	for lineStart <= len(text) {
-		lineEnd := strings.IndexByte(text[lineStart:], '\n')
-		if lineEnd < 0 {
-			break
-		}
-		lineEnd += lineStart
-		trimmed := strings.TrimSpace(text[lineStart:lineEnd])
-		if fence, ok := markdownFenceMarker(trimmed); ok {
-			if openFence == "" {
-				openFence = fence
-			} else if openFence == fence {
-				openFence = ""
-			}
-		}
-		nextStart := lineEnd + 1
-		if openFence == "" && trimmed == "" {
-			if lastBoundary == lineStart {
-				separatorLines++
-			} else {
-				separatorLines = 1
-			}
-			lastBoundary = nextStart
-		}
-		lineStart = nextStart
-	}
-	if lastBoundary < 0 {
-		return "", text, 0
-	}
-	return strings.TrimRight(text[:lastBoundary], "\n"), strings.TrimLeft(text[lastBoundary:], "\n"), separatorLines
+	return renderStreamingAssistantMarkdownFrameWith(text, proseMeasure, tableMeasure, renderMarkdown).lines()
 }
 
 func streamingMarkdownRenderCacheKey(text string, proseMeasure int, tableMeasure int) string {

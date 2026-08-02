@@ -212,11 +212,12 @@ flowchart TD
 
 Key responsibilities of the loop:
 
-1. **Build prompt state** — combines the system prompt, project/user guidelines,
-   loaded skills/specialist instructions, the current user prompt, and images. The
-   resulting message list is the model-facing context that later tool results are
-   appended to. Resumed session history is replayed by the caller before a new run,
-   not passed as a separate `agent.Run` history field.
+1. **Build prompt state** — combines the system prompt, provider/model harness
+   profile, project/user guidelines, loaded skills/specialist instructions, the
+   current user prompt, and images. The resulting message list is the
+   model-facing context that later tool results are appended to. Resumed session
+   history is replayed by the caller before a new run, not passed as a separate
+   `agent.Run` history field.
 2. **Expose tools** — starts from the registry built by the CLI, then filters
    tool definitions by permission mode, enabled or disabled filters, and
    deferred-loading rules. Tool schemas also count toward context budget, so they
@@ -363,11 +364,13 @@ flowchart TD
     Summarize --> Replace[system messages + summary + recent suffix]
 ```
 
-The trigger is intentionally approximate:
+The trigger is intentionally approximate and flows through the agent context
+planner:
 
 - KajiCode estimates request size using message text, images, tool-call arguments, and
   the tool definitions advertised on that turn.
-- The proactive threshold is roughly **two-thirds of the context window**.
+- The proactive threshold is roughly **two-thirds of the context window**, with
+  small profile-specific tuning for model families that need earlier pruning.
 - Provider usage from completed turns is used to calibrate the rough estimate over
   time, so the budget gauge and compaction decision track the provider more
   closely after a few turns.

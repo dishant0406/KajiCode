@@ -265,12 +265,19 @@ func (m *model) resetStreamingFade() {
 // styleStreamingLine applies the fade palette to one visual line of prose in the
 // streaming block. Already-styled lines (markdown/code/table highlighting) are
 // returned unchanged so live colors match committed colors instead of snapping at
-// turn end.
+// turn end. Only the newest visual line fades; repainting settled lines on every
+// fade tick reads as text flicker during fast streams.
 func (m model) styleStreamingLine(line string, visualIndex, visualCount int) string {
 	if strings.Contains(line, "\x1b") {
+		if !hasExternalANSIStyle(line) {
+			return styleAssistantMarkdownLine(line, kajicodeTheme.ink)
+		}
 		return line
 	}
 	if !m.fadeActive || m.lineAges == nil {
+		return kajicodeTheme.ink.Render(line)
+	}
+	if visualIndex != visualCount-1 {
 		return kajicodeTheme.ink.Render(line)
 	}
 	bornAt := streamingLineBornAt(visualIndex, visualCount, m.lineAges, m.lastStreamActivity)

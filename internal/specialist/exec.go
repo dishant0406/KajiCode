@@ -170,6 +170,8 @@ var readOnlySpecialistTools = map[string]bool{
 	"list_directory":     true,
 	"grep":               true,
 	"glob":               true,
+	"lsp_navigate":       true,
+	"skill":              true,
 	"update_plan":        true,
 }
 

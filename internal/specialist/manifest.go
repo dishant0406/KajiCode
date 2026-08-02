@@ -82,9 +82,9 @@ var knownMetadataKeys = map[string]bool{
 }
 
 var toolCategories = map[string][]string{
-	"read-only": {"read_file", "read_minified_file", "list_directory", "grep", "glob"},
-	"edit":      {"read_file", "read_minified_file", "list_directory", "grep", "glob", "write_file", "edit_file", "apply_patch"},
-	"execute":   {"read_file", "read_minified_file", "list_directory", "grep", "glob", "exec_command", "write_stdin", "bash"},
+	"read-only": {"read_file", "read_minified_file", "list_directory", "grep", "glob", "lsp_navigate", "skill"},
+	"edit":      {"read_file", "read_minified_file", "list_directory", "grep", "glob", "lsp_navigate", "skill", "write_file", "edit_file", "apply_patch"},
+	"execute":   {"read_file", "read_minified_file", "list_directory", "grep", "glob", "lsp_navigate", "skill", "exec_command", "write_stdin", "bash"},
 	"plan":      {"update_plan"},
 }
 
