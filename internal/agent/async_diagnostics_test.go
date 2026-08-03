@@ -99,6 +99,37 @@ func TestAsyncDiagnosticsSlowCheckDefersToNextDrain(t *testing.T) {
 	}
 }
 
+func TestAsyncDiagnosticsHungCheckDoesNotWedgeWorker(t *testing.T) {
+	previousCheckTimeout := asyncDiagnosticsCheckTimeout
+	previousDrainTimeout := asyncDiagnosticsDrainTimeout
+	asyncDiagnosticsCheckTimeout = 20 * time.Millisecond
+	asyncDiagnosticsDrainTimeout = time.Second
+	defer func() {
+		asyncDiagnosticsCheckTimeout = previousCheckTimeout
+		asyncDiagnosticsDrainTimeout = previousDrainTimeout
+	}()
+
+	release := make(chan struct{})
+	defer close(release)
+	check := func(_ context.Context, absPath string) string {
+		if filepath.Base(absPath) == "slow.go" {
+			<-release
+			return "ERR slow.go"
+		}
+		return "ERR " + filepath.Base(absPath)
+	}
+	diagnostics := newAsyncDiagnostics(check, "/ws")
+	diagnostics.enqueue(context.Background(), []string{"slow.go", "fast.go"})
+
+	nudge := diagnostics.drain(context.Background())
+	if !strings.Contains(nudge, "ERR fast.go") {
+		t.Fatalf("worker should move past the hung check and report fast.go, got %q", nudge)
+	}
+	if strings.Contains(nudge, "ERR slow.go") {
+		t.Fatalf("timed-out slow check should not produce a stale result, got %q", nudge)
+	}
+}
+
 // Re-enqueueing a file after its check completed replaces the stale result.
 func TestAsyncDiagnosticsReEditReplacesResult(t *testing.T) {
 	var mu sync.Mutex

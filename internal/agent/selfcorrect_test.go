@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dishant0406/KajiCode/internal/lsp"
 	"github.com/dishant0406/KajiCode/internal/verify"
@@ -47,6 +48,15 @@ func (e erroringVerifier) Verify(context.Context) (verify.Report, error) {
 	return verify.Report{}, e.err
 }
 
+type blockingChecker struct {
+	release <-chan struct{}
+}
+
+func (b blockingChecker) Check(context.Context, string) ([]lsp.Diagnostic, error) {
+	<-b.release
+	return nil, nil
+}
+
 func TestSelfCorrectSurfacesCheckerErrorInsteadOfPassing(t *testing.T) {
 	// Manager.Check degrades missing servers to (nil, nil); a real error (LSP
 	// startup/sync failure or unreadable file) must fail the pass, not be swallowed
@@ -79,6 +89,29 @@ func TestSelfCorrectSurfacesVerifierErrorInsteadOfPassing(t *testing.T) {
 	}
 	if !strings.Contains(feedback, "plan detection failed") {
 		t.Fatalf("feedback should surface the verifier error, got: %q", feedback)
+	}
+}
+
+func TestSelfCorrectTimeoutDoesNotHangRun(t *testing.T) {
+	release := make(chan struct{})
+	defer close(release)
+	sc := NewSelfCorrector("/root", blockingChecker{release: release}, nil, SelfCorrectConfig{
+		Enabled:    true,
+		IncludeLSP: true,
+		Autonomy:   "high",
+		Timeout:    20 * time.Millisecond,
+	})
+
+	start := time.Now()
+	feedback, outcome := sc.AfterEdit(context.Background(), []string{"a.go"})
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("AfterEdit blocked for %v; timeout should return promptly", elapsed)
+	}
+	if outcome != OutcomeCorrecting {
+		t.Fatalf("outcome = %q, want %q", outcome, OutcomeCorrecting)
+	}
+	if !strings.Contains(feedback, "post-edit verification timed out") {
+		t.Fatalf("feedback should report timeout, got %q", feedback)
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/dishant0406/KajiCode/internal/lsp"
 	"github.com/dishant0406/KajiCode/internal/redaction"
@@ -16,6 +17,11 @@ import (
 // defaultSelfCorrectMaxAttempts bounds how many corrective rounds a single run
 // will drive before giving up, so an unattended run can never loop forever.
 const defaultSelfCorrectMaxAttempts = 3
+
+const (
+	defaultSelfCorrectLSPTimeout  = 10 * time.Second
+	defaultSelfCorrectFullTimeout = 150 * time.Second
+)
 
 // diagnosticsChecker returns the diagnostics for a single (absolute) file path.
 // *lsp.Manager is adapted to this via lspDiagnosticsChecker; tests inject a fake.
@@ -33,6 +39,7 @@ type projectVerifier interface {
 type SelfCorrectConfig struct {
 	Enabled      bool
 	MaxAttempts  int
+	Timeout      time.Duration
 	IncludeTests bool
 	IncludeLSP   bool
 	Autonomy     string // low | medium | high
@@ -79,6 +86,9 @@ func NewSelfCorrector(workspaceRoot string, checker diagnosticsChecker, verifier
 	if cfg.MaxAttempts <= 0 {
 		cfg.MaxAttempts = defaultSelfCorrectMaxAttempts
 	}
+	if cfg.Timeout <= 0 {
+		cfg.Timeout = defaultSelfCorrectTimeout(cfg.IncludeTests)
+	}
 	return &SelfCorrector{workspaceRoot: workspaceRoot, checker: checker, verifier: verifier, cfg: cfg}
 }
 
@@ -91,7 +101,7 @@ func (sc *SelfCorrector) AfterEdit(ctx context.Context, changedFiles []string) (
 		return "", OutcomeDisabled
 	}
 
-	report := sc.inspect(ctx, changedFiles)
+	report := sc.inspectWithin(ctx, changedFiles)
 	if !report.Failed {
 		return "", OutcomePassed
 	}
@@ -106,6 +116,37 @@ func (sc *SelfCorrector) AfterEdit(ctx context.Context, changedFiles []string) (
 	}
 	sc.attempts++
 	return sc.feedback(report, true), OutcomeCorrecting
+}
+
+func (sc *SelfCorrector) inspectWithin(ctx context.Context, changedFiles []string) CorrectionReport {
+	timeout := sc.cfg.Timeout
+	if timeout <= 0 {
+		timeout = defaultSelfCorrectTimeout(sc.cfg.IncludeTests)
+	}
+	checkCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	reportCh := make(chan CorrectionReport, 1)
+	go func() {
+		reportCh <- sc.inspect(checkCtx, changedFiles)
+	}()
+
+	select {
+	case report := <-reportCh:
+		if checkCtx.Err() == context.DeadlineExceeded {
+			report.InspectErrors = append(report.InspectErrors, selfCorrectTimeoutMessage(timeout))
+			report.Failed = true
+		}
+		return report
+	case <-checkCtx.Done():
+		report := CorrectionReport{LSPDiagnostics: map[string][]lsp.Diagnostic{}, Failed: true}
+		if ctx.Err() != nil && ctx.Err() != context.DeadlineExceeded {
+			report.InspectErrors = append(report.InspectErrors, fmt.Sprintf("post-edit verification canceled: %v", ctx.Err()))
+		} else {
+			report.InspectErrors = append(report.InspectErrors, selfCorrectTimeoutMessage(timeout))
+		}
+		return report
+	}
 }
 
 // inspect collects LSP error diagnostics for the changed files and runs the
@@ -217,6 +258,17 @@ func autonomyAllowsAutoCorrect(autonomy string) bool {
 
 func abortedSelfCorrectNotice(maxAttempts int) string {
 	return fmt.Sprintf("Verification is still failing after %d self-correction attempts; stopping auto-correction. Review the remaining failures and decide how to proceed.", maxAttempts)
+}
+
+func defaultSelfCorrectTimeout(includeTests bool) time.Duration {
+	if includeTests {
+		return defaultSelfCorrectFullTimeout
+	}
+	return defaultSelfCorrectLSPTimeout
+}
+
+func selfCorrectTimeoutMessage(timeout time.Duration) string {
+	return fmt.Sprintf("post-edit verification timed out after %s", timeout)
 }
 
 // lspDiagnosticsChecker adapts *lsp.Manager to diagnosticsChecker by reading the

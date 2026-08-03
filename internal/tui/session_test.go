@@ -298,7 +298,7 @@ func TestPromptSubmitPersistsPermissionSessionEvents(t *testing.T) {
 		// not one of the 4 semantic steps this test drives — process them so the
 		// model state advances, but don't count them toward the budget.
 		switch runtimeMsg.(type) {
-		case toolCallStreamStartMsg, toolCallStreamDeltaMsg:
+		case agentPhaseMsg, toolCallStreamStartMsg, toolCallStreamDeltaMsg:
 			continue
 		}
 		received++
@@ -508,19 +508,44 @@ func submitAndDrivePermissionRun(t *testing.T, m model, prompt string, key strin
 		finalCh <- execCmd(cmd)
 	}()
 
-	for received := 0; received < expectedRuntimeMessages; received++ {
+	for received := 0; received < expectedRuntimeMessages; {
 		runtimeMsg := receiveRuntimeMessage(t, runtimeMessages)
 		updated, _ = next.Update(runtimeMsg)
 		next = updated.(model)
+		if _, ok := runtimeMsg.(agentPhaseMsg); ok {
+			continue
+		}
+		received++
 		if _, ok := runtimeMsg.(permissionRequestMsg); ok && key != "" {
 			updated, _ = next.Update(testKeyText(key))
 			next = updated.(model)
 		}
 	}
 
-	finalMsg := receiveFinalMessage(t, finalCh)
+	finalMsg := drainRuntimeUntilFinal(t, &next, runtimeMessages, finalCh, key)
 	updated, _ = next.Update(finalMsg)
 	return updated.(model)
+}
+
+func drainRuntimeUntilFinal(t *testing.T, next *model, runtimeMessages <-chan tea.Msg, finalCh <-chan tea.Msg, key string) tea.Msg {
+	t.Helper()
+	timeout := time.After(5 * time.Second)
+	for {
+		select {
+		case finalMsg := <-finalCh:
+			return finalMsg
+		case runtimeMsg := <-runtimeMessages:
+			updated, _ := next.Update(runtimeMsg)
+			*next = updated.(model)
+			if _, ok := runtimeMsg.(permissionRequestMsg); ok && key != "" {
+				updated, _ = next.Update(testKeyText(key))
+				*next = updated.(model)
+			}
+		case <-timeout:
+			t.Fatal("timed out waiting for final agent message")
+			return nil
+		}
+	}
 }
 
 func newPermissionTestModel(root string, provider kajicoderuntime.Provider, registry *tools.Registry, store *sessions.Store, grantStore *sandbox.GrantStore, runtimeMessages chan<- tea.Msg) model {

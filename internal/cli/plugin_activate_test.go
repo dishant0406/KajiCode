@@ -236,6 +236,7 @@ func TestNewHookDispatcherWithExtraFoldsPluginHooks(t *testing.T) {
 	// Keep the hook audit store inside a temp dir rather than the user's real data
 	// directory (the audit path is derived from XDG_DATA_HOME).
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	workspace := t.TempDir()
 	extra := []hooks.Definition{{
 		ID:      "kajicode.demo.pre",

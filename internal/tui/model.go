@@ -232,6 +232,7 @@ type model struct {
 	// from the TickMsg handler / beginRun, cleared when the handler stops the loop.
 	spinnerTicking bool
 	pending        bool
+	activePhase    agent.PhaseEvent
 	// turnStartedAt is when the in-flight run began; the working status line
 	// renders the live elapsed time from it so a long or stalled turn never looks
 	// like a frozen terminal (for ANY provider, not just slow ones). KajiCode = idle.
@@ -514,6 +515,11 @@ type model struct {
 type agentTextMsg struct {
 	runID int
 	delta string
+}
+
+type agentPhaseMsg struct {
+	runID int
+	phase agent.PhaseEvent
 }
 
 type exitConfirmExpiredMsg struct {
@@ -1968,6 +1974,13 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.notifier.SetFocused(false)
 		}
 		return m, nil
+	case agentPhaseMsg:
+		if msg.runID != m.activeRunID {
+			return m, nil
+		}
+		m.activePhase = msg.phase
+		m.lastStreamActivity = m.now()
+		return m, nil
 	case toolCallStreamStartMsg:
 		if msg.runID != m.activeRunID {
 			return m, nil
@@ -2260,6 +2273,7 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.clearStreamingToolCall() // active run finished — drop any lingering "writing" block
 		m.pending = false
+		m.activePhase = agent.PhaseEvent{}
 		m = m.disarmCancelConfirmation() // the run finished on its own — nothing left to confirm cancelling
 		// Fully reset the fade state at stream end. The next render
 		// emits the final row in solid ink (no settling animation), and
@@ -3530,7 +3544,39 @@ func (m model) workingActivity() string {
 	if m.streamingTextHasVisibleContent() {
 		return "writing"
 	}
+	if label := phaseActivityLabel(m.activePhase); label != "" {
+		return label
+	}
 	return "thinking"
+}
+
+func phaseActivityLabel(phase agent.PhaseEvent) string {
+	switch phase.Kind {
+	case agent.PhaseProviderRequest:
+		return "waiting for model"
+	case agent.PhaseStreaming:
+		return "streaming"
+	case agent.PhaseToolRunning:
+		if phase.Detail != "" {
+			return "running " + phase.Detail
+		}
+		return "running tool"
+	case agent.PhaseToolDone:
+		return "tool complete"
+	case agent.PhaseDiagnostics:
+		return "checking edits"
+	case agent.PhaseSelfCorrect:
+		return "verifying edits"
+	case agent.PhaseRetrying:
+		if phase.Detail != "" {
+			return phase.Detail
+		}
+		return "retrying"
+	case agent.PhaseFinalizing:
+		return "finalizing"
+	default:
+		return ""
+	}
 }
 
 // toolCardSuppressedInTranscript reports tools whose transcript card is redundant
@@ -4906,6 +4952,7 @@ func (m model) beginRun(cancel context.CancelFunc) model {
 	m.activeRunID = m.runID
 	m.runCancel = cancel
 	m.pending = true
+	m.activePhase = agent.PhaseEvent{}
 	m.clearStreamRender()
 	// Clear per-run tracking state so stale specialists and plans from the
 	// previous turn don't bleed into the new one.
@@ -5011,6 +5058,7 @@ func (m *model) cancelRun() {
 		}
 	}
 	m.pending = false
+	m.activePhase = agent.PhaseEvent{}
 	m.runCancel = nil
 	m.activeRunID = 0
 	m.cancelConfirmActive = false // whatever path got here, there's nothing left to confirm cancelling
@@ -5466,6 +5514,14 @@ func (m model) runAgentWithOptions(runID int, runCtx context.Context, prompt str
 			}
 		}
 
+		onPhase := options.OnPhase
+		options.OnPhase = func(event agent.PhaseEvent) {
+			m.sendAgentPhase(runID, event)
+			if onPhase != nil {
+				onPhase(event)
+			}
+		}
+
 		result, err := agent.Run(runCtx, prompt, m.provider, options)
 		if err != nil {
 			flushReasoning(m.now())
@@ -5566,6 +5622,13 @@ func (m model) sendAgentText(runID int, delta string) {
 		return
 	}
 	m.runtimeMessageSink(agentTextMsg{runID: runID, delta: delta})
+}
+
+func (m model) sendAgentPhase(runID int, phase agent.PhaseEvent) {
+	if m.runtimeMessageSink == nil {
+		return
+	}
+	m.runtimeMessageSink(agentPhaseMsg{runID: runID, phase: phase})
 }
 
 // streamingTextString returns the accumulated live assistant text. streamingText

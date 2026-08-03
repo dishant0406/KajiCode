@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dishant0406/KajiCode/internal/agent"
 	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
@@ -103,6 +104,20 @@ func TestQuietGenerationHint(t *testing.T) {
 	idle.activeRunID = 0
 	if got := idle.quietGenerationHint(); got != "" {
 		t.Errorf("idle: want no hint, got %q", got)
+	}
+}
+
+func TestWorkingActivityUsesAgentPhase(t *testing.T) {
+	m := model{
+		activePhase: agent.PhaseEvent{Kind: agent.PhaseSelfCorrect},
+	}
+	if got := m.workingActivity(); got != "verifying edits" {
+		t.Fatalf("workingActivity = %q, want phase label", got)
+	}
+
+	m.streamingTextHasContent = true
+	if got := m.workingActivity(); got != "writing" {
+		t.Fatalf("streaming answer text should win over phase label, got %q", got)
 	}
 }
 

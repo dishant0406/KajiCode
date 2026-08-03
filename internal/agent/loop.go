@@ -259,6 +259,7 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 		// BEFORE compaction so the nudge is part of the request being budgeted.
 		// A brief wait at most (asyncDiagnosticsDrainTimeout); an unfinished check
 		// simply delivers on a later turn.
+		emitPhase(options, PhaseDiagnostics, "checking recent edits")
 		if nudge := postEditDiagnostics.drain(ctx); nudge != "" {
 			messages = append(messages, kajicoderuntime.Message{
 				Role:    kajicoderuntime.MessageRoleUser,
@@ -319,6 +320,7 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 		// backoff (before any content is forwarded, so no OnText is duplicated);
 		// a context-limit / image-rejection / cancellation is NOT retried here —
 		// those fall through to their own handlers below.
+		emitPhase(options, PhaseProviderRequest, "waiting for model")
 		stream, err := streamWithReconnect(ctx, provider, request, reconnectNoticeFor(options))
 		if err != nil {
 			if isImageRejectionError(err) {
@@ -347,6 +349,7 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 				// Pre-content connect after a context-limit compaction: route through the
 				// reconnect helper so a transient upstream hiccup here doesn't fail the
 				// whole run and re-burn every token (AUDIT-L1).
+				emitPhase(options, PhaseProviderRequest, "waiting for model after compaction")
 				stream, err = streamWithReconnect(ctx, provider, request, reconnectNoticeFor(options))
 			}
 			if err != nil {
@@ -438,6 +441,7 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 					return collected, retryStreamErr
 				}
 				genSpan := options.Trace.Span(trace.SpanGeneration)
+				emitPhase(options, PhaseStreaming, "streaming model response")
 				collected = kajicoderuntime.CollectStreamWithOptions(ctx, retryStream, kajicoderuntime.CollectOptions{
 					OnUsage: options.OnUsage,
 				})
@@ -447,6 +451,7 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 		}
 
 		generationSpan := options.Trace.Span(trace.SpanGeneration)
+		emitPhase(options, PhaseStreaming, "streaming model response")
 		collected := kajicoderuntime.CollectStreamWithOptions(ctx, stream, forwardingOpts)
 		generationSpan.End()
 		if collected.Error != "" {
@@ -465,6 +470,7 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 			return result, ctx.Err()
 		}
 		for attempt := 1; attempt <= maxStreamReconnects && shouldRetryPreContentStreamError(ctx, collected, forwardedVisibleText); attempt++ {
+			emitPhase(options, PhaseRetrying, fmt.Sprintf("reconnecting %d/%d", attempt, maxStreamReconnects))
 			if notify := reconnectNoticeFor(options); notify != nil {
 				notify(attempt, maxStreamReconnects)
 			}
@@ -484,6 +490,7 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 				return result, retryErr
 			}
 			retryGenSpan := options.Trace.Span(trace.SpanGeneration)
+			emitPhase(options, PhaseStreaming, "streaming model response")
 			collected = kajicoderuntime.CollectStreamWithOptions(ctx, retryStream, forwardingOpts)
 			retryGenSpan.End()
 			if collected.Error != "" {
@@ -518,6 +525,7 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 		for attempt := 1; attempt <= maxStreamStallRetries &&
 			isStreamTimeoutError(collected.Error) && !forwardedVisibleText &&
 			collected.Text == ""; attempt++ {
+			emitPhase(options, PhaseRetrying, fmt.Sprintf("model stalled; retrying %d/%d", attempt, maxStreamStallRetries))
 			if notify := stallRetryNoticeFor(options); notify != nil {
 				notify(attempt, maxStreamStallRetries)
 			}
@@ -537,6 +545,7 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 				return result, retryErr
 			}
 			stallGenSpan := options.Trace.Span(trace.SpanGeneration)
+			emitPhase(options, PhaseStreaming, "streaming model response")
 			collected = kajicoderuntime.CollectStreamWithOptions(ctx, retryStream, forwardingOpts)
 			stallGenSpan.End()
 		}
@@ -725,9 +734,11 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 				toolResult, abortErr = precomputed[index-precomputedStart].result, precomputed[index-precomputedStart].abortErr
 			} else {
 				toolSpan := options.Trace.Span(trace.SpanToolExecution)
+				emitPhase(options, PhaseToolRunning, call.Name)
 				toolResult, abortErr = executeToolCall(ctx, registry, call, permissionMode, options)
 				toolSpan.End()
 			}
+			emitPhase(options, PhaseToolDone, call.Name)
 			options.Trace.Counter(trace.CounterToolCalls, 1)
 			recordOutputBudgetTrace(options.Trace, toolResult)
 			task.observe(taskStateEvent{kind: taskStateEventToolResult, toolResult: toolResult})
@@ -810,6 +821,7 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 		// the assistant's tool_results stay contiguous (a user message between
 		// tool_results breaks strict provider replay). nil SelfCorrect is a no-op.
 		if options.SelfCorrect != nil && len(changedFilesThisBatch) > 0 {
+			emitPhase(options, PhaseSelfCorrect, "checking changed files")
 			feedback, selfCorrectOutcome := options.SelfCorrect.AfterEdit(ctx, dedupeStrings(changedFilesThisBatch))
 			posture.observeSelfCorrect(selfCorrectOutcome)
 			task.observe(taskStateEvent{kind: taskStateEventVerification, verification: selfCorrectOutcome})
@@ -928,6 +940,7 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 	// LAST turn's edits get a drain too — with the finalization budget, since
 	// there is no later turn to defer to — otherwise an error introduced by
 	// the final edit would go unreported in the summary.
+	emitPhase(options, PhaseFinalizing, "checking final diagnostics")
 	if nudge := postEditDiagnostics.drainFinal(ctx); nudge != "" {
 		messages = append(messages, kajicoderuntime.Message{
 			Role:    kajicoderuntime.MessageRoleUser,
@@ -986,6 +999,7 @@ func finalAnswerAfterMaxTurns(ctx context.Context, provider Provider, messages [
 	// The max-turns final-answer call is a pre-content connect, often after a long
 	// autonomous/cron run — route it through the reconnect helper so a single
 	// transient hiccup doesn't drop the final summary (AUDIT-L1).
+	emitPhase(options, PhaseFinalizing, "asking for final summary")
 	stream, err := streamWithReconnect(ctx, provider, kajicoderuntime.CompletionRequest{
 		Messages:        copyMessages(finalMessages),
 		Tools:           toolDefs,
@@ -996,6 +1010,7 @@ func finalAnswerAfterMaxTurns(ctx context.Context, provider Provider, messages [
 		return "", messages, ""
 	}
 	finalGenSpan := options.Trace.Span(trace.SpanGeneration)
+	emitPhase(options, PhaseStreaming, "streaming final summary")
 	collected := kajicoderuntime.CollectStreamWithOptions(ctx, stream, kajicoderuntime.CollectOptions{
 		OnText:          options.OnText,
 		OnReasoning:     options.OnReasoning,

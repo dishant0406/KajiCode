@@ -43,6 +43,11 @@ var asyncDiagnosticsDrainTimeout = 3 * time.Second
 // can shorten the wait.
 var asyncDiagnosticsFinalDrainTimeout = 10 * time.Second
 
+// asyncDiagnosticsCheckTimeout bounds one worker check even when a custom
+// checker ignores the context it receives. The default LSP checker has its own
+// 10s timeout; this keeps the collector itself robust for tests/extensions.
+var asyncDiagnosticsCheckTimeout = 10 * time.Second
+
 // asyncDiagnosticsNudge prefixes the drained diagnostics blocks; phrased like
 // the old inline block so the model reacts the same way.
 const asyncDiagnosticsNudge = "Diagnostics after your recent edits (fix any errors you introduced):\n"
@@ -116,7 +121,7 @@ func (diagnostics *asyncDiagnostics) work(ctx context.Context, done chan struct{
 		delete(diagnostics.queued, path)
 		diagnostics.mu.Unlock()
 
-		block := diagnostics.check(ctx, path)
+		block := diagnostics.checkWithin(ctx, path)
 
 		diagnostics.mu.Lock()
 		if block != "" {
@@ -125,6 +130,25 @@ func (diagnostics *asyncDiagnostics) work(ctx context.Context, done chan struct{
 			delete(diagnostics.results, path)
 		}
 		diagnostics.mu.Unlock()
+	}
+}
+
+func (diagnostics *asyncDiagnostics) checkWithin(ctx context.Context, path string) string {
+	timeout := asyncDiagnosticsCheckTimeout
+	if timeout <= 0 {
+		return diagnostics.check(ctx, path)
+	}
+	checkCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	result := make(chan string, 1)
+	go func() {
+		result <- diagnostics.check(checkCtx, path)
+	}()
+	select {
+	case block := <-result:
+		return block
+	case <-checkCtx.Done():
+		return ""
 	}
 }
 

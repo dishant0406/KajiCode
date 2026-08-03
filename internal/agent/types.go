@@ -336,6 +336,11 @@ type Options struct {
 	// budget of the request about to be sent, so a surface (TUI/CLI) can show
 	// context utilization. Opt-in like the other callbacks; nil is a no-op.
 	OnContext func(ContextBreakdown)
+	// OnPhase, when set, receives non-model-visible liveness updates for the
+	// current run phase (provider request, tool execution, diagnostics,
+	// self-correction). Surfaces use it for status only; it never affects the
+	// conversation sent to the provider.
+	OnPhase func(PhaseEvent)
 	// ModelSwitcher, when set, lets a tool escalate the run to a stronger model
 	// mid-run: the loop calls it with the requested model id and, on success,
 	// swaps the active provider and updates Options.Model for the rest of the
