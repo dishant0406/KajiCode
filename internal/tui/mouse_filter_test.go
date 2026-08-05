@@ -7,12 +7,11 @@ import (
 	tea "charm.land/bubbletea/v2"
 )
 
-func TestMouseEventFilterThrottlesWheelAndMotion(t *testing.T) {
+func TestMouseEventFilterThrottlesMotionOnly(t *testing.T) {
 	base := time.Unix(0, 0)
 	times := []time.Time{
 		base,
 		base.Add(10 * time.Millisecond),
-		base.Add(14 * time.Millisecond),
 		base.Add(15 * time.Millisecond),
 	}
 	index := 0
@@ -23,15 +22,18 @@ func TestMouseEventFilterThrottlesWheelAndMotion(t *testing.T) {
 	}, 15*time.Millisecond)
 
 	if got := filter(nil, testMouseWheel(tea.MouseWheelDown, 0, 0)); got == nil {
-		t.Fatal("first wheel event should pass through")
+		t.Fatal("wheel events should pass through without touching motion throttle")
 	}
-	if got := filter(nil, tea.MouseMotionMsg(tea.Mouse{X: 1, Y: 1})); got != nil {
+	if got := filter(nil, tea.MouseMotionMsg(tea.Mouse{X: 1, Y: 1})); got == nil {
+		t.Fatal("first motion event should pass through")
+	}
+	if got := filter(nil, tea.MouseMotionMsg(tea.Mouse{X: 2, Y: 2})); got != nil {
 		t.Fatal("motion event inside throttle window should be dropped")
 	}
-	if got := filter(nil, testMouseWheel(tea.MouseWheelUp, 0, 0)); got != nil {
-		t.Fatal("wheel event inside throttle window should be dropped")
+	if got := filter(nil, testMouseWheel(tea.MouseWheelUp, 0, 0)); got == nil {
+		t.Fatal("wheel events should not be dropped by recent motion")
 	}
-	if got := filter(nil, tea.MouseMotionMsg(tea.Mouse{X: 2, Y: 2})); got == nil {
+	if got := filter(nil, tea.MouseMotionMsg(tea.Mouse{X: 3, Y: 3})); got == nil {
 		t.Fatal("mouse event at throttle boundary should pass through")
 	}
 }

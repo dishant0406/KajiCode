@@ -13,15 +13,15 @@ func mouseEventFilter() func(tea.Model, tea.Msg) tea.Msg {
 }
 
 func newMouseEventFilter(now func() time.Time, minInterval time.Duration) func(tea.Model, tea.Msg) tea.Msg {
-	var last time.Time
+	var lastMotion time.Time
 	return func(_ tea.Model, msg tea.Msg) tea.Msg {
 		switch msg.(type) {
-		case tea.MouseWheelMsg, tea.MouseMotionMsg:
+		case tea.MouseMotionMsg:
 			current := now()
-			if !last.IsZero() && current.Sub(last) < minInterval {
+			if !lastMotion.IsZero() && current.Sub(lastMotion) < minInterval {
 				return nil
 			}
-			last = current
+			lastMotion = current
 		}
 		return msg
 	}

@@ -313,6 +313,54 @@ func TestTranscriptBodyItemSetCachesStableComposerRedraw(t *testing.T) {
 	}
 }
 
+func TestTranscriptBodyItemSetCachesPendingStableBaseRows(t *testing.T) {
+	m := mouseTestModel()
+	m.transcript = appendRow(m.transcript, rowUser, "hello")
+	m.pending = true
+	m.streamingText = []byte("still working")
+	m.streamingTextHasContent = true
+	m.streamingTextTail = "still working"
+	width := m.chatColumnWidth()
+
+	first := m.transcriptBodyItemSet(width, "", false)
+	firstMetrics := m.measureTranscriptBodyItemSet(first)
+	m.input.SetValue("/")
+	second := m.transcriptBodyItemSet(width, "", false)
+	secondMetrics := m.measureTranscriptBodyItemSet(second)
+
+	if !first.cacheable || !second.cacheable {
+		t.Fatalf("pending transcript with stable base rows should cache metrics: first=%v second=%v", first.cacheable, second.cacheable)
+	}
+	if first.cacheKey == "" || first.cacheKey != second.cacheKey {
+		t.Fatalf("cache keys = %q then %q, want same non-empty key", first.cacheKey, second.cacheKey)
+	}
+	if len(first.items) == 0 || len(second.items) == 0 || &first.items[0] != &second.items[0] {
+		t.Fatal("pending redraw should reuse cached stable transcript base items")
+	}
+	if firstMetrics.totalLines() != secondMetrics.totalLines() {
+		t.Fatalf("metrics changed across pending composer-only redraw: %d vs %d", firstMetrics.totalLines(), secondMetrics.totalLines())
+	}
+}
+
+func TestTranscriptBodyItemSetBypassesPendingActiveToolRow(t *testing.T) {
+	m := mouseTestModel()
+	m.pending = true
+	m.activeRunID = 7
+	m.transcript = appendTranscriptRow(m.transcript, transcriptRow{
+		kind:   rowToolCall,
+		id:     "call_1",
+		runID:  7,
+		tool:   "bash",
+		detail: "go test ./...",
+	})
+
+	set := m.transcriptBodyItemSet(m.chatColumnWidth(), "", false)
+
+	if set.cacheable {
+		t.Fatal("active pending tool rows animate and must bypass transcript body caching")
+	}
+}
+
 func TestTranscriptBodyItemSetCachesCompletedSpecialistRows(t *testing.T) {
 	m := mouseTestModel()
 	m.transcript = append(m.transcript, transcriptRow{

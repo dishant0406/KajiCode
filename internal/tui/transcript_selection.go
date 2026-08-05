@@ -212,12 +212,23 @@ func (m model) renderHoverHighlight(rendered string, selectable []transcriptSele
 	return strings.Join(lines, "\n")
 }
 
+type transcriptBaseBodyItemSet struct {
+	items            []transcriptBodyItem
+	previousKind     rowKind
+	havePreviousKind bool
+}
+
 func (m model) transcriptBodyItems(width int, emptyOverlay string, detailed bool) []transcriptBodyItem {
+	base := m.transcriptBaseBodyItems(width, emptyOverlay, detailed)
+	return m.appendPendingTranscriptBodyItems(base, width)
+}
+
+func (m model) transcriptBaseBodyItems(width int, emptyOverlay string, detailed bool) transcriptBaseBodyItemSet {
 	// File drill-in: the chat column's body swaps to the viewed file's
 	// diff/content. Swapping HERE (the single source every consumer reads) keeps
 	// the viewport, scroll engine, renderer, and mouse hit-tests consistent.
 	if m.fileView.active {
-		return m.fileViewBodyItems(width)
+		return transcriptBaseBodyItemSet{items: m.fileViewBodyItems(width)}
 	}
 	items := []transcriptBodyItem{}
 	// Transcript ROWS render at the full chat width; row/status glyphs provide
@@ -379,9 +390,23 @@ func (m model) transcriptBodyItems(width int, emptyOverlay string, detailed bool
 		// into the scrolling body, so there is nothing to emit here anymore.
 	}
 
+	return transcriptBaseBodyItemSet{
+		items:            items,
+		previousKind:     previousKind,
+		havePreviousKind: havePreviousKind,
+	}
+}
+
+func (m model) appendPendingTranscriptBodyItems(base transcriptBaseBodyItemSet, width int) []transcriptBodyItem {
+	items := base.items
+	if !m.pending && m.pendingSpecReview == nil {
+		return items
+	}
+	contentWidth := transcriptContentWidth(width)
+	gutter := transcriptGutter(width)
 	if m.pending {
 		pendingShowsAssistantText := m.pendingPermission == nil && m.pendingAskUser == nil && m.streamingTextHasVisibleContent()
-		if pendingShowsAssistantText && havePreviousKind && shouldRuleBeforeTurn(previousKind, rowAssistant) {
+		if pendingShowsAssistantText && base.havePreviousKind && shouldRuleBeforeTurn(base.previousKind, rowAssistant) {
 			items = append(items, transcriptRuleBodyItem(contentWidth, gutter))
 		} else {
 			items = append(items, transcriptBlankBodyItem())
@@ -432,7 +457,6 @@ func (m model) transcriptBodyItems(width int, emptyOverlay string, detailed bool
 		items = append(items, transcriptBlankBodyItem())
 		items = append(items, transcriptBlockBodyItem(transcriptBodyItemSpecReview, -1, renderFocusedSpecReviewPrompt(*m.pendingSpecReview, width)))
 	}
-
 	return items
 }
 
@@ -1110,20 +1134,31 @@ func (m model) transcriptHitTestSource() (header string, items []transcriptBodyI
 	return header, set.items, width
 }
 
-func (m model) transcriptHitTestItemSet() (header string, set transcriptBodyItemSet, width int) {
+func (m model) transcriptViewportHeaderWidth() (header string, width int) {
 	if m.transcriptDetailed {
 		width = chatWidth(m.width)
 		header = detailedTranscriptHeader(width) + "\n" + kajicodeTheme.line.Render(strings.Repeat("-", width))
-		return header, m.transcriptBodyItemSet(width, "", true), width
+		return header, width
 	}
 	if m.subchat.active {
 		width = chatWidth(m.width)
-		return renderSubchatNavBar(m.subchat.childSessionTitle, width), transcriptBodyItemSet{
+		return renderSubchatNavBar(m.subchat.childSessionTitle, width), width
+	}
+	width = m.chatColumnWidth()
+	return m.pinnedTitleBar(width), width
+}
+
+func (m model) transcriptHitTestItemSet() (header string, set transcriptBodyItemSet, width int) {
+	header, width = m.transcriptViewportHeaderWidth()
+	if m.transcriptDetailed {
+		return header, m.transcriptBodyItemSet(width, "", true), width
+	}
+	if m.subchat.active {
+		return header, transcriptBodyItemSet{
 			items: m.transcriptBodyItemsFromRows(m.subchat.childRows, width),
 		}, width
 	}
-	width = m.chatColumnWidth()
-	return m.pinnedTitleBar(width), m.transcriptBodyItemSet(width, "", false), width
+	return header, m.transcriptBodyItemSet(width, "", false), width
 }
 
 // transcriptHitTestBlocked reports whether mouse hit-testing must be skipped

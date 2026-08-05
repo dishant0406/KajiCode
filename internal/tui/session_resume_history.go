@@ -40,6 +40,7 @@ func (m model) startResumeHistoryLoad(delta int, oldTop int) (model, tea.Cmd) {
 	scratch.resumePendingRows = nil
 	scratch.transcriptBodyHeights = newTranscriptBodyHeightCache(defaultTranscriptBodyHeightCacheMaxEntries)
 	scratch.transcriptBodyCache = newTranscriptBodyItemCache()
+	scratch.transcriptScrollCache = newTranscriptScrollMetricsCache()
 
 	return m, func() tea.Msg {
 		return resumeHistoryPreparedMsg{

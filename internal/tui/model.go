@@ -193,6 +193,7 @@ type model struct {
 	leaderSeq             int
 	transcriptBodyHeights *transcriptBodyHeightCache
 	transcriptBodyCache   *transcriptBodyItemCache
+	transcriptScrollCache *transcriptScrollMetricsCache
 	sidebarDerivedCache   *sidebarDerivedCache
 	input                 textinput.Model
 	composer              composerState
@@ -881,6 +882,7 @@ func newModel(ctx context.Context, options Options) model {
 		transcript:                  initialTranscript(),
 		transcriptBodyHeights:       newTranscriptBodyHeightCache(defaultTranscriptBodyHeightCacheMaxEntries),
 		transcriptBodyCache:         newTranscriptBodyItemCache(),
+		transcriptScrollCache:       newTranscriptScrollMetricsCache(),
 		sidebarDerivedCache:         newSidebarDerivedCache(),
 		prService:                   prService,
 		prState:                     prService.GetState(),
@@ -3191,6 +3193,7 @@ func (m model) scrollableTranscriptItemsView(header string, items []transcriptBo
 func (m model) scrollableTranscriptItemSetView(header string, set transcriptBodyItemSet, footer string, width int, overlay string) string {
 	frame := m.scrollableTranscriptFrame(header, footer)
 	metrics := m.measureTranscriptBodyItemSet(set)
+	m.storeTranscriptScrollMetrics(width, frame, metrics)
 	window := transcriptViewportForLayout(metrics, frame, m.chatScrollOffset).window()
 	body := layoutVisibleTranscriptBodyItems(set.items, metrics, window)
 
@@ -3375,13 +3378,25 @@ func (m model) chatTranscriptViewport() (transcriptViewport, bool) {
 	if !m.altScreen || m.height <= 0 {
 		return transcriptViewport{}, false
 	}
-	header, set, width := m.transcriptHitTestItemSet()
+	header, width := m.transcriptViewportHeaderWidth()
 	footer := m.footerView(width)
 	if m.transcriptDetailed {
 		footer = m.detailedTranscriptFooter(width)
 	}
-	body := m.measureTranscriptBodyItemSet(set)
 	frame := m.scrollableTranscriptFrame(header, footer)
+	if viewport, ok := m.cachedTranscriptViewport(width, frame); ok {
+		return viewport, true
+	}
+	var set transcriptBodyItemSet
+	if m.transcriptDetailed {
+		set = m.transcriptBodyItemSet(width, "", true)
+	} else if m.subchat.active {
+		set = transcriptBodyItemSet{items: m.transcriptBodyItemsFromRows(m.subchat.childRows, width)}
+	} else {
+		set = m.transcriptBodyItemSet(width, "", false)
+	}
+	body := m.measureTranscriptBodyItemSet(set)
+	m.storeTranscriptScrollMetrics(width, frame, body)
 	return transcriptViewportForLayout(body, frame, m.chatScrollOffset), true
 }
 
