@@ -108,6 +108,76 @@ func TestPromptSubmitInjectsLiveSessionModelContext(t *testing.T) {
 	}
 }
 
+func TestPromptSubmitUsesStructuredSessionHistoryWithoutTruncatingAssistant(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	store := sessions.NewStore(sessions.StoreOptions{RootDir: t.TempDir()})
+	session, err := store.Create(sessions.CreateInput{Title: "long thread", Cwd: t.TempDir()})
+	if err != nil {
+		t.Fatalf("Create returned error: %v", err)
+	}
+	prior := []sessions.Event{}
+	userEvent, err := store.AppendEvent(session.SessionID, sessions.AppendEventInput{
+		Type:    sessions.EventMessage,
+		Payload: map[string]any{"role": "user", "content": "research the SLO threshold"},
+	})
+	if err != nil {
+		t.Fatalf("AppendEvent user returned error: %v", err)
+	}
+	prior = append(prior, userEvent)
+	tail := "Want me to apply the threshold bumps to the config file?"
+	assistantEvent, err := store.AppendEvent(session.SessionID, sessions.AppendEventInput{
+		Type: sessions.EventMessage,
+		Payload: map[string]any{
+			"role":    "assistant",
+			"content": strings.Repeat("observed metric detail ", 80) + tail,
+		},
+	})
+	if err != nil {
+		t.Fatalf("AppendEvent assistant returned error: %v", err)
+	}
+	prior = append(prior, assistantEvent)
+
+	provider := &fakeProvider{events: []kajicoderuntime.StreamEvent{
+		{Type: kajicoderuntime.StreamEventText, Content: "Applied."},
+		{Type: kajicoderuntime.StreamEventDone},
+	}}
+	m := newModel(context.Background(), Options{
+		Cwd:          t.TempDir(),
+		ProviderName: "test",
+		ModelName:    "test-model",
+		Provider:     provider,
+		Registry:     tools.NewRegistry(),
+		SessionStore: store,
+	})
+	m.activeSession = session
+	m.sessionEvents = prior
+	m.input.SetValue("yes")
+
+	updated, cmd := m.Update(testKey(tea.KeyEnter))
+	if cmd == nil {
+		t.Fatal("expected prompt submit to start an agent run")
+	}
+	updated, _ = updated.(model).Update(execCmd(cmd))
+	_ = updated.(model)
+
+	if len(provider.requests) != 1 {
+		t.Fatalf("expected one provider request, got %d", len(provider.requests))
+	}
+	requestMessages := provider.requests[0].Messages
+	if len(requestMessages) < 4 {
+		t.Fatalf("expected system, prior user, prior assistant, current user; got %#v", requestMessages)
+	}
+	if requestMessages[len(requestMessages)-1].Role != kajicoderuntime.MessageRoleUser || requestMessages[len(requestMessages)-1].Content != "yes" {
+		t.Fatalf("expected current yes as final user message, got %#v", requestMessages[len(requestMessages)-1])
+	}
+	if !strings.Contains(requestMessages[len(requestMessages)-2].Content, tail) {
+		t.Fatalf("expected full prior assistant tail, got %#v", requestMessages[len(requestMessages)-2])
+	}
+	if strings.Contains(requestMessages[len(requestMessages)-1].Content, "Previous session context") {
+		t.Fatalf("current prompt should not be rewritten with formatted session context: %q", requestMessages[len(requestMessages)-1].Content)
+	}
+}
+
 func TestPromptSubmitStoresReasoningSeparatelyFromAnswer(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	provider := &fakeProvider{events: []kajicoderuntime.StreamEvent{

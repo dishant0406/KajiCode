@@ -337,12 +337,16 @@ func TestRunProactiveCompactionTriggers(t *testing.T) {
 
 	registry := tools.NewRegistry()
 	registry.Register(tools.NewReadFileTool(t.TempDir()))
+	compactions := []CompactionEvent{}
 
 	result, err := Run(context.Background(), strings.Repeat("y", 8000), provider, Options{
 		Registry:               registry,
 		PermissionMode:         PermissionModeUnsafe,
 		ContextWindow:          1000, // ~250 token 80% threshold; easily exceeded
 		CompactionPreserveLast: 2,
+		OnCompaction: func(event CompactionEvent) {
+			compactions = append(compactions, event)
+		},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -352,6 +356,20 @@ func TestRunProactiveCompactionTriggers(t *testing.T) {
 	}
 	if provider.summarizeCalls == 0 {
 		t.Fatal("expected proactive compaction to invoke the summarizer at least once")
+	}
+	if len(compactions) == 0 {
+		t.Fatal("expected proactive compaction callback")
+	}
+	if compactions[0].Trigger != "proactive" {
+		t.Fatalf("expected proactive trigger, got %q", compactions[0].Trigger)
+	}
+	if compactions[0].Summary != "COMPACTED SUMMARY" || len(compactions[0].Messages) == 0 {
+		t.Fatalf("expected compacted summary snapshot, got %#v", compactions[0])
+	}
+	for _, message := range compactions[0].Messages {
+		if message.Role == kajicoderuntime.MessageRoleSystem {
+			t.Fatalf("compaction snapshot must not persist system prompts: %#v", compactions[0].Messages)
+		}
 	}
 }
 
@@ -428,6 +446,7 @@ func TestRunReactiveCompactionRecovers(t *testing.T) {
 	// bloats the history.
 	registry := tools.NewRegistry()
 	registry.Register(tools.NewReadFileTool(t.TempDir()))
+	compactions := []CompactionEvent{}
 
 	// ContextWindow large enough that proactive compaction never triggers, so
 	// only the reactive path can save the run.
@@ -436,6 +455,9 @@ func TestRunReactiveCompactionRecovers(t *testing.T) {
 		PermissionMode:         PermissionModeUnsafe,
 		ContextWindow:          10_000_000,
 		CompactionPreserveLast: 2,
+		OnCompaction: func(event CompactionEvent) {
+			compactions = append(compactions, event)
+		},
 	})
 	if err != nil {
 		t.Fatalf("expected reactive compaction to recover the run, got error: %v", err)
@@ -445,6 +467,12 @@ func TestRunReactiveCompactionRecovers(t *testing.T) {
 	}
 	if provider.summarizeCalls == 0 {
 		t.Fatal("expected reactive compaction to invoke the summarizer")
+	}
+	if len(compactions) == 0 {
+		t.Fatal("expected reactive compaction callback")
+	}
+	if compactions[0].Trigger != "reactive" {
+		t.Fatalf("expected reactive trigger, got %q", compactions[0].Trigger)
 	}
 }
 

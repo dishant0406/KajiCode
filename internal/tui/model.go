@@ -748,10 +748,12 @@ type pendingSpecReviewPrompt struct {
 }
 
 type tuiAgentRunOptions struct {
-	registry       *tools.Registry
-	permissionMode agent.PermissionMode
-	systemPrompt   string
-	specDraft      bool
+	registry         *tools.Registry
+	permissionMode   agent.PermissionMode
+	systemPrompt     string
+	specDraft        bool
+	initialMessages  []kajicoderuntime.Message
+	compactionEvents []sessions.Event
 }
 
 func newModel(ctx context.Context, options Options) model {
@@ -4912,13 +4914,23 @@ func (m model) launchPrompt(prompt string) (model, tea.Cmd) {
 	}
 	var err error
 	m, err = m.ensureActiveSession(prompt)
+	initialMessages := []kajicoderuntime.Message{}
+	compactionEvents := []sessions.Event{}
 	if err != nil {
 		m.transcript = reduceTranscript(m.transcript, transcriptAction{
 			kind: actionAppendError,
 			text: "session create error: " + err.Error(),
 		})
 	} else {
-		agentPrompt := m.sessionPrompt(prompt)
+		// The launch log is the session's REHYDRATED events: a prior compaction
+		// is already collapsed to a single summary slot, so the model fold and
+		// the compactable-event mapping below both operate on the same
+		// already-reduced view the next run will actually see.
+		compactionEvents = append([]sessions.Event{}, m.sessionEvents...)
+		if rehydrated, rerr := m.sessionStore.ReadRehydratedEvents(m.activeSession.SessionID); rerr == nil {
+			compactionEvents = append([]sessions.Event{}, rehydrated...)
+		}
+		initialMessages = sessions.ModelMessagesFromEvents(compactionEvents)
 		var sessionRows []transcriptRow
 		m, sessionRows = m.appendSessionEvents([]pendingSessionEvent{
 			{Type: sessions.EventComposerInput, Payload: map[string]any{"text": composerInput}},
@@ -4928,7 +4940,6 @@ func (m model) launchPrompt(prompt string) (model, tea.Cmd) {
 			}},
 		})
 		m.transcript = appendTranscriptRowsDedup(m.transcript, sessionRows)
-		prompt = agentPrompt
 	}
 	// Re-check vision support against the CURRENT effective model at submit
 	// time, not just at /image attach time: the user may have attached on a
@@ -4952,7 +4963,10 @@ func (m model) launchPrompt(prompt string) (model, tea.Cmd) {
 	m.pendingImageLabels = nil
 	runCtx, cancel := context.WithCancel(m.ctx)
 	m = m.beginRun(cancel)
-	return m, tea.Batch(m.runAgent(m.activeRunID, runCtx, prompt, turnImages), m.spinner.Tick)
+	return m, tea.Batch(m.runAgentWithOptions(m.activeRunID, runCtx, prompt, turnImages, tuiAgentRunOptions{
+		initialMessages:  initialMessages,
+		compactionEvents: compactionEvents,
+	}), m.spinner.Tick)
 }
 
 // beginRun stamps the shared run-start state for a new agent turn: a fresh run
@@ -5141,6 +5155,7 @@ func (m model) runAgentWithOptions(runID int, runCtx context.Context, prompt str
 		options.ResponseStyle = m.responseStyle
 		options.Cwd = m.cwd
 		options.Images = images
+		options.InitialMessages = runOptions.initialMessages
 		if m.captureRunImages != nil {
 			m.captureRunImages(images)
 		}
@@ -5528,6 +5543,32 @@ func (m model) runAgentWithOptions(runID int, runCtx context.Context, prompt str
 			m.sendAgentUsage(runID, usageModelID, event)
 			if onUsage != nil {
 				onUsage(event)
+			}
+		}
+
+		onCompaction := options.OnCompaction
+		options.OnCompaction = func(event agent.CompactionEvent) {
+			// Bound the compaction to the events it ACTUALLY elided: the agent
+			// compacted a contiguous prefix of its message list (seed + current
+			// prompt + this run's tool traffic), and only the pre-run events of
+			// that run window correspond to stored session events. The launch log
+			// is rehydrated FIRST so a prior compaction snapshot is already
+			// collapsed; the elided message count is then walked back onto these
+			// events through the same event-to-model-message fold the replay uses
+			// (ModelMessagesFromEvents). Mapping by the elided count keeps
+			// preserved tail events (which carry real model content) in the replay
+			// and never re-marks previously compacted events.
+			compactableEvents := sessions.CompactableEventsFromMessages(
+				event.RemovedCount,
+				runOptions.compactionEvents,
+			)
+			payload := sessions.ModelCompactionPayload(event.Summary, event.Messages, compactableEvents, event.Trigger)
+			sessionEvents = append(sessionEvents, pendingSessionEvent{
+				Type:    sessions.EventCompaction,
+				Payload: payload,
+			})
+			if onCompaction != nil {
+				onCompaction(event)
 			}
 		}
 

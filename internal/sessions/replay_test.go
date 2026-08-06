@@ -2,6 +2,7 @@ package sessions
 
 import (
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -413,4 +414,62 @@ func mustRawJSON(t *testing.T, value any) json.RawMessage {
 		t.Fatal(err)
 	}
 	return data
+}
+
+func TestRehydrateEventsComposesMultipleCompactionsOldestFirst(t *testing.T) {
+	events := []Event{
+		{ID: "multi:1", SessionID: "multi", Sequence: 1, Type: EventMessage, Payload: json.RawMessage(`{"content":"alpha-old"}`)},
+		{ID: "multi:2", SessionID: "multi", Sequence: 2, Type: EventMessage, Payload: json.RawMessage(`{"content":"beta-old"}`)},
+		{ID: "multi:3", SessionID: "multi", Sequence: 3, Type: EventCompaction, Payload: mustRawJSON(t, CompactionPayload{
+			Summary:                  "First summary.",
+			CompactedThroughEventID:  "multi:2",
+			CompactedThroughSequence: 2,
+			CompactableEvents: []EventRef{
+				{ID: "multi:1", Sequence: 1, Type: EventMessage},
+				{ID: "multi:2", Sequence: 2, Type: EventMessage},
+			},
+		})},
+		{ID: "multi:4", SessionID: "multi", Sequence: 4, Type: EventMessage, Payload: json.RawMessage(`{"content":"gamma"}`)},
+		{ID: "multi:5", SessionID: "multi", Sequence: 5, Type: EventMessage, Payload: json.RawMessage(`{"content":"delta"}`)},
+		{ID: "multi:6", SessionID: "multi", Sequence: 6, Type: EventCompaction, Payload: mustRawJSON(t, CompactionPayload{
+			Summary:                  "Latest summary.",
+			CompactedThroughEventID:  "multi:5",
+			CompactedThroughSequence: 5,
+			CompactableEvents: []EventRef{
+				{ID: "multi:3", Sequence: 3, Type: EventCompaction},
+				{ID: "multi:4", Sequence: 4, Type: EventMessage},
+				{ID: "multi:5", Sequence: 5, Type: EventMessage},
+			},
+		})},
+		{ID: "multi:7", SessionID: "multi", Sequence: 7, Type: EventMessage, Payload: json.RawMessage(`{"content":"epsilon"}`)},
+	}
+
+	rehydrated, err := RehydrateEvents(events)
+
+	if err != nil {
+		t.Fatalf("RehydrateEvents returned error: %v", err)
+	}
+	ids := eventIDs(rehydrated)
+	want := []string{"multi:6", "multi:7"}
+	if !reflect.DeepEqual(ids, want) {
+		t.Fatalf("rehydrated ids = %v, want %v", ids, want)
+	}
+	// The surviving summary slot must be the LATEST compaction, carrying the
+	// latest summary text, with the earlier summary collapsed into it.
+	found := false
+	for _, event := range rehydrated {
+		if event.Type == EventCompaction {
+			var payload CompactionPayload
+			if err := json.Unmarshal(event.Payload, &payload); err != nil {
+				t.Fatalf("decode surviving compaction: %v", err)
+			}
+			if payload.Summary != "Latest summary." {
+				t.Fatalf("surviving summary = %q, want the latest compaction", payload.Summary)
+			}
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected the latest compaction to survive rehydrate, got %#v", rehydrated)
+	}
 }

@@ -182,7 +182,7 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 	defer runPermissions.cleanup()
 
 	promptParts := buildSystemPromptParts(options)
-	messages := kajicoderuntime.SeedMessagesWithImages(promptParts.prompt, prompt, options.Images)
+	messages := seedRunMessages(promptParts.prompt, prompt, options.Images, options.InitialMessages)
 
 	guards := newGuardState()
 	task := newTaskState(prompt, options.Trace)

@@ -861,10 +861,19 @@ func (m model) compactActiveSession() (model, CompactResult, error) {
 	if err != nil {
 		return m, CompactResult{}, err
 	}
-	if _, err := m.sessionStore.RecordCompaction(m.activeSession.SessionID, sessions.RecordCompactionInput{
-		Plan:    plan,
-		Summary: summary,
-	}); err != nil {
+	payload, err := sessions.CompactionPayloadFromPlan(summary, plan)
+	if err != nil {
+		return m, CompactResult{}, err
+	}
+	// Persist the compacted model-history snapshot (summary + preserved tail) so
+	// a resumed session feeds the compacted context straight into the agent
+	// instead of reconstructing the full oversized history from events.
+	tailFrom := len(beforeEvents) - plan.PreservedCount
+	if tailFrom < 0 {
+		tailFrom = 0
+	}
+	payload.ModelMessages = sessions.CompactedModelMessages(summary, beforeEvents[tailFrom:])
+	if _, err := m.recordCompactionWithPayload(payload); err != nil {
 		return m, CompactResult{}, err
 	}
 	if meta, err := m.sessionStore.Get(m.activeSession.SessionID); err == nil && meta != nil {
@@ -887,6 +896,16 @@ func (m model) compactActiveSession() (model, CompactResult, error) {
 		AfterTokens:  estimateTranscriptTokens(m.transcript),
 		Summary:      summary,
 	}, nil
+}
+
+func (m model) recordCompactionWithPayload(payload sessions.CompactionPayload) (sessions.Event, error) {
+	if m.sessionStore == nil || strings.TrimSpace(m.activeSession.SessionID) == "" {
+		return sessions.Event{}, fmt.Errorf("no active session to compact")
+	}
+	return m.sessionStore.AppendEvent(m.activeSession.SessionID, sessions.AppendEventInput{
+		Type:    sessions.EventCompaction,
+		Payload: payload,
+	})
 }
 
 func (m model) summarizeCompactionPlan(plan sessions.CompactionPlan) (string, error) {

@@ -1236,7 +1236,7 @@ func TestCtrlCCancelsAndFlushesCheckpointSessionEvents(t *testing.T) {
 	}
 }
 
-func TestResumedPromptIncludesSessionContext(t *testing.T) {
+func TestResumedPromptSendsStructuredSessionContext(t *testing.T) {
 	store := testSessionStore(t)
 	session, err := store.Create(sessions.CreateInput{Title: "Existing", Cwd: "repo", ModelID: "gpt-4.1", Provider: "openai"})
 	if err != nil {
@@ -1272,11 +1272,17 @@ func TestResumedPromptIncludesSessionContext(t *testing.T) {
 	if len(messages) == 0 {
 		t.Fatal("expected provider request to include messages")
 	}
-	prompt := messages[len(messages)-1].Content
-	for _, want := range []string{"Continuing KajiCode session", session.SessionID, "previous request", "previous answer", "Current user request:", "continue"} {
-		if !strings.Contains(prompt, want) {
-			t.Fatalf("expected resumed prompt to contain %q, got %q", want, prompt)
-		}
+	if len(messages) < 4 {
+		t.Fatalf("expected system, prior user, prior assistant, and current user; got %#v", messages)
+	}
+	if messages[len(messages)-3].Role != kajicoderuntime.MessageRoleUser || messages[len(messages)-3].Content != "previous request" {
+		t.Fatalf("expected prior user message before current turn, got %#v", messages)
+	}
+	if messages[len(messages)-2].Role != kajicoderuntime.MessageRoleAssistant || messages[len(messages)-2].Content != "previous answer" {
+		t.Fatalf("expected prior assistant message before current turn, got %#v", messages)
+	}
+	if messages[len(messages)-1].Role != kajicoderuntime.MessageRoleUser || messages[len(messages)-1].Content != "continue" {
+		t.Fatalf("expected current request as final user turn, got %#v", messages[len(messages)-1])
 	}
 }
 

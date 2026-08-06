@@ -247,6 +247,21 @@ type SkillInfo struct {
 	Description string
 }
 
+type CompactionEvent struct {
+	Trigger        string
+	Summary        string
+	RemovedCount   int
+	PreservedCount int
+	// Messages is the compacted conversation history (summary + preserved tail)
+	// with system messages and images removed, ready to persist for replay.
+	//
+	// RemovedCount counts model messages elided; surfaces that persist session
+	// history map it back onto the events that produced them via their shared
+	// event-to-model-message fold (sessions.ModelMessagesFromEvents), so the
+	// persisted boundary exactly matches what was summarized away.
+	Messages []kajicoderuntime.Message
+}
+
 type Options struct {
 	MaxTurns int
 	// DeferThreshold activates deferred MCP-tool loading: when the number of
@@ -291,6 +306,10 @@ type Options struct {
 	// nil for text-only runs (the seeded message then carries no images, exactly
 	// as before).
 	Images []kajicoderuntime.ImageBlock
+	// InitialMessages are prior conversation turns supplied by interactive
+	// surfaces. Run appends the current prompt as the final user message, so the
+	// current task stays distinct from history.
+	InitialMessages []kajicoderuntime.Message
 	// ContextWindow is the model's maximum input token budget. When > 0 the agent
 	// loop compacts long conversations once the estimated size crosses a fraction
 	// of this window. 0 DISABLES compaction entirely (every existing caller/test
@@ -336,6 +355,10 @@ type Options struct {
 	// budget of the request about to be sent, so a surface (TUI/CLI) can show
 	// context utilization. Opt-in like the other callbacks; nil is a no-op.
 	OnContext func(ContextBreakdown)
+	// OnCompaction is fired when the agent loop actually replaces history with a
+	// compacted summary. Surfaces can persist the compacted model history so the
+	// next turn does not reconstruct the same oversized context.
+	OnCompaction func(CompactionEvent)
 	// OnPhase, when set, receives non-model-visible liveness updates for the
 	// current run phase (provider request, tool execution, diagnostics,
 	// self-correction). Surfaces use it for status only; it never affects the

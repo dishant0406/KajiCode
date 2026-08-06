@@ -6,6 +6,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
 	"github.com/dishant0406/KajiCode/internal/redaction"
 )
 
@@ -59,16 +60,18 @@ type RecordCompactionInput struct {
 // CompactionPayload is the payload of an EventCompaction event. It records the
 // summary that should replace compacted-away events during replay.
 type CompactionPayload struct {
-	Summary                  string     `json:"summary"`
-	PreserveLast             int        `json:"preserveLast"`
-	CompactableCount         int        `json:"compactableCount"`
-	PreservedCount           int        `json:"preservedCount"`
-	CompactedThroughEventID  string     `json:"compactedThroughEventId,omitempty"`
-	CompactedThroughSequence int        `json:"compactedThroughSequence,omitempty"`
-	CompactableEvents        []EventRef `json:"compactableEvents,omitempty"`
-	PreservedEvents          []EventRef `json:"preservedEvents,omitempty"`
-	PromptChars              int        `json:"promptChars,omitempty"`
-	Truncated                bool       `json:"truncated,omitempty"`
+	Summary                  string                    `json:"summary"`
+	PreserveLast             int                       `json:"preserveLast"`
+	CompactableCount         int                       `json:"compactableCount"`
+	PreservedCount           int                       `json:"preservedCount"`
+	CompactedThroughEventID  string                    `json:"compactedThroughEventId,omitempty"`
+	CompactedThroughSequence int                       `json:"compactedThroughSequence,omitempty"`
+	CompactableEvents        []EventRef                `json:"compactableEvents,omitempty"`
+	PreservedEvents          []EventRef                `json:"preservedEvents,omitempty"`
+	ModelMessages            []kajicoderuntime.Message `json:"modelMessages,omitempty"`
+	Trigger                  string                    `json:"trigger,omitempty"`
+	PromptChars              int                       `json:"promptChars,omitempty"`
+	Truncated                bool                      `json:"truncated,omitempty"`
 }
 
 const defaultCompactionPreserveLast = 6
@@ -231,17 +234,50 @@ func (store *Store) ReadReplayEvents(sessionID string) ([]Event, error) {
 }
 
 func RehydrateEvents(events []Event) ([]Event, error) {
-	for i := len(events) - 1; i >= 0; i-- {
-		if events[i].Type != EventCompaction {
+	compactions := make([]int, 0)
+	for i, event := range events {
+		if event.Type == EventCompaction {
+			compactions = append(compactions, i)
+		}
+	}
+	if len(compactions) == 0 {
+		return cloneEvents(events), nil
+	}
+	// Compose every valid compaction oldest-first so each one collapses the
+	// events that existed when it ran. A malformed payload for the LATEST
+	// compaction still fails (a corrupt log must not silently resume), matching
+	// the pre-multi-compaction contract; earlier corrupt entries are skipped so
+	// one old bad event cannot block replay of newer ones.
+	rehydrated := cloneEvents(events)
+	pending := make([]string, 0, len(compactions))
+	for _, index := range compactions {
+		pending = append(pending, events[index].ID)
+	}
+	for _, compactionID := range pending {
+		index := -1
+		for i, event := range rehydrated {
+			if event.ID == compactionID {
+				index = i
+				break
+			}
+		}
+		if index < 0 {
+			// A later compaction already marked this one compactable; its
+			// summary was folded into the later snapshot. Nothing to apply.
 			continue
 		}
-		payload, err := decodeCompactionPayload(events[i])
+		payload, err := decodeCompactionPayload(rehydrated[index])
 		if err != nil {
-			return nil, err
+			if compactionID == pending[len(pending)-1] {
+				return nil, err
+			}
+			// An old corrupt compaction stays as a dead event; later valid
+			// compactions still make the log resumable (best effort).
+			continue
 		}
-		return rehydrateEventsWithCompaction(events, events[i], payload), nil
+		rehydrated = rehydrateEventsWithCompaction(rehydrated, rehydrated[index], payload)
 	}
-	return cloneEvents(events), nil
+	return rehydrated, nil
 }
 
 func ReplayEvents(events []Event) ([]Event, error) {
@@ -278,6 +314,10 @@ func rehydrateEventsWithCompaction(events []Event, compaction Event, payload Com
 	insertedSummary := false
 	for _, event := range events {
 		if event.ID == compaction.ID {
+			// The compaction event itself is replaced by its summary; the
+			// summary is placed where the compacted region began (the first
+			// skipped event), so the rehydrated event order mirrors the model
+			// fold: summary first, then the preserved tail.
 			continue
 		}
 		if shouldSkip(event) {
@@ -290,6 +330,9 @@ func rehydrateEventsWithCompaction(events []Event, compaction Event, payload Com
 		rehydrated = append(rehydrated, event)
 	}
 	if !insertedSummary {
+		// Nothing was compactable at application time (e.g. every ref already
+		// collapsed by an earlier compaction). Keep the summary at the head so
+		// the fold still sees it before the preserved content.
 		return append([]Event{compaction}, rehydrated...)
 	}
 	return rehydrated

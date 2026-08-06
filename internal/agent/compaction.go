@@ -336,8 +336,9 @@ type compactionState struct {
 	// onUsage forwards the summarizer call's token usage for accounting/budgeting.
 	// OnText is deliberately NOT forwarded (compaction stays invisible to the user),
 	// but its token COST must still be counted so usage reports and budgets include it.
-	onUsage func(Usage)
-	task    *taskState
+	onUsage      func(Usage)
+	onCompaction func(CompactionEvent)
+	task         *taskState
 
 	// calibrationRatio scales the raw byte/4 token estimate toward the provider's
 	// real prompt-token count. ApproxTextTokens over-counts code-heavy content by
@@ -380,6 +381,7 @@ func newCompactionState(options Options, task *taskState) *compactionState {
 		threshold:    compactionThresholdForRatio(options.ContextWindow, effectiveCompactionTriggerRatio(options)),
 		preserveLast: effectiveCompactionPreserveLast(options),
 		onUsage:      options.OnUsage,
+		onCompaction: options.OnCompaction,
 		task:         task,
 	}
 	return state
@@ -424,7 +426,7 @@ func (state *compactionState) maybeCompact(
 		}
 	}
 
-	compacted, err := Compact(messages, CompactionOptions{
+	result, err := CompactMessages(messages, CompactionOptions{
 		PreserveLast: state.preserveLast,
 		Summarize:    summarizeClosure(ctx, provider, state.onUsage),
 		taskState:    state.task.snapshotForCompaction(messages),
@@ -434,6 +436,7 @@ func (state *compactionState) maybeCompact(
 		// later turn) can try again; we never drop messages on failure here.
 		return messages
 	}
+	compacted := result.Messages
 	newSize := state.calibratedTokens(estimateTokens(compacted) + toolTokens)
 	if newSize >= size {
 		// Compaction did not actually shrink anything (e.g. nothing to
@@ -448,6 +451,7 @@ func (state *compactionState) maybeCompact(
 		r.Counter(trace.CounterCompactionCount, 1)
 	}
 	state.lowWaterMark = newSize
+	state.emitCompaction("proactive", result)
 	return compacted
 }
 
@@ -475,7 +479,7 @@ func (state *compactionState) recover(
 		return messages, false, nil
 	}
 
-	result, compactErr := Compact(messages, CompactionOptions{
+	result, compactErr := CompactMessages(messages, CompactionOptions{
 		PreserveLast: state.preserveLast,
 		Summarize:    summarizeClosure(ctx, provider, state.onUsage),
 		taskState:    state.task.snapshotForCompaction(messages),
@@ -486,7 +490,7 @@ func (state *compactionState) recover(
 		state.reactiveAttempted = true
 		return messages, true, compactErr
 	}
-	if estimateTokens(result) >= estimateTokens(messages) {
+	if estimateTokens(result.Messages) >= estimateTokens(messages) {
 		// Nothing to compact; the retry would just fail again. Signal "not
 		// retried" so the caller surfaces the original context-limit error. Do NOT
 		// consume the one-shot budget here: a no-op recover (history too small to
@@ -503,8 +507,33 @@ func (state *compactionState) recover(
 		r.Counter(trace.CounterCompactionCount, 1)
 	}
 	state.reactiveAttempted = true
-	state.lowWaterMark = state.calibratedTokens(estimateTokens(result) + estimateToolDefTokens(tools))
-	return result, true, nil
+	state.lowWaterMark = state.calibratedTokens(estimateTokens(result.Messages) + estimateToolDefTokens(tools))
+	state.emitCompaction("reactive", result)
+	return result.Messages, true, nil
+}
+
+func (state *compactionState) emitCompaction(trigger string, result CompactionResult) {
+	if state.onCompaction == nil || !result.Compacted {
+		return
+	}
+	state.onCompaction(CompactionEvent{
+		Trigger:        trigger,
+		Summary:        result.SummaryText,
+		RemovedCount:   result.RemovedCount,
+		PreservedCount: result.PreservedCount,
+		Messages:       persistedCompactionMessages(result.Messages),
+	})
+}
+func persistedCompactionMessages(messages []kajicoderuntime.Message) []kajicoderuntime.Message {
+	out := make([]kajicoderuntime.Message, 0, len(messages))
+	for _, message := range messages {
+		if message.Role == kajicoderuntime.MessageRoleSystem {
+			continue
+		}
+		message.Images = nil
+		out = append(out, message)
+	}
+	return out
 }
 
 // summarizeClosure builds a Summarize function backed by a focused, tool-less
