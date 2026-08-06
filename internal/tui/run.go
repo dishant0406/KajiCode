@@ -43,7 +43,11 @@ func Run(ctx context.Context, options Options) int {
 		tea.WithContext(ctx),
 		tea.WithInput(os.Stdin),
 		tea.WithOutput(os.Stdout),
-		tea.WithFilter(mouseEventFilter()),
+		tea.WithFilter(programMouseEventFilter(func(msg tea.Msg) {
+			if program != nil {
+				program.Send(msg)
+			}
+		})),
 	}
 	// Honor the no-color.org spec ourselves: NO_COLOR set to ANY non-empty value
 	// disables color. bubbletea/colorprofile only respects strconv.ParseBool-style

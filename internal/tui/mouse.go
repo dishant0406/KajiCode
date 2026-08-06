@@ -63,6 +63,25 @@ func (m model) scrollChatExtendingSelection(delta int, msg tea.MouseMsg) (model,
 	return m, cmd
 }
 
+func (m model) handleChatWheelScroll(msg chatWheelScrollMsg) (model, tea.Cmd) {
+	if msg.delta == 0 {
+		return m, nil
+	}
+	m.clearMouseSelection()
+	m = m.clearHover()
+	button := tea.MouseWheelUp
+	if msg.delta < 0 {
+		button = tea.MouseWheelDown
+	}
+	wheel := tea.MouseWheelMsg(tea.Mouse{Button: button, X: msg.x, Y: msg.y})
+	// The program filter only emits this internal message after the raw wheel hit
+	// the transcript, so do not repeat the composer geometry pass here.
+	if !m.mouseCapture || m.mouseReleased || m.transcriptHitTestBlocked() {
+		return m, nil
+	}
+	return m.scrollChatExtendingSelection(msg.delta, wheel)
+}
+
 func (m model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	// While a provider-wizard OAuth login is in flight, ignore all mouse input
 	// (clicks and wheel) so a stray scroll can't change the selected provider
@@ -284,18 +303,6 @@ func (m model) syncMouseCapture() (model, tea.Cmd) {
 	}
 	m.mouseCapture = want
 	return m, nil
-}
-
-func (m model) mouseOverComposer(msg tea.MouseMsg) bool {
-	if !m.altScreen || m.height <= 0 || m.transcriptDetailed {
-		return false
-	}
-	width := m.chatColumnWidth()
-	if m.homePresentationActive() {
-		return m.homeComposerRect(width).contains(mouseX(msg), mouseY(msg))
-	}
-	frame := m.scrollableTranscriptFrame(m.pinnedTitleBar(width), m.footerView(width))
-	return frame.composerRect.contains(mouseX(msg), mouseY(msg))
 }
 
 func lineSequenceIndex(lines []string, sequence []string) int {

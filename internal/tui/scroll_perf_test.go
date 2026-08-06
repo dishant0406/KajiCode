@@ -57,6 +57,39 @@ func BenchmarkScrollCommandLongThread(b *testing.B) {
 	}
 }
 
+func BenchmarkScrollWheelCoalescedBurstLongThread(b *testing.B) {
+	m := longThreadScrollBenchmarkModel(true)
+	var teaModel tea.Model = m
+	wheel := testMouseWheel(tea.MouseWheelUp, 2, 2)
+	sent := make([]tea.Msg, 0, 1)
+	c := newTranscriptWheelCoalescer(func(msg tea.Msg) {
+		sent = append(sent, msg)
+	})
+	c.afterFunc = func(func()) coalesceTimer { return &manualTimer{} }
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for range b.N {
+		sent = sent[:0]
+		for range 1000 {
+			if got := c.filter(teaModel, wheel); got != nil {
+				b.Fatal("transcript wheel should be buffered")
+			}
+		}
+		c.flush()
+		if len(sent) != 1 {
+			b.Fatalf("coalesced messages = %d, want 1", len(sent))
+		}
+		updated, cmd := m.Update(sent[0])
+		if cmd != nil {
+			b.Fatal("coalesced scroll should not schedule commands")
+		}
+		m = updated.(model)
+		teaModel = m
+		_ = m.View()
+	}
+}
+
 func longThreadScrollBenchmarkModel(pending bool) model {
 	m := newModel(context.Background(), Options{AltScreen: true, ProviderName: "test-provider", ModelName: "test-model"})
 	m.width = 160

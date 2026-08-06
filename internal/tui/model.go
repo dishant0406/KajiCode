@@ -1177,6 +1177,8 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.applyResumePrepared(msg)
 	case resumeHistoryPreparedMsg:
 		return m.applyResumeHistoryPrepared(msg)
+	case chatWheelScrollMsg:
+		return m.handleChatWheelScroll(msg)
 	case subchatPreparedMsg:
 		return m.applySubchatPrepared(msg)
 	case subchatContinueMsg:
