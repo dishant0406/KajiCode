@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
@@ -24,7 +25,20 @@ import (
 // defaultCompactionPreserveLast is how many trailing messages are kept verbatim
 // when the caller does not specify a preserve count. Kept in sync with the replay
 // reconstruction default in internal/sessions/replay.go.
-const defaultCompactionPreserveLast = 6
+//
+// Raised from 6 to 12 so a compaction keeps a full recent "window" of turns
+// verbatim (the last user/assistant question-answer cadence the user is actively
+// working on), which sharply reduces the "it forgot what I was doing" feeling.
+const defaultCompactionPreserveLast = 12
+
+// defaultOutputReserveTokens is the number of tokens the compaction threshold
+// reserves for the model's reply. Triggering at window*ratio ignores output
+// headroom, so on a window just large enough the request can pass the threshold
+// yet the provider rejects the request+output as over limit. Reserving this much
+// makes auto-compaction fire while the model still has room to respond after the
+// elision. Kept modest so long-context models aren't forced to compact
+// prematurely.
+const defaultOutputReserveTokens = 4096
 
 // compactionTriggerRatio is the fraction of the context window at which
 // proactive compaction kicks in (top of each turn). NOTE: this is speculative
@@ -147,10 +161,28 @@ func estimateToolDefTokens(tools []kajicoderuntime.ToolDefinition) int {
 	return total
 }
 
-// compactionThreshold is the estimated-token level at which proactive
-// compaction triggers for a given context window.
-func compactionThreshold(contextWindow int) int {
-	return compactionThresholdForRatio(contextWindow, compactionTriggerRatio)
+// compactionThresholdWithReserve applies the trigger ratio AND caps the trigger
+// below the hard limit by reserved output headroom, so auto-compaction fires
+// while the compacted history plus the pending reply still fit. The effective
+// threshold is the earlier (lower) of the two guards: the ratio triggers early
+// on small windows, and the reserve guarantees we never get so close to the
+// window that a full response can't fit. A contextWindow too small to hold the
+// reserve (<= reserve) falls back to the plain ratio threshold so compaction
+// still works on tiny test windows.
+func compactionThresholdWithReserve(contextWindow int, ratio float64) int {
+	if contextWindow <= 0 {
+		return 0
+	}
+	threshold := compactionThresholdForRatio(contextWindow, ratio)
+	if threshold <= 0 {
+		return 0
+	}
+	// Only apply the reserve when it leaves a meaningful window; otherwise fall
+	// back to the ratio threshold unchanged.
+	if window := contextWindow - defaultOutputReserveTokens; window >= defaultOutputReserveTokens && window < threshold {
+		threshold = window
+	}
+	return threshold
 }
 
 func compactionThresholdForRatio(contextWindow int, ratio float64) int {
@@ -338,7 +370,11 @@ type compactionState struct {
 	// but its token COST must still be counted so usage reports and budgets include it.
 	onUsage      func(Usage)
 	onCompaction func(CompactionEvent)
-	task         *taskState
+	// onPhase reports a visible "compacting…" liveness event so a surface can
+	// show the user that auto-compaction ran (it is otherwise invisible). nil
+	// no-ops; it never affects the conversation sent to the provider.
+	onPhase func(PhaseEvent)
+	task    *taskState
 
 	// calibrationRatio scales the raw byte/4 token estimate toward the provider's
 	// real prompt-token count. ApproxTextTokens over-counts code-heavy content by
@@ -377,11 +413,14 @@ func (state *compactionState) calibratedTokens(raw int) int {
 
 func newCompactionState(options Options, task *taskState) *compactionState {
 	state := &compactionState{
-		enabled:      options.ContextWindow > 0,
-		threshold:    compactionThresholdForRatio(options.ContextWindow, effectiveCompactionTriggerRatio(options)),
+		enabled: options.ContextWindow > 0,
+		// Reserve output headroom so proactive compaction fires before the model
+		// would hit the hard limit trying to reply after the elision.
+		threshold:    compactionThresholdWithReserve(options.ContextWindow, effectiveCompactionTriggerRatio(options)),
 		preserveLast: effectiveCompactionPreserveLast(options),
 		onUsage:      options.OnUsage,
 		onCompaction: options.OnCompaction,
+		onPhase:      options.OnPhase,
 		task:         task,
 	}
 	return state
@@ -513,6 +552,17 @@ func (state *compactionState) recover(
 }
 
 func (state *compactionState) emitCompaction(trigger string, result CompactionResult) {
+	if state.onCompaction == nil && state.onPhase == nil {
+		return
+	}
+	// A visible liveness event so the user SEES auto-compaction run instead of
+	// it being a silent removal.
+	if state.onPhase != nil {
+		state.onPhase(PhaseEvent{
+			Kind:   PhaseCompacting,
+			Detail: fmt.Sprintf("compact: summarized %d messages, kept %d verbatim (objective+plan preserved)", result.RemovedCount, result.PreservedCount),
+		})
+	}
 	if state.onCompaction == nil || !result.Compacted {
 		return
 	}

@@ -143,6 +143,9 @@ func Resolve(options ResolveOptions) (ResolvedConfig, error) {
 	if issues := validateHarnessConfig(cfg.Harness); len(issues) > 0 {
 		return ResolvedConfig{}, fmt.Errorf("%s: %s", issues[0].FieldPath, issues[0].Message)
 	}
+	if issues := validateLearningConfig(cfg.Learning); len(issues) > 0 {
+		return ResolvedConfig{}, fmt.Errorf("%s: %s", issues[0].FieldPath, issues[0].Message)
+	}
 
 	providers, active, err := normalizeProviders(cfg.Providers, cfg.ActiveProvider, options.Env)
 	if err != nil {
@@ -164,6 +167,7 @@ func Resolve(options ResolveOptions) (ResolvedConfig, error) {
 		Tools:          cfg.Tools,
 		Swarm:          cfg.Swarm,
 		Harness:        cfg.Harness,
+		Learning:       cfg.Learning.Effective(),
 		Preferences:    cfg.Preferences,
 		KeyBindings:    cfg.KeyBindings,
 		LocalControl:   cfg.LocalControl,
@@ -251,6 +255,7 @@ func mergeConfig(dst *FileConfig, src FileConfig) {
 		dst.Swarm.MaxTeamSize = src.Swarm.MaxTeamSize
 	}
 	mergeHarnessConfig(&dst.Harness, src.Harness)
+	mergeLearningConfig(&dst.Learning, src.Learning)
 	if src.Preferences.FavoriteModels != nil {
 		dst.Preferences.FavoriteModels = normalizeFavoriteModels(src.Preferences.FavoriteModels)
 	}
@@ -742,6 +747,7 @@ func applyOverrides(cfg *FileConfig, overrides Overrides) {
 		cfg.Tools.deferThresholdSet = true
 	}
 	mergeHarnessConfig(&cfg.Harness, overrides.Harness)
+	mergeLearningConfig(&cfg.Learning, overrides.Learning)
 	mergeLocalControlConfig(&cfg.LocalControl, overrides.LocalControl)
 	mergeKeyBindings(&cfg.KeyBindings, overrides.KeyBindings)
 	mergeSTTConfig(&cfg.STT, overrides.STT)

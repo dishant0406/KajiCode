@@ -59,5 +59,7 @@ func validateSemantics(cfg FileConfig) []Issue {
 	if err := validateSTTConfig(cfg.STT); err != nil {
 		return []Issue{{FieldPath: "stt", Message: err.Error()}}
 	}
-	return validateHarnessConfig(cfg.Harness)
+	issues := validateHarnessConfig(cfg.Harness)
+	issues = append(issues, validateLearningConfig(cfg.Learning)...)
+	return issues
 }

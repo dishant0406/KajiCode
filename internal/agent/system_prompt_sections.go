@@ -16,6 +16,7 @@ const (
 	promptSectionModeContract    promptSectionRole = "mode-contract"
 	promptSectionSpecialists     promptSectionRole = "specialists"
 	promptSectionSkills          promptSectionRole = "skills"
+	promptSectionLearning        promptSectionRole = "learning"
 	promptSectionResponseStyle   promptSectionRole = "response-style"
 	promptSectionConfirmation    promptSectionRole = "confirmation"
 )

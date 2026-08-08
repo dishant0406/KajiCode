@@ -18,6 +18,7 @@ import (
 	"github.com/charmbracelet/x/term"
 	"github.com/dishant0406/KajiCode/internal/agent"
 	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/harness"
 	"github.com/dishant0406/KajiCode/internal/hooks"
 	"github.com/dishant0406/KajiCode/internal/kajicodegit"
 	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
@@ -437,6 +438,8 @@ func runWithDeps(args []string, stdout io.Writer, stderr io.Writer, deps appDeps
 		return runSkills(args[1:], stdout, stderr, deps)
 	case "tools", "tool":
 		return runTools(args[1:], stdout, stderr, deps)
+	case "learning", "learn":
+		return runLearningConfig(args[1:], stdout, stderr, deps)
 	case "hooks":
 		return runHooks(args[1:], stdout, stderr, deps)
 	case "mcp":
@@ -825,6 +828,11 @@ func runInteractiveTUIWithSetup(stderr io.Writer, deps appDeps, permissionMode a
 	// notice when project hooks/plugins were dropped for an untrusted workspace.
 	hookDispatcher, hookSkip := newHookDispatcherWithExtra(workspaceRoot, pluginActivation.hooks, trustRoot)
 	emitTrustNotice(stderr, hookSkip, pluginActivation.trustSkip, mcpSkip)
+	// Self-learning engine for the TUI run. The TUI resolves learning at the
+	// global scope (matching the learn/recipe tools at registration), because a
+	// per-session root is negotiated inside the TUI run; a nil engine leaves the
+	// agent loop byte-identical.
+	learning := learningEngine(resolved.Learning, provider, harness.GlobalDir(nil), "")
 	return deps.runTUI(context.Background(), tui.Options{
 		Cwd:                  workspaceRoot,
 		Version:              version,
@@ -881,6 +889,7 @@ func runInteractiveTUIWithSetup(stderr io.Writer, deps appDeps, permissionMode a
 			PermissionMode: permissionMode,
 			Autonomy:       "low",
 			Harness:        resolved.Harness,
+			Learning:       learning,
 			Sandbox:        sandboxEngine,
 			FileTracker:    fileTracker,
 			Hooks:          hookDispatcher,
@@ -992,6 +1001,10 @@ func newCoreRegistryScoped(workspaceRoot string, scope tools.PathScope) *tools.R
 		registry.Register(tool)
 	}
 	registerLocalControlTools(registry, workspaceRoot, config.LocalControlConfig{})
+	// Self-learning tools need an assembled registry (recipe_run dispatches
+	// through it) and the resolved global learning directory.
+	registry.Register(tools.NewLearnTool(harness.GlobalDir(nil)))
+	registry.Register(tools.NewRecipeRunTool(registry, harness.GlobalDir(nil)))
 	return registry
 }
 
@@ -1205,6 +1218,7 @@ Commands:
   context    Report workspace context budget usage
   prompt     Inspect or edit runtime prompt instructions
   harness    Inspect and configure prompt addenda and permission rules
+  learning   Inspect and configure self-learning auto-review settings
   repo-map   Build a deterministic repository map for agent context
   search     Search persisted local KajiCode session events
   find       Alias for search
@@ -1451,6 +1465,7 @@ Flags:
       --no-notify                   Disable notifications for this run
       --no-completion-gate          Accept a no-tool-call reply as final without the INCOMPLETE
                                     downgrade (for conversational callers with an operator present)
+      --no-learning                 Disable self-learning (perpetual memory auto-review) for this run
 `)
 	return err
 }

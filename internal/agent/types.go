@@ -408,6 +408,12 @@ type Options struct {
 	// ceiling and the autonomy gate. nil disables it entirely (the loop is
 	// byte-identical to before). One instance per run — it holds attempt state.
 	SelfCorrect *SelfCorrector
+	// Learning, when set, arms KajiCode's self-learning (perpetual memory)
+	// controller for this run: turn-interval / compaction-triggered review,
+	// plan, and apply against the harness stores, plus manual learn-tool
+	// requests. nil — the default everywhere today — leaves the loop
+	// byte-identical. Same opt-in convention as Profile, SelfCorrect, and Trace.
+	Learning *LearningEngine
 	// FileDiagnostics, when set, checks files changed by mutating tools for
 	// error-severity language diagnostics IN THE BACKGROUND and appends any
 	// errors as a nudge before the model's next request — the model still sees

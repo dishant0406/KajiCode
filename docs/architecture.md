@@ -40,6 +40,7 @@ the next model turn.
 | CLI composition | `internal/cli` | Argument parsing, config resolution, provider creation, registry setup, prompt/harness inspection commands, sandbox/session/plugin/MCP wiring, and launch routing. |
 | Interactive UI | `internal/tui` | Bubble Tea model/update/view state, transcript rendering, composer, modals, slash commands, setup, and runtime callbacks. |
 | Agent loop | `internal/agent` | Prompt assembly, provider turns, tool execution, compaction, retries, completion policy, self-correction, and callback emission. |
+| Self-learning | `internal/config` (learning settings), `internal/agent/learning.go` (runtime gate), `internal/harness` (learn pipeline, recipes, apply/rollback), `internal/tools` (`_learning_apply`, `_learning_review`, `_learning_recipe`) | Perpetual-memory loop: turn/compaction-triggered reviews produce durable learned lessons, reviewed with diff + tests, applied on approval with rollback, and controlled by the `learning` CLI/`cmd_kajicode` settings. |
 | Provider contract | `internal/kajicoderuntime` | Provider-neutral messages, tool calls, stream events, usage, images, and turn sessions. |
 | Provider adapters | `internal/providers`, `internal/aimlapi`, provider catalog packages | API-specific translation for OpenAI, Azure OpenAI, Anthropic, Gemini, compatible gateways, OAuth/API key resolution, model discovery, provider health, and onboarding. |
 | Tools | `internal/tools` | Tool interface, registry, built-in tools, redaction, output budgets, display metadata, and mutation tracking. |
@@ -123,6 +124,34 @@ Interactive-only assumptions must not leak into exec.
 
 Tool calls and tool results must stay provider-valid as paired conversation
 messages. Any loop change that can affect message pairing needs regression tests.
+
+## Self-Learning
+
+KajiCode can learn durable, cross-session lessons about a project's conventions
+and apply them automatically. Auto-learning is on by default and is tuned by a
+`learning` config block (`enabled`, `turnInterval` >= 0 defaulting to 10,
+`compact` on/off, `cooldownMs` defaulting to 20 minutes). The `learning` CLI
+subcommand inspects and changes these settings.
+
+The loop lives in several owned layers, each with its own tests:
+
+- `internal/config/learning*.go` defines the settings, defaults, merge,
+  validation, and the config-file writer used by the CLI.
+- `internal/agent/learning.go` gates triggers: a review runs after N assistant
+  turns (`turnInterval`) or after a context compaction when `compact` is on,
+  subject to the cooldown. It bubbles reviews up and applies results through
+  callbacks so the agent loop stays provider-neutral.
+- `internal/harness` owns the learning pipeline/pipeline recipe types. A recipe
+  standard can turn a run into a repeatable learn (prompts, tool budget,
+  expectations). Pipeline executions may apply changes only after a diff and
+  test verification, with file locks, state records, and rollback on failure.
+- `internal/tools` exposes `_learning_apply`, `_learning_review`, and
+  `_learning_recipe` tools that inspect/apply learned lessons and recipes.
+
+Learned lessons are surfaced to the model as durable memory
+(`<learned_memory>` prompt addendum) and treated as project/user conventions that
+yield to any current, explicit instruction. Apply is safe-by-default: diff +
+tests gate the change, and a failed apply rolls back to the pre-run state.
 
 ## Tools, Sandbox, And Hooks
 

@@ -68,8 +68,9 @@ func TestProactiveCompactionPersistenceKeepsTail(t *testing.T) {
 	}
 
 	// Seed enough pre-run history that the agent's compaction has a real middle
-	// to summarize: preserveLast=6 keeps the current prompt + the 5 trailing
-	// seeded messages, so the oldest 5 seeded messages are elidable.
+	// to summarize: preserveLast defaults to 12 now, so seed 16 old events plus
+	// a trailing assistant answer — the oldest few events become elidable while
+	// the recent tail (including the final answer) stays verbatim.
 	prior := []sessions.Event{}
 	appendStored := func(role, content string) {
 		ev, err := store.AppendEvent(session.SessionID, sessions.AppendEventInput{
@@ -81,7 +82,7 @@ func TestProactiveCompactionPersistenceKeepsTail(t *testing.T) {
 		}
 		prior = append(prior, ev)
 	}
-	names := []string{"one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"}
+	names := []string{"one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen"}
 	for i, name := range names {
 		role := "user"
 		content := "old request " + name
@@ -148,13 +149,14 @@ func TestProactiveCompactionPersistenceKeepsTail(t *testing.T) {
 	_ = json.Unmarshal(events[compactionIdx].Payload, &payload)
 	compactedThrough := payloadInt(payload, "compactedThroughSequence")
 	compactableCount := payloadInt(payload, "compactableCount")
-	// The preserved tail event must NOT be elided: 10 old events are seeded, a
-	// 6-slot preserved suffix keeps events 6..10, so at most 5 may be compacted.
-	if compactedThrough >= 10 {
-		t.Fatalf("compaction boundary %d must stay below the preserved tail (event 10)", compactedThrough)
+	// The preserved tail event must NOT be elided: preserveLast=12 preserves the
+	// trailing 12 events (which include the final answer), so at most the oldest
+	// 5 seeded events may be compacted.
+	if compactedThrough >= 16 {
+		t.Fatalf("compaction boundary %d must stay below the preserved tail (event 16)", compactedThrough)
 	}
-	if compactableCount <= 0 || compactableCount >= 10 {
-		t.Fatalf("expected a partial compactable count (1..9), got %d", compactableCount)
+	if compactableCount <= 0 || compactableCount >= 16 {
+		t.Fatalf("expected a partial compactable count (1..15), got %d", compactableCount)
 	}
 
 	// Resume flow: rehydrate events and rebuild model history.

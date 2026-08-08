@@ -377,6 +377,7 @@ type FileConfig struct {
 	Tools          ToolsConfig        `json:"tools,omitempty"`
 	Swarm          SwarmConfig        `json:"swarm,omitempty"`
 	Harness        HarnessConfig      `json:"harness,omitempty"`
+	Learning       LearningConfig     `json:"learning,omitempty"`
 	Preferences    PreferencesConfig  `json:"preferences,omitempty"`
 	KeyBindings    KeyBindingsConfig  `json:"keybindings,omitempty"`
 	LocalControl   LocalControlConfig `json:"localControl,omitempty"`
@@ -394,6 +395,7 @@ func (cfg FileConfig) MarshalJSON() ([]byte, error) {
 		Tools          ToolsConfig         `json:"tools,omitempty"`
 		Swarm          SwarmConfig         `json:"swarm,omitempty"`
 		Harness        *HarnessConfig      `json:"harness,omitempty"`
+		Learning       *LearningConfig     `json:"learning,omitempty"`
 		Preferences    PreferencesConfig   `json:"preferences,omitempty"`
 		KeyBindings    KeyBindingsConfig   `json:"keybindings,omitempty"`
 		LocalControl   *LocalControlConfig `json:"localControl,omitempty"`
@@ -413,6 +415,9 @@ func (cfg FileConfig) MarshalJSON() ([]byte, error) {
 	}
 	if !cfg.Harness.Empty() {
 		raw.Harness = &cfg.Harness
+	}
+	if !cfg.Learning.Empty() {
+		raw.Learning = &cfg.Learning
 	}
 	if !cfg.LocalControl.Empty() {
 		raw.LocalControl = &cfg.LocalControl
@@ -446,6 +451,7 @@ type Overrides struct {
 	Notify         NotifyConfig
 	Tools          ToolsConfig
 	Harness        HarnessConfig
+	Learning       LearningConfig
 	KeyBindings    KeyBindingsConfig
 	LocalControl   LocalControlConfig
 	STT            STTConfig
@@ -462,6 +468,7 @@ type ResolvedConfig struct {
 	Tools          ToolsConfig
 	Swarm          SwarmConfig
 	Harness        HarnessConfig
+	Learning       LearningConfig
 	Preferences    PreferencesConfig
 	KeyBindings    KeyBindingsConfig
 	LocalControl   LocalControlConfig
@@ -524,6 +531,7 @@ func (cfg *FileConfig) UnmarshalJSON(data []byte) error {
 		Tools           ToolsConfig                `json:"tools"`
 		Swarm           SwarmConfig                `json:"swarm"`
 		Harness         HarnessConfig              `json:"harness"`
+		Learning        LearningConfig             `json:"learning"`
 		Preferences     PreferencesConfig          `json:"preferences"`
 		KeyBindings     KeyBindingsConfig          `json:"keybindings"`
 		LocalControl    LocalControlConfig         `json:"localControl"`
@@ -553,6 +561,7 @@ func (cfg *FileConfig) UnmarshalJSON(data []byte) error {
 	cfg.Tools = raw.Tools
 	cfg.Swarm = raw.Swarm
 	cfg.Harness = raw.Harness
+	cfg.Learning = raw.Learning
 	cfg.Preferences = raw.Preferences
 	cfg.KeyBindings = raw.KeyBindings
 	cfg.LocalControl = raw.LocalControl

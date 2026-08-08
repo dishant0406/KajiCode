@@ -74,7 +74,7 @@ type CompactionPayload struct {
 	Truncated                bool                      `json:"truncated,omitempty"`
 }
 
-const defaultCompactionPreserveLast = 6
+const defaultCompactionPreserveLast = 12
 const defaultCompactionMaxPromptChars = 8000
 
 func (store *Store) PlanRewind(sessionID string, options RewindOptions) (RewindPlan, error) {

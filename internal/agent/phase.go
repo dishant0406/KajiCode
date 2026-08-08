@@ -14,6 +14,7 @@ const (
 	PhaseDiagnostics     PhaseKind = "diagnostics"
 	PhaseSelfCorrect     PhaseKind = "self_correct"
 	PhaseRetrying        PhaseKind = "retrying"
+	PhaseCompacting      PhaseKind = "compacting"
 	PhaseFinalizing      PhaseKind = "finalizing"
 )
 

@@ -242,6 +242,34 @@ The model never directly mutates the workspace. It asks for tool calls; KajiCode
 validates and executes those calls through the registry, permission policy, and
 sandbox engine.
 
+### Self-Learning
+
+KajiCode can carry durable lessons across sessions instead of relearning the same
+project conventions every run. Self-learning is on by default and is driven by
+the `learning` config block (`internal/config/learning*.go`): `enabled`,
+`turnInterval` (default 10 turns), `compact` (review after a compaction), and
+`cooldownMs` (default 20 minutes between reviews). The `learning` CLI
+subcommand (`kajicode learning status|set <key> <value>`) inspects and changes
+these settings.
+
+The runtime gate lives in `internal/agent/learning.go`, which is wired into the
+agent loop by callbacks so the loop itself stays provider-neutral: after N
+assistant turns or a compaction (when enabled), a review is scheduled and
+throttled by the cooldown. A failed or buggy review also stamps the cooldown so
+it cannot burn provider budget in a tight loop.
+
+Reviews, applies, and repeatable recipes are owned by `internal/harness`:
+
+- A review examines recent tool activity and drafts durable lessons.
+- Applying a lesson only succeeds after a diff and test verification, guarded by
+  file locks and recorded state, and rolls back to the pre-run state on failure.
+- A recipe is a repeatable standard (prompts, tool budget, expectations) that can
+  turn a run into a learning pass.
+
+Learned lessons are injected as `<learned_memory>` prompt addenda: they are
+treated as project/user conventions, not immutable facts, and a current explicit
+instruction always wins over one of them.
+
 ## Tool Execution Lifecycle
 
 A tool call is part of the model conversation, not a side channel that bypasses
@@ -374,25 +402,36 @@ planner:
 - KajiCode estimates request size using message text, images, tool-call arguments, and
   the tool definitions advertised on that turn.
 - The proactive threshold is roughly **two-thirds of the context window**, with
-  small profile-specific tuning for model families that need earlier pruning.
+  small profile-specific tuning for model families that need earlier pruning, and
+  it is capped so it never gets so close to the hard window that a full response
+  could not fit — the trigger reserves `defaultOutputReserveTokens` of output
+  headroom on windows where the ratio would sit too near the limit.
 - Provider usage from completed turns is used to calibrate the rough estimate over
   time, so the budget gauge and compaction decision track the provider more
   closely after a few turns.
 - A low-water mark prevents the loop from re-summarizing the same already-compacted
   history on every turn.
+- When compaction fires, it surfaces a `compacting` run-phase event (see
+  `PhaseCompacting`) so the TUI/status surfaces can reflect it instead of
+  compacting silently.
 
 When compaction actually runs, it tries to preserve the parts most likely to be
 needed by the model:
 
 - leading system messages stay verbatim;
 - the most recent turns stay verbatim (`CompactionPreserveLast`, defaulting to the
-  agent's normal preserve count);
+  agent's normal preserve count, 12);
 - the preserved suffix is widened to a provider-valid turn boundary so tool-result
   messages are not replayed without their corresponding assistant tool call;
 - the older middle is summarized into one user-role message labeled
   `[Summary of earlier conversation]`;
-- structured state that should not be paraphrased away, such as active plan/loaded
-  skill state, is preserved alongside the prose summary.
+- structured state that should not be paraphrased away, such as the original task
+  objective, the active plan, loaded skill/tool state, and recent edits, is
+  preserved alongside the prose summary.
+
+The agent auto-compaction and the manual session-compaction path (`/compact`)
+share the same 12-message preserve window, so both keep the same recent tail
+verbatim.
 
 There are two compaction paths:
 

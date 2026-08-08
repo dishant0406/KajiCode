@@ -301,8 +301,21 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 		// context window, summarize the oldest middle before building the
 		// request. A no-op when ContextWindow == 0 (compaction disabled).
 		compactionSpan := options.Trace.Span(trace.SpanCompaction)
+		lenBefore := len(messages)
 		messages = compactor.maybeCompact(ctx, provider, messages, exposed)
 		compactionSpan.End()
+		// Self-learning hook: after compaction (and once per turn) run the
+		// review→plan→apply pipeline when its gates open (interval,
+		// post-compaction, or a manual learn-tool request). A nil engine leaves
+		// the loop byte-identical. When a pass actually applied lessons, splice
+		// the fresh, bounded <learned_memory> block into the leading system
+		// message so they take effect on this very next provider call
+		// (same-session pickup) instead of waiting for the next run.
+		if ilc := options.Learning; ilc != nil {
+			if ilc.TurnElapsed(ctx, messages, lenBefore != len(messages)) {
+				messages = ilc.EnsurePromptHasMemory(messages)
+			}
+		}
 		request := kajicoderuntime.CompletionRequest{
 			Messages:        copyMessages(messages),
 			Tools:           exposed,
@@ -1494,7 +1507,7 @@ func executeToolCall(ctx context.Context, registry *tools.Registry, call ToolCal
 	// Secret scrubbing happens at the registry boundary (the single point both
 	// the agent loop and the MCP server pass through), so result.Output is
 	// already redacted here and result.Redacted reflects whether it changed.
-	return ToolResult{
+	toolResult := ToolResult{
 		Risk:         executedRisk,
 		ToolCallID:   call.ID,
 		Name:         call.Name,
@@ -1511,7 +1524,13 @@ func executeToolCall(ctx context.Context, registry *tools.Registry, call ToolCal
 		// the Run turn loop performs the actual provider switch. Empty for every
 		// ordinary tool result.
 		RequestedModel: result.Meta["escalate_to_model"],
-	}, nil
+	}
+	// Self-learning hook: hand the result to the engine so a manual learn-tool
+	// request (Meta["request_learn"]=="true") arms a pass at the next boundary.
+	if options.Learning != nil {
+		options.Learning.NoteToolResult(toolResult)
+	}
+	return toolResult, nil
 }
 
 const sandboxNamespaceLimitedReason = "sandbox output is limited to the sandbox PID namespace; host/global state requires approval"

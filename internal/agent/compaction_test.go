@@ -669,3 +669,123 @@ func TestRecoverDisabledIsNoop(t *testing.T) {
 		t.Fatalf("disabled recover must be a no-op, got retried=%v err=%v len=%d", retried, err, len(got))
 	}
 }
+
+// TestCompactionThresholdWithReserve proves the output-reservation guard: for a
+// window whose plain ratio threshold would sit too close to the hard limit, the
+// threshold is pulled back so the compacted history plus a full reply still fit.
+// Large windows keep the conservative ratio (which is already safely earlier).
+func TestCompactionThresholdWithReserve(t *testing.T) {
+	// Large window: ratio threshold (140k) is far below window-reserve (195.9k)
+	// and is already safe, so the reserve does not pull the trigger later — the
+	// threshold stays at the ratio line.
+	big := compactionThresholdWithReserve(200_000, 0.7)
+	if want := int(float64(200_000) * 0.7); big != want {
+		t.Fatalf("large-window threshold = %d, want ratio %d (reserve must not push later)", big, want)
+	}
+
+	// Mid window: window-reserve (5904) is LOWER than the 0.7 ratio (7000), so
+	// the reserve wins and pulls the trigger earlier to keep output headroom.
+	mid := compactionThresholdWithReserve(10_000, 0.7)
+	if want := 10_000 - defaultOutputReserveTokens; mid != want {
+		t.Fatalf("mid-window reserved threshold = %d, want %d (reserve must pull earlier)", mid, want)
+	}
+
+	// Too-small window to hold the reserve: plain ratio, never negative/nonsense.
+	tiny := compactionThresholdWithReserve(5000, 0.7)
+	if tiny != int(float64(5000)*0.7) {
+		t.Fatalf("tiny-window threshold = %d, want plain ratio %d", tiny, int(float64(5000)*0.7))
+	}
+
+	// Zero/negative window yields no threshold.
+	if compactionThresholdWithReserve(0, 0.7) != 0 || compactionThresholdWithReserve(-1, 0.7) != 0 {
+		t.Fatal("non-positive context window must yield a zero threshold")
+	}
+}
+
+// TestMaybeCompactNoThrash proves the low-water-mark guard: once a proactive
+// compaction lands, the next top-of-turn check must not compact again while the
+// history sits at or below the post-compaction size (otherwise the loop would
+// compact every single turn and never make progress).
+func TestMaybeCompactNoThrash(t *testing.T) {
+	bigMessages := []kajicoderuntime.Message{
+		{Role: kajicoderuntime.MessageRoleSystem, Content: "sys"},
+		{Role: kajicoderuntime.MessageRoleUser, Content: strings.Repeat("u", 6000)},
+		{Role: kajicoderuntime.MessageRoleAssistant, Content: strings.Repeat("a", 6000)},
+		{Role: kajicoderuntime.MessageRoleUser, Content: "u2"},
+		{Role: kajicoderuntime.MessageRoleAssistant, Content: "a2"},
+	}
+	provider := &summarizeRecordingProvider{
+		turns: [][]kajicoderuntime.StreamEvent{{
+			{Type: kajicoderuntime.StreamEventText, Content: "the real answer"},
+			{Type: kajicoderuntime.StreamEventDone},
+		}},
+	}
+	st := newCompactionState(Options{
+		ContextWindow:          1000, // tiny window: the big history trips the check
+		CompactionPreserveLast: 1,
+	}, nil)
+
+	first := st.maybeCompact(context.Background(), provider, bigMessages, nil)
+	if provider.summarizeCalls == 0 {
+		t.Fatal("expected the first maybeCompact to compact")
+	}
+	if estimateTokens(first) >= estimateTokens(bigMessages) {
+		t.Fatalf("first compaction did not shrink history: %d -> %d", estimateTokens(bigMessages), estimateTokens(first))
+	}
+
+	callsAfterFirst := provider.summarizeCalls
+	// Feed the already-compacted history back — it now sits at the low-water
+	// mark, so a second pass must NOT compact again.
+	second := st.maybeCompact(context.Background(), provider, first, nil)
+	if provider.summarizeCalls != callsAfterFirst {
+		t.Fatalf("second maybeCompact compacted again (thrash): summarize calls %d -> %d", callsAfterFirst, provider.summarizeCalls)
+	}
+	if len(second) != len(first) {
+		t.Fatalf("no-thrash pass must return messages unchanged, got %d -> %d", len(first), len(second))
+	}
+}
+
+// TestRunProactiveCompactionEmitsPhaseEvent proves a visible "compacting" phase
+// event reaches the caller when auto-compaction fires, so the TUI/status
+// surfaces can reflect what is happening instead of compacting silently.
+func TestRunProactiveCompactionEmitsPhaseEvent(t *testing.T) {
+	bigText := strings.Repeat("x", 8000) // ~2000 estimated tokens
+	provider := &summarizeRecordingProvider{
+		turns: [][]kajicoderuntime.StreamEvent{
+			toolTurnWithText(bigText, "1", "read_file", `{"path":"x"}`),
+			textTurn("done"),
+		},
+	}
+	registry := tools.NewRegistry()
+	registry.Register(tools.NewReadFileTool(t.TempDir()))
+
+	var phaseKinds []PhaseKind
+	result, err := Run(context.Background(), strings.Repeat("y", 8000), provider, Options{
+		Registry:               registry,
+		PermissionMode:         PermissionModeUnsafe,
+		ContextWindow:          1000, // trips the proactive top-of-turn check
+		CompactionPreserveLast: 2,
+		OnPhase: func(event PhaseEvent) {
+			phaseKinds = append(phaseKinds, event.Kind)
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.FinalAnswer != "done" {
+		t.Fatalf("expected run to complete with 'done', got %q", result.FinalAnswer)
+	}
+	if provider.summarizeCalls == 0 {
+		t.Fatal("expected proactive compaction to run")
+	}
+	found := false
+	for _, kind := range phaseKinds {
+		if kind == PhaseCompacting {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected a %q phase event, got %#v", PhaseCompacting, phaseKinds)
+	}
+}

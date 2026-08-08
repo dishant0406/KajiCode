@@ -132,6 +132,9 @@ func buildSystemPromptParts(options Options) systemPromptParts {
 	if skillsBlock != "" {
 		builder.add(promptSectionSkills, skillsBlock)
 	}
+	if learning := learningContext(options); learning != "" {
+		builder.add(promptSectionLearning, learning)
+	}
 	if style := responseStyleContext(options); style != "" {
 		builder.add(promptSectionResponseStyle, style)
 	}
@@ -146,6 +149,22 @@ func buildSystemPromptParts(options Options) systemPromptParts {
 // a system-prompt directive so the choice actually shapes responses. "balanced"
 // (the default) and unknown/empty values add nothing, keeping the prompt
 // byte-identical to the pre-style behavior.
+// learningContext renders the merged learned memory block from the run's
+// LearningEngine. The block is wrapped in a <learned_memory> tag so the model
+// treats it as durable, evidence-backed knowledge from prior sessions rather
+// than workspace guidance. It returns "" (adding nothing to the prompt) when
+// the engine is unset or has nothing topical to surface.
+func learningContext(options Options) string {
+	if options.Learning == nil {
+		return ""
+	}
+	memory := options.Learning.Context()
+	if memory == "" {
+		return ""
+	}
+	return learnedMemoryOpen + "\nDurable lessons learned across prior sessions. Treat these as project/user conventions, not as immutable facts; if a current instruction contradicts one, follow the current instruction.\n" + memory + "\n" + learnedMemoryClose
+}
+
 func responseStyleContext(options Options) string {
 	switch strings.ToLower(strings.TrimSpace(options.ResponseStyle)) {
 	case "concise":

@@ -14,6 +14,7 @@ import (
 	"github.com/dishant0406/KajiCode/internal/config"
 	"github.com/dishant0406/KajiCode/internal/errhint"
 	"github.com/dishant0406/KajiCode/internal/execprofile"
+	"github.com/dishant0406/KajiCode/internal/harness"
 	"github.com/dishant0406/KajiCode/internal/imageinput"
 	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
 	"github.com/dishant0406/KajiCode/internal/lsp"
@@ -132,6 +133,11 @@ type execOptions struct {
 	// mislabel honest blocker reports. Default off: plain `kajicode exec` keeps the
 	// gate, preserving CI/cron semantics.
 	noCompletionGate bool
+	// noLearning disables self-learning for this run, overriding the resolved
+	// auto-learn config. A run with --no-learning wires a nil LearningEngine so
+	// the agent loop never triggers a review/plan/apply pass even when the user
+	// config has auto-learning enabled.
+	noLearning bool
 	// addDirs holds directories passed via --add-dir that should be allowed as
 	// additional write roots for this run. Unioned with
 	// config.SandboxConfig.AdditionalWriteRoots at scope construction time.
@@ -644,6 +650,17 @@ func runExec(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) in
 	// project hooks/plugins were dropped for an untrusted workspace.
 	hookDispatcher, hookSkip := newHookDispatcherWithExtra(workspaceRoot, pluginActivation.hooks, trustRoot)
 	emitTrustNotice(stderr, hookSkip, pluginActivation.trustSkip, mcpSkip)
+	// Self-learning: the global store always backs the engine, and a per-session
+	// local store backs it when a real exec session is present. Enabled via the
+	// resolved learning config; nil disables learning entirely (loop unchanged).
+	learningLocalRoot := ""
+	if preparedSession.Store != nil && preparedSession.Session.SessionID != "" {
+		learningLocalRoot = harness.LocalDir(filepath.Join(preparedSession.Store.RootDir, preparedSession.Session.SessionID))
+	}
+	learning := learningEngine(resolved.Learning, provider, harness.GlobalDir(nil), learningLocalRoot)
+	if options.noLearning {
+		learning = nil // --no-learning: never run a learning pass this run.
+	}
 	result, err := agent.Run(runCtx, agentPrompt, provider, agent.Options{
 		MaxTurns:             resolved.MaxTurns,
 		ContextWindow:        resolveAgentContextWindow(runCtx, modelRegistry, resolved.Provider),
@@ -669,6 +686,7 @@ func runExec(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) in
 		PermissionMode:       permissionMode,
 		Autonomy:             options.autonomy,
 		Harness:              resolved.Harness,
+		Learning:             learning,
 		SelfCorrect:          selfCorrector,
 		FileDiagnostics:      fileDiagnostics,
 		Profile:              execProfile.Policy(displacedMaxTurns, execProfileFilledEffort),

@@ -53,6 +53,8 @@ func parseExecArgs(args []string) (execOptions, bool, error) {
 			options.noNotify = true
 		case arg == "--no-completion-gate":
 			options.noCompletionGate = true
+		case arg == "--no-learning":
+			options.noLearning = true
 		case arg == "--trace":
 			value, next, err := nextFlagValue(args, index, arg)
 			if err != nil {
