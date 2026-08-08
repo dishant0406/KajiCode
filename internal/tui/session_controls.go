@@ -23,6 +23,7 @@ var responseStyles = []string{"balanced", "concise", "explanatory", "review"}
 const tuiCompactionPreserveLast = 8
 const tuiCompactionMaxPromptChars = 8000
 const compactStatusRowID = "compact/status"
+const agentCompactionRowID = "agent/compaction"
 
 var compactFrames = []string{"⠂", "⠒", "⠲", "⠴"}
 
@@ -1000,6 +1001,41 @@ func (m model) setCompactStatusRow(text string) model {
 	}
 	m.transcript = appendTranscriptRow(m.transcript, row)
 	return m
+}
+
+// setAgentCompactionRow upserts the in-thread row that shows agent auto-
+// compaction progress/file. It transitions from the live "compressing…" text to
+// the completed "compacted" text when the agent finishes (see agentPhaseMsg /
+// agentCompactionMsg in Update). Uses a dedicated row id so it never collides
+// with the manual /compact status card.
+func (m model) setAgentCompactionRow(text string) model {
+	row := transcriptRow{kind: rowSystem, id: agentCompactionRowID, text: text}
+	for i := len(m.transcript) - 1; i >= 0; i-- {
+		if m.transcript[i].id == agentCompactionRowID {
+			m.transcript[i] = row
+			return m
+		}
+	}
+	m.transcript = appendTranscriptRow(m.transcript, row)
+	return m
+}
+
+// agentCompactCompleteText renders the in-thread completion row for an agent
+// auto-compaction, mirroring compactCompleteText for the manual path but driven
+// by the agent CompactionEvent.
+func (m model) agentCompactCompleteText(event agent.CompactionEvent) string {
+	lines := []string{
+		"Compression complete",
+		"Session summary saved.",
+		"Ready for the next prompt.",
+	}
+	if event.RemovedCount > 0 {
+		lines = append(lines, fmt.Sprintf("Consolidated %d messages into a summary.", event.RemovedCount))
+	}
+	if event.Summary != "" {
+		lines = append(lines, "Summary: "+strings.TrimSpace(event.Summary))
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (m model) recordUsageEvent(modelID string, event kajicoderuntime.Usage) (model, []transcriptRow) {

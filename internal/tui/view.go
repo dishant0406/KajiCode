@@ -243,6 +243,16 @@ func (m model) statusLine(width int) string {
 		if loopSummary := m.loopFooterSummary(); loopSummary != "" {
 			left += separator + kajicodeTheme.accent.Render("↻ ") + kajicodeTheme.muted.Render(loopSummary)
 		}
+		// Per-session auto-compaction count: "♻ compacted N×" stays on the footer
+		// so the number of agent compactions this session is always at a glance,
+		// complementing the sidebar ACTIVITY line for the current run.
+		if m.compactions > 0 {
+			label := "♻ compacted"
+			if m.compactions > 1 {
+				label = fmt.Sprintf("♻ compacted %dx", m.compactions)
+			}
+			left += separator + kajicodeTheme.amber.Render(label)
+		}
 	}
 
 	rightGroups := []string{}

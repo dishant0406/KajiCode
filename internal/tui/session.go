@@ -71,6 +71,7 @@ func (m model) startNewSession() model {
 	m.compactFrame = 0
 	m.lastCompactResult = nil
 	m.lastCompactError = ""
+	m.compactions = 0
 	m.turnLatencySum = 0
 	m.turnLatencyCount = 0
 	m.turnTTFTSum = 0

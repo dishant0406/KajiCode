@@ -282,6 +282,10 @@ type model struct {
 	// the checkpoints stay referenced, then removes the id.
 	flushRunIDs     map[int]string
 	liveUsageCounts map[int]int
+	// compactions counts how many times the agent auto-compacted the active
+	// conversation this session (incremented in the OnCompaction wrapper). It
+	// feeds the "♻ compacted N×" sidebar/status counter. Reset per session.
+	compactions int
 	// swarmSessionMap maps a swarm task id to its member's durable child session
 	// id (carried up by swarm_collect's Meta), so the AGENTS sidebar rows can drill
 	// into a member's conversation. Persists across turns; only completed members
@@ -521,6 +525,14 @@ type agentTextMsg struct {
 type agentPhaseMsg struct {
 	runID int
 	phase agent.PhaseEvent
+}
+
+// agentCompactionMsg carries a completed agent auto-compaction to the Update
+// loop so it can render an in-thread "compacted" row and bump the per-session
+// counter (distinct from the manual /compact command-card path).
+type agentCompactionMsg struct {
+	runID int
+	event agent.CompactionEvent
 }
 
 type exitConfirmExpiredMsg struct {
@@ -1986,6 +1998,19 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.activePhase = msg.phase
 		m.lastStreamActivity = m.now()
+		// Surface a live in-thread "compressing conversation…" row while the agent
+		// is compacting: the completion message replaces it with the final
+		// "compacted" row. Uses an upsert so repeated phase pings don't stack rows.
+		if msg.phase.Kind == agent.PhaseCompacting {
+			m = m.setAgentCompactionRow(m.compactRunningText())
+		}
+		return m, nil
+	case agentCompactionMsg:
+		if msg.runID != m.activeRunID {
+			return m, nil
+		}
+		m.compactions++
+		m = m.setAgentCompactionRow(m.agentCompactCompleteText(msg.event))
 		return m, nil
 	case toolCallStreamStartMsg:
 		if msg.runID != m.activeRunID {
@@ -3591,6 +3616,8 @@ func phaseActivityLabel(phase agent.PhaseEvent) string {
 			return phase.Detail
 		}
 		return "retrying"
+	case agent.PhaseCompacting:
+		return "compressing conversation"
 	case agent.PhaseFinalizing:
 		return "finalizing"
 	default:
@@ -5567,6 +5594,7 @@ func (m model) runAgentWithOptions(runID int, runCtx context.Context, prompt str
 				Type:    sessions.EventCompaction,
 				Payload: payload,
 			})
+			m.sendAgentCompaction(runID, event)
 			if onCompaction != nil {
 				onCompaction(event)
 			}
@@ -5687,6 +5715,13 @@ func (m model) sendAgentPhase(runID int, phase agent.PhaseEvent) {
 		return
 	}
 	m.runtimeMessageSink(agentPhaseMsg{runID: runID, phase: phase})
+}
+
+func (m model) sendAgentCompaction(runID int, event agent.CompactionEvent) {
+	if m.runtimeMessageSink == nil {
+		return
+	}
+	m.runtimeMessageSink(agentCompactionMsg{runID: runID, event: event})
 }
 
 // streamingTextString returns the accumulated live assistant text. streamingText

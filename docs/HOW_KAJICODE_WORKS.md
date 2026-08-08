@@ -433,6 +433,12 @@ The agent auto-compaction and the manual session-compaction path (`/compact`)
 share the same 12-message preserve window, so both keep the same recent tail
 verbatim.
 
+The TUI surfaces auto-compaction in three places: a live in-thread "compressing
+conversation…" row while the agent compacts (replaced by a "Compression
+complete" row when it finishes), and a per-session "♻ compacted N×" counter on
+both the sidebar ACTIVITY feed and the footer status line so repeated
+auto-compactions stay at a glance.
+
 There are two compaction paths:
 
 1. **Proactive compaction** runs before the provider call when the estimated

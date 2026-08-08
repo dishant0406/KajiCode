@@ -244,6 +244,12 @@ func (m model) renderRowModeUncached(row transcriptRow, width int, rc rowContext
 		if row.id == compactStatusRowID && strings.HasPrefix(strings.TrimSpace(row.text), "Compression complete") {
 			return renderCompactCompleteCard(row.text, width)
 		}
+		if row.id == agentCompactionRowID && strings.HasPrefix(strings.TrimSpace(row.text), "Compressing session") {
+			return renderCompactRunningCard(row.text, width)
+		}
+		if row.id == agentCompactionRowID && strings.HasPrefix(strings.TrimSpace(row.text), "Compression complete") {
+			return renderCompactCompleteCard(row.text, width)
+		}
 		if row.id == doctorStatusRowID && strings.HasPrefix(strings.TrimSpace(row.text), "Checking provider") {
 			return renderDoctorRunningCard(row.text, width)
 		}

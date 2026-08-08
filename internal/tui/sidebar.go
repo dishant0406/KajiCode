@@ -829,9 +829,23 @@ func (m model) sidebarActivityLines(width, budget int) []string {
 			live = " " + kajicodeTheme.accent.Render("•") + " " + kajicodeTheme.faint.Render(truncateStep(hint, room))
 		}
 	}
-	lines := make([]string, 0, len(work)+1)
+	// Compacta count surfaces as its own pinned ACTIVITY line so repeated agent
+	// auto-compactions are glanceable ("♻ compacted N×") without cluttering the
+	// work feed beneath it.
+	compactionLine := ""
+	if m.compactions > 0 {
+		label := "♻ compacted"
+		if m.compactions > 1 {
+			label = fmt.Sprintf("♻ compacted %dx", m.compactions)
+		}
+		compactionLine = " " + kajicodeTheme.amber.Render(label)
+	}
+	lines := make([]string, 0, len(work)+2)
 	if live != "" {
 		lines = append(lines, live)
+	}
+	if compactionLine != "" {
+		lines = append(lines, compactionLine)
 	}
 	lines = append(lines, work...)
 	if len(lines) > budget {
