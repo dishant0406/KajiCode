@@ -67,6 +67,27 @@ func boolArg(args map[string]any, key string, fallback bool) (bool, error) {
 	return false, fmt.Errorf("%s must be a boolean", key)
 }
 
+// enumArg reads an optional string argument that must be one of allowed. It
+// falls back to defaultValue when the key is absent, and rejects values outside
+// the allowed set (case-insensitive).
+func enumArg(args map[string]any, key string, defaultValue string, allowed []string) (string, error) {
+	value, ok := args[key]
+	if !ok || value == nil {
+		return defaultValue, nil
+	}
+	text, ok := value.(string)
+	if !ok {
+		return "", fmt.Errorf("%s must be one of %v", key, allowed)
+	}
+	text = strings.ToLower(strings.TrimSpace(text))
+	for _, candidate := range allowed {
+		if text == candidate {
+			return text, nil
+		}
+	}
+	return "", fmt.Errorf("%s must be one of %v", key, allowed)
+}
+
 // floatToInt converts a float to int only when it is finite, integral, and in
 // range; NaN/Inf/non-integer/out-of-range return ok=false so callers fail closed
 // before an implementation-defined cast.

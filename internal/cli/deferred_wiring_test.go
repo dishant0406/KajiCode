@@ -37,6 +37,44 @@ func registryHasToolSearch(registry *tools.Registry) bool {
 	return ok
 }
 
+// registryHasBatch reports whether the `batch` tool is registered.
+func registryHasBatch(registry *tools.Registry) bool {
+	_, ok := registry.Get("batch")
+	return ok
+}
+
+func TestRegisterBatchToolDefaultsToRegistered(t *testing.T) {
+	reg := tools.NewRegistry()
+	registerBatchTool(reg, nil, nil)
+	if !registryHasBatch(reg) {
+		t.Fatalf("expected batch registered by default")
+	}
+}
+
+func TestRegisterBatchToolHonorsDisabledFilter(t *testing.T) {
+	reg := tools.NewRegistry()
+	registerBatchTool(reg, nil, []string{"batch"})
+	if registryHasBatch(reg) {
+		t.Fatalf("batch should be skipped when disabled")
+	}
+}
+
+func TestRegisterBatchToolHonorsEnabledFilter(t *testing.T) {
+	reg := tools.NewRegistry()
+	registerBatchTool(reg, []string{"grep", "batch"}, nil)
+	if !registryHasBatch(reg) {
+		t.Fatalf("expected batch registered when enabled")
+	}
+}
+
+func TestRegisterBatchToolSkipsWhenNotInEnabledFilter(t *testing.T) {
+	reg := tools.NewRegistry()
+	registerBatchTool(reg, []string{"grep"}, nil)
+	if registryHasBatch(reg) {
+		t.Fatalf("batch should be skipped when not in enabled list")
+	}
+}
+
 func TestRegisterToolSearchIfEligibleRegistersAtThreshold(t *testing.T) {
 	registry := tools.NewRegistry()
 	for i := 0; i < 3; i++ {

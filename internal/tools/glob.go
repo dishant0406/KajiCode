@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -110,7 +111,9 @@ func (tool globTool) runWith(ctx context.Context, args map[string]any, exclude r
 		return okResult("No matches found for " + pattern)
 	}
 
-	sort.Strings(matches)
+	// Order matches by file modification time (newest first, like opencode), so
+	// the most recently touched files surface near the top of a truncated list.
+	sortGlobMatchesByMtimeDesc(root, matches)
 	totalMatches := len(matches)
 	truncated := totalMatches > limit
 	if truncated {
@@ -141,8 +144,7 @@ func (tool globTool) runWith(ctx context.Context, args map[string]any, exclude r
 
 func scanGlob(ctx context.Context, root string, displayRoot string, matcher *regexp.Regexp, includeDirs bool, exclude readExcluder) ([]string, error) {
 	matches := []string{}
-	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
-		// Checked first, ahead of walkErr: an unscoped scan over a large tree can
+	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error { // Checked first, ahead of walkErr: an unscoped scan over a large tree can
 		// run long enough that cancelling the run must stop the walk promptly
 		// rather than visiting every remaining entry to completion.
 		if err := ctx.Err(); err != nil {
@@ -206,6 +208,39 @@ func compileGlob(pattern string) (*regexp.Regexp, error) {
 		return nil, fmt.Errorf("pattern is required")
 	}
 	return regexp.Compile("^" + globToRegexp(filepath.ToSlash(pattern)) + "$")
+}
+
+// sortGlobMatchesByMtimeDesc reorders matched paths so the most recently
+// modified files come first, matching opencode's recency-first listing. It
+// groups lexicographically-ordered results by file path and reads each file's
+// mtime relative to the scan root; stat errors fall back to the oldest bucket.
+func sortGlobMatchesByMtimeDesc(root string, matches []string) {
+	type ranked struct {
+		path  string
+		mtime int64
+	}
+	rankedMatches := make([]ranked, 0, len(matches))
+	for _, match := range matches {
+		candidate := match
+		if !filepath.IsAbs(candidate) {
+			candidate = filepath.Join(root, match)
+		}
+		info, err := os.Stat(candidate)
+		mtime := int64(0)
+		if err == nil {
+			mtime = info.ModTime().UnixNano()
+		}
+		rankedMatches = append(rankedMatches, ranked{path: match, mtime: mtime})
+	}
+	sort.SliceStable(rankedMatches, func(i, j int) bool {
+		if rankedMatches[i].mtime != rankedMatches[j].mtime {
+			return rankedMatches[i].mtime > rankedMatches[j].mtime
+		}
+		return rankedMatches[i].path < rankedMatches[j].path
+	})
+	for index := range matches {
+		matches[index] = rankedMatches[index].path
+	}
 }
 
 func globToRegexp(pattern string) string {

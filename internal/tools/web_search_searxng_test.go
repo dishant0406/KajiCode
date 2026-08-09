@@ -31,7 +31,7 @@ func TestSearxngBackendGETParsesResults(t *testing.T) {
 	defer server.Close()
 
 	backend := &httpSearchBackend{client: server.Client(), baseURL: server.URL, provider: "searxng"}
-	results, err := backend.Search(context.Background(), "language", 5)
+	results, err := backend.Search(context.Background(), "language", SearchOptions{Limit: 5})
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
@@ -49,7 +49,7 @@ func TestSearxngBackendRespectsLimit(t *testing.T) {
 	}))
 	defer server.Close()
 	backend := &httpSearchBackend{client: server.Client(), baseURL: server.URL, provider: "searxng"}
-	results, err := backend.Search(context.Background(), "x", 2)
+	results, err := backend.Search(context.Background(), "x", SearchOptions{Limit: 2})
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}

@@ -4,10 +4,13 @@ import (
 	"bufio"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -27,19 +30,18 @@ func NewReadFileTool(workspaceRoot string) Tool {
 func NewScopedReadFileTool(workspaceRoot string, scope PathScope) Tool {
 	return readFileTool{
 		baseTool: baseTool{
-			name:        "read_file",
-			description: "Read a file with optional 1-based inclusive line range and max line cap.",
-			parameters: Schema{
-				Type: "object",
-				Properties: map[string]PropertySchema{
-					"path":       {Type: "string", Description: "Path of the file to read."},
-					"start_line": {Type: "integer", Description: "1-based inclusive line number to start reading from.", Minimum: intPtr(1)},
-					"end_line":   {Type: "integer", Description: "1-based inclusive line number to stop reading at.", Minimum: intPtr(1)},
-					"max_lines":  {Type: "integer", Description: "Maximum number of lines to return.", Minimum: intPtr(1)},
-				},
-				Required:             []string{"path"},
-				AdditionalProperties: false,
-			},
+			name: "read_file",
+			description: "Read a file with optional line range and max line cap. " +
+				"Prefer reading the whole file and read several files in a single response. " +
+				"Use start_line/end_line (1-based, inclusive) only for long files. " +
+				"Raster images and PDFs are returned as base64 media; binary files are rejected. " +
+				"If a path is missing, near-miss suggestions are returned.",
+			parameters: SpecsToSchema([]*ArgSpec{
+				{Name: "path", Kind: ArgString, Required: true, Aliases: []string{"file_path", "filepath", "filename"}, Description: "Path of the file to read."},
+				{Name: "start_line", Kind: ArgInt, Aliases: []string{"offset"}, Min: intPtr(1), Description: "1-based inclusive line number to start reading from."},
+				{Name: "end_line", Kind: ArgInt, Min: intPtr(1), Description: "1-based inclusive line number to stop reading at."},
+				{Name: "max_lines", Kind: ArgInt, Aliases: []string{"limit"}, Min: intPtr(1), Description: "Maximum number of lines to return."},
+			}),
 			safety: readOnlySafety("Reads file contents without modifying files."),
 			// ThreadSafe: FileTracker is mutex-guarded; concurrent reads of
 			// distinct paths are safe. Same-path calls still serialize via
@@ -60,26 +62,48 @@ func (tool readFileTool) RunWithOptions(_ context.Context, args map[string]any, 
 }
 
 func (tool readFileTool) run(args map[string]any, options RunOptions, directBudget bool) Result {
-	requestedPath, err := aliasedStringArg(args, []string{"path", "file", "file_path", "filepath", "filename"}, "", true, false)
-	if err != nil {
-		return errorResult("Error: Invalid arguments for read_file: " + err.Error())
-	}
-	startLine, err := intArg(args, "start_line", 1, 1, 0)
-	if err != nil {
-		return errorResult("Error: Invalid arguments for read_file: " + err.Error())
-	}
-	endLine, err := intArg(args, "end_line", 0, 1, 0)
-	if err != nil {
-		return errorResult("Error: Invalid arguments for read_file: " + err.Error())
-	}
-	maxLines, err := intArg(args, "max_lines", 0, 1, 0)
+	parsed, err := ParseArgs([]*ArgSpec{
+		{Name: "path", Kind: ArgString, Required: true, Aliases: []string{"file", "file_path", "filepath", "filename"}},
+		{Name: "start_line", Kind: ArgInt, Aliases: []string{"offset"}, Min: intPtr(1), Default: 1},
+		{Name: "end_line", Kind: ArgInt, Min: intPtr(1), Default: 0},
+		{Name: "max_lines", Kind: ArgInt, Aliases: []string{"limit"}, Min: intPtr(1), Default: 0},
+	}, args)
 	if err != nil {
 		return errorResult("Error: Invalid arguments for read_file: " + err.Error())
 	}
 
+	requestedPath := parsed["path"].(string)
+	startLine := parsed["start_line"].(int)
+	endLine := parsed["end_line"].(int)
+	maxLines := parsed["max_lines"].(int)
+
 	absolutePath, relativePath, err := resolveScopedReadPath(tool.workspaceRoot, tool.scope, requestedPath)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return readFileNotExist(requestedPath, missingReadPath(tool.workspaceRoot, requestedPath))
+		}
 		return errorResult("Error reading file " + requestedPath + ": " + err.Error())
+	}
+
+	info, statErr := os.Stat(absolutePath)
+	if statErr != nil {
+		if os.IsNotExist(statErr) {
+			return readFileNotExist(requestedPath, absolutePath)
+		}
+		return errorResult("Error reading file " + relativePath + ": " + statErr.Error())
+	}
+
+	if !info.Mode().IsRegular() {
+		return errorResult("Error reading file " + relativePath + ": not a regular file")
+	}
+
+	switch classifyFileKind(absolutePath, readFilePrefix(absolutePath)) {
+	case mediaImage:
+		return renderReadMedia(absolutePath, relativePath, mediaMimeForPath(absolutePath))
+	case mediaPDF:
+		return renderReadMedia(absolutePath, relativePath, "application/pdf")
+	case mediaBinary:
+		return errorResult("Error reading file " + relativePath + ": cannot read binary file. Use bash or a specialized tool instead.")
 	}
 
 	stats, err := scanReadFileStats(absolutePath)
@@ -97,6 +121,102 @@ func (tool readFileTool) run(args map[string]any, options RunOptions, directBudg
 		maxBytes = readOutputBudgetBytes
 	}
 	return renderReadFileRange(absolutePath, relativePath, stats.lines, startLine, endLine, maxLines, maxBytes)
+}
+
+// readFilePrefix reads up to a bounded prefix for media/binary classification
+// without materializing a whole file into memory.
+func readFilePrefix(path string) []byte {
+	const maxPrefix = 16 * 1024
+	f, err := os.Open(path)
+	if err != nil {
+		return nil
+	}
+	defer f.Close()
+	buf := make([]byte, maxPrefix)
+	n, _ := io.ReadFull(f, buf)
+	if n <= 0 {
+		return nil
+	}
+	return buf[:n]
+}
+
+// readFileNotExist renders a "file not found" message with up to three
+// near-miss suggestions from the parent directory, matching opencode's read.ts.
+func readFileNotExist(requestedPath string, absolutePath string) Result {
+	suggestions := suggestNearbyPaths(filepath.Dir(absolutePath), filepath.Base(absolutePath))
+	message := "File not found: " + requestedPath
+	if len(suggestions) == 0 {
+		return errorResult("Error: " + message)
+	}
+	return errorResult("Error: " + message + "\n\nDid you mean one of these?\n" + strings.Join(suggestions, "\n"))
+}
+
+// missingReadPath builds an absolute path for a requested path that could not be
+// resolved (e.g. EvalSymlinks failed on a nonexistent target). It best-efforts
+// an absolute path so parent-dir scanning for did-you-mean can run.
+func missingReadPath(workspaceRoot string, requestedPath string) string {
+	if filepath.IsAbs(requestedPath) {
+		return filepath.Clean(requestedPath)
+	}
+	return filepath.Join(workspaceRoot, requestedPath)
+}
+
+// suggestNearbyPaths gathers up to three sibling files whose base name is a
+// plausible typo/misspelling of the requested base name. Candidates are ranked by
+// Levenshtein distance (case-insensitive) with the requested base name; a soft
+// contains-match both directions also counts, mirroring opencode's read.ts
+// "did you mean" behavior.
+func suggestNearbyPaths(dir string, base string) []string {
+	entries, err := os.ReadDir(dir)
+	if err != nil || base == "" {
+		return nil
+	}
+	lower := strings.ToLower(base)
+	type scored struct {
+		name  string
+		score int
+	}
+	var candidates []scored
+	for _, entry := range entries {
+		name := entry.Name()
+		lowerName := strings.ToLower(name)
+		if lowerName == lower {
+			continue
+		}
+		distance := levenshtein(lower, lowerName)
+		contains := strings.Contains(lowerName, lower) || strings.Contains(lower, lowerName)
+		// Accept near-miss typos (small edit distance) or strong contains matches.
+		if distance <= 2 || contains {
+			candidates = append(candidates, scored{name: name, score: distance})
+		}
+	}
+	sort.SliceStable(candidates, func(i, j int) bool { return candidates[i].score < candidates[j].score })
+	var matches []string
+	for _, c := range candidates {
+		matches = append(matches, filepath.Join(dir, c.name))
+		if len(matches) == 3 {
+			break
+		}
+	}
+	return matches
+}
+
+// renderReadMedia renders a media (image/PDF) file as a base64 resource line.
+// The tool layer has no provider message channel, so it returns a stable
+// base64 reference the agent can pass upstream; decode failures still surface.
+func renderReadMedia(absolutePath string, relativePath string, mime string) Result {
+	content, err := fileContentFor(absolutePath)
+	if err != nil {
+		return errorResult("Error reading media file " + relativePath + ": " + err.Error())
+	}
+	encoded := base64.StdEncoding.EncodeToString(content)
+	output := fmt.Sprintf("Media file: %s (%s)\ndata:%s;base64,%s",
+		relativePath, mime, mime, string(encoded))
+	return Result{
+		Status: StatusOK,
+		Output: output,
+		Meta:   map[string]string{"media": "true", "mime": mime, "path": relativePath},
+	}
 }
 
 func renderReadFileRange(absolutePath string, relativePath string, total int, startLine int, endLine int, maxLines int, maxBytes int) Result {

@@ -55,6 +55,7 @@ const (
 	commandLoop
 	commandVoice
 	commandSTTModel
+	commandWebSearch
 	commandUnknown
 )
 
@@ -139,6 +140,14 @@ var commandDefinitions = []commandDefinition{
 		group:       commandGroupRuntime,
 		description: "Stop running background terminal sessions.",
 		kind:        commandStop,
+	},
+	{
+		name:        "/web-search",
+		aliases:     []string{"/web-search-config"},
+		usage:       "/web-search [status|remove]",
+		group:       commandGroupTools,
+		description: "Configure web-search credentials: pick a provider, enter an API key, persist it to your shell profile. /web-search status shows what's set; /web-search remove clears it.",
+		kind:        commandWebSearch,
 	},
 	{
 		name:        "/sandbox-setup",

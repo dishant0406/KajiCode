@@ -1439,6 +1439,9 @@ func executeToolCall(ctx context.Context, registry *tools.Registry, call ToolCal
 		// Per-session file version tracker so write_file/edit_file refuse to clobber
 		// a file that changed on disk outside KajiCode since it was last read.
 		FileTracker: options.FileTracker,
+		// Session-backed tools (todo_read/todo_write) persist per-session state
+		// through the wired session store when present.
+		SessionStore: options.SessionStore,
 		// Post-edit diagnostics are NOT forwarded to the tools: they used to run
 		// synchronously inside edit_file/write_file and block every mutating tool
 		// call on the language server (≥300ms debounce floor, 10s cap). The loop
@@ -1772,6 +1775,7 @@ func runToolForNetworkRetry(ctx context.Context, registry *tools.Registry, name 
 		Depth:             options.Depth,
 		Cwd:               options.Cwd,
 		FileTracker:       options.FileTracker,
+		SessionStore:      options.SessionStore,
 		EnabledTools:      options.EnabledTools,
 		DisabledTools:     options.DisabledTools,
 		Progress:          progressCallback,
@@ -1800,6 +1804,7 @@ func runToolForUnsandboxedRetry(ctx context.Context, registry *tools.Registry, n
 		Depth:             options.Depth,
 		Cwd:               options.Cwd,
 		FileTracker:       options.FileTracker,
+		SessionStore:      options.SessionStore,
 		EnabledTools:      options.EnabledTools,
 		DisabledTools:     options.DisabledTools,
 		Progress:          progressCallback,

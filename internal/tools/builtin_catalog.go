@@ -22,10 +22,13 @@ func BuiltinCatalog(workspaceRoot string) []Tool {
 	all = append(all, CoreReadOnlyTools(workspaceRoot)...)
 	all = append(all, CoreWriteTools(workspaceRoot)...)
 	all = append(all, CoreShellTools(workspaceRoot)...)
-	// Network tools: always include web_fetch; always include web_search for
-	// classification even when no backend is configured at runtime (registration
-	// remains conditional in CoreNetworkTools).
+	// Network tools: always include web_fetch and web_search (the latter returns
+	// a setup hint when unconfigured); code_search stays conditional on an actual
+	// backend.
 	all = append(all, NewWebFetchTool(), NewWebSearchTool())
+	if defaultSearchBackend() != nil {
+		all = append(all, NewCodeSearchTool())
+	}
 	all = append(all, NewEscalateModelTool())
 
 	// tool_search needs a live registry of the tools above.
@@ -43,6 +46,11 @@ func BuiltinCatalog(workspaceRoot string) []Tool {
 	all = append(all, NewLocalDesktopTools(localcontrol.DesktopOptions{})...)
 	all = append(all, NewLocalTerminalTools(localcontrol.TerminalOptions{})...)
 	all = append(all, NewLocalControlArtifactTools(LocalControlArtifactOptions{})...)
+	// Session-tracking tools are core in opencode (todo_read/todo_write are
+	// registered for every agent). They persist via the wired SessionStore.
+	all = append(all, NewTodoReadTool(), NewTodoWriteTool())
+	// Multi-edit: atomic batch editing of one file.
+	all = append(all, NewMultiEditTool(workspaceRoot))
 	return all
 }
 

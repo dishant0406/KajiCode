@@ -19,9 +19,9 @@ type fakeSearchBackend struct {
 	gotLimit int
 }
 
-func (f *fakeSearchBackend) Search(_ context.Context, query string, limit int) ([]searchResult, error) {
+func (f *fakeSearchBackend) Search(_ context.Context, query string, opts SearchOptions) ([]searchResult, error) {
 	f.gotQuery = query
-	f.gotLimit = limit
+	f.gotLimit = opts.Limit
 	return f.results, f.err
 }
 
@@ -77,13 +77,75 @@ func TestWebSearchRequiresQuery(t *testing.T) {
 }
 
 func TestWebSearchUnconfiguredBackend(t *testing.T) {
-	tool := newWebSearchToolWithBackend(nil)
-	res := tool.Run(context.Background(), map[string]any{"query": "q"})
-	if res.Status != StatusError {
-		t.Fatalf("expected StatusError, got %v", res.Status)
+	// Ensure no web-search env is set so the lazy backend resolution in Run
+	// yields nil (otherwise a dev shell with a key would mask the unconfigured
+	// path).
+	for _, k := range []string{
+		envWebSearchProvider, envExaAPIKey, envTavilyAPIKey,
+		envTinyFishAPIKey, envWebSearchBaseURL,
+	} {
+		t.Setenv(k, "")
 	}
-	if !strings.Contains(res.Output, "no search backend configured") {
+	tool := NewWebSearchTool()
+	res := tool.Run(context.Background(), map[string]any{"query": "q"})
+	// Always-visible tool: unconfigured returns a helpful setup hint (StatusOK),
+	// never a hard error, so the model can decide whether to search.
+	if res.Status != StatusOK {
+		t.Fatalf("expected StatusOK setup hint, got %v", res.Status)
+	}
+	if !strings.Contains(res.Output, "not configured") {
 		t.Fatalf("output should explain the missing backend, got %q", res.Output)
+	}
+	if !strings.Contains(res.Output, "EXA_API_KEY") {
+		t.Fatalf("setup hint should mention EXA_API_KEY, got %q", res.Output)
+	}
+}
+
+// TestWebSearchLazilyPicksUpEnvConfiguredAfterConstruction reproduces the bug
+// where /web-search sets env vars at runtime but a web_search tool constructed
+// earlier kept a stale (nil) backend. The tool must resolve the backend from
+// process env on each call, so config set after construction is honored.
+func TestWebSearchLazilyPicksUpEnvConfiguredAfterConstruction(t *testing.T) {
+	for _, k := range []string{
+		envWebSearchProvider, envExaAPIKey, envTavilyAPIKey,
+		envTinyFishAPIKey, envWebSearchBaseURL,
+	} {
+		t.Setenv(k, "")
+	}
+
+	// A local backend so no real network is touched. The generic/SearXNG path
+	// is driven by KAJICODE_WEBSEARCH_BASE_URL, exactly like a /web-search save.
+	hits := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"results":[{"title":"Go","url":"https://go.dev"}]}`))
+	}))
+	defer srv.Close()
+
+	tool := NewWebSearchTool() // constructed with no env set → backend nil
+
+	// Before setup: unconfigured hint.
+	res := tool.Run(context.Background(), map[string]any{"query": "q"})
+	if !strings.Contains(res.Output, "not configured") {
+		t.Fatalf("expected unconfigured hint before env set, got %q", res.Output)
+	}
+
+	// Simulate /web-search: set the provider + base URL live in this process.
+	t.Setenv(envWebSearchProvider, providerSearxng)
+	t.Setenv(envWebSearchBaseURL, srv.URL)
+
+	// After setup: same tool instance must build a backend from the live env and
+	// return results instead of the "not configured" hint.
+	res = tool.Run(context.Background(), map[string]any{"query": "q"})
+	if strings.Contains(res.Output, "not configured") {
+		t.Fatalf("post-setup Run still reports unconfigured: %q", res.Output)
+	}
+	if !strings.Contains(res.Output, "Go") || !strings.Contains(res.Output, "https://go.dev") {
+		t.Fatalf("expected search results after env set, got %q", res.Output)
+	}
+	if hits == 0 {
+		t.Fatal("lazy backend never hit the configured base URL")
 	}
 }
 
@@ -175,7 +237,7 @@ func TestHTTPSearchBackendSendsProviderAndParsesResults(t *testing.T) {
 	defer server.Close()
 
 	backend := &httpSearchBackend{client: server.Client(), baseURL: server.URL, apiKey: "k", provider: "exa"}
-	results, err := backend.Search(context.Background(), "q", 3)
+	results, err := backend.Search(context.Background(), "q", SearchOptions{Limit: 3})
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
@@ -196,7 +258,7 @@ type fakeHostedBackend struct {
 	called  bool
 }
 
-func (b *fakeHostedBackend) Search(context.Context, string, int) ([]searchResult, error) {
+func (b *fakeHostedBackend) Search(context.Context, string, SearchOptions) ([]searchResult, error) {
 	b.called = true
 	return b.results, nil
 }
@@ -400,7 +462,7 @@ func TestHTTPSearchBackendParsesScoreField(t *testing.T) {
 	defer server.Close()
 
 	backend := &httpSearchBackend{client: server.Client(), baseURL: server.URL}
-	results, err := backend.Search(context.Background(), "q", 5)
+	results, err := backend.Search(context.Background(), "q", SearchOptions{Limit: 5})
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
@@ -665,26 +727,36 @@ func TestParseSearchResultsToleratesNonNumericScore(t *testing.T) {
 	}
 }
 
-// #2: tiny positive and negative scores must not render; >=0.005 rounds in.
+// #2: sub-threshold/tiny/negative scores are filtered out by ranking; scores that
+// pass survive and render (rounded to 2dp). Rounding for non-0.01-boundary scores
+// is additionally asserted via formatSearchResults directly.
 func TestWebSearchScoreRenderingGate(t *testing.T) {
 	backend := &fakeSearchBackend{results: []searchResult{
 		{Title: "tiny", URL: "https://a.test/1", Score: 0.0001},
 		{Title: "neg", URL: "https://a.test/2", Score: -0.5},
-		{Title: "round-in", URL: "https://a.test/3", Score: 0.005},
+		{Title: "subthreshold", URL: "https://a.test/3", Score: 0.005},
 		{Title: "shown", URL: "https://a.test/4", Score: 0.91},
 	}}
 	res := newWebSearchToolWithBackend(backend).Run(context.Background(), map[string]any{"query": "x"})
 	if res.Status != StatusOK {
 		t.Fatalf("status = %v: %s", res.Status, res.Output)
 	}
+	// Ranked path drops everything < minWebSearchRelevanceScore, so only the 0.91
+	// result survives and renders — no 'score 0.00', no sub-threshold noise.
+	if !strings.Contains(res.Output, "score 0.91") {
+		t.Errorf("0.91 should render, got: %s", res.Output)
+	}
 	if strings.Contains(res.Output, "score 0.00") {
 		t.Errorf("tiny/negative score must not render 'score 0.00', got: %s", res.Output)
 	}
-	if !strings.Contains(res.Output, "score 0.01") {
-		t.Errorf("0.005 should round to 'score 0.01', got: %s", res.Output)
+	if strings.Contains(res.Output, "tiny") || strings.Contains(res.Output, "neg") || strings.Contains(res.Output, "subthreshold") {
+		t.Errorf("sub-threshold results must be dropped by ranking, got: %s", res.Output)
 	}
-	if !strings.Contains(res.Output, "score 0.91") {
-		t.Errorf("0.91 should render, got: %s", res.Output)
+
+	// formatSearchResults still rounds a passing score to 2dp on its own.
+	rendered := formatSearchResults([]searchResult{{Title: "t", URL: "https://a.test", Score: 0.005}})
+	if !strings.Contains(rendered, "score 0.01") {
+		t.Errorf("formatSearchResults should round 0.005 to 'score 0.01', got: %s", rendered)
 	}
 }
 

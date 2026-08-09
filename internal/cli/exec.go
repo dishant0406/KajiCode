@@ -355,6 +355,7 @@ func runExec(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) in
 		effectiveDeferThreshold = 0
 	}
 	registerToolSearchIfEligible(registry, effectiveDeferThreshold, permissionMode, options.enabledTools, options.disabledTools)
+	registerBatchTool(registry, options.enabledTools, options.disabledTools)
 	images, err := resolveExecImages(options.imagePaths, workspaceRoot)
 	if err != nil {
 		return writeExecFormatUsageError(stdout, stderr, options.outputFormat, err.Error())
@@ -699,6 +700,7 @@ func runExec(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) in
 		RequireCompletionSignal: !options.noCompletionGate,
 		Sandbox:                 sandboxEngine,
 		FileTracker:             fileTracker,
+		SessionStore:            execSessionStoreFor(preparedSession.Store, preparedSession.Session.SessionID),
 		Hooks:                   hookDispatcher,
 		EnabledTools:            options.enabledTools,
 		DisabledTools:           options.disabledTools,
@@ -941,6 +943,21 @@ func registerToolSearchIfEligible(registry *tools.Registry, deferThreshold int, 
 		return
 	}
 	registry.Register(tools.NewToolSearchTool(registry))
+}
+
+// registerBatchTool registers the explicit `batch` tool unless the operator
+// explicitly disabled it. Unlike tool_search (which is deferred to avoid ever
+// showing a combined set), batch is a small, always-available capability-safe
+// wrapper that collapses independent sub-calls into one message, so it is
+// exposed by default and gated only by the operator's tool filters.
+func registerBatchTool(registry *tools.Registry, enabledTools []string, disabledTools []string) {
+	if toolListContains(disabledTools, "batch") {
+		return
+	}
+	if len(enabledTools) > 0 && !toolListContains(enabledTools, "batch") {
+		return
+	}
+	registry.Register(tools.NewBatchTool(registry))
 }
 
 func buildExecSandboxEngine(workspaceRoot string, resolved config.ResolvedConfig, deps appDeps, scope *sandbox.Scope) (*sandbox.Engine, error) {

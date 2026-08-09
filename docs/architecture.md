@@ -167,6 +167,49 @@ Hooks in `internal/hooks` run around tool lifecycle events. Hooks may annotate o
 block execution, but they should not bypass the sandbox or mutate unrelated
 runtime state.
 
+### Tool catalog
+
+The core tools are registered from `internal/tools` and assembled in
+`internal/cli`. In addition to the foundational read/write, search, and command
+tools, the catalog now includes:
+
+- `multi_edit` — targeted string replacements synced in a fuzzy engine
+  (`internal/tools/multi_edit.go`), in `tools.CoreTools`.
+- `ls` — recursive ignore-aware directory tree (`internal/tools/ls.go`).
+- `code_search` — web-search-backed code search (`internal/tools/code_search.go`).
+- `todo_read` / `todo_write` — session-persisted todo list
+  (`internal/tools/todo.go` + `internal/sessions/state.go`).
+- `batch` — explicit batcher that fans out up to 10 sub-calls to
+  `Registry.RunWithOptions`, parallelizing only ReadOnly + ThreadSafe + permitted
+  calls with non-conflicting resource keys and serializing the rest
+  (`internal/tools/batch.go`). Wired via `registerBatchTool` in `internal/cli`
+  (exec.go and app.go), gated by operator tool filters, and excluded from the
+  core list so it never appears in the agent's eager schema.
+- `lsp_navigate` — full operation enum (definition, references, implementations,
+  workspace symbol, hover, document symbol, call hierarchy).
+- `web_search` — hosted web search with optional full page content
+  (`internal/tools/web_search.go`, `web_search_providers.go`). Fans out to a
+  provider: **Exa** (`EXA_API_KEY`), **Tavily** (`TAVILY_API_KEY`), a
+  self-hosted **SearXNG**/generic backend (`KAJICODE_WEBSEARCH_BASE_URL`), or a
+  failover chain of all configured providers. `KAJICODE_WEBSEARCH_PROVIDER`
+  (`auto|exa|tavily|searxng|snippet`) forces one. `web_search` is always visible
+  and returns a one-line setup hint when nothing is configured; `code_search`
+  stays gated on a real backend. Both scrub `EXA_API_KEY`, `TAVILY_API_KEY`,
+  `PARALLEL_API_KEY`, and `KAJICODE_WEBSEARCH_API_KEY` in the sandbox.
+- `/web-search` — TUI command (`internal/tui/web_search_form.go`) to configure
+  web-search credentials without hand-editing shell profiles: picks a provider,
+  edits the base URL, enters a masked API key, then persists `export KEY=…` lines
+  into a guarded block of the user's shell rc (`internal/tui/shellrc.go`,
+  detected from `$SHELL`) and a fallback env file under the config dir
+  (`internal/config/envfile.go`, loaded at startup via `os.Setenv` when the live
+  env var is unset). `/web-search status` reports what's set; `/web-search remove`
+  clears both write sites. Provider list comes from `tools.WebSearchProviders()`
+  in `web_search_providers.go`.
+
+The `batch` tool is deliberately not part of `CoreTools()`/`knownToolNames`
+because it needs a live `*tools.Registry` at construction and is only available
+through the run paths that wire it.
+
 ## Persistence
 
 KajiCode persists local session state through `internal/sessions`:

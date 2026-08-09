@@ -203,6 +203,7 @@ type model struct {
 	composerSelection     composerSelectionState
 	dictation             dictationController
 	sttKeyPrompt          *sttKeyPromptState
+	webSearchForm         *webSearchFormState
 	promptEditor          *promptEditorState
 	// plan holds the sticky plan panel state (steps, expansion, timings)
 	// synced from the update_plan tool. See plan_panel.go.
@@ -1304,6 +1305,10 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.sttKeyPrompt.input += strings.TrimSpace(msg.Content)
 			return m, nil
 		}
+		if m.webSearchForm != nil {
+			m.webSearchForm.apiKey += strings.TrimSpace(msg.Content)
+			return m, nil
+		}
 		if m.promptEditor != nil {
 			return m.handlePromptEditorPaste(msg.Content), nil
 		}
@@ -1358,6 +1363,10 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// input) until Enter saves or Esc cancels.
 		if m.sttKeyPrompt != nil {
 			return m.handleSTTKeyPromptKey(msg)
+		}
+		// The /web-search setup form is modal while open.
+		if m.webSearchForm != nil {
+			return m.handleWebSearchKey(msg)
 		}
 		if m.promptEditor != nil {
 			return m.handlePromptEditorKey(msg)
@@ -2797,6 +2806,7 @@ func (m model) transcriptView() string {
 	mcpOverlay := m.mcpManagerOverlay(width)
 	pickerOverlay := m.pickerOverlay(width)
 	sttKeyOverlay := m.sttKeyPromptOverlay(width)
+	webSearchOverlay := m.webSearchFormOverlay(width)
 	promptEditorOverlay := m.promptEditorOverlay(width)
 	viewportOverlay := ""
 	switch {
@@ -2804,6 +2814,8 @@ func (m model) transcriptView() string {
 		viewportOverlay = promptEditorOverlay
 	case sttKeyOverlay != "":
 		viewportOverlay = sttKeyOverlay
+	case webSearchOverlay != "":
+		viewportOverlay = webSearchOverlay
 	case helpOverlayContent != "":
 		viewportOverlay = helpOverlayContent
 	case leaderHelpOverlayContent != "":
@@ -4627,6 +4639,8 @@ func (m model) dispatchCommand(command parsedCommand) (tea.Model, tea.Cmd) {
 		return m.openSTTModelPicker()
 	case commandVoice:
 		return m.toggleVoiceMode()
+	case commandWebSearch:
+		return m.handleWebSearchCommand(command.text), nil
 	case commandContext:
 		m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: m.contextText()})
 		return m, nil

@@ -24,10 +24,11 @@ type grepTool struct {
 func (grepTool) outputCategory(map[string]any) outputCategory { return outputCategorySearch }
 
 type grepMatch struct {
-	file string
-	line int
-	text string
-	hits int
+	file  string
+	line  int
+	text  string
+	hits  int
+	mtime int64
 }
 
 var errGrepLimitReached = errors.New("grep head limit reached")
@@ -378,6 +379,12 @@ func scanGrepFile(ctx context.Context, resolvedRoot string, absolutePaths bool, 
 		fileLabel = filepath.ToSlash(resolvedPath)
 	}
 
+	// Capture the file's mtime once for recency ordering of results.
+	fileMtime := int64(0)
+	if info, statErr := os.Stat(resolvedPath); statErr == nil {
+		fileMtime = info.ModTime().UnixNano()
+	}
+
 	// Read the symlink-RESOLVED path that confineGrepFile validated, not the
 	// raw candidate, so a symlink swapped in after the check can't escape.
 	handle, err := os.Open(resolvedPath)
@@ -397,7 +404,7 @@ func scanGrepFile(ctx context.Context, resolvedRoot string, absolutePaths bool, 
 		raw, ended, err := readRawLine(reader)
 		if err == io.EOF {
 			if !sawLine || lastEnded {
-				return emitGrepLine(matcher, fileLabel, lineNumber, nil, emit)
+				return emitGrepLineWithMtime(matcher, fileLabel, fileMtime, lineNumber, nil, emit)
 			}
 			return nil
 		}
@@ -407,7 +414,7 @@ func scanGrepFile(ctx context.Context, resolvedRoot string, absolutePaths bool, 
 		sawLine = true
 		lastEnded = ended
 		line := trimTrailingCarriageReturns(trimLineBreak(raw, ended))
-		if err := emitGrepLine(matcher, fileLabel, lineNumber, line, emit); err != nil {
+		if err := emitGrepLineWithMtime(matcher, fileLabel, fileMtime, lineNumber, line, emit); err != nil {
 			return err
 		}
 		lineNumber++
@@ -422,15 +429,20 @@ func trimTrailingCarriageReturns(line []byte) []byte {
 }
 
 func emitGrepLine(matcher grepLineMatcher, fileLabel string, lineNumber int, line []byte, emit func(grepMatch) bool) error {
+	return emitGrepLineWithMtime(matcher, fileLabel, 0, lineNumber, line, emit)
+}
+
+func emitGrepLineWithMtime(matcher grepLineMatcher, fileLabel string, mtime int64, lineNumber int, line []byte, emit func(grepMatch) bool) error {
 	hits, ok := matcher(line)
 	if !ok {
 		return nil
 	}
 	if !emit(grepMatch{
-		file: fileLabel,
-		line: lineNumber,
-		text: string(line),
-		hits: hits,
+		file:  fileLabel,
+		line:  lineNumber,
+		text:  string(line),
+		hits:  hits,
+		mtime: mtime,
 	}) {
 		return errGrepLimitReached
 	}
@@ -451,7 +463,7 @@ func (collector *grepCountCollector) result() Result {
 }
 
 type grepFileListCollector struct {
-	files []string
+	files []grepMatch
 	seen  map[string]bool
 }
 
@@ -463,7 +475,7 @@ func (collector *grepFileListCollector) collect(match grepMatch) bool {
 		return true
 	}
 	collector.seen[match.file] = true
-	collector.files = append(collector.files, match.file)
+	collector.files = append(collector.files, match)
 	return true
 }
 
@@ -471,8 +483,19 @@ func (collector *grepFileListCollector) result() Result {
 	if len(collector.files) == 0 {
 		return okResult("No matches found.")
 	}
-	sort.Strings(collector.files)
-	return Result{Status: StatusOK, Output: strings.Join(collector.files, "\n")}
+	// Newest-first by file mtime, like opencode; ties break by name so output
+	// is deterministic.
+	sort.SliceStable(collector.files, func(i, j int) bool {
+		if collector.files[i].mtime != collector.files[j].mtime {
+			return collector.files[i].mtime > collector.files[j].mtime
+		}
+		return collector.files[i].file < collector.files[j].file
+	})
+	names := make([]string, 0, len(collector.files))
+	for _, match := range collector.files {
+		names = append(names, match.file)
+	}
+	return Result{Status: StatusOK, Output: strings.Join(names, "\n")}
 }
 
 type grepContentCollector struct {
@@ -496,6 +519,19 @@ func (collector *grepContentCollector) result() Result {
 	if collector.matchesSeen == 0 {
 		return okResult("No matches found.")
 	}
+	// Sort the captured matches newest-file-first so truncated output surfaces
+	// the most recently edited files (opencode recency ordering). Only the
+	// within-limit slice is reordered, never the full scan, so early-stop
+	// semantics and truncation markers are unchanged.
+	sort.SliceStable(collector.matches, func(i, j int) bool {
+		if collector.matches[i].mtime != collector.matches[j].mtime {
+			return collector.matches[i].mtime > collector.matches[j].mtime
+		}
+		if collector.matches[i].file != collector.matches[j].file {
+			return collector.matches[i].file < collector.matches[j].file
+		}
+		return collector.matches[i].line < collector.matches[j].line
+	})
 	lines := make([]string, 0, len(collector.matches))
 	for _, match := range collector.matches {
 		lines = append(lines, fmt.Sprintf("%s:%d: %s", match.file, match.line, match.text))

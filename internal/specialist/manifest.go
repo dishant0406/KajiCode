@@ -116,6 +116,11 @@ var knownToolNames = map[string]bool{
 	"exec_command":        true,
 	"write_stdin":         true,
 	"bash":                true,
+	"code_search":         true,
+	"ls":                  true,
+	"multi_edit":          true,
+	"todo_read":           true,
+	"todo_write":          true,
 	"web_fetch":           true,
 	"web_search":          true,
 }

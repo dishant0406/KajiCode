@@ -1005,6 +1005,10 @@ func scrubSensitiveEnv(env []string, additionalKeys ...string) []string {
 		"GITLAB_TOKEN",
 		"GH_TOKEN",
 		"KAJICODE_WEBSEARCH_API_KEY",
+		"EXA_API_KEY",
+		"TAVILY_API_KEY",
+		"PARALLEL_API_KEY",
+		"TINYFISH_API_KEY",
 		"KAJICODE_DAEMON_REMOTE_TOKEN",
 	}
 	for _, descriptor := range providercatalog.All() {

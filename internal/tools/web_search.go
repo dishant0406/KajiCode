@@ -9,7 +9,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
-	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -19,28 +19,64 @@ import (
 )
 
 const (
-	defaultWebSearchLimit  = 5
-	maxWebSearchLimit      = 10
-	webSearchTimeout       = 10 * time.Second
-	webSearchBodyLimit     = 256 * 1024
-	webSearchRedirectLimit = 5
+	defaultWebSearchLimit      = 5
+	maxWebSearchLimit          = 10
+	webSearchTimeout           = 10 * time.Second
+	webSearchBodyLimit         = 256 * 1024
+	webSearchRedirectLimit     = 5
+	defaultWebSearchContextMax = 10000
+	maxWebSearchContextMax     = 30000
+	minWebSearchRelevanceScore = 0.15
+	snippetProviderLabel       = "snippet"
 )
+
+// webSearchDescription builds the tool description with the current year baked
+// in (mirrors opencode's websearch.txt). This is what stops stale-cutoff answers
+// ("AI news 2025") by forcing the model to anchor recent-queries on the real year.
+func webSearchDescription() string {
+	year := time.Now().Year()
+	return fmt.Sprintf(
+		"Search the web and return ranked results. When a content provider (Exa/Tavily) is configured, results include page content excerpts; otherwise snippets (SearXNG/generic) are returned, in which case prefer web_fetch to retrieve a full page. The current year is %d: ALWAYS include it when searching for recent information. Example: instead of \"latest AI news\", search \"AI news %d\", NEVER \"AI news %d\".",
+		year, year, year-1,
+	)
+}
 
 // searchResult is one hit returned by a search backend.
 type searchResult struct {
 	Title   string
 	URL     string
 	Snippet string
+	// Content is the fetched page text when the provider returns full content
+	// (Exa/Tavily/Parallel), empty for snippet-only backends.
+	Content string
 	// Score is an optional provider-supplied relevance signal in the [0, 1]
 	// range. Zero (the zero value) is treated as "absent" by the renderer.
 	Score float64
 }
 
-// searchBackend discovers URLs for a query. It is an interface so any hosted
-// search API (or a fake, in tests) can be dropped in without touching the tool.
-// nil means no backend is configured.
+// SearchOptions carries the per-call knobs a backend needs to return rich,
+// content-bearing results (mirrors opencode's websearch parameters).
+type SearchOptions struct {
+	// Limit caps the number of results returned.
+	Limit int
+	// Type selects a search mode: auto | fast | deep.
+	Type string
+	// LiveCrawl is fallback | preferred and only affects content providers.
+	LiveCrawl string
+	// ContextMax caps the per-result content excerpt budget in characters.
+	ContextMax int
+	// CurrentYear is injected so providers/query guidance stay current.
+	CurrentYear int
+	// PreferredProvider forces a specific provider when set (exa|tavily|searxng);
+	// empty selects automatically with fallback.
+	PreferredProvider string
+}
+
+// searchBackend discovers URLs (and optionally full content) for a query. It is
+// an interface so any hosted search API (or a fake, in tests) can be dropped in
+// without touching the tool. nil means no backend is configured.
 type searchBackend interface {
-	Search(ctx context.Context, query string, limit int) ([]searchResult, error)
+	Search(ctx context.Context, query string, opts SearchOptions) ([]searchResult, error)
 }
 
 type webSearchTool struct {
@@ -50,14 +86,14 @@ type webSearchTool struct {
 
 // NewWebSearchTool builds the web_search tool with the env-configured backend.
 func NewWebSearchTool() Tool {
-	return newWebSearchToolWithBackend(defaultSearchBackend())
+	return newWebSearchToolWithBackend(nil)
 }
 
 func newWebSearchToolWithBackend(backend searchBackend) Tool {
 	return webSearchTool{
 		baseTool: baseTool{
 			name:        "web_search",
-			description: "Search the web for a query and return ranked results (title, URL, snippet). Complements web_fetch, which retrieves a single known URL.",
+			description: webSearchDescription(),
 			parameters: Schema{
 				Type: "object",
 				Properties: map[string]PropertySchema{
@@ -76,6 +112,25 @@ func newWebSearchToolWithBackend(backend searchBackend) Tool {
 						Type:        "array",
 						Description: "Optional list of allowed hostnames; results outside these hosts are filtered out before they reach the model. Useful as a prompt-injection defense when you only want results from a known set of domains.",
 						Items:       &PropertySchema{Type: "string"},
+					},
+					"type": {
+						Type:        "string",
+						Description: "Search type: auto, fast, or deep.",
+						Enum:        []string{"auto", "fast", "deep"},
+						Default:     "auto",
+					},
+					"livecrawl": {
+						Type:        "string",
+						Description: "Live-crawl mode for content providers: fallback (default) or preferred.",
+						Enum:        []string{"fallback", "preferred"},
+						Default:     "fallback",
+					},
+					"context_max_characters": {
+						Type:        "integer",
+						Description: "Per-result content budget in characters.",
+						Default:     defaultWebSearchContextMax,
+						Minimum:     intPtr(1),
+						Maximum:     intPtr(maxWebSearchContextMax),
 					},
 				},
 				Required:             []string{"query"},
@@ -105,6 +160,15 @@ func (tool webSearchTool) RunWithSandbox(ctx context.Context, args map[string]an
 }
 
 func (tool webSearchTool) Run(ctx context.Context, args map[string]any) Result {
+	// Resolve the backend lazily. NewWebSearchTool is constructed without a
+	// backend; defaultSearchBackend() reads the process env, so api keys
+	// configured at runtime (e.g. via /web-search, which sets env vars) take
+	// effect on the next call even though the tool was built earlier.
+	backend := tool.backend
+	if backend == nil {
+		backend = defaultSearchBackend()
+	}
+
 	query, err := stringArg(args, "query", "", true)
 	if err != nil {
 		return errorResult("Error: Invalid arguments for web_search: " + err.Error())
@@ -130,14 +194,39 @@ func (tool webSearchTool) Run(ctx context.Context, args map[string]any) Result {
 		return errorResult("Error: web_search 'domains' argument was provided but contained no valid hostnames; remove the argument or pass valid hostnames")
 	}
 
-	if tool.backend == nil {
-		return errorResult("Error: no search backend configured. Set KAJICODE_WEBSEARCH_BASE_URL (and KAJICODE_WEBSEARCH_API_KEY) to enable web_search.")
+	searchType, err := enumArg(args, "type", "auto", []string{"auto", "fast", "deep"})
+	if err != nil {
+		return errorResult("Error: Invalid arguments for web_search: " + err.Error())
+	}
+	livecrawl, err := enumArg(args, "livecrawl", "fallback", []string{"fallback", "preferred"})
+	if err != nil {
+		return errorResult("Error: Invalid arguments for web_search: " + err.Error())
+	}
+	contextMax, err := intArg(args, "context_max_characters", defaultWebSearchContextMax, 1, maxWebSearchContextMax)
+	if err != nil {
+		return errorResult("Error: Invalid arguments for web_search: " + err.Error())
+	}
+
+	if backend == nil {
+		// Always-visible tool: return a helpful one-line setup hint instead of a
+		// hard error so the model can either proceed without search or ask the
+		// user to configure a provider. code_search stays gated separately.
+		return okResult("web_search is not configured. To enable it, set KAJICODE_WEBSEARCH_PROVIDER (auto|exa|tavily|searxng|snippet|tinyfish) plus: EXA_API_KEY and/or TAVILY_API_KEY and/or TINYFISH_API_KEY for content, or KAJICODE_WEBSEARCH_BASE_URL for a self-hosted SearXNG/snippet backend.")
+	}
+
+	opts := SearchOptions{
+		Limit:             limit,
+		Type:              searchType,
+		LiveCrawl:         livecrawl,
+		ContextMax:        contextMax,
+		CurrentYear:       time.Now().Year(),
+		PreferredProvider: "",
 	}
 
 	runCtx, cancel := context.WithTimeout(ctx, webSearchTimeout)
 	defer cancel()
 
-	results, err := tool.backend.Search(runCtx, query, limit)
+	results, err := backend.Search(runCtx, query, opts)
 	if err != nil {
 		return errorResult("Error performing web search: " + redactWebSearchText(err.Error()))
 	}
@@ -151,13 +240,40 @@ func (tool webSearchTool) Run(ctx context.Context, args map[string]any) Result {
 		}
 		results = filtered
 	}
+	results = rankAndTrimWebSearchResults(results, limit)
 	if len(results) == 0 {
 		return okResult("No results for query: " + redactWebSearchText(query))
+	}
+	return okResult(redactWebSearchText(formatSearchResults(results)))
+}
+
+// rankAndTrimWebSearchResults sorts by relevance (highest score first) and then
+// applies a score floor so off-topic hits don't crowd out good ones. When no
+// result carries a score, the existing order is preserved (limit still applies).
+func rankAndTrimWebSearchResults(results []searchResult, limit int) []searchResult {
+	hasScore := false
+	for _, r := range results {
+		if r.Score > 0 {
+			hasScore = true
+			break
+		}
+	}
+	if hasScore {
+		sort.SliceStable(results, func(i, j int) bool {
+			return results[i].Score > results[j].Score
+		})
+		kept := results[:0]
+		for _, r := range results {
+			if r.Score >= minWebSearchRelevanceScore {
+				kept = append(kept, r)
+			}
+		}
+		results = kept
 	}
 	if len(results) > limit {
 		results = results[:limit]
 	}
-	return okResult(redactWebSearchText(formatSearchResults(results)))
+	return results
 }
 
 // formatSearchResults renders results as a compact numbered list:
@@ -166,7 +282,7 @@ func (tool webSearchTool) Run(ctx context.Context, args map[string]any) Result {
 // " — score 0.91" after the title. Absent (zero), negative, and sub-0.005 scores
 // are omitted so the common case stays tidy and never prints a noisy "score 0.00".
 func formatSearchResults(results []searchResult) string {
-	lines := make([]string, 0, len(results)*2)
+	lines := make([]string, 0, len(results)*3)
 	for index, result := range results {
 		title := strings.TrimSpace(result.Title)
 		if title == "" {
@@ -183,26 +299,21 @@ func formatSearchResults(results []searchResult) string {
 		if snippet := strings.TrimSpace(result.Snippet); snippet != "" {
 			lines = append(lines, "   "+snippet)
 		}
+		// Full page content from a content provider is the upgrade over snippet-only
+		// search: the model reads real text without a round-trip to web_fetch.
+		if content := strings.TrimSpace(result.Content); content != "" {
+			lines = append(lines, "   <content> "+content+" </content>")
+		}
 	}
 	return strings.Join(lines, "\n")
 }
 
-// defaultSearchBackend returns the env-configured generic backend, or nil when
-// KAJICODE_WEBSEARCH_BASE_URL is unset (the tool then reports it as unconfigured).
+// defaultSearchBackend returns the env-configured backend chain, or nil when
+// none of the supported knobs (Exa/Tavily keys, a base URL) are set. It honors
+// an explicit KAJICODE_WEBSEARCH_PROVIDER and otherwise auto-selects with
+// failover.
 func defaultSearchBackend() searchBackend {
-	baseURL := strings.TrimSpace(os.Getenv("KAJICODE_WEBSEARCH_BASE_URL"))
-	if baseURL == "" {
-		return nil
-	}
-	return &httpSearchBackend{
-		client: &http.Client{
-			Timeout:       webSearchTimeout,
-			CheckRedirect: sameHostRedirectPolicy,
-		},
-		baseURL:  baseURL,
-		apiKey:   strings.TrimSpace(os.Getenv("KAJICODE_WEBSEARCH_API_KEY")),
-		provider: strings.TrimSpace(os.Getenv("KAJICODE_WEBSEARCH_PROVIDER")),
-	}
+	return buildSearchBackend(envToSearchEnv())
 }
 
 // sameHostRedirectPolicy confines the search backend to redirects that stay on
@@ -235,13 +346,13 @@ type httpSearchBackend struct {
 	provider string
 }
 
-func (backend *httpSearchBackend) Search(ctx context.Context, query string, limit int) ([]searchResult, error) {
+func (backend *httpSearchBackend) Search(ctx context.Context, query string, opts SearchOptions) ([]searchResult, error) {
 	// SearXNG speaks a different shape (GET /search?q=&format=json, keyless), so a
 	// self-hosted instance works as a real engine with no API key.
 	if strings.EqualFold(backend.provider, "searxng") {
-		return backend.searchSearxng(ctx, query, limit)
+		return backend.searchSearxng(ctx, query, opts)
 	}
-	requestBody := map[string]any{"query": query, "limit": limit}
+	requestBody := map[string]any{"query": query, "limit": opts.Limit}
 	// Forward the configured provider so an aggregating endpoint can route the
 	// query; without this the KAJICODE_WEBSEARCH_PROVIDER knob would be inert.
 	if backend.provider != "" {
@@ -282,7 +393,7 @@ func (backend *httpSearchBackend) Search(ctx context.Context, query string, limi
 // searchSearxng queries a SearXNG instance: GET {baseURL}/search?q=&format=json,
 // no API key. SearXNG returns {results:[{title,url,content,score}]}, which differs
 // from the generic POST backend, so it has its own request + parser.
-func (backend *httpSearchBackend) searchSearxng(ctx context.Context, query string, limit int) ([]searchResult, error) {
+func (backend *httpSearchBackend) searchSearxng(ctx context.Context, query string, opts SearchOptions) ([]searchResult, error) {
 	endpoint, err := url.Parse(strings.TrimRight(backend.baseURL, "/") + "/search")
 	if err != nil {
 		return nil, fmt.Errorf("build searxng request: %w", err)
@@ -315,7 +426,7 @@ func (backend *httpSearchBackend) searchSearxng(ctx context.Context, query strin
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return nil, fmt.Errorf("searxng backend returned HTTP %d", response.StatusCode)
 	}
-	return parseSearxngResults(body, limit)
+	return parseSearxngResults(body, opts.Limit)
 }
 
 func parseSearxngResults(body []byte, limit int) ([]searchResult, error) {

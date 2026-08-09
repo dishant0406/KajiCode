@@ -326,6 +326,10 @@ type Options struct {
 	// can detect a file changed on disk outside KajiCode since it was last read. nil
 	// disables the check. Created once per session and threaded into every tool run.
 	FileTracker *tools.FileTracker
+	// SessionStore, when set, is threaded into every tool run's RunOptions so
+	// session-backed tools (todo_read / todo_write) can persist per-session state
+	// durably. nil disables durable persistence (tools fall back to in-process).
+	SessionStore tools.SessionStore
 	// Hooks, when set, runs configured beforeTool (blocking) and afterTool
 	// (advisory) commands around each tool call. nil disables hooks entirely; a
 	// dispatcher built from an empty config is also a safe no-op.

@@ -30,8 +30,8 @@ func tempDirOutsideDefaultTemp(t *testing.T) string {
 
 func TestCoreReadOnlyToolsExposeSafeMetadata(t *testing.T) {
 	toolset := CoreReadOnlyTools(t.TempDir())
-	if len(toolset) != 9 {
-		t.Fatalf("expected 9 core read-only tools, got %d", len(toolset))
+	if len(toolset) != 10 {
+		t.Fatalf("expected 10 core read-only tools, got %d", len(toolset))
 	}
 
 	seen := map[string]bool{}
@@ -127,10 +127,15 @@ func TestCoreNetworkToolsExposeSafetyMetadata(t *testing.T) {
 	}
 }
 
-func TestCoreNetworkToolsOmitWebSearchWhenUnconfigured(t *testing.T) {
-	// No backend configured → don't offer web_search (it could only error, which
-	// makes the model waste calls + prompts before falling back to an MCP search).
+func TestCoreNetworkToolsWebSearchAlwaysVisibleButCodeSearchGated(t *testing.T) {
+	// No backend configured → web_search must still be offered (returns a setup
+	// hint), while code_search stays gated (it could only error).
 	t.Setenv("KAJICODE_WEBSEARCH_BASE_URL", "")
+	t.Setenv("EXA_API_KEY", "")
+	t.Setenv("TAVILY_API_KEY", "")
+	t.Setenv("PARALLEL_API_KEY", "")
+	t.Setenv("KAJICODE_WEBSEARCH_API_KEY", "")
+	t.Setenv("KAJICODE_WEBSEARCH_PROVIDER", "")
 	names := map[string]bool{}
 	for _, tool := range CoreNetworkTools() {
 		names[tool.Name()] = true
@@ -138,8 +143,11 @@ func TestCoreNetworkToolsOmitWebSearchWhenUnconfigured(t *testing.T) {
 	if !names["web_fetch"] {
 		t.Fatal("web_fetch should always be present")
 	}
-	if names["web_search"] {
-		t.Fatal("web_search must be omitted when no search backend is configured")
+	if !names["web_search"] {
+		t.Fatal("web_search must always be visible, even when unconfigured")
+	}
+	if names["code_search"] {
+		t.Fatal("code_search must be omitted when no search backend is configured")
 	}
 }
 

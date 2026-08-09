@@ -797,6 +797,7 @@ func runInteractiveTUIWithSetup(stderr io.Writer, deps appDeps, permissionMode a
 	// unchanged. The interactive surface applies no operator tool filters, so
 	// enabled/disabled are nil — matching the AgentOptions below.
 	registerToolSearchIfEligible(registry, resolved.Tools.DeferThreshold, permissionMode, nil, nil)
+	registerBatchTool(registry, nil, nil)
 	sandboxStore, err := deps.newSandboxStore()
 	if err != nil {
 		return writeAppError(stderr, "failed to initialize sandbox grants: "+err.Error(), 1)

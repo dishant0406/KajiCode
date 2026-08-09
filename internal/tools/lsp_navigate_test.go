@@ -85,3 +85,27 @@ func TestLSPNavigateIsReadOnly(t *testing.T) {
 		t.Fatalf("name = %q", tool.Name())
 	}
 }
+
+func TestLSPNavigateAcceptsNewOps(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "notes.unknownext")
+	if err := os.WriteFile(path, []byte("hello"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	tool := NewLSPNavigateTool(root)
+	// Each new op must be recognized (not "unknown op") and degrade gracefully
+	// for an unsupported file type rather than error on argument validation.
+	for _, op := range []string{"hover", "document_symbol", "prepare_call_hierarchy", "incoming_calls", "outgoing_calls"} {
+		args := map[string]any{"op": op, "path": "notes.unknownext"}
+		if op != "document_symbol" {
+			args["line"], args["character"] = 1, 1
+		}
+		got := tool.Run(context.Background(), args)
+		if got.Status == StatusError {
+			t.Fatalf("op %s: expected graceful degrade (no unsupported-server error), got %s: %s", op, got.Status, got.Output)
+		}
+		if strings.Contains(got.Output, "unknown op") {
+			t.Fatalf("op %s: expected recognized op, got %q", op, got.Output)
+		}
+	}
+}

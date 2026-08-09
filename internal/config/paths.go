@@ -16,6 +16,12 @@ func DefaultResolveOptions(workspaceRoot string) (ResolveOptions, error) {
 		return ResolveOptions{}, err
 	}
 
+	// Load KajiCode's env fallback (keyed by /web-search and friends) into the
+	// process environment at startup so configured keys are live even when the
+	// user's shell never sourced them. Live env vars override the file. Failures
+	// are non-fatal: resolve keeps going with whatever the environment already had.
+	loadStartupEnvFile()
+
 	userConfigPath, err = existingConfigFile(userConfigPath)
 	if err != nil {
 		return ResolveOptions{}, err
@@ -33,6 +39,20 @@ func DefaultResolveOptions(workspaceRoot string) (ResolveOptions, error) {
 	}, nil
 }
 
+// loadStartupEnvFile loads the KajiCode env fallback from the KajiCode config
+// dir (~/.config/kajicode or $XDG_CONFIG_HOME/kajicode) into the process
+// environment (os.Setenv) unless the key is already live. Deliberately
+// best-effort and silent: this runs on every startup and must never block
+// startup on a transient read error.
+func loadStartupEnvFile() {
+	userConfigDir, err := UserConfigDir()
+	if err != nil {
+		return
+	}
+	_ = LoadEnvFile(filepath.Join(userConfigDir, "kajicode"))
+}
+
+// DefaultUserConfigPath returns the path of the per-user config.json.
 func DefaultUserConfigPath() (string, error) {
 	userConfigDir, err := UserConfigDir()
 	if err != nil {

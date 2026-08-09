@@ -17,10 +17,12 @@ import (
 // (auto permission-mode) interactive turn sends ~2430 tokens. The tool figure is
 // the auto-mode advertised set, not the full core registry — higher-risk tools that
 // only advertise in other modes are excluded, matching what a real turn actually
-// pays.
+// pays. The todo_read/todo_write, multi_edit, and ls tools advanced this floor and
+// are part of the intended eager (read-only, low-risk) surface, so the ceiling was
+// raised deliberately to keep 10% headroom over the measured 2828 tokens.
 const (
 	maxBaseSystemPromptTokens = 3500
-	maxEagerToolSchemaTokens  = 2700
+	maxEagerToolSchemaTokens  = 3200
 )
 
 func TestSystemPromptTokenBudget(t *testing.T) {

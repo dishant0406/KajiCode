@@ -29,6 +29,11 @@ type RunOptions struct {
 	// disk outside KajiCode since it was last read. nil disables the feature entirely
 	// (the read/write tools behave exactly as before).
 	FileTracker *FileTracker
+	// SessionStore, when set, persists per-session key/value metadata (used by
+	// todo_read / todo_write). Tools that need session state fall back to an
+	// in-process store keyed by SessionID when nil, so they stay functional
+	// without CLI wiring.
+	SessionStore SessionStore
 	// EnabledTools / DisabledTools carry the run's operator tool filters so a
 	// filter-aware tool (tool_search) never discloses or loads an operator-hidden
 	// tool. They use the same allow/deny semantics as the agent's filter gate:
@@ -47,6 +52,14 @@ type RunOptions struct {
 	// it introduced in the same turn instead of waiting for a later verification
 	// pass. nil disables inline diagnostics.
 	Diagnostics func(ctx context.Context, absPath string) string
+}
+
+// SessionStore is the narrow persistence surface session-backed tools need. The
+// CLI wires the real sessions.Store here; a nil field routes to an in-process
+// fallback so tools remain testable and functional without CLI wiring.
+type SessionStore interface {
+	ReadMetadata(id string) (map[string]any, error)
+	WriteMetadata(id string, meta map[string]any) error
 }
 
 type sandboxAwareTool interface {
@@ -271,6 +284,7 @@ func CoreReadOnlyToolsScoped(workspaceRoot string, scope PathScope) []Tool {
 		NewScopedReadFileTool(workspaceRoot, scope),
 		NewScopedReadMinifiedFileTool(workspaceRoot, scope),
 		NewScopedListDirectoryTool(workspaceRoot, scope),
+		NewScopedLsTool(workspaceRoot, scope),
 		NewScopedGlobTool(workspaceRoot, scope),
 		NewScopedGrepTool(workspaceRoot, scope),
 		// lsp_navigate is semantic code navigation (definition/references/impl/
@@ -308,12 +322,13 @@ func CoreShellToolsScoped(workspaceRoot string, scope PathScope) []Tool {
 
 func CoreNetworkTools() []Tool {
 	tools := []Tool{NewWebFetchTool()}
-	// Only offer the built-in web_search when a backend is actually configured.
-	// Registering it unconfigured makes the model waste calls (and high-risk
-	// permission prompts) on a tool that can only return "no backend configured";
-	// an MCP-provided search tool (e.g. Exa) stands on its own without it.
+	// web_search is always visible (mirrors opencode): when unconfigured it
+	// returns a one-line setup hint rather than a hard error, so the model can
+	// decide whether to search. code_search stays gated on an actual backend so
+	// it never surfaces unconfigured.
+	tools = append(tools, NewWebSearchTool())
 	if defaultSearchBackend() != nil {
-		tools = append(tools, NewWebSearchTool())
+		tools = append(tools, NewCodeSearchTool())
 	}
 	return tools
 }
@@ -324,5 +339,7 @@ func CoreToolsScoped(workspaceRoot string, scope PathScope) []Tool {
 	tools = append(tools, CoreWriteToolsScoped(workspaceRoot, scope)...)
 	tools = append(tools, CoreShellToolsScoped(workspaceRoot, scope)...)
 	tools = append(tools, CoreNetworkTools()...)
+	tools = append(tools, NewTodoReadTool(), NewTodoWriteTool())
+	tools = append(tools, NewMultiEditTool(workspaceRoot))
 	return tools
 }
