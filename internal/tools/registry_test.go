@@ -134,6 +134,7 @@ func TestCoreNetworkToolsWebSearchAlwaysVisibleButCodeSearchGated(t *testing.T) 
 	t.Setenv("EXA_API_KEY", "")
 	t.Setenv("TAVILY_API_KEY", "")
 	t.Setenv("PARALLEL_API_KEY", "")
+	t.Setenv("TINYFISH_API_KEY", "")
 	t.Setenv("KAJICODE_WEBSEARCH_API_KEY", "")
 	t.Setenv("KAJICODE_WEBSEARCH_PROVIDER", "")
 	names := map[string]bool{}

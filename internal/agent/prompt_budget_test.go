@@ -20,9 +20,15 @@ import (
 // pays. The todo_read/todo_write, multi_edit, and ls tools advanced this floor and
 // are part of the intended eager (read-only, low-risk) surface, so the ceiling was
 // raised deliberately to keep 10% headroom over the measured 2828 tokens.
+//
+// The declarative tool-spec + LSP work added web_search (319), lsp_navigate (289),
+// and the new ask_user/request_permissions permission flow tooling to the eager
+// surface; all are read-only / low-risk interaction tools that must be advertised
+// in auto mode, so the ceiling was raised deliberately to keep ~10% headroom over
+// the measured 3327 tokens rather than trimming the surface.
 const (
 	maxBaseSystemPromptTokens = 3500
-	maxEagerToolSchemaTokens  = 3200
+	maxEagerToolSchemaTokens  = 3600
 )
 
 func TestSystemPromptTokenBudget(t *testing.T) {

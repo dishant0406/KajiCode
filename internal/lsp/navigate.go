@@ -448,9 +448,9 @@ func decodeCallHierarchyCalls(raw json.RawMessage) ([]CallHierarchyCall, error) 
 		return nil, nil
 	}
 	var calls []struct {
-		From       chItem   `json:"from"`
-		FromRanges []Range  `json:"fromRanges"`
-		To         chItem   `json:"to"`
+		From       chItem  `json:"from"`
+		FromRanges []Range `json:"fromRanges"`
+		To         chItem  `json:"to"`
 	}
 	if err := json.Unmarshal(trimmed, &calls); err != nil {
 		return nil, err
