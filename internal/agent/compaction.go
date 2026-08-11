@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
 	"github.com/dishant0406/KajiCode/internal/trace"
@@ -52,13 +53,80 @@ const compactionTriggerRatio = 0.7
 // transcript (and so tests can assert on it).
 const summaryLabel = "[Summary of earlier conversation]"
 
-// summaryInstructions is the system prompt handed to the summarizer model.
+// summaryTemplate is the strict Markdown outline the summarizer must fill out.
+// Keeping a fixed structure means repeated compactions stay mutually consistent,
+// so the running summary accumulates facts rather than drifting in shape across
+// summarizer calls. Every section is preserved — titles, exact file paths,
+// symbols, and commands — with terse bullets.
+const summaryTemplate = `Write the summary strictly in this Markdown outline, terse bullet points, and keep every section heading exactly:
+
+## Objective
+The user's goal and hard constraints, in the user's own framing.
+
+## Important Details
+Decisions made and why; exact file paths, symbols, commands, and their important results.
+
+## Work State
+### Completed
+What has finished and holds.
+### Active
+What is currently in progress, with the exact next step.
+### Blocked
+Anything stuck, and the specific obstacle.
+
+## Next Move
+The single most likely next action, stated as an imperative.
+
+## Relevant Files
+Exact paths built/modified so far (one bullet each).`
+
+// summaryInstructions is the system prompt handed to the summarizer model. It
+// mandates the strict template and asks the summarizer to fold in any previous
+// summary block that heads the conversation rather than dropping it.
 const summaryInstructions = "You are compacting a coding-assistant conversation to save context. " +
-	"Write a dense, factual summary of the conversation so far. Preserve: the user's goals and explicit constraints; " +
-	"decisions made and why; files created or modified (with paths) and key code changes; commands run and their important " +
-	"results; and anything still in progress or unresolved. Omit pleasantries. Use terse bullet points. Do not invent details. " +
-	"If the conversation already begins with an earlier summary block, treat its facts as established context and carry them " +
-	"forward into the new summary — never drop earlier information."
+	"The NEWEST turns are kept verbatim outside your summary — focus on the older context that still matters, " +
+	"and never mention that you are summarizing or compacting.\n\n" +
+	summaryTemplate + "\n\nPreserve the user's goals, explicit constraints, decisions and why, files created or " +
+	"modified (exact paths) and key code changes, commands run and their important results, and anything still " +
+	"in progress or unresolved. Omit pleasantries. Do not invent details."
+
+// previousSummaryOpenTag / CloseTag wrap a prior compaction's summary block that
+// is folded into the next summarizer call, so a later compaction updates the
+// running summary instead of re-deriving it from scratch.
+const (
+	previousSummaryOpenTag  = "<previous-summary>"
+	previousSummaryCloseTag = "</previous-summary>"
+)
+
+// extractPreviousSummary returns the most recent injected summary text carried
+// in the head to fold into a new summarization, or "" if there is none. It
+// recognizes a user message starting with the summary label and strips the
+// label and any trailing preserved-state JSON block.
+func extractPreviousSummary(messages []kajicoderuntime.Message) string {
+	for i := len(messages) - 1; i >= 0; i-- {
+		message := messages[i]
+		if message.Role != kajicoderuntime.MessageRoleUser {
+			continue
+		}
+		content := strings.TrimSpace(message.Content)
+		if !strings.HasPrefix(content, summaryLabel) {
+			continue
+		}
+		body := strings.TrimPrefix(content, summaryLabel)
+		body = strings.TrimSpace(body)
+		// Strip the preserved-state JSON block appended by appendPreservedState
+		// so the previous *prose* summary carries into the template without the
+		// structured state duplicate.
+		if idx := strings.Index(body, preservedStateLabel); idx >= 0 {
+			body = strings.TrimSpace(body[:idx])
+		}
+		if body == "" {
+			continue
+		}
+		return summaryLabel + "\n" + body
+	}
+	return ""
+}
 
 // CompactionOptions configure a single Compact call.
 type CompactionOptions struct {
@@ -66,6 +134,20 @@ type CompactionOptions struct {
 	// preserved suffix is widened (never shrunk) so it begins at a safe
 	// user/assistant boundary. <= 0 falls back to defaultCompactionPreserveLast.
 	PreserveLast int
+	// TailTurns enables opencode-style turn/budget-aware tail selection. When
+	// > 0, the preserved suffix is a recent window of complete user turns — the
+	// TOTAL count of recent turns kept verbatim (including the mandatory newest
+	// turn) — budgeted to TailTokenBudget tokens (see compaction_tail.go) instead
+	// of a bare message count, and an over-budget turn is split so its newest
+	// part stays verbatim. When <= 0 the legacy PreserveLast message-count tail
+	// is used.
+	TailTurns int
+	// TailTokenBudget is the token budget for the verbatim tail when TailTurns
+	// is active. <= 0 falls back to tailTokenBudget(ContextWindow).
+	TailTokenBudget int
+	// ContextWindow is the model's context window, used to derive the tail
+	// budget when TailTurns is active and TailTokenBudget is unset.
+	ContextWindow int
 	// Summarize turns the to-be-elided middle into a single dense summary. It is
 	// injected so Compact stays pure and testable; the agent loop wires it to a
 	// real provider call.
@@ -238,13 +320,33 @@ func CompactMessages(messages []kajicoderuntime.Message, opts CompactionOptions)
 		systemEnd++
 	}
 
-	// Naive boundary: keep the last preserveLast messages. Then widen the suffix
-	// backward to a safe boundary so it never starts on a tool result.
-	boundary := len(messages) - preserveLast
+	// Determine the preserve boundary. When TailTurns is active, keep a recent
+	// window of complete user turns budgeted to a token budget (opencode-style);
+	// otherwise keep the legacy trailing message count. Both widen to a safe
+	// boundary so the preserved suffix never starts on a tool result.
+	var boundary int
+	if opts.TailTurns > 0 {
+		budget := opts.TailTokenBudget
+		if budget <= 0 {
+			budget = tailTokenBudget(opts.ContextWindow)
+		}
+		boundary = planTail(messages, systemEnd, opts.TailTurns, budget)
+	} else {
+		boundary = len(messages) - opts.PreserveLast
+	}
 	if boundary < systemEnd {
 		boundary = systemEnd
 	}
-	boundary = safeSuffixBoundary(messages, systemEnd, boundary)
+	// Widen the boundary to a safe start so the preserved suffix never begins on
+	// a tool result (a dangling tool result with no preceding assistant tool call
+	// is rejected by provider APIs; the summary is user-role, so a user-led
+	// suffix would create consecutive user turns). When planTail reported "keep
+	// everything" (boundary == len(messages)) there is nothing to summarize, so
+	// leave the boundary untouched — widening would walk the newest user prompt
+	// (the active ask) back into the elided middle and drop it.
+	if boundary < len(messages) {
+		boundary = safeSuffixBoundary(messages, systemEnd, boundary)
+	}
 
 	middle := messages[systemEnd:boundary]
 	if len(middle) == 0 {
@@ -353,8 +455,16 @@ func isStreamTimeoutError(message string) bool {
 // options.ContextWindow <= 0.
 type compactionState struct {
 	enabled      bool
+	window       int
 	threshold    int
 	preserveLast int
+	// tailTurns is the number of complete recent user turns the budgeted tail
+	// keeps verbatim (beyond the mandatory newest turn), or 0 to use the legacy
+	// message-count preserveLast tail.
+	tailTurns int
+	// tailBudget is the token budget for the verbatim tail when tailTurns is
+	// active (derived from the context window at construction).
+	tailBudget int
 	// lowWaterMark is the estimated token size at (or below) which we will NOT
 	// proactively compact again. It is the size right after the last compaction;
 	// the loop only compacts when the history has grown past it AND is over the
@@ -414,6 +524,7 @@ func (state *compactionState) calibratedTokens(raw int) int {
 func newCompactionState(options Options, task *taskState) *compactionState {
 	state := &compactionState{
 		enabled: options.ContextWindow > 0,
+		window:  options.ContextWindow,
 		// Reserve output headroom so proactive compaction fires before the model
 		// would hit the hard limit trying to reply after the elision.
 		threshold:    compactionThresholdWithReserve(options.ContextWindow, effectiveCompactionTriggerRatio(options)),
@@ -422,6 +533,19 @@ func newCompactionState(options Options, task *taskState) *compactionState {
 		onCompaction: options.OnCompaction,
 		onPhase:      options.OnPhase,
 		task:         task,
+	}
+	// opencode-style budgeted tail: active for realistic model windows (the real
+	// deployment path), keeping a recent turn window verbatim instead of a bare
+	// message count. Tiny harness/test windows keep the legacy message-count tail
+	// so existing small-window semantics hold. TailTurns can be set explicitly to
+	// force the budgeted path in tests.
+	tailTurns := options.CompactionTailTurns
+	if tailTurns == 0 && options.ContextWindow >= defaultBudgetedTailMinWindow {
+		tailTurns = defaultCompactionTailTurns
+	}
+	state.tailTurns = tailTurns
+	if tailTurns > 0 {
+		state.tailBudget = tailTokenBudget(options.ContextWindow)
 	}
 	return state
 }
@@ -466,9 +590,12 @@ func (state *compactionState) maybeCompact(
 	}
 
 	result, err := CompactMessages(messages, CompactionOptions{
-		PreserveLast: state.preserveLast,
-		Summarize:    summarizeClosure(ctx, provider, state.onUsage),
-		taskState:    state.task.snapshotForCompaction(messages),
+		PreserveLast:    state.preserveLast,
+		TailTurns:       state.tailTurns,
+		TailTokenBudget: state.tailBudget,
+		ContextWindow:   state.window,
+		Summarize:       summarizeClosure(ctx, provider, state.onUsage),
+		taskState:       state.task.snapshotForCompaction(messages),
 	})
 	if err != nil {
 		// Summarizer failed: keep the original history. The reactive path (or a
@@ -520,8 +647,13 @@ func (state *compactionState) recover(
 
 	result, compactErr := CompactMessages(messages, CompactionOptions{
 		PreserveLast: state.preserveLast,
-		Summarize:    summarizeClosure(ctx, provider, state.onUsage),
-		taskState:    state.task.snapshotForCompaction(messages),
+		// REACTIVE compaction must guarantee a shrink so the retried turn fits:
+		// a budgeted tail can keep a small whole history verbatim and no-op.
+		// Just set TailTurns=0 to force the aggressive legacy message-count tail
+		// here; the richer turn/budget tail is reserved for proactive splts.
+		TailTurns: 0,
+		Summarize: summarizeClosure(ctx, provider, state.onUsage),
+		taskState: state.task.snapshotForCompaction(messages),
 	})
 	if compactErr != nil {
 		// A genuine compaction attempt was made (and failed): the budget is spent
@@ -647,10 +779,21 @@ func summarizeWithFallback(ctx context.Context, provider Provider, messages []ka
 
 // summarizeMessagesOnce performs a single tool-less summarization call.
 func summarizeMessagesOnce(ctx context.Context, provider Provider, messages []kajicoderuntime.Message, onUsage func(Usage)) (string, error) {
+	// Fold a prior compaction's summary block into the prompt so a later
+	// compaction UPDATEs the running summary rather than re-deriving it from
+	// scratch (opencode's anchored-summary contract). The previous summary (if
+	// any) lives at the head of the middle being summarized on repeated runs.
+	userPrompt := "Summarize this conversation:\n\n" + renderTranscript(messages)
+	if previous := extractPreviousSummary(messages); previous != "" {
+		userPrompt = "Update the anchored summary below using the conversation history above. " +
+			"Preserve still-true details, remove stale details, and merge in the new facts.\n\n" +
+			previousSummaryOpenTag + "\n" + previous + "\n" + previousSummaryCloseTag +
+			"\n\nConversation history:\n\n" + renderTranscript(messages)
+	}
 	request := kajicoderuntime.CompletionRequest{
 		Messages: []kajicoderuntime.Message{
 			{Role: kajicoderuntime.MessageRoleSystem, Content: summaryInstructions},
-			{Role: kajicoderuntime.MessageRoleUser, Content: "Summarize this conversation:\n\n" + renderTranscript(messages)},
+			{Role: kajicoderuntime.MessageRoleUser, Content: userPrompt},
 		},
 		// No tools: this is a plain text summarization call.
 	}
@@ -673,6 +816,8 @@ func summarizeMessagesOnce(ctx context.Context, provider Provider, messages []ka
 
 // renderTranscript flattens messages into a plain-text transcript for the
 // summarizer. Secret scrubbing already happened upstream at the tool boundary.
+// Tool-result bodies are bounded to summarizeToolResultMaxBytes (opencode-style)
+// so a single giant output can't bloat the summarizer's own input window.
 func renderTranscript(messages []kajicoderuntime.Message) string {
 	lines := make([]string, 0, len(messages))
 	for _, message := range messages {
@@ -688,10 +833,40 @@ func renderTranscript(messages []kajicoderuntime.Message) string {
 			}
 			lines = append(lines, line)
 		case kajicoderuntime.MessageRoleTool:
-			lines = append(lines, "tool result: "+message.Content)
+			// An already-pruned body means the model long since acted on it; the
+			// placeholder carries everything compressible. Otherwise bound the body.
+			body := message.Content
+			if isPrunedPlaceholder(body) {
+				body = "[Old tool result content cleared to reclaim context]"
+			} else {
+				body = truncateTranscriptBytes(body)
+			}
+			lines = append(lines, "tool result: "+body)
 		default:
 			lines = append(lines, string(message.Role)+": "+message.Content)
 		}
 	}
 	return strings.Join(lines, "\n\n")
+}
+
+// summarizeToolResultMaxBytes caps each tool-result body a summarizer sees, so a
+// huge output can't dominate the summarizer input. Matches opencode's ~2000-char
+// truncation of tool outputs fed to the summarizer.
+const summarizeToolResultMaxBytes = 2000
+
+// truncateTranscriptBytes truncates a long tool-result body to
+// summarizeToolResultMaxBytes bytes on a UTF-8 rune boundary, appending a note.
+func truncateTranscriptBytes(body string) string {
+	if len(body) <= summarizeToolResultMaxBytes {
+		return body
+	}
+	const suffix = "… (output truncated for compaction)"
+	limit := summarizeToolResultMaxBytes - len(suffix)
+	if limit < 0 {
+		limit = 0
+	}
+	for limit > 0 && !utf8.RuneStart(body[limit]) {
+		limit--
+	}
+	return body[:limit] + suffix
 }
