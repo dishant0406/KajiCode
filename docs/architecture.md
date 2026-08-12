@@ -153,6 +153,12 @@ Learned lessons are surfaced to the model as durable memory
 yield to any current, explicit instruction. Apply is safe-by-default: diff +
 tests gate the change, and a failed apply rolls back to the pre-run state.
 
+Recall mirrors compaction's budgeted-tail principle: entries carry a `lastUsedAt`
+stamp (`harness.TouchEntry`) that the injected `learning.Context` view orders by
+(freshest-first, capped per kind and by a whole-block token budget), and the plan
+pass is anchored (`buildPlanPrompt`) to preserve the curated state by preferring
+update-over-create, backstopped by a normalized-title dedup guard in `apply.go`.
+
 ## Tools, Sandbox, And Hooks
 
 Tools are registered by name in `internal/tools.Registry`. Each tool needs clear

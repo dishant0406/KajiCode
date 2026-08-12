@@ -201,8 +201,10 @@ func (e *LearningEngine) loadRefinements() []harness.RefinementEvent {
 // section. It is called at run start by buildSystemPromptParts so the model
 // sees durable lessons (memory/prompt/subagent entries) on the first turn, and
 // later by the loop's same-session refresh to pick up newly applied lessons.
-// The block is bounded per kind and each entry's content is truncated; a
-// growing harness store can never blow the context window.
+// The merged set is recall-ordered (freshest-first), the block is capped per
+// kind, and the whole block obeys a token budget — so a growing harness store
+// can never blow the context window and is biased toward memory the model has
+// actually re-used (compaction's "keep the freshest within a budget").
 func (e *LearningEngine) Context() string {
 	if e == nil {
 		return ""
@@ -213,6 +215,7 @@ func (e *LearningEngine) Context() string {
 	}
 	var b strings.Builder
 	shows := map[harness.Kind]int{}
+	budget := learnedMemoryTokenBudget()
 	for _, entry := range merged {
 		switch entry.Kind {
 		case harness.KindMemory, harness.KindPrompt, harness.KindSubagent:
@@ -227,12 +230,28 @@ func (e *LearningEngine) Context() string {
 			if scope == "" {
 				scope = string(harness.ScopeLocal)
 			}
-			fmt.Fprintf(&b, "- [%s] %s: %s\n", scope, title, trimLearningContent(entry.Content))
+			line := fmt.Sprintf("- [%s] %s: %s\n", scope, title, trimLearningContent(entry.Content))
+			weight := ApproxTextTokens(line)
+			if weight > budget {
+				// The whole block is over budget; drop the rest (which are all
+				// strictly older than what we've already shown).
+				break
+			}
+			b.WriteString(line)
+			budget -= weight
 			shows[entry.Kind]++
 		}
 	}
 	return strings.TrimSpace(b.String())
 }
+
+// learnedMemoryTokenBudget bounds the whole <learned_memory> block so a store
+// with many lessons can never monopolize the context budget, mirroring the
+// compaction tail budget (a fraction of the window). A static, self-contained
+// ceiling keeps the block deterministic and cheap to reason about.
+const learnedMemoryTokenBudgetValue = 1200
+
+func learnedMemoryTokenBudget() int { return learnedMemoryTokenBudgetValue }
 
 // trimLearningContent normalizes a learned entry's content for the one-line
 // prompt summary: newlines collapse to spaces and the value is truncated with a

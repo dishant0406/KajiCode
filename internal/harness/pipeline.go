@@ -147,6 +147,7 @@ Rules:
 - Scope: local by default. Use global only for durable cross-session lessons.
 - A recipe entry's commands array is [{ "id": string, "tool": string (a registered KajiCode tool name), "args": object }].
 - Delete only entries that are stale or contradicted. Never delete an entry you did not first read.
+- Preserve still-true details in the current learning state. Do not create a near-duplicate of an entry the state already carries — prefer updating the existing entry.
 
 Reply with ONLY a JSON object, no markdown fences:
 {
@@ -171,8 +172,18 @@ func buildPlanPrompt(options PlanOptions) string {
 	var b strings.Builder
 	b.WriteString("<scope_policy>\n" + strings.TrimSpace(options.ScopePolicy) + "\n</scope_policy>\n\n")
 	b.WriteString("<current_learning_state>\n")
-	b.WriteString(FormatHarnessStateForPrompt(ScopeLocal, MergeHarnessStates(options.State, State{}), 20))
+	merged := MergeHarnessStates(options.State, State{})
+	b.WriteString(FormatHarnessStateForPrompt(ScopeLocal, merged, 20))
 	b.WriteString("\n</current_learning_state>\n\n")
+	// Anchored plan: the current state is the bounded, freshest-first view the
+	// plan will mutate. Mirror compaction's "preserve still-true details" — the
+	// plan must not delete or rewrite an existing lesson just because a similar
+	// fact reappeared; prefer an update-over-create merge.
+	if len(merged) > 0 {
+		b.WriteString("<anchor>\n")
+		b.WriteString("The <current_learning_state> above is the live memory this run re-uses. Preserve still-true details in it; do not create a near-duplicate the memory already carries — prefer updating the existing entry. Only create when the lesson is genuinely new. Only delete entries that are stale or contradicted by this conversation.\n")
+		b.WriteString("</anchor>\n\n")
+	}
 	b.WriteString("<refinement_history>\n")
 	writeRefinementHistory(&b, options.Refinements)
 	b.WriteString("\n</refinement_history>\n\n")

@@ -173,3 +173,68 @@ func TestStateJSONRoundTripIsStable(t *testing.T) {
 func contains(s, sub string) bool {
 	return strings.Contains(s, sub)
 }
+
+func TestTouchEntryStampsLastUsedAt(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "learning")
+	store := NewStore(StoreOptions{Dir: dir, Scope: ScopeGlobal, Now: fixedNow})
+	if err := store.WithLock(func(state State) (State, error) {
+		state.Entries = append(state.Entries, NewEntry(KindMemory, "fact", "c", "fact", "general", ScopeGlobal, "agent", time.Now()))
+		return state, nil
+	}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	now := time.Date(2026, 3, 4, 5, 6, 7, 0, time.UTC)
+	if !store.TouchEntry(KindMemory, "fact", now, false) {
+		t.Fatal("TouchEntry returned false for existing entry")
+	}
+	state, err := store.Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(state.Entries) != 1 {
+		t.Fatalf("entries = %d, want 1", len(state.Entries))
+	}
+	if state.Entries[0].LastUsedAt != "2026-03-04T05:06:07Z" {
+		t.Fatalf("LastUsedAt = %q", state.Entries[0].LastUsedAt)
+	}
+	if state.Entries[0].Version != 1 {
+		t.Fatalf("non-bumping touch must not advance version, got v%d", state.Entries[0].Version)
+	}
+	// bumpVersion advances the version.
+	if !store.TouchEntry(KindMemory, "fact", now.Add(time.Hour), true) {
+		t.Fatal("TouchEntry(bump) returned false")
+	}
+	if state, _ = store.Load(); state.Entries[0].Version != 2 {
+		t.Fatalf("touch bump did not advance version, got v%d", state.Entries[0].Version)
+	}
+}
+
+func TestTouchEntryMissingIsNoop(t *testing.T) {
+	store := NewStore(StoreOptions{Dir: filepath.Join(t.TempDir(), "learning"), Scope: ScopeGlobal})
+	if store.TouchEntry(KindMemory, "nope", time.Now(), false) {
+		t.Fatal("TouchEntry should be false for a missing entry")
+	}
+	if (*Store)(nil).TouchEntry(KindMemory, "x", time.Now(), false) {
+		t.Fatal("nil store TouchEntry should be a no-op")
+	}
+}
+
+func TestOrderByRecency(t *testing.T) {
+	older := "2025-01-01T00:00:00Z"
+	newest := "2026-02-02T00:00:00Z"
+	mid := "2025-06-01T00:00:00Z"
+	entries := []Entry{
+		{ID: "a", Kind: KindMemory, Title: "A", Scope: ScopeGlobal, UpdatedAt: older},
+		{ID: "b", Kind: KindMemory, Title: "B", Scope: ScopeGlobal, UpdatedAt: mid, LastUsedAt: newest},
+		{ID: "c", Kind: KindMemory, Title: "C", Scope: ScopeGlobal, UpdatedAt: mid},
+		{ID: "d", Kind: KindMemory, Title: "D", Scope: ScopeGlobal, UpdatedAt: newest},
+	}
+	OrderByRecency(entries)
+	if entries[0].ID != "b" {
+		t.Fatalf("most-recently-used should surface first, got %#v", entries[0])
+	}
+	// d (updated newest but never used) beats c (mid UpdatedAt).
+	if entries[1].ID != "d" {
+		t.Fatalf("updated-newest should beat mid-updated, got %#v", entries[1])
+	}
+}

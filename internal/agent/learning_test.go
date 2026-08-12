@@ -362,3 +362,55 @@ func TestRunSplicesFreshLearnedMemoryIntoSameSessionRequests(t *testing.T) {
 func baseMsgs() []kajicoderuntime.Message {
 	return []kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleSystem, Content: "core instructions"}}
 }
+
+func TestLearningContextRecencyFirstWithinBudget(t *testing.T) {
+	gs, ls := newEngineStores(t)
+	seed := func(id, content, updated, lastUsed string) {
+		t.Helper()
+		if err := gs.WithLock(func(state harness.State) (harness.State, error) {
+			e := harness.NewEntry(harness.KindMemory, id, content, id, "general", harness.ScopeGlobal, "agent", testNow())
+			e.UpdatedAt = updated
+			e.LastUsedAt = lastUsed
+			state.Entries = append(state.Entries, e)
+			return state, nil
+		}); err != nil {
+			t.Fatalf("seed %s: %v", id, err)
+		}
+	}
+	older := "2025-01-01T00:00:00Z"
+	used := "2026-02-02T00:00:00Z"
+	seed("reused", "lesson A", older, used)
+	seed("plain_old", strings.Repeat("old content ", 20), older, "")
+
+	eng := NewLearningEngine(config.LearningConfig{}, nil, gs, ls)
+	ctx := eng.Context()
+	if !strings.Contains(ctx, "reused") || !strings.Contains(ctx, "plain_old") {
+		t.Fatalf("context missing entries: %q", ctx)
+	}
+	// Reused lesson must surface before the unused one.
+	if strings.Index(ctx, "reused") > strings.Index(ctx, "plain_old") {
+		t.Fatalf("recency ordering broken:\n%s", ctx)
+	}
+}
+
+func TestLearningContextTokenBudgetCapsBlock(t *testing.T) {
+	gs, ls := newEngineStores(t)
+	// A single large entry that exceeds the whole-block budget must not blow it.
+	if err := gs.WithLock(func(state harness.State) (harness.State, error) {
+		state.Entries = append(state.Entries, harness.NewEntry(harness.KindMemory, "big", strings.Repeat("very long content ", 4000), "big", "general", harness.ScopeGlobal, "agent", testNow()))
+		return state, nil
+	}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	eng := NewLearningEngine(config.LearningConfig{}, nil, gs, ls)
+	ctx := eng.Context()
+	if ApproxTextTokens(ctx) > learnedMemoryTokenBudget() {
+		t.Fatalf("context exceeded token budget: %d > %d", ApproxTextTokens(ctx), learnedMemoryTokenBudget())
+	}
+	// Even so, content is per-line truncated to the per-kind content cap.
+	for _, line := range strings.Split(ctx, "\n") {
+		if len(line) > learnedPromptoMaxContentLen+40 {
+			t.Fatalf("line too long: %q", line)
+		}
+	}
+}

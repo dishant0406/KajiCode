@@ -105,6 +105,17 @@ func applyOne(proposal EditProposal, entries []Entry, baselineVersions map[strin
 		if idxEntry(entries, proposal.Kind, proposal.ID) >= 0 {
 			return EditOutcome{Proposal: proposal, Error: fmt.Sprintf("%s:%s already exists", proposal.Kind, proposal.ID)}, entries, false
 		}
+		// Dedup-on-create: reject a near-duplicate of an existing entry of the
+		// same kind (normalized-title match). Mirroring compaction's "update
+		// rather than re-add", the plan pass is told to prefer update-over-create;
+		// this guard backstops an LLM that creates a near clone instead, so it
+		// cannot silently starve the per-kind recall cap.
+		if idx := idxSameTitle(entries, proposal.Kind, proposal.Title); idx >= 0 {
+			return EditOutcome{
+				Proposal: proposal,
+				Error:    fmt.Sprintf("%s:%s near-duplicate of %s:%s (same title)", proposal.Kind, proposal.ID, proposal.Kind, entries[idx].ID),
+			}, entries, false
+		}
 		entry := NewEntry(proposal.Kind, proposal.Title, proposal.Content, proposal.ID, proposal.Path, target, "learning", now)
 		if proposal.Recipe != nil {
 			entry.Recipe = proposal.Recipe
@@ -170,4 +181,33 @@ func idxEntry(entries []Entry, kind Kind, id string) int {
 		}
 	}
 	return -1
+}
+
+// idxSameTitle returns the index of the first entry of kind whose normalized
+// title matches the proposal's normalized title, or -1. The normalization is a
+// conservative dup signal (spaces/punct collapsed, case-folded), so it only
+// rejects obvious clones, not distinct lessons that merely share a headword.
+func idxSameTitle(entries []Entry, kind Kind, title string) int {
+	want := normalizeTitle(title)
+	if want == "" {
+		return -1
+	}
+	for i, e := range entries {
+		if e.Kind != kind {
+			continue
+		}
+		if normalizeTitle(e.Title) == want {
+			return i
+		}
+	}
+	return -1
+}
+
+// normalizeTitle folds and collapses a title for dup comparison: case-folded,
+// non-alnum collapsed to single spaces, trimmed.
+func normalizeTitle(title string) string {
+	fields := strings.FieldsFunc(strings.ToLower(strings.TrimSpace(title)), func(r rune) bool {
+		return !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9')
+	})
+	return strings.Join(fields, " ")
 }

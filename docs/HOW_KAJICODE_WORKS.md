@@ -270,6 +270,24 @@ Learned lessons are injected as `<learned_memory>` prompt addenda: they are
 treated as project/user conventions, not immutable facts, and a current explicit
 instruction always wins over one of them.
 
+The learned-memory view mirrors the compaction engine's "keep the freshest within
+a budget" principle:
+
+- Entries carry a `lastUsedAt` stamp updated by `harness.TouchEntry` when a model
+  actually re-applies a lesson, so the injected block is recall-ordered
+  (freshest-first) rather than an alphabetical slab.
+- The whole block obeys a token budget (`learning.Context`), capped per kind
+  too, so a growing store can never blow the context window; lessons the model
+  re-uses stay pinned at the top and unused ones age out.
+- The plan pass is anchored (`buildPlanPrompt`): the current curated state is
+  shown as a live anchor the plan must preserve, telling the optimizer to prefer
+  update-over-create instead of re-adding a near-duplicate. `apply.go` backstops
+  this by rejecting creates a that exactly duplicate an existing same-kind title.
+- Applying a lesson only succeeds after a diff and test verification, guarded by
+  file locks and recorded state, and rolls back to the pre-run state on failure.
+- A recipe is a repeatable standard (prompts, tool budget, expectations) that can
+  turn a run into a learning pass.
+
 ## Tool Execution Lifecycle
 
 A tool call is part of the model conversation, not a side channel that bypasses

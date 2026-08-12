@@ -91,7 +91,11 @@ type Entry struct {
 	Source    string         `json:"source,omitempty"`
 	CreatedAt string         `json:"createdAt"`
 	UpdatedAt string         `json:"updatedAt"`
-	Version   int            `json:"version"`
+	// LastUsedAt is stamped by TouchEntry when the model actually applies the
+	// lesson in a turn. It drives recall (freshest-first) so re-used lessons are
+	// pinned at the top of the prompted budget while stale ones age out.
+	LastUsedAt string `json:"lastUsedAt,omitempty"`
+	Version    int    `json:"version"`
 }
 
 // NewEntry builds an entry with defaults applied. ID is derived from title when
@@ -337,6 +341,36 @@ func (store *Store) WithLock(fn func(State) (State, error)) error {
 	return store.saveLocked(next)
 }
 
+// TouchEntry stamps LastUsedAt on an existing entry (under the OS file lock) to
+// record that the model actually applied that lesson in a run. bumpVersion
+// controls whether the entry's Version advances: bumping keeps touch traffic
+// conflict-visible for concurrent writers, while false isolates recall metadata
+// from real content edits. Touch on a missing entry or a nil store is a no-op.
+// The returned bool reports whether the touch landed.
+func (store *Store) TouchEntry(kind Kind, id string, now time.Time, bumpVersion bool) bool {
+	if store == nil || kind == "" || id == "" {
+		return false
+	}
+	stamp := now.UTC().Format(time.RFC3339)
+	var landed bool
+	err := store.WithLock(func(state State) (State, error) {
+		idx := idxEntry(state.Entries, kind, id)
+		if idx < 0 {
+			return state, nil
+		}
+		state.Entries[idx].LastUsedAt = stamp
+		if bumpVersion {
+			state.Entries[idx].Version++
+		}
+		landed = true
+		return state, nil
+	})
+	if err != nil {
+		return false
+	}
+	return landed
+}
+
 func (store *Store) saveLocked(state State) error {
 	if err := os.MkdirAll(store.Dir, 0o755); err != nil {
 		return fmt.Errorf("create learning dir: %w", err)
@@ -387,6 +421,63 @@ func sortEntries(entries []Entry) {
 	})
 }
 
+// OrderByRecency sorts a merged set so the most-recently-reused entries surface
+// first (LastUsedAt desc), then most-recently-updated, then by kind/id/title for a
+// deterministic tiebreak. It mirrors compaction's "keep the freshest within a
+// budget" principle: recall prefers lessons the model has actually applied, so a
+// bounded prompt shows the highest-value memory rather than an alphabetical slab.
+func OrderByRecency(entries []Entry) {
+	sort.SliceStable(entries, func(i, j int) bool {
+		a, b := entries[i], entries[j]
+		if cmp := compareRecency(a, b); cmp != 0 {
+			return cmp < 0
+		}
+		if a.Kind != b.Kind {
+			return a.Kind < b.Kind
+		}
+		if a.ID != b.ID {
+			return a.ID < b.ID
+		}
+		return a.Title < b.Title
+	})
+}
+
+// compareRecency orders higher on LastUsedAt, falling back to UpdatedAt. Returns
+// negative when a is more recent than b, zero on a tie. timestamps that do not
+// parse as RFC3339 are treated as never-used (oldest).
+func compareRecency(a, b Entry) int {
+	at, errA := time.Parse(time.RFC3339, a.LastUsedAt)
+	bt, errB := time.Parse(time.RFC3339, b.LastUsedAt)
+	if errA != nil {
+		at = time.Time{}
+	}
+	if errB != nil {
+		bt = time.Time{}
+	}
+	if at.After(bt) {
+		return -1
+	}
+	if bt.After(at) {
+		return 1
+	}
+	ua, errA := time.Parse(time.RFC3339, a.UpdatedAt)
+	ub, errB := time.Parse(time.RFC3339, b.UpdatedAt)
+	if errA != nil {
+		ua = time.Time{}
+	}
+	if errB != nil {
+		ub = time.Time{}
+	}
+	switch {
+	case ua.After(ub):
+		return -1
+	case ub.After(ua):
+		return 1
+	default:
+		return 0
+	}
+}
+
 // MergeHarnessStates unions a global and a local state into one view for
 // planning/prompt display. Local entries win on id+kind conflict (a local entry
 // shadows the global one) and are surfaced with a "local:" scope prefix on the
@@ -408,7 +499,7 @@ func MergeHarnessStates(global, local State) []Entry {
 	for _, key := range order {
 		out = append(out, byKey[key])
 	}
-	sortEntries(out)
+	OrderByRecency(out)
 	return out
 }
 

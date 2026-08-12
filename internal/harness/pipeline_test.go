@@ -210,3 +210,25 @@ func TestRecordRefinement(t *testing.T) {
 		t.Fatalf("refinements = %#v", state.Refinements)
 	}
 }
+
+func TestPlanPromptCarriesAnchorAndRecencyOrder(t *testing.T) {
+	older := "2025-01-01T00:00:00Z"
+	newer := "2026-02-02T00:00:00Z"
+	state := State{Scope: ScopeGlobal, Entries: []Entry{
+		{ID: "old", Kind: KindMemory, Title: "Old", Content: "o", Scope: ScopeGlobal, UpdatedAt: older},
+		{ID: "used", Kind: KindMemory, Title: "Used", Content: "u", Scope: ScopeGlobal, UpdatedAt: older, LastUsedAt: newer},
+	}}
+	prompt := buildPlanPrompt(PlanOptions{Conversation: "x", State: state, Refinements: nil})
+	if !strings.Contains(prompt, "<anchor>") {
+		t.Fatal("plan prompt missing <anchor> preserved-state directive")
+	}
+	if !strings.Contains(prompt, "prefer updating the existing entry") {
+		t.Fatal("plan prompt missing update-over-create directive")
+	}
+	// The current learning state must surface the re-used lesson first.
+	youngIdx := strings.Index(prompt, "used")
+	oldIdx := strings.Index(prompt, "old")
+	if youngIdx < 0 || oldIdx < 0 || youngIdx > oldIdx {
+		t.Fatalf("expected re-used entry 'used' before 'old' in plan state:\n%s", prompt)
+	}
+}
