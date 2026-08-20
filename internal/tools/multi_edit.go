@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -99,6 +100,9 @@ func (tool multiEditTool) RunWithOptions(ctx context.Context, args map[string]an
 	if err != nil {
 		return errorResult("Error editing " + requestedPath + ": " + err.Error())
 	}
+	// Report the target directory so the agent can discover AGENTS.md rules in
+	// the tree whose file it is editing.
+	observeProjectGuideline(options, filepath.Dir(absolutePath))
 	contentBytes, err := os.ReadFile(absolutePath)
 	if err != nil {
 		return errorResult("Error: Could not find or open " + relativePath + ": " + err.Error())

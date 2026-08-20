@@ -163,6 +163,19 @@ func parseExecArgs(args []string) (execOptions, bool, error) {
 			index = next
 		case strings.HasPrefix(arg, "--model="):
 			options.model = strings.TrimSpace(strings.TrimPrefix(arg, "--model="))
+		case arg == "--role":
+			value, next, err := nextFlagValue(args, index, arg)
+			if err != nil {
+				return options, false, err
+			}
+			options.role = strings.TrimSpace(value)
+			index = next
+		case strings.HasPrefix(arg, "--role="):
+			value, err := requiredInlineFlagValue(arg, "--role")
+			if err != nil {
+				return options, false, err
+			}
+			options.role = strings.TrimSpace(value)
 		case arg == "--profile":
 			value, next, err := nextFlagValue(args, index, arg)
 			if err != nil {

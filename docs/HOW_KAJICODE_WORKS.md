@@ -186,6 +186,11 @@ stream-JSON mode for automation, and always requires a stronger completion
 signal so a no-tool assistant response is not treated as success while work is
 still pending.
 
+Exec also owns multi-model task routing: `--role <name>` explicitly routes the run to
+a task role's model, and `images.visionRouting` (config) routes image attachments to a
+vision-capable profile when the active model does not support images. See
+[Multi-Model Routing](MULTI_MODEL_ROUTING.md).
+
 ## Agent Loop
 
 The core loop lives in `internal/agent.Run`. Conceptually, every turn follows
@@ -241,6 +246,30 @@ Key responsibilities of the loop:
 The model never directly mutates the workspace. It asks for tool calls; KajiCode
 validates and executes those calls through the registry, permission policy, and
 sandbox engine.
+
+### Task-role routing
+
+When `agent.Options.RoleRouting` is set, the loop queries `RoleFor(RoleContext)` at
+the start of each turn. If the selected task role differs from the one in force, it
+swaps the run's provider to that role's profile via the same session/swap seam as
+mid-run model escalation, preserving messages and refreshing the compactor context
+window when `ContextWindowFor` is wired. Routing is opt-in and swap errors are
+non-fatal. The CLI drives this with `--role`; the interactive TUI exposes `/role`:
+bare `/role` (or `/role add <name>`) opens a two-stage picker that lets you pick a
+task role and then a model for it (binding `modelRoles[role]` via
+`config.SetModelRole`), with `/role <name>` still switching the active role for the
+session and `/role status|list|clear` printing/clearing.
+
+KajiCode ships a small built-in role catalog (`internal/modelregistry/default_roles.go`):
+`default`, `plan`, `design`, `implement`, `vision`, `review`, and `fast`, each tagged
+with a capability and a `DefaultSelector` hint. When an explicit `modelRoles[role]`
+binding is absent, `RoleRouter.ProfileFor` falls back to a capability-driven scan for
+that built-in role's model (vision roles also require image support) before keeping
+the active provider as a safe no-op. Intent auto-routing (`AutoRole`) stays
+conservative — it only swaps to plan/implement on plan mode or a todo+edit signal —
+and any explicit `--role` / `/role` choice (surfaced as `RoleContext.PromptedRole`)
+always wins over the heuristic. See
+[Multi-Model Routing](MULTI_MODEL_ROUTING.md).
 
 ### Self-Learning
 

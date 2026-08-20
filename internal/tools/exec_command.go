@@ -484,15 +484,15 @@ func NewScopedExecCommandTool(workspaceRoot string, scope PathScope, manager *ex
 }
 
 func (tool execCommandTool) Run(ctx context.Context, args map[string]any) Result {
-	return tool.run(ctx, args, nil, true)
+	return tool.run(ctx, args, nil, RunOptions{}, true)
 }
 
 func (tool execCommandTool) RunWithSandbox(ctx context.Context, args map[string]any, engine *zeroSandbox.Engine) Result {
-	return tool.run(ctx, args, engine, true)
+	return tool.run(ctx, args, engine, RunOptions{}, true)
 }
 
 func (tool execCommandTool) RunWithOptions(ctx context.Context, args map[string]any, options RunOptions) Result {
-	return tool.run(ctx, args, options.Sandbox, false)
+	return tool.run(ctx, args, options.Sandbox, options, false)
 }
 
 func (tool execCommandTool) ExecSessions() []ExecSessionSnapshot {
@@ -507,7 +507,7 @@ func (tool execCommandTool) StopAllExecSessions() []int {
 	return tool.manager.stopAll()
 }
 
-func (tool execCommandTool) run(ctx context.Context, args map[string]any, engine *zeroSandbox.Engine, directBudget bool) Result {
+func (tool execCommandTool) run(ctx context.Context, args map[string]any, engine *zeroSandbox.Engine, runOpts RunOptions, directBudget bool) Result {
 	commandText, err := execCommandArg(args)
 	if err != nil {
 		return errorResult("Error: Invalid arguments for exec_command: " + err.Error())
@@ -547,6 +547,9 @@ func (tool execCommandTool) run(ctx context.Context, args map[string]any, engine
 	if err != nil {
 		return errorResult("Error running exec_command: " + err.Error())
 	}
+	// Report the command's working directory so the agent can discover
+	// AGENTS.md rules in whichever directory the command executed in.
+	observeProjectGuideline(runOpts, absoluteCwd)
 
 	session, err := tool.startSession(commandText, absoluteCwd, relativeCwd, ttyRequested, engine, sandboxPermissions)
 	if err != nil {

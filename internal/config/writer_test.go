@@ -194,6 +194,102 @@ func TestSetProviderModelUpdatesConfiguredProvider(t *testing.T) {
 	}
 }
 
+func TestSetActiveRolePersistsAndClears(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "kajicode.json")
+	writeConfigFixture(t, path, FileConfig{
+		ActiveProvider: "openai",
+		Providers: []ProviderProfile{
+			{Name: "openai", ProviderKind: ProviderKindOpenAI, Model: "gpt-4.1"},
+		},
+		ActiveRole: "review",
+	}, 0o600)
+
+	// Set a new global role; other fields are preserved.
+	cfg, err := SetActiveRole(path, " implement ")
+	if err != nil {
+		t.Fatalf("SetActiveRole() error = %v", err)
+	}
+	if cfg.ActiveRole != "implement" {
+		t.Fatalf("ActiveRole = %q, want implement", cfg.ActiveRole)
+	}
+	if cfg.Providers[0].Model != "gpt-4.1" {
+		t.Fatalf("provider mutated by role write: %#v", cfg.Providers[0])
+	}
+	persisted := readConfigFixture(t, path)
+	if persisted.ActiveRole != "implement" {
+		t.Fatalf("persisted ActiveRole = %q, want implement", persisted.ActiveRole)
+	}
+
+	// Clearing with an empty role resets to the default model.
+	cfg, err = SetActiveRole(path, "")
+	if err != nil {
+		t.Fatalf("SetActiveRole(clear) error = %v", err)
+	}
+	if cfg.ActiveRole != "" {
+		t.Fatalf("ActiveRole after clear = %q, want empty", cfg.ActiveRole)
+	}
+	persisted = readConfigFixture(t, path)
+	if persisted.ActiveRole != "" {
+		t.Fatalf("persisted ActiveRole after clear = %q, want empty", persisted.ActiveRole)
+	}
+}
+
+func TestSetActiveRoleRejectsEmptyConfigPath(t *testing.T) {
+	if _, err := SetActiveRole("", "review"); err == nil {
+		t.Fatal("SetActiveRole(empty path) error = nil, want error")
+	}
+}
+
+func TestSetActiveRoleWritesNewConfig(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "kajicode.json")
+	cfg, err := SetActiveRole(path, "vision")
+	if err != nil {
+		t.Fatalf("SetActiveRole(on missing file) error = %v", err)
+	}
+	if cfg.ActiveRole != "vision" {
+		t.Fatalf("ActiveRole = %q, want vision", cfg.ActiveRole)
+	}
+}
+
+func TestSetModelRoleBindsAndClears(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "kajicode.json")
+	writeConfigFixture(t, path, FileConfig{
+		ActiveProvider: "openai",
+		Providers: []ProviderProfile{
+			{Name: "openai", ProviderKind: ProviderKindOpenAI, Model: "gpt-4.1"},
+			{Name: "anthropic", ProviderKind: ProviderKindAnthropic, Model: "claude-sonnet-4.5"},
+		},
+		ModelRoles: map[string]string{"implement": "gpt-4.1"},
+	}, 0o600)
+
+	cfg, err := SetModelRole(path, " implement ", " anthropic:claude-opus-4 ")
+	if err != nil {
+		t.Fatalf("SetModelRole() error = %v", err)
+	}
+	if got := cfg.ModelRoles["implement"]; got != "anthropic:claude-opus-4" {
+		t.Fatalf("updated role binding = %q, want anthropic:claude-opus-4", got)
+	}
+	// Provider profiles untouched by a role write.
+	if cfg.Providers[0].Model != "gpt-4.1" {
+		t.Fatalf("provider model changed: %#v", cfg.Providers[0])
+	}
+
+	// Clearing with an empty selector removes the key.
+	cfg, err = SetModelRole(path, "implement", "")
+	if err != nil {
+		t.Fatalf("SetModelRole(clear) error = %v", err)
+	}
+	if _, ok := cfg.ModelRoles["implement"]; ok {
+		t.Fatalf("expected role binding removed, got %#v", cfg.ModelRoles)
+	}
+
+	// Persist round-trips.
+	persisted := readConfigFixture(t, path)
+	if _, ok := persisted.ModelRoles["implement"]; ok {
+		t.Fatalf("persisted config still has implement binding: %#v", persisted.ModelRoles)
+	}
+}
+
 func TestSetProviderModelRejectsUnknownProviderWithoutRewriting(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "kajicode.json")
 	before := writeConfigFixture(t, path, FileConfig{

@@ -63,6 +63,9 @@ func (tool writeFileTool) RunWithOptions(ctx context.Context, args map[string]an
 	if err != nil {
 		return errorResult("Error writing file " + requestedPath + ": " + err.Error())
 	}
+	// Report the target directory so the agent can discover AGENTS.md rules in
+	// the tree it is writing into (possibly a freshly created subdir).
+	observeProjectGuideline(options, filepath.Dir(absolutePath))
 
 	existed := false
 	if _, err := os.Stat(absolutePath); err == nil {

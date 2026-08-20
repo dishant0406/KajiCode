@@ -83,6 +83,9 @@ func (tool applyPatchTool) RunWithOptions(ctx context.Context, args map[string]a
 	if err := recheckPatchWriteTargets(applyRoot, patch); err != nil {
 		return errorResult("Error applying patch: " + err.Error())
 	}
+	// Report the patch's target directory so the agent can discover AGENTS.md
+	// rules inside any tree the patch created or modified.
+	observeProjectGuideline(options, applyRoot)
 	var createdTargets []string
 	if options.FileTracker != nil {
 		createdTargets = missingPatchTargets(applyRoot, patch)

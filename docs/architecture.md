@@ -97,7 +97,10 @@ Exec owns:
 - prompt, file, image, and stream-JSON input handling;
 - session resume/fork/worktree setup;
 - completion-gate semantics for automation;
-- trace, spec, self-correct, and verification wiring.
+- trace, spec, self-correct, and verification wiring;
+- multi-model task routing: `--role` selection and the `images.visionRouting` gate
+  (swapping `resolved.Provider` to a vision-capable profile before the run provider
+  is built).
 
 Interactive-only assumptions must not leak into exec.
 
@@ -124,6 +127,62 @@ Interactive-only assumptions must not leak into exec.
 
 Tool calls and tool results must stay provider-valid as paired conversation
 messages. Any loop change that can affect message pairing needs regression tests.
+
+## Multi-Model Routing
+
+KajiCode can route a run to a task `role` (design, implement, …) that carries its
+own model, and can route image attachments to a vision-capable model when the
+active model does not support them. Routing is opt-in; with none configured every
+run is byte-identical to before. The config/behavior contract and a worked example
+live in `docs/MULTI_MODEL_ROUTING.md`.
+
+- `internal/config` owns the schema: `ModelRoles` (role → `provider:model` / alias /
+  `@role`), `DefaultModel`, and `ImagesConfig.VisionRouting` with a safe
+  `EffectiveVisionRouting()` (anything but `auto`/`model` collapses to `off`,
+  preserving legacy drop+warn).
+- `internal/modelregistry/roles.go` resolves a role selector to a provider profile.
+- `internal/agent/rolerouter.go` is the `RoleRouter`: it computes the effective model
+  from `DefaultModel`/active profile and maps a role to a provider.
+- The loop-side switch lives in `internal/agent/loop.go`: when `Options.RoleRouting`
+  is set, each turn the loop asks `RoleFor(RoleContext)` and swaps the run's provider
+  to the selected role's profile via the same session swap seam as mid-run escalation,
+  refreshing the compactor context window via `ContextWindowFor`. `roleselector.go`
+  defines the pure `RoleSelector` (`ExplicitRole`, conservative `AutoRole`). Swap
+  errors are non-fatal — a note is recorded and the run continues.
+- `internal/cli/exec*.go` implements `--role <name>` (explicit routing) and the
+  `images.visionRouting` gate, which swaps `resolved.Provider` to a vision-capable
+  profile before the run provider is built.
+- The interactive TUI exposes `/role`: bare `/role` (or `/role add <name>`) opens a
+  two-stage picker — pick a task role, then pick a model for it — binding/persisting
+  `modelRoles[role]` via `config.SetModelRole`. `/role name` still switches the active
+  role for the session; `/role status`/`/role list`/`/role clear` print/clear.
+
+### Built-in default roles
+
+Beyond the free-form `modelRoles` schema, KajiCode ships a small fixed, canonical
+role catalog in `internal/modelregistry/default_roles.go`:
+`default`, `plan`, `design`, `implement`, `vision`, `review`, and `fast`. Each
+role carries a display name, tag, one-line summary, a `DefaultSelector` hint, and a
+`ModelCapability` tag (reasoning / vision) used for capability-based fallback.
+`DefaultRoleCatalog()`/`DefaultRoleIDs()` return the stable-builtin-first catalog;
+`RoleInfoByID(id)` looks a role up case-insensitively.
+
+Role resolution (`RoleRouter.ProfileFor`) falls back through three layers:
+1. Explicit `modelRoles[role]` selector (`provider:model`, model alias, or `@role`
+   alias chain).
+2. If the role is a built-in catalog role with no explicit binding, a
+   capability-driven scan picks the first configured provider whose model supports
+   the role's capability (vision roles also require image support), excluding the
+   currently-active model.
+3. Otherwise the active provider is kept as a safe no-op fallback, so unknown or
+   unbound roles never break a run.
+
+Intent auto-routing (the pure `RoleSelector` in `roleselector.go`) is conservative:
+`AutoRole` returns the plan default only in `PlanMode`, and the implement default
+only when the run has a todo list and the last tool was a write/edit; a user- or
+CLI-prompted role always wins. `RoleContext`'s `PromptedRole` signal is what
+wires explicit `/role` / `--role` intent ahead of the heuristic, keeping the
+heuristic from overriding an explicit choice.
 
 ## Self-Learning
 

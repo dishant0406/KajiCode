@@ -201,6 +201,21 @@ func outsideWorkspaceError(requestedPath string) error {
 	return fmt.Errorf("%s must stay inside the workspace", requestedPath)
 }
 
+// observeProjectGuideline forwards absDir to the run's ProjectGuidelineObserver
+// (if any). It is a nil-safe no-op when no observer is wired, so tools keep
+// their exact prior behavior when the feature is disabled. The absolute
+// directory is always used so the observer can walk upward to the git root
+// without dependence on a workspace-relative base.
+func observeProjectGuideline(options RunOptions, absDir string) {
+	if options.ProjectGuidelines == nil {
+		return
+	}
+	if absDir == "" {
+		return
+	}
+	options.ProjectGuidelines.ObservePath(absDir)
+}
+
 func shouldSkipDirectory(name string) bool {
 	return ignoredDirectories[name] || workspaceindex.ShouldSkipDir(name)
 }

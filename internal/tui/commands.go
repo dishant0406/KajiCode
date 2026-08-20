@@ -21,6 +21,7 @@ const (
 	commandSandboxSetup
 	commandProvider
 	commandModel
+	commandRole
 	commandContext
 	commandConfig
 	commandDebug
@@ -98,6 +99,13 @@ var commandDefinitions = []commandDefinition{
 		group:       commandGroupModel,
 		description: "Show or switch the active model.",
 		kind:        commandModel,
+	},
+	{
+		name:        "/role",
+		usage:       "/role [list|name|clear]",
+		group:       commandGroupModel,
+		description: "Show or set the active task role for multi-model routing.",
+		kind:        commandRole,
 	},
 	{
 		name:        "/stt-model",

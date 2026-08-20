@@ -160,6 +160,9 @@ func Resolve(options ResolveOptions) (ResolvedConfig, error) {
 		ActiveProvider: active.Name,
 		Providers:      providers,
 		Provider:       active,
+		ModelRoles:     cloneStringMap(cfg.ModelRoles),
+		DefaultModel:   cfg.DefaultModel,
+		ActiveRole:     cfg.ActiveRole,
 		MaxTurns:       cfg.MaxTurns,
 		MCP:            cfg.MCP,
 		Sandbox:        cfg.Sandbox,
@@ -171,6 +174,7 @@ func Resolve(options ResolveOptions) (ResolvedConfig, error) {
 		Preferences:    cfg.Preferences,
 		KeyBindings:    cfg.KeyBindings,
 		LocalControl:   cfg.LocalControl,
+		Images:         cfg.Images,
 		STT:            cfg.STT,
 	}, nil
 }
@@ -274,6 +278,14 @@ func mergeConfig(dst *FileConfig, src FileConfig) {
 	mergeLocalControlConfig(&dst.LocalControl, src.LocalControl)
 	mergeKeyBindings(&dst.KeyBindings, src.KeyBindings)
 	mergeSTTConfig(&dst.STT, src.STT)
+	if strings.TrimSpace(src.ActiveRole) != "" {
+		dst.ActiveRole = strings.TrimSpace(src.ActiveRole)
+	}
+	mergeRoleOverrides(dst, Overrides{
+		ModelRoles:   src.ModelRoles,
+		DefaultModel: src.DefaultModel,
+		Images:       src.Images,
+	})
 }
 
 func mergeProjectConfig(dst *FileConfig, src FileConfig) error {
@@ -751,6 +763,7 @@ func applyOverrides(cfg *FileConfig, overrides Overrides) {
 	mergeLocalControlConfig(&cfg.LocalControl, overrides.LocalControl)
 	mergeKeyBindings(&cfg.KeyBindings, overrides.KeyBindings)
 	mergeSTTConfig(&cfg.STT, overrides.STT)
+	mergeRoleOverrides(cfg, overrides)
 	for _, provider := range overrides.Providers {
 		mergeProvider(cfg, provider)
 	}
@@ -856,6 +869,42 @@ func mergeSTTConfig(dst *STTConfig, src STTConfig) {
 	if src.WindowsAudioDevice != "" {
 		dst.WindowsAudioDevice = src.WindowsAudioDevice
 	}
+}
+
+// mergeRoleOverrides copies the CLI override layer's model routing into the file
+// config: a merged ModelRoles map, a DefaultModel, and the VisionRouting image
+// setting. Only set fields override; an empty override leaves the file value intact.
+func mergeRoleOverrides(cfg *FileConfig, overrides Overrides) {
+	if len(overrides.ModelRoles) > 0 {
+		if cfg.ModelRoles == nil {
+			cfg.ModelRoles = map[string]string{}
+		}
+		for k, v := range overrides.ModelRoles {
+			cfg.ModelRoles[k] = v
+		}
+	}
+	if strings.TrimSpace(overrides.DefaultModel) != "" {
+		cfg.DefaultModel = strings.TrimSpace(overrides.DefaultModel)
+	}
+	if strings.TrimSpace(overrides.ActiveRole) != "" {
+		cfg.ActiveRole = strings.TrimSpace(overrides.ActiveRole)
+	}
+	if strings.TrimSpace(overrides.Images.VisionRouting) != "" {
+		cfg.Images.VisionRouting = strings.TrimSpace(overrides.Images.VisionRouting)
+	}
+}
+
+// cloneStringMap returns a defensive copy of a string→string map, or nil for a nil
+// input, so ResolvedConfig never aliases the caller-owned FileConfig map.
+func cloneStringMap(src map[string]string) map[string]string {
+	if src == nil {
+		return nil
+	}
+	dst := make(map[string]string, len(src))
+	for k, v := range src {
+		dst[k] = v
+	}
+	return dst
 }
 
 // validateSTTConfig rejects unknown provider/streamProvider values and a

@@ -153,16 +153,24 @@ func (m model) titlePRSegment() string {
 func (m model) titleModelSegment() string {
 	provider := strings.TrimSpace(m.providerDisplayName())
 	model := strings.TrimSpace(m.modelName)
+	var base string
 	switch {
 	case provider == "" && model == "":
-		return kajicodeTheme.muted.Render("no provider")
+		base = "no provider"
 	case model == "":
-		return kajicodeTheme.ink.Render(provider)
+		base = provider
 	case provider == "":
-		return kajicodeTheme.ink.Render(model)
+		base = model
 	default:
-		return kajicodeTheme.ink.Render(provider + "/" + model)
+		base = provider + "/" + model
 	}
+	// A role-routed model swap is only visible mid-run; surface the ACTIVE task
+	// role when one is set so the reason for a surprising model is always at a
+	// glance in the title bar.
+	if role := strings.TrimSpace(m.activeRole); role != "" {
+		return kajicodeTheme.ink.Render(base) + kajicodeTheme.muted.Render(" · role ") + kajicodeTheme.accent.Render(role)
+	}
+	return kajicodeTheme.ink.Render(base)
 }
 
 func (m model) composerDividerLine(width int) string {

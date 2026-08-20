@@ -206,6 +206,8 @@ func btwCommandUnavailable(command parsedCommand) bool {
 		return true
 	case commandModel:
 		return arg != "list" && arg != "ls"
+	case commandRole:
+		return arg != "" && arg != "status" && arg != "list" && arg != "ls"
 	case commandProvider:
 		return arg != "status"
 	case commandWebSearch:

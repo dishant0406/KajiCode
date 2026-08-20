@@ -768,6 +768,67 @@ func NormalizeRecentModels(entries []RecentModelEntry) []RecentModelEntry {
 	return recent
 }
 
+// SetModelRole binds a task role to a model selector (a registry alias, "model" or
+// "provider:model" form) in the config's modelRoles map and persists it. An empty
+// selector removes the role's binding. It returns the updated FileConfig and any
+// write/parse error ("" path, invalid JSON, or an I/O failure). Read-modify-write
+// is atomic (temp + rename) like the other config writers.
+func SetModelRole(path, role, selector string) (FileConfig, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return FileConfig{}, fmt.Errorf("config path is required")
+	}
+	role = strings.TrimSpace(role)
+	if role == "" {
+		return FileConfig{}, fmt.Errorf("role name is required")
+	}
+	selector = strings.TrimSpace(selector)
+
+	cfg := FileConfig{}
+	if data, err := os.ReadFile(path); err == nil {
+		if err := json.Unmarshal(data, &cfg); err != nil {
+			return FileConfig{}, fmt.Errorf("invalid config JSON %s: %w", path, err)
+		}
+	} else if !os.IsNotExist(err) {
+		return FileConfig{}, fmt.Errorf("read config %s: %w", path, err)
+	}
+	if cfg.ModelRoles == nil {
+		cfg.ModelRoles = map[string]string{}
+	}
+	if selector == "" {
+		delete(cfg.ModelRoles, role)
+	} else {
+		cfg.ModelRoles[role] = selector
+	}
+	if err := writeConfigFile(path, cfg); err != nil {
+		return FileConfig{}, err
+	}
+	return cfg, nil
+}
+
+func SetActiveRole(path, role string) (FileConfig, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return FileConfig{}, fmt.Errorf("config path is required")
+	}
+	cfg := FileConfig{}
+	if data, err := os.ReadFile(path); err == nil {
+		if err := json.Unmarshal(data, &cfg); err != nil {
+			return FileConfig{}, fmt.Errorf("invalid config JSON %s: %w", path, err)
+		}
+	} else if !os.IsNotExist(err) {
+		return FileConfig{}, fmt.Errorf("read config %s: %w", path, err)
+	}
+	// An empty role clears the persisted global role (routing follows the active
+	// profile / DefaultModel). Any other value is stored as-is so it applies to
+	// every later session and project.
+	cfg.ActiveRole = strings.TrimSpace(role)
+	if err := writeConfigFile(path, cfg); err != nil {
+		return FileConfig{}, err
+	}
+	return cfg, nil
+}
+
 func writeConfigFile(path string, cfg FileConfig) error {
 	dir := filepath.Dir(path)
 	if dir != "." && dir != "" {

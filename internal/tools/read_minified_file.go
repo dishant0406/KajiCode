@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -68,6 +69,8 @@ func (tool readMinifiedFileTool) run(args map[string]any, options RunOptions, di
 	if err != nil {
 		return errorResult("Error reading file " + relativePath + ": " + err.Error())
 	}
+	// Report the file's directory so the agent can discover AGENTS.md rules.
+	observeProjectGuideline(options, filepath.Dir(absolutePath))
 	// Record the raw whole-file baseline (matching read_file/edit_file) so a later
 	// write can still detect an out-of-KajiCode modification — the minification only
 	// affects what the model SEES, not the tracked on-disk state.

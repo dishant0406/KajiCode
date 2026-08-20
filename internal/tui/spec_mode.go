@@ -51,8 +51,8 @@ func (m model) handleSpecCommand(task string) (tea.Model, tea.Cmd) {
 	}
 
 	turnImages := m.pendingImages
-	if len(turnImages) > 0 && !m.modelSupportsVisionTUI() {
-		name := m.modelName
+	if len(turnImages) > 0 && !m.modelSupportsVisionTUI() && !m.canRouteVisionImages(m.roleRouter()) {
+		name := m.effectiveModelName()
 		if name == "" {
 			name = "the active model"
 		}

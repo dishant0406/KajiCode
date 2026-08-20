@@ -65,7 +65,7 @@ func NewScopedGrepTool(workspaceRoot string, scope PathScope) Tool {
 }
 
 func (tool grepTool) Run(ctx context.Context, args map[string]any) Result {
-	return tool.runWith(ctx, args, readExcluder{}, true)
+	return tool.runWith(ctx, args, readExcluder{}, RunOptions{}, true)
 }
 
 func (tool grepTool) RunWithOptions(ctx context.Context, args map[string]any, options RunOptions) Result {
@@ -73,7 +73,7 @@ func (tool grepTool) RunWithOptions(ctx context.Context, args map[string]any, op
 	if options.Sandbox != nil {
 		exclude = sandboxReadExcluder(options.Sandbox)
 	}
-	return tool.runWith(ctx, args, exclude, false)
+	return tool.runWith(ctx, args, exclude, options, false)
 }
 
 // RunWithSandbox runs the search while skipping subtrees the sandbox policy
@@ -81,10 +81,10 @@ func (tool grepTool) RunWithOptions(ctx context.Context, args map[string]any, op
 // path. With no DenyRead configured the excluder is a no-op and behavior is
 // unchanged.
 func (tool grepTool) RunWithSandbox(ctx context.Context, args map[string]any, engine *sandbox.Engine) Result {
-	return tool.runWith(ctx, args, sandboxReadExcluder(engine), true)
+	return tool.runWith(ctx, args, sandboxReadExcluder(engine), RunOptions{}, true)
 }
 
-func (tool grepTool) runWith(ctx context.Context, args map[string]any, exclude readExcluder, directBudget bool) Result {
+func (tool grepTool) runWith(ctx context.Context, args map[string]any, exclude readExcluder, options RunOptions, directBudget bool) Result {
 	pattern, err := aliasedStringArg(args, []string{"pattern", "query", "regex", "search", "expression"}, "", true, false)
 	if err != nil {
 		return errorResult("Error: Invalid arguments for grep: " + err.Error())
@@ -146,6 +146,9 @@ func (tool grepTool) runWith(ctx context.Context, args map[string]any, exclude r
 	if err != nil {
 		return errorResult("Error running grep: " + err.Error())
 	}
+	// Report the resolved search root so the agent can discover AGENTS.md rules
+	// in any directory tree it scanned with a pattern search.
+	observeProjectGuideline(options, resolvedRoot)
 
 	var globMatcher *regexp.Regexp
 	if globPattern != "" {

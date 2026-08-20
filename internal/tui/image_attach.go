@@ -86,15 +86,35 @@ func stripMatchingQuotes(s string) (string, bool) {
 	return s, false
 }
 
-// modelSupportsVisionTUI reports whether the active model can accept image
-// input. It checks three sources in order:
+// effectiveModelName returns the model that will actually serve the current
+// turn's request. With an explicit active role that resolves to a provider +
+// model, that role-routed model wins (the loop swaps the provider to it per
+// turn). Otherwise the session default (m.modelName) is used. This matters for
+// capability gates like the vision check: attaching an image while the "vision"
+// role routes to a vision-capable model must not be refused based on the
+// default (non-vision) model.
+func (m model) effectiveModelName() string {
+	if role := strings.TrimSpace(m.activeRole); role != "" {
+		if router := m.roleRouter(); router != nil {
+			if profile, ok := router.ProfileFor(role); ok && strings.TrimSpace(profile.Model) != "" {
+				return strings.TrimSpace(profile.Model)
+			}
+		}
+	}
+	return strings.TrimSpace(m.modelName)
+}
+
+// modelSupportsVisionTUI reports whether the model serving the current turn can
+// accept image input. It evaluates the effective model (role-routed model when
+// an explicit role is set, else the session default), checking three sources in
+// order:
 //  1. The curated model registry (catalog authority + name heuristic)
 //  2. The discovered model list from models.dev (if the live model picker
 //     fetched it) — this carries InputModalities from models.dev, which
 //     includes "image" for vision-capable models
 //  3. Falls back to the name heuristic for unknown models
 func (m model) modelSupportsVisionTUI() bool {
-	trimmed := strings.TrimSpace(m.modelName)
+	trimmed := m.effectiveModelName()
 	if trimmed == "" {
 		return false
 	}
@@ -127,7 +147,7 @@ func (m model) modelSupportsVisionTUI() bool {
 // /image <path>, but the bytes come from the clipboard instead of a file.
 func (m model) attachClipboardImage(data []byte, mediaType string) model {
 	if !m.modelSupportsVisionTUI() {
-		name := m.modelName
+		name := m.effectiveModelName()
 		if name == "" {
 			name = "the active model"
 		}
@@ -171,7 +191,7 @@ func (m model) handleImageCommand(arg string) model {
 	}
 
 	if !m.modelSupportsVisionTUI() {
-		name := m.modelName
+		name := m.effectiveModelName()
 		if name == "" {
 			name = "the active model"
 		}

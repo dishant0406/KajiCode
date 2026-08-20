@@ -11,6 +11,7 @@ const (
 	promptSectionCommandPrefixes promptSectionRole = "command-prefixes"
 	promptSectionWorkspaceSeed   promptSectionRole = "workspace-seed"
 	promptSectionUserGuidelines  promptSectionRole = "user-guidelines"
+	promptSectionAgentGuidelines promptSectionRole = "agent-guidelines"
 	promptSectionProjectContext  promptSectionRole = "project-context"
 	promptSectionHarnessConfig   promptSectionRole = "harness-config"
 	promptSectionModeContract    promptSectionRole = "mode-contract"

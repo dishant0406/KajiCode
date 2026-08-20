@@ -28,6 +28,16 @@ const (
 	pickerSTTModel
 	pickerSTTDownload
 	pickerPermissions
+	pickerRole
+)
+
+// Sentinel values for pickerRole rows (stage-1 role list). They are distinct
+// printable strings so they can never collide with a real role name or an
+// active-role value; the flow switches on them after a selection.
+const (
+	rolePickerAddNew  = "\x00role:new"
+	rolePickerClear   = "\x00role:clear"
+	rolePickerDefault = "\x00role:default"
 )
 
 // pickerItem is one selectable row: Label is shown, Value is passed to the

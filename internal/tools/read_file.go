@@ -97,6 +97,12 @@ func (tool readFileTool) run(args map[string]any, options RunOptions, directBudg
 		return errorResult("Error reading file " + relativePath + ": not a regular file")
 	}
 
+	// Report the directory backing this read so the agent can discover any
+	// AGENTS.md/KAJICODE.md rules in sibling or ancestor directories of a file
+	// it actually read. Kept after the IsRegular gate so we never observe the
+	// resolved dir for a failed read of a non-file target.
+	observeProjectGuideline(options, filepath.Dir(absolutePath))
+
 	switch classifyFileKind(absolutePath, readFilePrefix(absolutePath)) {
 	case mediaImage:
 		return renderReadMedia(absolutePath, relativePath, mediaMimeForPath(absolutePath))

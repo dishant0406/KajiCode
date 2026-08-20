@@ -4,6 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
+
+	"github.com/dishant0406/KajiCode/internal/modelregistry"
 )
 
 // Issue is a single structured problem found while validating a config file.
@@ -61,5 +64,75 @@ func validateSemantics(cfg FileConfig) []Issue {
 	}
 	issues := validateHarnessConfig(cfg.Harness)
 	issues = append(issues, validateLearningConfig(cfg.Learning)...)
+	issues = append(issues, validateRoleConfig(cfg)...)
 	return issues
+}
+
+// validateRoleConfig checks the model-routing surface: every modelRoles value must be
+// a resolvable selector or an @role alias, and DefaultModel must resolve. Failures are
+// reported as Issues (advisory), not hard load errors — an unroutable role falls back
+// to the active model at run time.
+func validateRoleConfig(cfg FileConfig) []Issue {
+	var issues []Issue
+	for role, value := range cfg.ModelRoles {
+		if strings.TrimSpace(value) == "" {
+			issues = append(issues, Issue{
+				FieldPath: "modelRoles." + role,
+				Message:   fmt.Sprintf("model role %q is empty; remove it or give it a model selector", role),
+			})
+			continue
+		}
+		if strings.HasPrefix(strings.TrimSpace(value), "@") {
+			continue // alias is validated lazily; it may target a later-defined role
+		}
+		if !modelRegistryResolves(value) {
+			issues = append(issues, Issue{
+				FieldPath: "modelRoles." + role,
+				Message:   fmt.Sprintf("model role %q selector %q does not resolve to a known model", role, value),
+			})
+		}
+	}
+	if strings.TrimSpace(cfg.DefaultModel) != "" && !modelRegistryResolves(cfg.DefaultModel) {
+		issues = append(issues, Issue{
+			FieldPath: "defaultModel",
+			Message:   fmt.Sprintf("defaultModel %q does not resolve to a known model", cfg.DefaultModel),
+		})
+	}
+	if active := strings.TrimSpace(cfg.ActiveRole); active != "" {
+		_, isDefault := modelregistry.RoleInfoByID(active)
+		configured := false
+		for role := range cfg.ModelRoles {
+			if strings.EqualFold(role, active) {
+				configured = true
+				break
+			}
+		}
+		if !isDefault && !configured {
+			issues = append(issues, Issue{
+				FieldPath: "activeRole",
+				Message:   fmt.Sprintf("activeRole %q is not a known role; the run will use the default model", active),
+			})
+		}
+	}
+	switch strings.TrimSpace(cfg.Images.VisionRouting) {
+	case "auto", "model", "off", "":
+	default:
+		issues = append(issues, Issue{
+			FieldPath: "images.visionRouting",
+			Message:   fmt.Sprintf("images.visionRouting %q is invalid; expected auto, model, or off", cfg.Images.VisionRouting),
+		})
+	}
+	return issues
+}
+
+// modelRegistryResolves reports whether a model selector resolves through the curated
+// catalog. Unknown/custom ids that happen to be configured as profiles are accepted
+// (best-effort) because SupportsVision falls back to a name heuristic for them.
+func modelRegistryResolves(value string) bool {
+	registry, err := modelregistry.DefaultRegistry()
+	if err != nil {
+		return true // registry unavailable — be permissive, do not fail load
+	}
+	_, ok := registry.Resolve(strings.TrimSpace(value))
+	return ok
 }

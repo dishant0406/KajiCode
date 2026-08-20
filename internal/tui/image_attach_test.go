@@ -10,7 +10,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dishant0406/KajiCode/internal/config"
 	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
+	"github.com/dishant0406/KajiCode/internal/modelregistry"
 	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
@@ -554,5 +556,140 @@ func TestRetryResendsAttachments(t *testing.T) {
 	}
 	if !strings.Contains(last.Content, "describe both") {
 		t.Fatalf("retried prompt should include the remembered user text, got:\n%s", last.Content)
+	}
+}
+
+// TestImageCommandAzureDiscoveryIdVisionRoleAttaches reproduces the real-world
+// failure: the "vision" role is bound to a models.dev discovery id
+// ("azure/gpt-5.6-luna") owned by a saved azure-openai provider ("zerocarbon-codex"),
+// while the session default model is non-vision. The router must resolve the
+// discovery id's owner slug to that provider, so the effective model is the
+// vision-capable routed model and the image attaches (not refused).
+func TestImageCommandAzureDiscoveryIdVisionRoleAttaches(t *testing.T) {
+	root := t.TempDir()
+	writeTestPNG(t, root, "photo.png")
+
+	m := newModel(context.Background(), Options{
+		Cwd:       root,
+		ModelName: "fireworks/DeepSeek_V4_Flash_0731", // default model, non-vision
+		SavedProviders: []config.ProviderProfile{
+			{Name: "zerocarbon-codex", ProviderKind: config.ProviderKindAzureOpenAI, Model: "gpt-5.5"},
+			{Name: "growwcorp", ProviderKind: config.ProviderKindOpenAICompatible, Model: "fireworks/DeepSeek_V4_Flash_0731"},
+		},
+		ModelRoles:      map[string]string{"vision": "azure/gpt-5.6-luna"},
+		DefaultModel:    "fireworks/DeepSeek_V4_Flash_0731",
+		ProviderProfile: config.ProviderProfile{Name: "growwcorp", Model: "fireworks/DeepSeek_V4_Flash_0731"},
+	})
+	m.activeRole = "vision"
+
+	if got := m.effectiveModelName(); got != "gpt-5.6-luna" {
+		t.Fatalf("effectiveModelName = %q, want gpt-5.6-luna", got)
+	}
+	if !m.modelSupportsVisionTUI() {
+		t.Fatal("routed azure vision model should pass the vision gate")
+	}
+
+	m.input.SetValue("/image photo.png")
+	nextAny, _ := m.handleSubmit()
+	next := nextAny.(model)
+	if len(next.pendingImages) != 1 {
+		t.Fatalf("expected 1 pending image under the azure vision role, got %d", len(next.pendingImages))
+	}
+	if notice := lastTranscriptText(next); strings.Contains(notice, "does not support image input") {
+		t.Fatalf("azure vision role should not refuse the image, got %q", notice)
+	}
+}
+
+func visionRoleModel(opts Options) Options {
+	// Wire a vision-capable saved provider + a "vision" role bound to it, so the
+	// role router resolves the vision role to a vision-capable model even when the
+	// session default model is not vision-capable.
+	if opts.ProviderProfile.Name == "" {
+		opts.ProviderProfile = config.ProviderProfile{Name: "visionprovider", Model: "gpt-5.6-luna"}
+	}
+	if len(opts.SavedProviders) == 0 {
+		opts.SavedProviders = []config.ProviderProfile{{Name: "visionprovider", Model: "gpt-5.6-luna"}}
+	}
+	if opts.ModelRoles == nil {
+		opts.ModelRoles = map[string]string{"vision": "visionprovider:gpt-5.6-luna"}
+	}
+	if opts.DefaultModel == "" {
+		opts.DefaultModel = opts.ModelName
+	}
+	return opts
+}
+
+func TestImageCommandVisionRoleRoutedModelAttaches(t *testing.T) {
+	root := t.TempDir()
+	writeTestPNG(t, root, "photo.png")
+
+	// The session default is NON-vision (refuses by itself), but the active
+	// "vision" role routes to a vision-capable model — so the image must attach.
+	m := newModel(context.Background(), visionRoleModel(Options{
+		Cwd:       root,
+		ModelName: "totally-unknown-custom", // default model, non-vision
+	}))
+	m.activeRole = modelregistry.RoleVision
+
+	m.input.SetValue("/image photo.png")
+	nextAny, _ := m.handleSubmit()
+	next := nextAny.(model)
+
+	if m.effectiveModelName() != "gpt-5.6-luna" {
+		t.Fatalf("effectiveModelName = %q, want gpt-5.6-luna", m.effectiveModelName())
+	}
+	if !next.modelSupportsVisionTUI() {
+		t.Fatal("vision role routes to a vision model; gate should pass")
+	}
+	if len(next.pendingImages) != 1 {
+		t.Fatalf("expected 1 pending image under vision role, got %d", len(next.pendingImages))
+	}
+	if notice := lastTranscriptText(next); strings.Contains(notice, "does not support image input") {
+		t.Fatalf("vision role should not emit a refusal notice, got %q", notice)
+	}
+}
+
+func TestImageCommandNonVisionRoleRoutedModelRefuses(t *testing.T) {
+	root := t.TempDir()
+	writeTestPNG(t, root, "photo.png")
+
+	// Default model is vision-capable, but the active role routes to a NON-vision
+	// model — the gate must follow the routed model and refuse.
+	m := newModel(context.Background(), Options{
+		Cwd:             root,
+		ModelName:       "gpt-4.1", // would accept images on its own
+		SavedProviders:  []config.ProviderProfile{{Name: "textprovider", Model: "kimi-for-coding"}},
+		ModelRoles:      map[string]string{"implement": "textprovider:kimi-for-coding"},
+		DefaultModel:    "gpt-4.1",
+		ProviderProfile: config.ProviderProfile{Name: "textprovider", Model: "kimi-for-coding"},
+	})
+	m.activeRole = "implement"
+
+	m.input.SetValue("/image photo.png")
+	nextAny, _ := m.handleSubmit()
+	next := nextAny.(model)
+
+	if m.effectiveModelName() != "kimi-for-coding" {
+		t.Fatalf("effectiveModelName = %q, want kimi-for-coding", m.effectiveModelName())
+	}
+	if !strings.Contains(lastTranscriptText(next), "does not support image input") {
+		t.Fatal("routed text-only model must refuse the image")
+	}
+	if len(next.pendingImages) != 0 {
+		t.Fatalf("routed text-only model must not attach, got %d", len(next.pendingImages))
+	}
+}
+
+func TestEffectiveModelName_defaultAndNoRoles(t *testing.T) {
+	// No active role -> session default model.
+	m := newModel(context.Background(), Options{ModelName: "gpt-4.1"})
+	if got := m.effectiveModelName(); got != "gpt-4.1" {
+		t.Fatalf("effectiveModelName = %q, want gpt-4.1", got)
+	}
+	// Active role that does not resolve -> falls back to session default.
+	m2 := newModel(context.Background(), Options{ModelName: "gpt-4.1"})
+	m2.activeRole = "nope"
+	if got := m2.effectiveModelName(); got != "gpt-4.1" {
+		t.Fatalf("unresolvable role should fall back to default, got %q", got)
 	}
 }

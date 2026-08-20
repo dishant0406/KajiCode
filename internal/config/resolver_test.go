@@ -905,6 +905,33 @@ func TestResolveUsesAnthropicEnvBaseURLAsCompatible(t *testing.T) {
 	}
 }
 
+func TestResolvePreservesActiveRoleFromUserConfig(t *testing.T) {
+	path := writeConfig(t, `{
+		"activeProvider": "openai",
+		"providers": [{
+			"name": "openai",
+			"provider": "openai",
+			"model": "gpt-4.1-mini"
+		}],
+		"activeRole": "implement",
+		"modelRoles": {"implement": "gpt-4.1-mini"}
+	}`)
+
+	resolved, err := Resolve(ResolveOptions{
+		UserConfigPath: path,
+		Env:            map[string]string{"OPENAI_API_KEY": "[REDACTED]"},
+	})
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if resolved.ActiveRole != "implement" {
+		t.Fatalf("ActiveRole = %q, want implement", resolved.ActiveRole)
+	}
+	if resolved.ModelRoles["implement"] != "gpt-4.1-mini" {
+		t.Fatalf("ModelRoles = %#v, want implement binding preserved", resolved.ModelRoles)
+	}
+}
+
 func TestResolveUsesOpenAIAPIKeyOnlyWithDefaultModel(t *testing.T) {
 	resolved, err := Resolve(ResolveOptions{
 		Env: map[string]string{

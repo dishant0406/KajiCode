@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -68,6 +69,9 @@ func (tool editFileTool) RunWithOptions(ctx context.Context, args map[string]any
 	if err != nil {
 		return errorResult("Error reading " + requestedPath + ": " + err.Error())
 	}
+	// Report the target directory so the agent can discover AGENTS.md rules in
+	// the tree whose file it is editing.
+	observeProjectGuideline(options, filepath.Dir(absolutePath))
 	contentBytes, err := os.ReadFile(absolutePath)
 	if err != nil {
 		return errorResult("Error reading " + relativePath + ": " + err.Error())

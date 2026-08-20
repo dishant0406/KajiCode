@@ -61,23 +61,31 @@ const dragEdgeScrollInterval = 70 * time.Millisecond
 const dragEdgeScrollStep = 1
 
 type model struct {
-	ctx                         context.Context
-	cwd                         string
-	appVersion                  string
-	userCommands                []usercommands.Command // file-sourced /commands (.kajicode/commands)
-	userCommandPaths            usercommands.Paths
-	loadSkills                  func() []skills.Skill // lazy installed-skills loader for /skills + /<skill-name>
-	userConfigPath              string
-	doctorUserConfigPath        string
-	projectConfigPath           string
-	gitBranch                   string
-	providerName                string
-	modelName                   string
-	modelCatalog                modelregistry.Registry
-	providerProfile             config.ProviderProfile
-	savedProviders              []config.ProviderProfile
-	provider                    kajicoderuntime.Provider
-	newProvider                 func(config.ProviderProfile) (kajicoderuntime.Provider, error)
+	ctx                  context.Context
+	cwd                  string
+	appVersion           string
+	userCommands         []usercommands.Command // file-sourced /commands (.kajicode/commands)
+	userCommandPaths     usercommands.Paths
+	loadSkills           func() []skills.Skill // lazy installed-skills loader for /skills + /<skill-name>
+	userConfigPath       string
+	doctorUserConfigPath string
+	projectConfigPath    string
+	gitBranch            string
+	providerName         string
+	modelName            string
+	modelCatalog         modelregistry.Registry
+	providerProfile      config.ProviderProfile
+	savedProviders       []config.ProviderProfile
+	provider             kajicoderuntime.Provider
+	newProvider          func(config.ProviderProfile) (kajicoderuntime.Provider, error)
+	modelRoles           map[string]string
+	defaultModel         string
+	activeRole           string
+	visionRouting        string
+	// roleBindTarget is the role an open role-bound model picker is configuring.
+	// It is set when /role's stage-1 role list hands off to a model picker, and
+	// cleared once a model is chosen (or the flow is cancelled).
+	roleBindTarget              string
 	probeProviderHealth         func(context.Context, providerhealth.Options) providerhealth.Result
 	discoverProviderModels      func(context.Context, config.ProviderProfile) ([]providermodeldiscovery.Model, error)
 	discoverOllamaContextWindow func(ctx context.Context, baseURL string, model string) (int, error)
@@ -861,6 +869,10 @@ func newModel(ctx context.Context, options Options) model {
 		doctorUserConfigPath:        doctorUserConfigPath,
 		projectConfigPath:           options.ProjectConfigPath,
 		savedProviders:              options.SavedProviders,
+		modelRoles:                  options.ModelRoles,
+		defaultModel:                options.DefaultModel,
+		activeRole:                  options.ActiveRole,
+		visionRouting:               options.VisionRouting,
 		gitBranch:                   gitBranch(cwd),
 		providerName:                options.ProviderName,
 		modelName:                   options.ModelName,
@@ -1544,6 +1556,9 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// An open picker cancels first; then an active suggestion overlay is
 			// dismissed. Neither cancels the run or clears the input.
 			if m.picker != nil {
+				// Closing a role-bound model picker abandons the bind in progress so a
+				// later plain /model picker isn't misrouted into role binding.
+				m.roleBindTarget = ""
 				if m.picker.kind == pickerModel {
 					m.clearModelPickerLoadState()
 				}
@@ -4335,6 +4350,13 @@ func (m model) choosePicker() (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	switch picker.kind {
 	case pickerModel:
+		// A role-bound model picker (opened from the interactive /role flow) binds
+		// the chosen model to the role instead of switching the active provider.
+		if role := strings.TrimSpace(m.roleBindTarget); role != "" {
+			m.roleBindTarget = ""
+			m = m.bindRoleToModel(role, item.Value)
+			return m, nil
+		}
 		text := ""
 		owner := strings.TrimSpace(item.OwnerProvider)
 		_, ownerIsSavedProvider := m.savedProviderByName(owner)
@@ -4380,6 +4402,11 @@ func (m model) choosePicker() (tea.Model, tea.Cmd) {
 		text := ""
 		m, text = m.choosePermissionProfile(item.Value)
 		m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: text})
+	case pickerRole:
+		// Stage-1 /role list: a role row advances to the bound model picker; the
+		// control rows act immediately. The resulting model (possibly opening a new
+		// picker) is returned directly.
+		return m.handleRolePickerChoice(item)
 	case pickerTheme:
 		// The hovered palette is already live from the preview; handleThemeCommand
 		// records the choice (m.themeMode) and re-applies it, and reports the switch.
@@ -4629,6 +4656,42 @@ func (m model) dispatchCommand(command parsedCommand) (tea.Model, tea.Cmd) {
 		}
 		text := ""
 		m, text = m.handleModelCommand(command.text)
+		m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: text})
+		return m, nil
+	case commandRole:
+		arg := strings.TrimSpace(command.text)
+		if arg == "" {
+			if m.pending {
+				m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: pickerBusyText(command.name)})
+				return m, nil
+			}
+			next, cmd, text := m.openRolePicker()
+			if text != "" {
+				m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: text})
+			}
+			if next.picker != nil || next.roleBindTarget != "" {
+				return next, cmd
+			}
+		}
+		// /role add <name> jumps straight into the bound model picker for a fresh
+		// role (an interactive way to create a role without typing a selector).
+		if strings.HasPrefix(strings.ToLower(arg), "add ") || strings.EqualFold(arg, "add") {
+			if m.pending {
+				m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: pickerBusyText(command.name)})
+				return m, nil
+			}
+			name := strings.TrimSpace(strings.TrimPrefix(arg, "add "))
+			name = strings.TrimSpace(strings.TrimPrefix(name, " "))
+			name = strings.TrimSpace(strings.TrimPrefix(name, "add"))
+			if name == "" {
+				m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: "Role\nUse /role add <name> then pick a model for the new role."})
+				return m, nil
+			}
+			next, cmd := m.openRoleModelPicker(name)
+			return next, cmd
+		}
+		text := ""
+		m, text = m.handleRoleCommand(command.text)
 		m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: text})
 		return m, nil
 	case commandSTTModel:
@@ -4989,8 +5052,8 @@ func (m model) launchPrompt(prompt string) (model, tea.Cmd) {
 	// exec's drop+warn wording) rather than sending them to a model that
 	// rejects them. Pending state is cleared either way below.
 	turnImages := m.pendingImages
-	if len(turnImages) > 0 && !m.modelSupportsVisionTUI() {
-		name := m.modelName
+	if len(turnImages) > 0 && !m.modelSupportsVisionTUI() && !m.canRouteVisionImages(m.roleRouter()) {
+		name := m.effectiveModelName()
 		if name == "" {
 			name = "the active model"
 		}
@@ -5192,6 +5255,11 @@ func (m model) runAgentWithOptions(runID int, runCtx context.Context, prompt str
 		options.SessionID = m.activeSession.SessionID
 		options.ProviderName = m.providerName
 		options.Model = m.modelName
+		// Multi-model task routing: the explicit /role the operator set in this TUI
+		// session (or --role at launch) drives per-turn model routing through the
+		// loop's role-swap seam. Nil when no role is set / none configured — the loop
+		// is then byte-identical.
+		options.RoleRouting = m.roleRoutingOptions(m.newProvider)
 		options.ReasoningEffort = string(m.reasoningEffort)
 		options.ResponseStyle = m.responseStyle
 		options.Cwd = m.cwd

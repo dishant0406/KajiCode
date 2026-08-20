@@ -41,6 +41,17 @@ const (
 
 var errPermissionApprovalCanceled = errors.New("permission approval cancelled")
 
+// imageRejectHint returns the routing-aware suffix for the image-rejection error
+// message. When role routing (and thus a vision-capable role profile) is wired, point
+// the model at the vision route; otherwise suggest a known vision-capable model.
+// routing may be nil.
+func imageRejectHint(routing *RoleRouting) string {
+	if routing != nil {
+		return " — the run is role-routed; ensure the active role's model is vision-capable, or set images.visionRouting to auto/model (kajicode) to route images to a vision-capable profile."
+	}
+	return " — try switching to a vision-capable model (claude, gpt-4o, gemini)"
+}
+
 // isImageRejectionError reports whether err is a provider 400 that rejects
 // image/multimodal content. This is checked BEFORE the compaction-retry path
 // so an image-rejection 400 doesn't loop endlessly (the user hit this with
@@ -228,6 +239,18 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 	// FileDiagnostics callback is wired; every method no-ops on nil.
 	postEditDiagnostics := newAsyncDiagnostics(options.FileDiagnostics, options.Cwd)
 
+	// Mid-run project guideline tracking: tools report the directories they
+	// resolve (a command's cwd, a file's parent), and the tracker discovers
+	// AGENTS.md/KAJICODE.md up the tree from each so rules become active even
+	// when the model cd's into a subdirectory mid-run. drain() is called before
+	// the next request, alongside the diagnostics nudge. Seed the tracker with
+	// the startup directory chain (git root → cwd) so the files already carried
+	// in the boot system prompt are NOT re-injected when the first tool call
+	// resolves them.
+	guidelineTrack := newGuidelineTracker(options.Cwd)
+	guidelineTrack.seedStartup(options.Cwd)
+	options.guidelineTrack = guidelineTrack
+
 	// loaded tracks deferred-eligible tools the model has pulled via tool_search
 	// during THIS run. It is consulted by partitionTools each turn to expose a
 	// loaded tool's full schema; it lives only for the run (v1 within-run scope).
@@ -237,6 +260,105 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 	// bounded follow-up state out of the central loop. Self-correcting profiles
 	// opt into the one permitted task-grounded semantic check.
 	completionPolicy := newCompletionPolicy(options.SelfCorrect != nil)
+
+	// Multi-model task routing (opt-in via Options.RoleRouting; nil leaves the loop
+	// byte-identical). The loop tracks the IN-FORCE role and, when RoleFor picks a
+	// different role for a turn, swaps the run's provider to that role's profile —
+	// mirroring the mid-run escalation swap (build a new session, close the old,
+	// update options.Model). messages are preserved: a role switch is a temporary
+	// model swap, never a conversation reset. A routing/swap error is non-fatal:
+	// record a note and stay on the current provider.
+	currentRole := ""
+	defaultModel := options.Model
+	baseContextWindow := options.ContextWindow
+	baseSessions := turnSessions
+	roleSwapFailureNotice := func(prev, req string, err error) kajicoderuntime.Message {
+		return kajicoderuntime.Message{
+			Role:    kajicoderuntime.MessageRoleUser,
+			Content: "Note: could not switch to the role \"" + req + "\" model: " + err.Error() + ". Continuing on " + options.Model + ".",
+		}
+	}
+	// applyRoleRouting recomputes the active role for the current turn and performs a
+	// provider swap if it changed. Returns true if the role/model actually switched.
+	//
+	// Role-driven routing is per-turn and reversible: a turn whose RoleFor returns
+	// "" (or the "default" role) swaps BACK to the run's starting provider/model —
+	// the per-message vision seam relies on this to return to the default model
+	// after an image turn. currentRole tracks the role IN FORCE so "" default turns
+	// are only reached when a prior turn actually routed away.
+	applyRoleRouting := func(ctx context.Context, ctxSig RoleContext) bool {
+		if options.RoleRouting == nil {
+			return false
+		}
+		role := strings.TrimSpace(options.RoleRouting.RoleFor(ctxSig))
+		isDefault := role == "" || role == "default"
+		// Only act when the intended role differs from the in-force role.
+		if (isDefault && currentRole == "") || (!isDefault && role == currentRole) {
+			return false
+		}
+		if isDefault {
+			// Swap back to the run's default provider/model. Close the routed session
+			// and reopen the base one we captured before the first role swap, so the
+			// default provider's optimized session (if any) is restored, not just the
+			// provider. A reopen failure is non-fatal: keep the routed session and note
+			// it, mirroring the role-swap failure handling.
+			base, reopenErr := baseSessions.OpenTurnSession(ctx)
+			if reopenErr != nil || base == nil {
+				// Best-effort: the default provider would not reopen. Stay on the routed
+				// session but restore the default model/context-window labels; record a
+				// non-fatal note.
+				options.Model = defaultModel
+				if baseContextWindow > 0 {
+					options.ContextWindow = baseContextWindow
+				}
+				currentRole = ""
+				if reopenErr != nil {
+					messages = append(messages, roleSwapFailureNotice("", defaultModel, fmt.Errorf("could not reopen the default session: %w", reopenErr)))
+				}
+				return true
+			}
+			_ = session.Close()
+			session = base
+			_ = session.Prewarm(ctx)
+			provider = sessionProvider{session: session}
+			options.Model = defaultModel
+			if baseContextWindow > 0 {
+				options.ContextWindow = baseContextWindow
+			}
+			currentRole = ""
+			return true
+		}
+		newProvider, profile, ok := options.RoleRouting.Current(ctx, role)
+		if !ok || newProvider == nil {
+			messages = append(messages, roleSwapFailureNotice(currentRole, role, fmt.Errorf("no provider available for role %q", role)))
+			currentRole = role
+			return false
+		}
+		// Build a turn session for the role's provider (same seam as escalation), then
+		// swap session/provider for the rest of the run.
+		newSessions := kajicoderuntime.NewProviderTurnSessionProvider(newProvider, kajicoderuntime.ProviderCapabilities{})
+		newSession, openErr := newSessions.OpenTurnSession(ctx)
+		if openErr != nil {
+			messages = append(messages, roleSwapFailureNotice(currentRole, role, openErr))
+			currentRole = role
+			return false
+		}
+		_ = session.Close()
+		session = newSession
+		_ = session.Prewarm(ctx)
+		provider = sessionProvider{session: session}
+		options.Model = profile.Model
+		// Recompute the compactor's context-window budget from the new profile when the
+		// router can report it; otherwise keep the prior budget (identified limitation).
+		if options.RoleRouting.ContextWindowFor != nil {
+			if cw := options.RoleRouting.ContextWindowFor(profile); cw > 0 {
+				options.ContextWindow = cw
+			}
+		}
+		options.Trace.Counter(trace.CounterModelSwitches, 1)
+		currentRole = role
+		return true
+	}
 
 	// toolDefCache memoizes each tool's rendered JSON-schema definition across
 	// turns (a tool's advertised schema is stable for the run), so partitionTools
@@ -264,6 +386,19 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 			messages = append(messages, kajicoderuntime.Message{
 				Role:    kajicoderuntime.MessageRoleUser,
 				Content: nudge,
+			})
+		}
+		// Inject project guide files discovered wherever the previous turn's tools
+		// actually resolved directories (a cd'd command cwd, a subdirectory file).
+		// Appended after the diagnostics nudge, before compaction, so they ride the
+		// next request as binding instructions — governing, not just informing, the
+		// upcoming actions. Each block is <INSTRUCTIONS>-formatted (heading starts
+		// with "# " and contains " instructions for ", body wrapped in tags) so
+		// compaction preserve carries it verbatim if these turns are later elided.
+		for _, block := range guidelineTrack.drain() {
+			messages = append(messages, kajicoderuntime.Message{
+				Role:    kajicoderuntime.MessageRoleUser,
+				Content: block,
 			})
 		}
 
@@ -297,6 +432,15 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 			})
 		}
 
+		// Multi-model task routing: pick the active role for this turn and swap the
+		// provider when the role's model differs from the one in force. Best-effort —
+		// a swap failure keeps the current provider (a note is recorded). Performed
+		// before compaction so compaction's summarizer already uses the routed model.
+		// HasImages is true only for the initial user turn, which is the only turn
+		// that carries the seeded image attachments — per-message vision routing uses
+		// it to route exactly that message and swap back to the default model.
+		applyRoleRouting(ctx, RoleContext{NumTurns: turn, HasImages: turn == 0 && len(options.Images) > 0})
+
 		// PROACTIVE compaction: if the history is approaching the model's
 		// context window, summarize the oldest middle before building the
 		// request. A no-op when ContextWindow == 0 (compaction disabled).
@@ -304,6 +448,21 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 		lenBefore := len(messages)
 		messages = compactor.maybeCompact(ctx, provider, messages, exposed)
 		compactionSpan.End()
+		// Compaction-safety net: after ANY compaction, re-assert the authoritative
+		// AGENTS.md/KAJICODE.md rules for the current working directory as verbatim
+		// <INSTRUCTIONS> user messages. This guarantees the rules survive a compact
+		// even when a root-level AGENTS.md was edited mid-run (no longer in the boot
+		// system prompt) or a summarizer paraphrased an instruction block away — and
+		// re-applies them on this very next request. Idempotent: only fires when a
+		// compaction actually ran.
+		if lenBefore != len(messages) {
+			for _, block := range guidelineTrack.reassertGuidelines(options.Cwd) {
+				messages = append(messages, kajicoderuntime.Message{
+					Role:    kajicoderuntime.MessageRoleUser,
+					Content: block,
+				})
+			}
+		}
 		// Self-learning hook: after compaction (and once per turn) run the
 		// review→plan→apply pipeline when its gates open (interval,
 		// post-compaction, or a manual learn-tool request). A nil engine leaves
@@ -322,7 +481,6 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 			ReasoningEffort: options.ReasoningEffort,
 			PromptCacheKey:  options.SessionID,
 		}
-
 		// Report the per-category context budget for this turn so a surface can
 		// show utilization. Opt-in: a no-op when OnContext is unset.
 		if options.OnContext != nil {
@@ -338,7 +496,7 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 		if err != nil {
 			if isImageRejectionError(err) {
 				result.Messages = copyMessages(messages)
-				return result, fmt.Errorf("model %s rejected the image: %s. The model may not support image input — try switching to a vision-capable model (claude, gpt-4o, gemini)", options.Model, err.Error())
+				return result, fmt.Errorf("model %s rejected the image: %s. The model may not support image input%s", options.Model, err.Error(), imageRejectHint(options.RoleRouting))
 			}
 			// REACTIVE compaction: a context-limit failure on the call itself
 			// can be recovered by compacting once and retrying the same turn.
@@ -431,7 +589,7 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 		// collected and a non-nil stop error when the run must end now.
 		recoverStreamError := func(collected kajicoderuntime.CollectedStream) (kajicoderuntime.CollectedStream, error) {
 			if isImageRejectionError(errors.New(collected.Error)) {
-				return collected, fmt.Errorf("model %s rejected the image: %s. The model may not support image input — try switching to a vision-capable model (claude, gpt-4o, gemini)", options.Model, collected.Error)
+				return collected, fmt.Errorf("model %s rejected the image: %s. The model may not support image input%s", options.Model, collected.Error, imageRejectHint(options.RoleRouting))
 			}
 			// REACTIVE compaction: the streamed error may also be a context limit
 			// (some providers surface it mid-stream). Compact and retry once.
@@ -439,6 +597,16 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 				messages = compacted
 				if retryErr != nil {
 					return collected, retryErr
+				}
+				// Compaction-safety net on the reactive path too: re-assert the
+				// authoritative AGENTS.md/KAJICODE.md rules for the current working
+				// directory so they are verbatim in the compacted history retried
+				// below, rather than relying on the summarizer having preserved them.
+				for _, block := range guidelineTrack.reassertGuidelines(options.Cwd) {
+					messages = append(messages, kajicoderuntime.Message{
+						Role:    kajicoderuntime.MessageRoleUser,
+						Content: block,
+					})
 				}
 				// Reuse the SAME active-mode partition (exposed) from this turn rather
 				// than the bare toolDefinitions: exposed depends on registry+loaded (not
@@ -960,6 +1128,16 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 			Content: nudge,
 		})
 	}
+	// Final guideline injection: any guide discovered on the last turn's
+	// directories surfaces before the summary so a final cd that revealed new
+	// rules is not silently dropped. <INSTRUCTIONS>-formatted for compaction
+	// preservation consistency with the per-turn injection.
+	for _, block := range guidelineTrack.drain() {
+		messages = append(messages, kajicoderuntime.Message{
+			Role:    kajicoderuntime.MessageRoleUser,
+			Content: block,
+		})
+	}
 	finalExposed, _ := partitionToolsCached(registry, permissionMode, options, loaded, toolDefCache)
 	if answer, finalMessages, finishReason := finalAnswerAfterMaxTurns(ctx, provider, messages, finalExposed, options); strings.TrimSpace(answer) != "" {
 		result.FinalAnswer = answer
@@ -1453,6 +1631,10 @@ func executeToolCall(ctx context.Context, registry *tools.Registry, call ToolCal
 		EnabledTools:  options.EnabledTools,
 		DisabledTools: options.DisabledTools,
 		Progress:      progressCallback,
+		// Forward the mid-run guideline tracker so every tool reports the
+		// directories it resolves and the loop can inject newly-discovered
+		// AGENTS.md/KAJICODE.md rules before the next request.
+		ProjectGuidelines: options.guidelineTrack.observer(),
 		// The sandbox decision (if any) is returned synchronously on the Result and
 		// used here for permission event building.
 	})
@@ -1779,6 +1961,7 @@ func runToolForNetworkRetry(ctx context.Context, registry *tools.Registry, name 
 		EnabledTools:      options.EnabledTools,
 		DisabledTools:     options.DisabledTools,
 		Progress:          progressCallback,
+		ProjectGuidelines: options.guidelineTrack.observer(),
 	})
 }
 
@@ -1808,6 +1991,7 @@ func runToolForUnsandboxedRetry(ctx context.Context, registry *tools.Registry, n
 		EnabledTools:      options.EnabledTools,
 		DisabledTools:     options.DisabledTools,
 		Progress:          progressCallback,
+		ProjectGuidelines: options.guidelineTrack.observer(),
 	})
 }
 
@@ -2099,6 +2283,7 @@ func askUserFallbackResult(ctx context.Context, registry *tools.Registry, call T
 			ReasoningEffort:   options.ReasoningEffort,
 			Depth:             options.Depth,
 			Cwd:               options.Cwd,
+			ProjectGuidelines: options.guidelineTrack.observer(),
 		})
 		return ToolResult{
 			ToolCallID:   call.ID,

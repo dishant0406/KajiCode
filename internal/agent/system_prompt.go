@@ -45,7 +45,13 @@ var projectContextFiles = []string{"AGENTS.md", "KAJICODE.md", ".kajicode/AGENTS
 // of individual repositories.
 const userContextFile = "KAJICODE.md"
 
+// userConfigDirForPrompt is the resolver for the per-user config dir; tests stub
+// it so prompt assertions don't read a developer's real ~/.config/kajicode.
 var userConfigDirForPrompt = config.UserConfigDir
+
+// userHomeDirForPrompt is the resolver for the home dir used by the shared
+// ~/.agents rules/skills path; tests stub it so prompt assertions are hermetic.
+var userHomeDirForPrompt = os.UserHomeDir
 
 // maxProjectContextBytes caps how much of a single project doc is injected so
 // a large guidelines file can't blow the context budget.
@@ -114,6 +120,9 @@ func buildSystemPromptParts(options Options) systemPromptParts {
 	// the section text itself.
 	if user := userGuidelines(); user != "" {
 		builder.add(promptSectionUserGuidelines, user)
+	}
+	if shared := agentGuidelines(); shared != "" {
+		builder.add(promptSectionAgentGuidelines, shared)
 	}
 	project := workspaceContext(options.Cwd)
 	if project != "" {
@@ -428,6 +437,52 @@ func userGuidelines() string {
 		"These are the operator's personal preferences, not project policy. " +
 		"Where they conflict with a repository's project guidelines below (AGENTS.md/KAJICODE.md), the project guidelines take precedence.\n\n" +
 		content
+}
+
+// agentGuidelines returns the shared multi-agent AGENTS.md instructions block, if
+// present. It reads $HOME/.agents/AGENTS.md, the same convention path that already
+// hosts shared skills (~/.agents/skills), so a rules file written once for a
+// many-agents toolchain (KajiCode, Claude Code, etc.) is honored here too. The
+// basename is matched case-insensitively, mirroring the other guideline loaders.
+// It is injected after user guidelines and before project context, with an explicit
+// precedence note, so project AGENTS.md/KAJICODE.md (more specific) wins over this
+// shared source, which wins over personal user guidelines.
+func agentGuidelines() string {
+	dir := agentsHomeRulesDir()
+	if dir == "" {
+		return ""
+	}
+	match := findCaseInsensitiveFile(dir, "AGENTS.md")
+	if match == "" {
+		return ""
+	}
+	data, err := os.ReadFile(match)
+	if err != nil {
+		return ""
+	}
+	content := strings.TrimSpace(string(data))
+	if content == "" {
+		return ""
+	}
+	content = truncateGuidelineContent(content, maxProjectContextBytes)
+	return "## Shared agent guidelines (~/.agents/AGENTS.md)\n\n" +
+		"These are shared, multi-agent preferences, not project policy. " +
+		"The repository's project guidelines below (AGENTS.md/KAJICODE.md) take precedence on conflict, and these take precedence over the personal user guidelines above.\n\n" +
+		content
+}
+
+// agentsHomeRulesDir resolves the ~/.agents rules directory, or "" when home cannot
+// be determined. It uses the same ~/.agents shared convention path that hosts
+// multi-agent skills (see internal/skills/skills.go), so one location serves both
+// rules and skills. os.UserHomeDir returns $HOME on Unix and $USERPROFILE on
+// Windows, matching that package's fallback order. findCaseInsensitiveFile fails
+// open when the directory is missing, so no separate existence check is needed here.
+func agentsHomeRulesDir() string {
+	home, err := userHomeDirForPrompt()
+	if err != nil || strings.TrimSpace(home) == "" {
+		return ""
+	}
+	return filepath.Join(home, ".agents")
 }
 
 // truncationMarker is appended to guideline content that was cut short.

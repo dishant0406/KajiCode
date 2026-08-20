@@ -846,6 +846,10 @@ func runInteractiveTUIWithSetup(stderr io.Writer, deps appDeps, permissionMode a
 		ModelName:            resolved.Provider.Model,
 		ProviderProfile:      resolved.Provider,
 		SavedProviders:       usableSavedProviders(resolved.Providers),
+		ModelRoles:           resolved.ModelRoles,
+		DefaultModel:         resolved.DefaultModel,
+		ActiveRole:           resolved.ActiveRole,
+		VisionRouting:        resolved.Images.EffectiveVisionRouting(),
 		FavoriteModels:       resolved.Preferences.FavoriteModels,
 		RecentModels:         resolved.Preferences.RecentModels,
 		RecapsEnabled:        resolved.Preferences.RecapsEnabled(),
@@ -1426,6 +1430,8 @@ Flags:
       --add-dir <path>               Allow writes in an extra directory (repeatable)
       --mode <name>                  Apply a preset (smart, deep, fast, large, precise); explicit flags override it
   -m, --model <model>                Select the model for provider setup
+      --role <name>                  Route the run to a task role (e.g. design, implement)
+                                     via ModelRoles; selects that role's model for the run
       --use-spec                     Draft a spec first and stop for review
       --spec-model <model>           Override the draft model when --use-spec is set
       --spec-reasoning-effort <effort>

@@ -19,6 +19,7 @@ KajiCode.
 
 - [Architecture](architecture.md)
 - [How KajiCode Works](HOW_KAJICODE_WORKS.md)
+- [Multi-Model Routing](MULTI_MODEL_ROUTING.md)
 - [npm wrapper smoke checklist](NPM_WRAPPER_SMOKE.md)
 - [Benchmarks](BENCHMARK.md)
 - [Performance benchmarks](PERFORMANCE.md)

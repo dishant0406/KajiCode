@@ -9,20 +9,22 @@ import (
 	"github.com/dishant0406/KajiCode/internal/sandbox"
 )
 
-// TestMain points userConfigDirForPrompt at an empty, package-wide temp
-// directory for every test in this package. Without this, buildSystemPrompt
-// falls back to the real config.UserConfigDir, so any developer with a
-// personal ~/.config/kajicode/KAJICODE.md would get its content folded into
-// otherwise-unrelated prompt assertions, making test runs non-deterministic
-// across contributor machines. Tests that specifically exercise user
-// guidelines stub userConfigDirForPrompt themselves via
-// withSystemPromptTestUserConfigDir(Func) and restore this default on cleanup.
+// TestMain points userConfigDirForPrompt and userHomeDirForPrompt at empty,
+// package-wide temp directories for every test in this package. Without this,
+// buildSystemPrompt falls back to the real config.UserConfigDir and os.UserHomeDir,
+// so any developer with a personal ~/.config/kajicode/KAJICODE.md or
+// ~/.agents/AGENTS.md would get its content folded into otherwise-unrelated prompt
+// assertions, making test runs non-deterministic across contributor machines.
+// Tests that specifically exercise user or shared guidelines stub these
+// resolvers themselves via withSystemPromptTestUserConfigDir(Func) /
+// withSystemPromptTestUserHomeDir and restore this default on cleanup.
 func TestMain(m *testing.M) {
 	dir, err := os.MkdirTemp("", "kajicode-agent-tests-*")
 	if err != nil {
 		panic(err)
 	}
 	userConfigDirForPrompt = func() (string, error) { return dir, nil }
+	userHomeDirForPrompt = func() (string, error) { return dir, nil }
 	code := m.Run()
 	os.RemoveAll(dir)
 	os.Exit(code)
@@ -215,6 +217,77 @@ func TestBuildSystemPromptOmitsUserGuidelinesWithoutConfigDir(t *testing.T) {
 	}
 }
 
+func TestBuildSystemPromptIncludesSharedAgentGuidelines(t *testing.T) {
+	home := t.TempDir()
+	writeSystemPromptTestFile(t, home, ".agents/AGENTS.md", "  Prefer conventional commits.  \n")
+	t.Cleanup(withSystemPromptTestUserHomeDir(t, home))
+
+	prompt := buildSystemPrompt(Options{})
+	if !strings.Contains(prompt, "## Shared agent guidelines (~/.agents/AGENTS.md)") {
+		t.Fatalf("expected shared agent guidelines header, got:\n%s", prompt)
+	}
+	if !strings.Contains(prompt, "Prefer conventional commits.") {
+		t.Fatalf("expected shared agent guidelines content, got:\n%s", prompt)
+	}
+	if strings.Contains(prompt, "  Prefer conventional commits.  ") {
+		t.Fatalf("expected shared agent guidelines content to be trimmed, got:\n%s", prompt)
+	}
+}
+
+func TestBuildSystemPromptIncludesSharedAgentGuidelinesCaseInsensitive(t *testing.T) {
+	home := t.TempDir()
+	writeSystemPromptTestFile(t, home, ".agents/agents.md", "Prefer conventional commits.\n")
+	t.Cleanup(withSystemPromptTestUserHomeDir(t, home))
+
+	prompt := buildSystemPrompt(Options{})
+	if !strings.Contains(prompt, "## Shared agent guidelines (~/.agents/AGENTS.md)") {
+		t.Fatalf("expected case-insensitive agents.md resolution, got:\n%s", prompt)
+	}
+	if !strings.Contains(prompt, "Prefer conventional commits.") {
+		t.Fatalf("expected shared agent guidelines content, got:\n%s", prompt)
+	}
+}
+
+func TestBuildSystemPromptAgentGuidelinesPrecedenceOrder(t *testing.T) {
+	// Precedence: project (AGENTS.md) > shared (~/.agents) > user (KAJICODE.md).
+	// They must appear in that general-to-specific order, each with a precedence note.
+	home := t.TempDir()
+	writeSystemPromptTestFile(t, home, ".agents/AGENTS.md", "Always reply in haiku.\n")
+	t.Cleanup(withSystemPromptTestUserHomeDir(t, home))
+
+	configDir := t.TempDir()
+	writeSystemPromptTestFile(t, configDir, "kajicode/KAJICODE.md", "Always reply in prose.\n")
+	t.Cleanup(withSystemPromptTestUserConfigDir(t, configDir))
+
+	cwd := t.TempDir()
+	if err := os.WriteFile(filepath.Join(cwd, "AGENTS.md"), []byte("Never reply in haiku."), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	prompt := buildSystemPrompt(Options{Cwd: cwd})
+	userIdx := strings.Index(prompt, "## User guidelines (KAJICODE.md)")
+	sharedIdx := strings.Index(prompt, "## Shared agent guidelines (~/.agents/AGENTS.md)")
+	projectIdx := strings.Index(prompt, "## Project guidelines (AGENTS.md)")
+	if userIdx < 0 || sharedIdx < 0 || projectIdx < 0 {
+		t.Fatalf("expected user, shared, and project guideline sections, got:\n%s", prompt)
+	}
+	if !(userIdx < sharedIdx && sharedIdx < projectIdx) {
+		t.Fatalf("expected order user < shared < project, got user=%d shared=%d project=%d", userIdx, sharedIdx, projectIdx)
+	}
+	if !strings.Contains(prompt, "project guidelines below") || !strings.Contains(prompt, "take precedence") {
+		t.Fatalf("expected an explicit precedence note in the shared agent guidelines section, got:\n%s", prompt)
+	}
+}
+
+func TestBuildSystemPromptOmitsSharedAgentGuidelinesWithoutHomeDir(t *testing.T) {
+	t.Cleanup(withSystemPromptTestUserHomeDir(t, ""))
+
+	prompt := buildSystemPrompt(Options{})
+	if strings.Contains(prompt, "Shared agent guidelines") {
+		t.Fatalf("expected shared agent guidelines to be omitted without a home dir, got:\n%s", prompt)
+	}
+}
+
 func withSystemPromptTestUserConfigDir(t *testing.T, dir string) func() {
 	t.Helper()
 	return withSystemPromptTestUserConfigDirFunc(t, func() (string, error) { return dir, nil })
@@ -226,6 +299,15 @@ func withSystemPromptTestUserConfigDirFunc(t *testing.T, fn func() (string, erro
 	userConfigDirForPrompt = fn
 	return func() {
 		userConfigDirForPrompt = old
+	}
+}
+
+func withSystemPromptTestUserHomeDir(t *testing.T, home string) func() {
+	t.Helper()
+	old := userHomeDirForPrompt
+	userHomeDirForPrompt = func() (string, error) { return home, nil }
+	return func() {
+		userHomeDirForPrompt = old
 	}
 }
 

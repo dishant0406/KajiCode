@@ -52,6 +52,23 @@ type RunOptions struct {
 	// it introduced in the same turn instead of waiting for a later verification
 	// pass. nil disables inline diagnostics.
 	Diagnostics func(ctx context.Context, absPath string) string
+	// ProjectGuidelines, when set, receives one ObservePath call per absolute
+	// directory the tool resolved this run (the dir containing a read/written
+	// file, a scan root, or a command's cwd). The agent's GuidelineTracker
+	// consumes these to discover AGENTS.md/KAJICODE.md rules in subdirectories
+	// the agent touches and inject them mid-run. nil disables the feature
+	// entirely (tools behave exactly as before). Implementations must be safe
+	// for concurrent calls (parallel read batches).
+	ProjectGuidelines ProjectGuidelineObserver
+}
+
+// ProjectGuidelineObserver is the seam tools use to report directories they
+// touched. It is defined in tools (not agent) so tools never import agent, and
+// implemented by the agent's GuidelineTracker to avoid an import cycle. Tools
+// must call it only for directories they actually resolved; the observer is
+// responsible for cheap de-duplication and path containment checks.
+type ProjectGuidelineObserver interface {
+	ObservePath(absDir string)
 }
 
 // SessionStore is the narrow persistence surface session-backed tools need. The

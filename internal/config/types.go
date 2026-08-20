@@ -368,26 +368,67 @@ func (cfg *ToolsConfig) UnmarshalJSON(data []byte) error {
 }
 
 type FileConfig struct {
-	ActiveProvider string             `json:"activeProvider,omitempty"`
-	Providers      []ProviderProfile  `json:"providers,omitempty"`
-	MaxTurns       int                `json:"maxTurns,omitempty"`
-	MCP            MCPConfig          `json:"mcp,omitempty"`
-	Sandbox        SandboxConfig      `json:"sandbox,omitempty"`
-	Notify         NotifyConfig       `json:"notify,omitempty"`
-	Tools          ToolsConfig        `json:"tools,omitempty"`
-	Swarm          SwarmConfig        `json:"swarm,omitempty"`
-	Harness        HarnessConfig      `json:"harness,omitempty"`
-	Learning       LearningConfig     `json:"learning,omitempty"`
-	Preferences    PreferencesConfig  `json:"preferences,omitempty"`
-	KeyBindings    KeyBindingsConfig  `json:"keybindings,omitempty"`
-	LocalControl   LocalControlConfig `json:"localControl,omitempty"`
-	STT            STTConfig          `json:"stt,omitempty"`
+	ActiveProvider string            `json:"activeProvider,omitempty"`
+	Providers      []ProviderProfile `json:"providers,omitempty"`
+	// ModelRoles maps a task role name to a model selector ("provider:model", a
+	// registry alias, or "@role" to reference another role). Roles not present fall
+	// back to the active model / DefaultModel.
+	ModelRoles map[string]string `json:"modelRoles,omitempty"`
+	// DefaultModel, when set, is the model used when no role override applies and no
+	// active profile model is selected. Empty means "use the active profile's own
+	// Model field".
+	DefaultModel string `json:"defaultModel,omitempty"`
+	// ActiveRole is the task role in effect at startup, persisted so a role set in
+	// one session applies globally to every later session and project. Each job
+	// role routes to the model picked by MultiModel routing (modelRoles["role"] or a
+	// capability default). Empty means no explicit role — the run follows the active
+	// profile model / DefaultModel. It is global by design (not per-session).
+	ActiveRole   string             `json:"activeRole,omitempty"`
+	MaxTurns     int                `json:"maxTurns,omitempty"`
+	MCP          MCPConfig          `json:"mcp,omitempty"`
+	Sandbox      SandboxConfig      `json:"sandbox,omitempty"`
+	Notify       NotifyConfig       `json:"notify,omitempty"`
+	Tools        ToolsConfig        `json:"tools,omitempty"`
+	Swarm        SwarmConfig        `json:"swarm,omitempty"`
+	Harness      HarnessConfig      `json:"harness,omitempty"`
+	Learning     LearningConfig     `json:"learning,omitempty"`
+	Preferences  PreferencesConfig  `json:"preferences,omitempty"`
+	KeyBindings  KeyBindingsConfig  `json:"keybindings,omitempty"`
+	LocalControl LocalControlConfig `json:"localControl,omitempty"`
+	Images       ImagesConfig       `json:"images,omitempty"`
+	STT          STTConfig          `json:"stt,omitempty"`
+}
+
+type ImagesConfig struct {
+	// VisionRouting controls how image attachments are handled when the active model
+	// is not vision-capable. "auto" routes the request to the first vision-capable
+	// available profile; "model" uses ModelRoles["vision"]; "off" keeps the legacy
+	// drop+warn behavior.
+	VisionRouting string `json:"visionRouting,omitempty"`
+}
+
+// EffectiveVisionRouting returns the normalized, safe vision-routing mode. Anything
+// other than "auto" or "model" collapses to "off", preserving legacy behavior.
+func (c ImagesConfig) EffectiveVisionRouting() string {
+	switch strings.TrimSpace(c.VisionRouting) {
+	case "auto", "model":
+		return strings.TrimSpace(c.VisionRouting)
+	default:
+		return "off"
+	}
+}
+
+func (c ImagesConfig) Empty() bool {
+	return strings.TrimSpace(c.VisionRouting) == ""
 }
 
 func (cfg FileConfig) MarshalJSON() ([]byte, error) {
 	type rawConfig struct {
 		ActiveProvider string              `json:"activeProvider,omitempty"`
 		Providers      []ProviderProfile   `json:"providers,omitempty"`
+		ModelRoles     map[string]string   `json:"modelRoles,omitempty"`
+		DefaultModel   string              `json:"defaultModel,omitempty"`
+		ActiveRole     string              `json:"activeRole,omitempty"`
 		MaxTurns       int                 `json:"maxTurns,omitempty"`
 		MCP            MCPConfig           `json:"mcp,omitempty"`
 		Sandbox        SandboxConfig       `json:"sandbox,omitempty"`
@@ -399,11 +440,15 @@ func (cfg FileConfig) MarshalJSON() ([]byte, error) {
 		Preferences    PreferencesConfig   `json:"preferences,omitempty"`
 		KeyBindings    KeyBindingsConfig   `json:"keybindings,omitempty"`
 		LocalControl   *LocalControlConfig `json:"localControl,omitempty"`
+		Images         *ImagesConfig       `json:"images,omitempty"`
 		STT            *STTConfig          `json:"stt,omitempty"`
 	}
 	raw := rawConfig{
 		ActiveProvider: cfg.ActiveProvider,
 		Providers:      cfg.Providers,
+		ModelRoles:     cfg.ModelRoles,
+		DefaultModel:   cfg.DefaultModel,
+		ActiveRole:     cfg.ActiveRole,
 		MaxTurns:       cfg.MaxTurns,
 		MCP:            cfg.MCP,
 		Sandbox:        cfg.Sandbox,
@@ -421,6 +466,9 @@ func (cfg FileConfig) MarshalJSON() ([]byte, error) {
 	}
 	if !cfg.LocalControl.Empty() {
 		raw.LocalControl = &cfg.LocalControl
+	}
+	if !cfg.Images.Empty() {
+		raw.Images = &cfg.Images
 	}
 	if !cfg.STT.Empty() {
 		raw.STT = &cfg.STT
@@ -445,6 +493,9 @@ type Overrides struct {
 	ActiveProvider string
 	Providers      []ProviderProfile
 	Provider       ProviderProfile
+	ModelRoles     map[string]string
+	DefaultModel   string
+	ActiveRole     string
 	MaxTurns       int
 	MCP            MCPConfig
 	Sandbox        SandboxConfig
@@ -454,6 +505,7 @@ type Overrides struct {
 	Learning       LearningConfig
 	KeyBindings    KeyBindingsConfig
 	LocalControl   LocalControlConfig
+	Images         ImagesConfig
 	STT            STTConfig
 }
 
@@ -461,6 +513,9 @@ type ResolvedConfig struct {
 	ActiveProvider string
 	Providers      []ProviderProfile
 	Provider       ProviderProfile
+	ModelRoles     map[string]string
+	DefaultModel   string
+	ActiveRole     string
 	MaxTurns       int
 	MCP            MCPConfig
 	Sandbox        SandboxConfig
@@ -472,6 +527,7 @@ type ResolvedConfig struct {
 	Preferences    PreferencesConfig
 	KeyBindings    KeyBindingsConfig
 	LocalControl   LocalControlConfig
+	Images         ImagesConfig
 	STT            STTConfig
 }
 
@@ -524,6 +580,10 @@ func (cfg *FileConfig) UnmarshalJSON(data []byte) error {
 	type rawConfig struct {
 		ActiveProvider  string                     `json:"activeProvider"`
 		Providers       []ProviderProfile          `json:"providers"`
+		ModelRoles      map[string]string          `json:"modelRoles"`
+		DefaultModel    string                     `json:"defaultModel"`
+		ActiveRole      string                     `json:"activeRole"`
+		Images          ImagesConfig               `json:"images"`
 		MaxTurns        int                        `json:"maxTurns"`
 		MCP             MCPConfig                  `json:"mcp"`
 		Sandbox         SandboxConfig              `json:"sandbox"`
@@ -546,6 +606,10 @@ func (cfg *FileConfig) UnmarshalJSON(data []byte) error {
 	}
 	cfg.ActiveProvider = raw.ActiveProvider
 	cfg.Providers = raw.Providers
+	cfg.ModelRoles = raw.ModelRoles
+	cfg.DefaultModel = raw.DefaultModel
+	cfg.ActiveRole = raw.ActiveRole
+	cfg.Images = raw.Images
 	// A negative maxTurns is unambiguously invalid; without this it would be
 	// silently dropped by the `MaxTurns > 0` merge gates and fall back to the
 	// default, hiding a misconfiguration. (0 is left as-is: with omitempty it is

@@ -72,18 +72,18 @@ func NewScopedBashTool(workspaceRoot string, scope PathScope) Tool {
 }
 
 func (tool bashTool) Run(ctx context.Context, args map[string]any) Result {
-	return tool.run(ctx, args, nil, true)
+	return tool.run(ctx, args, nil, RunOptions{}, true)
 }
 
 func (tool bashTool) RunWithSandbox(ctx context.Context, args map[string]any, engine *zeroSandbox.Engine) Result {
-	return tool.run(ctx, args, engine, true)
+	return tool.run(ctx, args, engine, RunOptions{}, true)
 }
 
 func (tool bashTool) RunWithOptions(ctx context.Context, args map[string]any, options RunOptions) Result {
-	return tool.run(ctx, args, options.Sandbox, false)
+	return tool.run(ctx, args, options.Sandbox, options, false)
 }
 
-func (tool bashTool) run(ctx context.Context, args map[string]any, engine *zeroSandbox.Engine, directBudget bool) Result {
+func (tool bashTool) run(ctx context.Context, args map[string]any, engine *zeroSandbox.Engine, options RunOptions, directBudget bool) Result {
 	commandText, err := bashCommandArg(args)
 	if err != nil {
 		return errorResult("Error: Invalid arguments for bash: " + err.Error())
@@ -120,6 +120,9 @@ func (tool bashTool) run(ctx context.Context, args map[string]any, engine *zeroS
 	if err != nil {
 		return errorResult("Error running bash: " + err.Error())
 	}
+	// Report the command's working directory so the agent can discover AGENTS.md
+	// rules in whichever directory the command executed in.
+	observeProjectGuideline(options, absoluteCwd)
 
 	commandCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutMS)*time.Millisecond)
 	defer cancel()

@@ -30,6 +30,10 @@ type Options struct {
 	ModelName                   string
 	ProviderProfile             config.ProviderProfile
 	SavedProviders              []config.ProviderProfile // all configured providers, for the /model multi-provider list
+	ModelRoles                  map[string]string        // task role name → model selector, for /role multi-model routing
+	DefaultModel                string                   // default model when no role/model override applies
+	ActiveRole                  string                   // persisted global task role to apply at startup
+	VisionRouting               string                   // images.visionRouting: auto|model|off (per-message image auto-routing)
 	FavoriteModels              []string
 	RecentModels                []config.RecentModelEntry
 	RecapsEnabled               bool

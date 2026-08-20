@@ -397,6 +397,12 @@ type Options struct {
 	// contract as ModelSwitcher: a returned error records a note and the run
 	// continues on the current model and session.
 	ModelSessionSwitcher func(ctx context.Context, modelID string) (kajicoderuntime.TurnSessionProvider, error)
+	// RoleRouting, when set, enables multi-model task routing: the loop queries
+	// RoleFor each turn and, when the active role's model differs from the current
+	// one, swaps the run's provider via Current. nil DISABLES routing entirely —
+	// every existing caller/test is unaffected. A routing/swap error is non-fatal:
+	// the run continues on the current provider.
+	RoleRouting *RoleRouting
 	// Profile, when set, arms the execution-profile posture controller for this
 	// run (auto-escalation to stricter knob values on failure/uncertainty/risky
 	// mutation signals). nil — the default everywhere today — leaves the loop
@@ -449,6 +455,10 @@ type Options struct {
 	RequireCompletionSignal bool
 
 	runPermissions *permissionRunState
+	// guidelineTrack carries the mid-run AGENTS.md/KAJICODE.md discovery tracker
+	// across helper calls (executeToolCall builds RunOptions with it). Set by the
+	// run loop; nil outside a run.
+	guidelineTrack *guidelineTracker
 }
 
 type Result struct {
