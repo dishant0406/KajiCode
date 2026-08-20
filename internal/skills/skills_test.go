@@ -80,6 +80,59 @@ func TestLoadParsesFrontmatter(t *testing.T) {
 	}
 }
 
+func TestLoadParsesProactiveFrontmatter(t *testing.T) {
+	dir := t.TempDir()
+	content := "---\nname: docs-bot\n" +
+		"description: Writing update guides.\n" +
+		"scope: when writing docs/**\n" +
+		"when_to_use: docs/** cmd/kajicode/**, internal/agent/**\n" +
+		"permission: prompt\n" +
+		"---\n\n# Docs Bot\n\nFollow the docs guide.\n"
+	writeSkill(t, dir, "docs-bot", content)
+
+	loaded, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if len(loaded) != 1 {
+		t.Fatalf("expected 1 skill, got %d", len(loaded))
+	}
+	skill := loaded[0]
+	if skill.Scope != "when writing docs/**" {
+		t.Fatalf("Scope = %q", skill.Scope)
+	}
+	wantPatterns := []string{"docs/**", "cmd/kajicode/**", "internal/agent/**"}
+	if len(skill.WhenToUse) != len(wantPatterns) {
+		t.Fatalf("WhenToUse = %v, want %v", skill.WhenToUse, wantPatterns)
+	}
+	for i := range wantPatterns {
+		if skill.WhenToUse[i] != wantPatterns[i] {
+			t.Fatalf("WhenToUse[%d] = %q, want %q", i, skill.WhenToUse[i], wantPatterns[i])
+		}
+	}
+	if skill.Permission != PermissionPrompt {
+		t.Fatalf("Permission = %q, want %q", skill.Permission, PermissionPrompt)
+	}
+}
+
+func TestNormalizePermissionDefaultsToAllow(t *testing.T) {
+	cases := map[string]string{
+		"":             PermissionAllow,
+		"ALLOW":        PermissionAllow,
+		"AlLoW":        PermissionAllow,
+		"prompt":       PermissionPrompt,
+		"deny":         PermissionDeny,
+		"  deny  ":     PermissionDeny,
+		"bogus":        PermissionAllow,
+		"unrecognized": PermissionAllow,
+	}
+	for input, want := range cases {
+		if got := NormalizePermission(input); got != want {
+			t.Errorf("NormalizePermission(%q) = %q, want %q", input, got, want)
+		}
+	}
+}
+
 func TestLoadDerivesNameFromDirectoryWithoutFrontmatter(t *testing.T) {
 	dir := t.TempDir()
 	writeSkill(t, dir, "no-frontmatter", "# Just markdown\n\nNo frontmatter here.\n")
@@ -580,5 +633,36 @@ func TestInfoFromRootsPrimaryLockMetadata(t *testing.T) {
 	}
 	if info.Source != "file:///src" || info.Hash != "sha256:abc" {
 		t.Fatalf("lock metadata missing: %#v", info)
+	}
+}
+
+func TestBuiltinCustomizeKajicode(t *testing.T) {
+	s := BuiltinCustomizeKajicode()
+	if s.Name != BuiltinCustomizeKajicodeName {
+		t.Fatalf("Name = %q, want %q", s.Name, BuiltinCustomizeKajicodeName)
+	}
+	if s.Permission != PermissionAllow {
+		t.Fatalf("Permission = %q, want allow", s.Permission)
+	}
+	if len(s.WhenToUse) == 0 {
+		t.Fatalf("builtin must declare when_to_use scoping")
+	}
+}
+
+func TestPrependBuiltinAppendsAndShadows(t *testing.T) {
+	// Empty input: builtin synthesized.
+	withBuiltin := PrependBuiltin(nil)
+	if len(withBuiltin) != 1 || withBuiltin[0].Name != BuiltinCustomizeKajicodeName {
+		t.Fatalf("PrependBuiltin(nil) = %+v", withBuiltin)
+	}
+	// Existing skills keep order; builtin added at front (lowest shadow).
+	withOne := PrependBuiltin([]Skill{{Name: "other", Content: "x"}})
+	if len(withOne) != 2 || withOne[0].Name != BuiltinCustomizeKajicodeName || withOne[1].Name != "other" {
+		t.Fatalf("PrependBuiltin(one) = %+v", withOne)
+	}
+	// A real skill of the same name must shadow the builtin (no duplicate).
+	withUser := PrependBuiltin([]Skill{{Name: BuiltinCustomizeKajicodeName, Content: "user"}})
+	if len(withUser) != 1 || withUser[0].Content != "user" {
+		t.Fatalf("PrependBuiltin should keep the real skill, got %+v", withUser)
 	}
 }

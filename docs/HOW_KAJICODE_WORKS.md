@@ -857,7 +857,12 @@ flowchart TD
 ```
 
 - **Project/user guidelines** become prompt context.
-- **Skills** are instruction packs the model can load on demand.
+- **Skills** are instruction packs the model can load on demand. They are used
+  proactively: the boot `<available_skills>` catalog is reconciled as a delta as the
+  run moves filesystems, project skills auto-coach when their `when_to_use:` path globs
+  match an observed path, a lowest-precedence built-in `customize-kajicode` is always
+  discoverable, and per-skill `permission:` (allow|prompt|deny) gating is enforced by the
+  `skill` tool and surfaced as `[prompt]`/`[deny]` catalog markers.
 - **Specialists** are sub-agents callable through the `Task` tool.
 - **MCP servers** contribute external tools.
 - **Plugins** can add tools, hooks, and skill roots. Bootstrap always registers a

@@ -16,6 +16,7 @@ import (
 
 	"github.com/dishant0406/KajiCode/internal/hooks"
 	"github.com/dishant0406/KajiCode/internal/mcp"
+	"github.com/dishant0406/KajiCode/internal/sandbox"
 	"github.com/dishant0406/KajiCode/internal/secrets"
 	"github.com/dishant0406/KajiCode/internal/skills"
 	"github.com/dishant0406/KajiCode/internal/tools"
@@ -279,18 +280,41 @@ const skillFileName = "SKILL.md"
 // considered first so a user skill shadows agents and plugins. A bad root simply
 // yields no skills rather than failing the merge.
 func MergedSkills(defaultDir string, pluginRoots []string) ([]skills.Skill, []skills.DuplicateName) {
-	return mergeSkills(defaultDir, pluginRoots, false)
+	return mergeSkills(defaultDir, nil, pluginRoots, false)
 }
 
-// mergeSkills merges the primary skills dir, optional ~/.agents/skills, and
-// plugin roots into one sorted, name-deduplicated list via skills.LoadFromRoots /
-// ListFromRoots. keepContent retains each skill's body versus stripping it.
-// Roots are considered in order with the default dir first, so an earlier root
-// wins a name clash; collisions are recorded rather than crashing.
-func mergeSkills(defaultDir string, pluginRoots []string, keepContent bool) ([]skills.Skill, []skills.DuplicateName) {
+// MergedSkillsForCwd is MergedSkills but also merges the project skills
+// governing cwd (skills.LoadForCwd), so the boot catalog surfaces repo skills.
+// Project roots are inserted between the global roots and plugin roots, matching
+// the documented precedence global > project > plugins.
+func MergedSkillsForCwd(defaultDir string, pluginRoots []string, cwd string) ([]skills.Skill, []skills.DuplicateName) {
+	projectRoots := skills.ProjectSkillRoots(cwd, skills.FindProjectGitRoot(cwd))
+	return mergeSkills(defaultDir, projectRoots, pluginRoots, false)
+}
+
+// MergedSkillsForCwdLoaded is MergedSkillsForCwd but keeps each skill's Content
+// (so LoadSkills-backed /skills and /<skill-name> can return a body), matching
+// the MergedSkillsLoaded / keep-Content split for the global+plugin-only set.
+func MergedSkillsForCwdLoaded(defaultDir string, pluginRoots []string, cwd string) ([]skills.Skill, []skills.DuplicateName) {
+	projectRoots := skills.ProjectSkillRoots(cwd, skills.FindProjectGitRoot(cwd))
+	return mergeSkills(defaultDir, projectRoots, pluginRoots, true)
+}
+
+// mergeSkills merges the primary skills dir, optional ~/.agents/skills, plugin
+// roots, and (when non-nil) project skill roots into one sorted, name-deduplicated
+// list via skills.LoadFromRoots / ListFromRoots. keepContent retains each skill's
+// body versus stripping it. Global roots, then project roots, then plugin roots —
+// so a more global skill wins a name clash; collisions are recorded rather than
+// crashing.
+func mergeSkills(defaultDir string, projectRoots []string, pluginRoots []string, keepContent bool) ([]skills.Skill, []skills.DuplicateName) {
 	// Keep defaultDir injectable for tests rather than always calling DefaultDir.
 	roots := skills.GlobalRoots(defaultDir)
-	// GlobalRoots already includes AgentsDir; append plugin roots only.
+	// GlobalRoots already includes AgentsDir; then project roots, then plugins.
+	for _, root := range projectRoots {
+		if root = strings.TrimSpace(root); root != "" {
+			roots = append(roots, root)
+		}
+	}
 	for _, root := range pluginRoots {
 		if root = strings.TrimSpace(root); root != "" {
 			roots = append(roots, root)
@@ -327,9 +351,11 @@ func NewSkillTool(defaultDir string, pluginRoots []string) tools.Tool {
 func (tool skillTool) Name() string { return "skill" }
 
 func (tool skillTool) Description() string {
-	return "Load a named KajiCode skill and return its instructions as the tool output. " +
+	return "Load a specialized skill when the task at hand matches one of the available_skills entries. " +
 		"Skills are reusable, on-demand instruction sets (including shared ~/.agents/skills and any contributed by plugins). " +
-		"Call this when a relevant skill exists; an unknown name returns the list of available skills."
+		"Before starting a request, scan <available_skills>; when it names a skill whose description matches the task, call this tool " +
+		"with its exact name FIRST and follow the returned guidance — do not guess names, do not skip a matching skill, and do not " +
+		"substitute your own approach for its instructions. An unknown name returns the list of available skills."
 }
 
 func (tool skillTool) Parameters() tools.Schema {
@@ -351,21 +377,94 @@ func (tool skillTool) Safety() tools.Safety {
 	}
 }
 
+// PermissionForArgs implements tools.ArgsPermissioner so the agent loop consults
+// a skill's frontmatter permission (deny/prompt/allow) for a SPECIFIC load call.
+// It returns the named skill's permission, or the read-only allow default when the
+// name cannot be resolved or the skill is unconstrained. Returning deny here makes
+// the registry hard-block loading that skill before its body is read.
+func (tool skillTool) PermissionForArgs(args map[string]any) tools.Permission {
+	name := skillName(args)
+	if name == "" {
+		return tools.PermissionAllow
+	}
+	switch skillPermissionByName(tool.defaultDir, tool.pluginRoots, name) {
+	case skills.PermissionDeny:
+		return tools.PermissionDeny
+	case skills.PermissionPrompt:
+		return tools.PermissionPrompt
+	default:
+		return tools.PermissionAllow
+	}
+}
+
+// skillPermissionByName resolves a named skill's frontmatter permission across the
+// compiler-in-roots set. An unknown name or unconstrained skill returns allow (the
+// read default). Only used for permission gating: body resolution happens in run.
+func skillPermissionByName(defaultDir string, pluginRoots []string, name string) string {
+	merged, _ := MergedSkillsLoaded(defaultDir, append([]string{}, pluginRoots...))
+	for _, skill := range merged {
+		if skill.Name == name {
+			if p := skills.NormalizePermission(skill.Permission); p != "" {
+				return p
+			}
+			return skills.PermissionAllow
+		}
+	}
+	if strings.EqualFold(name, skills.BuiltinCustomizeKajicodeName) {
+		return skills.BuiltinCustomizeKajicode().Permission
+	}
+	return skills.PermissionAllow
+}
+
 func (tool skillTool) Run(_ context.Context, args map[string]any) tools.Result {
+	return tool.run(args, tool.pluginRoots, nil, "")
+}
+
+// RunWithOptions implements tools.optionsAwareTool so the skill tool also
+// resolves project skill roots (skills.ProjectSkillRoots) the run has discovered,
+// merging them after the compiled-in plugin roots. This keeps repo skills loadable
+// by name as soon as the loop observes their subtree, matching opencode's
+// project-scoped skill discovery without a restart.
+func (tool skillTool) RunWithOptions(_ context.Context, args map[string]any, options tools.RunOptions) tools.Result {
+	return tool.run(args, tool.pluginRoots, options.ProjectSkillRoots, options.PermissionMode)
+}
+
+// run resolves a named skill across the default dir, shared agents root, plugin
+// roots, and the run's project skill roots. projectRoots come from
+// RunOptions.ProjectSkillRoots (runtime discovery) and are treated as the
+// least-precedence root set. permissionMode is threaded from RunOptions so a
+// deny-gated skill yields to bypass-all: the loop's profilePermission already
+// lets bypass-all through before the tool call, and the in-tool guard mirrors it
+// so skill body loading shares the same permission system rather than a separate
+// hard wall.
+func (tool skillTool) run(args map[string]any, pluginRoots, projectRoots []string, permissionMode string) tools.Result {
 	name := skillName(args)
 	if name == "" {
 		return tools.Result{Status: tools.StatusError, Output: "Error: Invalid arguments for skill: name is required"}
 	}
-	merged, _ := MergedSkillsLoaded(tool.defaultDir, tool.pluginRoots)
+	merged, _ := MergedSkillsLoaded(tool.defaultDir, append(append([]string{}, pluginRoots...), projectRoots...))
 	if len(merged) == 0 {
 		return tools.Result{Status: tools.StatusError, Output: "Error: no skills are available."}
 	}
+	bypassAll := sandbox.NormalizePermissionMode(sandbox.PermissionMode(permissionMode)) == sandbox.PermissionModeBypassAll
 	available := make([]string, 0, len(merged))
 	for _, skill := range merged {
 		if skill.Name == name {
-			return tools.Result{Status: tools.StatusOK, Output: skill.Content}
+			// Enforce a frontmatter-declared deny as a hard gate except under
+			// bypass-all, so a deny skill's body is never returned unless the user
+			// has opted into full permission bypass (mirrors the loop's
+			// profilePermission handling of bypass-all).
+			if !bypassAll && skills.NormalizePermission(skill.Permission) == skills.PermissionDeny {
+				return tools.Result{Status: tools.StatusError, Output: "Error: skill " + name + " is permission-denied and cannot be loaded."}
+			}
+			return tools.Result{Status: tools.StatusOK, Output: skills.SkillOutput(skill)}
 		}
 		available = append(available, skill.Name)
+	}
+	// Fall back to the built-in synthesize skill when no disk skill matches, so the
+	// always-discoverable customize-kajicode resolves through the multi-root tool.
+	if strings.EqualFold(name, skills.BuiltinCustomizeKajicodeName) {
+		return tools.Result{Status: tools.StatusOK, Output: skills.SkillOutput(skills.BuiltinCustomizeKajicode())}
 	}
 	return tools.Result{Status: tools.StatusError, Output: fmt.Sprintf("Error: unknown skill %q. Available skills: %s.", name, strings.Join(available, ", "))}
 }
@@ -386,7 +485,7 @@ func skillName(args map[string]any) string {
 // MergedSkillsLoaded is MergedSkills but keeps each skill's Content (so the skill
 // tool can return a body). MergedSkills strips Content for listing callers.
 func MergedSkillsLoaded(defaultDir string, pluginRoots []string) ([]skills.Skill, []skills.DuplicateName) {
-	return mergeSkills(defaultDir, pluginRoots, true)
+	return mergeSkills(defaultDir, nil, pluginRoots, true)
 }
 
 // mapHookEvent maps a plugin manifest HookEvent onto the hooks package Event. The

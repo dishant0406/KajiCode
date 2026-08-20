@@ -900,14 +900,14 @@ func runInteractiveTUIWithSetup(stderr io.Writer, deps appDeps, permissionMode a
 			Hooks:          hookDispatcher,
 			DeferThreshold: resolved.Tools.DeferThreshold,
 			Specialists:    specialistRuntime.specialists,
-			Skills:         pluginActivation.skillInfos(deps.skillsDir()),
+			Skills:         pluginActivation.skillInfos(deps.skillsDir(), workspaceRoot),
 		},
 		// LoadSkills backs /skills and direct /<skill-name> invocation in the TUI.
 		// It resolves against the same merged set (default dir + plugin skill
 		// roots) as the skill tool and the system-prompt list, re-read per use so
 		// newly installed skills work without a restart.
 		LoadSkills: cachedSkillsLoader(func() []skills.Skill {
-			merged, _ := plugins.MergedSkillsLoaded(deps.skillsDir(), pluginActivation.skillRoots)
+			merged, _ := plugins.MergedSkillsForCwdLoaded(deps.skillsDir(), pluginActivation.skillRoots, workspaceRoot)
 			return merged
 		}),
 		PermissionMode: permissionMode,

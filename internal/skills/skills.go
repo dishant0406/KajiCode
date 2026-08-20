@@ -18,15 +18,52 @@ import (
 
 // Skill is a single discovered skill. Name and Description come from the
 // SKILL.md frontmatter (Name falls back to the directory name); Content is the
-// markdown body; Path is the absolute path to the SKILL.md file.
+// markdown body; Path is the absolute path to the SKILL.md file. Scope,
+// WhenToUse and Permission come from optional frontmatter used for proactive
+// auto-loading and per-skill permission gating.
 type Skill struct {
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
 	Content     string `json:"content,omitempty"`
 	Path        string `json:"path"`
+	// Scope is a short human trigger phrase ("use when…") that lets the catalog
+	// and auto-load surface why a skill applies.
+	Scope string `json:"scope,omitempty"`
+	// WhenToUse is a space/comma-separated set of glob patterns, relative to the
+	// skill's repo/workspace git root, that mark files/dirs this skill governs.
+	// When the runtime observes a path matching one, the skill auto-loads.
+	WhenToUse []string `json:"when_to_use,omitempty"`
+	// Permission is the skill's load permission: PermissionAllow/Prompt/Deny.
+	// Empty means allow (the safe default). Surfaced in the catalog and enforced
+	// on load.
+	Permission string `json:"permission,omitempty"`
 }
 
 const skillFileName = "SKILL.md"
+
+// Skill permission values (see tools.PermissionAllow/Prompt/Deny). Keeping the
+// strings in sync avoids a dependency of internal/skills on internal/tools.
+const (
+	PermissionAllow  = "allow"
+	PermissionPrompt = "prompt"
+	PermissionDeny   = "deny"
+)
+
+// NormalizePermission maps a frontmatter permission value (case-insensitive,
+// whitespace-trimmed) onto one of the canonical allow/prompt/deny constants.
+// Empty or unrecognized values fall back to allow — the safe default — so a
+// malformed or legacy skill never becomes un-loadable or auto-loadable against
+// the user's intent.
+func NormalizePermission(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case PermissionDeny:
+		return PermissionDeny
+	case PermissionPrompt:
+		return PermissionPrompt
+	default:
+		return PermissionAllow
+	}
+}
 
 // errNotDirectory is returned when a skills root path exists but is not a
 // directory. On Windows, os.ReadDir reports that case as ErrNotExist
@@ -381,6 +418,9 @@ func parseSkill(dirName string, path string, raw string) Skill {
 	body := raw
 	name := dirName
 	description := ""
+	var scope string
+	var whenToUse string
+	var permission string
 
 	normalized := strings.ReplaceAll(raw, "\r\n", "\n")
 	if frontmatter, remainder, ok := splitFrontmatter(normalized); ok {
@@ -389,6 +429,9 @@ func parseSkill(dirName string, path string, raw string) Skill {
 			name = parsedName
 		}
 		description = frontmatterValue(frontmatter, "description")
+		scope = frontmatterValue(frontmatter, "scope")
+		whenToUse = frontmatterValue(frontmatter, "when_to_use")
+		permission = frontmatterValue(frontmatter, "permission")
 	}
 
 	return Skill{
@@ -396,7 +439,29 @@ func parseSkill(dirName string, path string, raw string) Skill {
 		Description: description,
 		Content:     strings.TrimSpace(body),
 		Path:        path,
+		Scope:       strings.TrimSpace(scope),
+		WhenToUse:   splitWhenToUse(whenToUse),
+		Permission:  NormalizePermission(permission),
 	}
+}
+
+// splitWhenToUse splits the `when_to_use:` frontmatter value into its glob
+// patterns. Patterns are separated by whitespace or commas, trimmed, and
+// filtered for empty entries. Returns nil when no patterns are declared.
+func splitWhenToUse(value string) []string {
+	fields := strings.FieldsFunc(value, func(r rune) bool {
+		return r == ',' || r == ' ' || r == '\t' || r == '\n'
+	})
+	out := make([]string, 0, len(fields))
+	for _, field := range fields {
+		if trimmed := strings.TrimSpace(field); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // splitFrontmatter detects a leading `---` line, captures lines up to the

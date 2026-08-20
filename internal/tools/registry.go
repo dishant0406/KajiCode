@@ -60,6 +60,14 @@ type RunOptions struct {
 	// entirely (tools behave exactly as before). Implementations must be safe
 	// for concurrent calls (parallel read batches).
 	ProjectGuidelines ProjectGuidelineObserver
+	// ProjectSkillRoots, when set, is the ordered list of project skill roots
+	// (see skills.ProjectSkillRoots) the run has discovered so far. Skills tools
+	// resolve these alongside the global/plugin roots so repo skills are
+	// loadable by name as soon as the run touches their subtree. nil/empty keeps
+	// the tools on global+plugin roots only. This is deliberately a value snapshot
+	// rather than an observer: skill resolution is pull-based per invocation and
+	// does not need mid-invocation mutation.
+	ProjectSkillRoots []string
 }
 
 // ProjectGuidelineObserver is the seam tools use to report directories they

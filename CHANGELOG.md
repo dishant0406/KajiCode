@@ -181,6 +181,12 @@ tagged. Until then, source builds report the version `dev`.
 ## [Unreleased]
 
 ### Added
+- Skills are now used proactively, not just discoverable. Project skills may declare
+  `when_to_use:` path globs and auto-coach on observe-path match; a lowest-precedence
+  built-in `customize-kajicode` skill is always discoverable and auto-loads when editing
+  KajiCode's own extensions/config. Skills may also declare `scope:`/`permission:` frontmatter
+  surfaced as `[prompt]`/`[deny]` catalog markers and enforced by the `skill` tool
+  (allow|prompt|deny gating).
 - Shared multi-agent skills discovery: when present, `~/.agents/skills` is searched after the primary
   Zero skills dir (and before plugin skill roots). `zero skills list` / `info` and the runtime `skill`
   tool share one multi-root discovery path; install/remove/lock still target only the Zero skills directory.

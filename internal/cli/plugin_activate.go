@@ -10,6 +10,7 @@ import (
 	"github.com/dishant0406/KajiCode/internal/agent"
 	"github.com/dishant0406/KajiCode/internal/hooks"
 	"github.com/dishant0406/KajiCode/internal/plugins"
+	"github.com/dishant0406/KajiCode/internal/skills"
 	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
@@ -91,22 +92,31 @@ func projectPluginsDirExists(workspaceRoot string) bool {
 }
 
 // skillInfos resolves the reusable skills the model can load via the skill tool —
-// primary dir + optional ~/.agents/skills + plugin skill roots, the same set the
-// multi-root skill tool resolves against — as plain data for the agent's system
-// prompt. It returns nil when no skills are installed, so a skill-less run leaves
-// the prompt byte-identical.
-func (a pluginActivation) skillInfos(defaultDir string) []agent.SkillInfo {
-	merged, _ := plugins.MergedSkills(defaultDir, a.skillRoots)
+// primary dir + optional ~/.agents/skills + project skills governing cwd + plugin
+// skill roots, the same set the multi-root skill tool resolves against — as plain
+// data for the agent's system prompt. It returns nil when no skills are installed,
+// so a skill-less run leaves the prompt byte-identical.
+func (a pluginActivation) skillInfos(defaultDir string, cwd string) []agent.SkillInfo {
+	merged, _ := plugins.MergedSkillsForCwd(defaultDir, a.skillRoots, cwd)
 	if len(merged) == 0 {
 		return nil
 	}
+	// Synthesize the built-in customize-kajicode skill into the boot catalog so
+	// the model always discovers it alongside the installed skills (it never
+	// shadows a real on-disk skill of the same name). A skill-less run still yields
+	// nil here, keeping the prompt byte-identical.
+	merged = skills.PrependBuiltin(merged)
 	infos := make([]agent.SkillInfo, 0, len(merged))
 	for _, skill := range merged {
 		name := strings.TrimSpace(skill.Name)
 		if name == "" {
 			continue
 		}
-		infos = append(infos, agent.SkillInfo{Name: name, Description: strings.TrimSpace(skill.Description)})
+		infos = append(infos, agent.SkillInfo{
+			Name:        name,
+			Description: strings.TrimSpace(skill.Description),
+			Permission:  skills.NormalizePermission(skill.Permission),
+		})
 	}
 	return infos
 }

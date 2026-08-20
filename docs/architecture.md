@@ -294,6 +294,20 @@ Extension loading happens before `agent.Run`:
 - MCP servers add external tools through `internal/mcp`.
 - Plugins add tool, hook, and skill roots through `internal/plugins`.
 - Skills are prompt-loadable instructions discovered by `internal/skills`.
+  Discovery is cwd/project-scoped: the agent walks from the git root to the
+  touched working directory (`skills.ProjectSkillRoots`) for `.skills` and
+  `.agents/skills` roots, surfaces a boot `<available_skills>` catalog in the
+  system prompt, and `internal/agent` reconciles that catalog dynamically
+  (`guidelineTracker.drainSkillsCatalog`) as the run moves — emitting added /
+  no-longer-available deltas instead of a full re-render. Skills may declare
+  frontmatter `when_to_use:` (path globs) to auto-coach on path match
+  (`guidelineTracker.ObservePath` → auto-load queue), `scope:`, and
+  `permission:` (allow|prompt|deny), enforced by the `skill` tool
+  (`tools.ArgsPermissioner`) and surfaced as `[prompt]`/`[deny]` catalog
+  markers. A built-in lowest-precedence `customize-kajicode` skill is always
+  discoverable and auto-loads when editing KajiCode's own internals. The `skill`
+  tool resolves loadable skills across the boot roots plus the run's discovered
+  project roots.
 - Specialists and swarm members expose sub-agent tools through
   `internal/specialist` and `internal/swarm`.
 - User commands are file-backed commands surfaced by CLI/TUI command layers.

@@ -515,6 +515,52 @@ func TestNewSkillToolLoadsAgentsSkillWithoutPluginRoots(t *testing.T) {
 	}
 }
 
+// TestNewSkillToolDenyYieldsToBypassAll links the plugin skill tool's permission
+// gate to the same bypass-all setting as every other tool: a frontmatter deny
+// skill stays hard blocked, but under bypass-all RunOptions the deny guard
+// relaxes and the body loads.
+func TestNewSkillToolDenyYieldsToBypassAll(t *testing.T) {
+	isolateAgentsHome(t)
+	defaultDir := t.TempDir()
+	skillDir := filepath.Join(defaultDir, "secret-skill")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := "---\nname: secret-skill\ndescription: restricted\npermission: deny\n---\n\n# SECRET BODY\n\nDo not leak."
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	tool := NewSkillTool(defaultDir, nil)
+
+	// RunWithOptions is offered by the option-aware variant; the plugin skill tool
+	// implements it so project roots and the permission mode reach run().
+	optioned, ok := tool.(interface {
+		RunWithOptions(context.Context, map[string]any, tools.RunOptions) tools.Result
+	})
+	if !ok {
+		t.Fatalf("plugin skill tool must implement the option-aware RunWithOptions")
+	}
+
+	// ask-all: deny stays hard-blocked, body never returned.
+	denied := optioned.RunWithOptions(context.Background(), map[string]any{"name": "secret-skill"}, tools.RunOptions{PermissionMode: "ask-all"})
+	if denied.Status != tools.StatusError {
+		t.Fatalf("ask-all Status = %s, want error", denied.Status)
+	}
+	if strings.Contains(denied.Output, "SECRET BODY") {
+		t.Fatalf("deny skill body leaked under ask-all: %q", denied.Output)
+	}
+
+	// bypass-all: deny guard relaxes, body loads (shares the global bypass).
+	allowed := optioned.RunWithOptions(context.Background(), map[string]any{"name": "secret-skill"}, tools.RunOptions{PermissionMode: "bypass-all"})
+	if allowed.Status != tools.StatusOK {
+		t.Fatalf("bypass-all Status = %s, want ok (output: %s)", allowed.Status, allowed.Output)
+	}
+	if !strings.Contains(allowed.Output, "SECRET BODY") {
+		t.Fatalf("bypass-all should return the deny skill body, got: %q", allowed.Output)
+	}
+}
+
 func TestActivateSkipsMalformedPluginAndContinues(t *testing.T) {
 	registry := tools.NewRegistry()
 	good := toolPlugin(t.TempDir(), ToolExtension{Name: "good", Command: "good", Permission: PermissionPrompt})

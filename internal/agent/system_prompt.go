@@ -260,15 +260,29 @@ func specialistDelegationContext(options Options) string {
 // skill it cannot see.
 const skillsContextListBudget = 4096
 
+// skillsContext formats the available-skill catalog (names + one-line
+// descriptions only, never bodies) into a single <available_skills> block, or ""
+// when empty/skill-less. It is shared by the boot system prompt and the
+// per-turn dynamic-catalog re-render (see renderSkillsContext / guidelineTracker)
+// so a project skill found mid-run appears in the same shape the model already
+// knows. Always list at least one skill; past the budget, summarize the remainder
+// as a count instead of dropping it from the discovery surface.
 func skillsContext(options Options) string {
-	if len(options.Skills) == 0 {
+	return renderSkillsContext(options.Skills)
+}
+
+// renderSkillsContext is skillsContext over a plain skill list, so the loop can
+// re-render an updated catalog (boot skills + newly-discovered project skills)
+// without rebuilding an Options value.
+func renderSkillsContext(skills []SkillInfo) string {
+	if len(skills) == 0 {
 		return ""
 	}
 	var b strings.Builder
 	b.WriteString("<available_skills>\n")
 	b.WriteString("Reusable, on-demand instruction sets you can load with the skill tool. Before acting on a request, scan this list; when the request matches a skill's name or description, call skill with its exact name FIRST and follow the loaded guidance — do not guess names, do not skip a matching skill, and do not substitute your own approach for its instructions.\n")
 	listed, spent, omitted := 0, 0, 0
-	for _, info := range options.Skills {
+	for _, info := range skills {
 		name := strings.TrimSpace(info.Name)
 		if name == "" {
 			continue
@@ -276,6 +290,15 @@ func skillsContext(options Options) string {
 		line := "- " + name
 		if desc := strings.TrimSpace(info.Description); desc != "" {
 			line += ": " + truncateForSkillLine(desc)
+		}
+		// Surface the load permission so the model knows a deny skill must not be
+		// called and a prompt skill may require approval. Permissions are
+		// pre-normalized to the canonical allow/prompt/deny strings by callers.
+		switch info.Permission {
+		case "deny":
+			line += " [deny]"
+		case "prompt":
+			line += " [prompt]"
 		}
 		line += "\n"
 		// Always list at least one skill; past the budget, summarize the remainder

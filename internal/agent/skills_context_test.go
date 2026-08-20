@@ -86,3 +86,22 @@ func TestSystemPromptIncludesSkillsOnlyWhenInstalled(t *testing.T) {
 		t.Fatalf("available_skills block must not appear without skills")
 	}
 }
+
+func TestSkillsContextSurfacesPermissionMarkers(t *testing.T) {
+	skills := []SkillInfo{
+		{Name: "guard-skill", Description: "needs care", Permission: "prompt"},
+		{Name: "secret-skill", Description: "restricted", Permission: "deny"},
+		{Name: "open-skill", Description: "fine", Permission: "allow"},
+		{Name: "legacy-skill", Description: "no permission"},
+	}
+	got := skillsContext(Options{Skills: skills})
+	if !strings.Contains(got, "guard-skill") || !strings.Contains(got, "[prompt]") {
+		t.Errorf("prompt permission marker missing:\n%s", got)
+	}
+	if !strings.Contains(got, "secret-skill") || !strings.Contains(got, "[deny]") {
+		t.Errorf("deny permission marker missing:\n%s", got)
+	}
+	if strings.Contains(got, "open-skill [") || strings.Contains(got, "legacy-skill [") {
+		t.Errorf("allow/empty skills must carry no permission marker:\n%s", got)
+	}
+}

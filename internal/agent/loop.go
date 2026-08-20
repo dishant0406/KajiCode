@@ -15,6 +15,7 @@ import (
 	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
 	"github.com/dishant0406/KajiCode/internal/redaction"
 	"github.com/dishant0406/KajiCode/internal/sandbox"
+	"github.com/dishant0406/KajiCode/internal/skills"
 	"github.com/dishant0406/KajiCode/internal/streamjson"
 	"github.com/dishant0406/KajiCode/internal/tools"
 	"github.com/dishant0406/KajiCode/internal/trace"
@@ -249,6 +250,14 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 	// resolves them.
 	guidelineTrack := newGuidelineTracker(options.Cwd)
 	guidelineTrack.seedStartup(options.Cwd)
+	// Wire the dynamic skill catalog: when a tool resolves a subtree whose
+	// .skills/.agents/skills carry skills NOT in the boot <available_skills> list,
+	// the tracker re-renders the merged catalog (project roots + boot baseline) so
+	// the model can discover and invoke those repo skills mid-run — opencode's live
+	// catalog refresh. setCatalog runs after seedStartup so the startup roots are
+	// marked already-cataloged and no spurious update fires for skills the boot
+	// prompt already lists.
+	guidelineTrack.setCatalog(options.Skills, dynamicSkillsCatalogRenderer(options))
 	options.guidelineTrack = guidelineTrack
 
 	// loaded tracks deferred-eligible tools the model has pulled via tool_search
@@ -399,6 +408,27 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 			messages = append(messages, kajicoderuntime.Message{
 				Role:    kajicoderuntime.MessageRoleUser,
 				Content: block,
+			})
+		}
+		// Dynamic skill catalog: if a project skill root appeared since the last
+		// render, inject an updated <available_skills> block that supersedes the
+		// boot list, so the model discovers repo skills the run just touched.
+		// Append after the guideline drain so project instructions and the updated
+		// catalog travel the same request.
+		if catalogBlock := guidelineTrack.drainSkillsCatalog(); catalogBlock != "" {
+			messages = append(messages, kajicoderuntime.Message{
+				Role:    kajicoderuntime.MessageRoleUser,
+				Content: catalogBlock,
+			})
+		}
+		// Proactive skill auto-load: path-matched skills discovered this turn are
+		// coached (named + why) so the model loads them via the skill tool. Append
+		// after the catalog so the model sees both the discovery surface and the
+		// nudge together.
+		for _, coach := range guidelineTrack.drainSkillAutoLoads() {
+			messages = append(messages, kajicoderuntime.Message{
+				Role:    kajicoderuntime.MessageRoleUser,
+				Content: coach,
 			})
 		}
 
@@ -1138,6 +1168,22 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 			Content: block,
 		})
 	}
+	// Final dynamic skill catalog update, so a project skill discovered only on the
+	// last turn's resolution is not silently dropped from the discovery surface.
+	if catalogBlock := guidelineTrack.drainSkillsCatalog(); catalogBlock != "" {
+		messages = append(messages, kajicoderuntime.Message{
+			Role:    kajicoderuntime.MessageRoleUser,
+			Content: catalogBlock,
+		})
+	}
+	// Final proactive skill auto-load drain, so a path-matched skill observed only
+	// on the last turn is still coached instead of silently dropped.
+	for _, coach := range guidelineTrack.drainSkillAutoLoads() {
+		messages = append(messages, kajicoderuntime.Message{
+			Role:    kajicoderuntime.MessageRoleUser,
+			Content: coach,
+		})
+	}
 	finalExposed, _ := partitionToolsCached(registry, permissionMode, options, loaded, toolDefCache)
 	if answer, finalMessages, finishReason := finalAnswerAfterMaxTurns(ctx, provider, messages, finalExposed, options); strings.TrimSpace(answer) != "" {
 		result.FinalAnswer = answer
@@ -1635,6 +1681,9 @@ func executeToolCall(ctx context.Context, registry *tools.Registry, call ToolCal
 		// directories it resolves and the loop can inject newly-discovered
 		// AGENTS.md/KAJICODE.md rules before the next request.
 		ProjectGuidelines: options.guidelineTrack.observer(),
+		// Forward the project skill roots the tracker has observed so skills
+		// tools resolve repo skills the run touched, alongside global/plugin roots.
+		ProjectSkillRoots: options.guidelineTrack.projectSkillRoots(),
 		// The sandbox decision (if any) is returned synchronously on the Result and
 		// used here for permission event building.
 	})
@@ -1962,6 +2011,7 @@ func runToolForNetworkRetry(ctx context.Context, registry *tools.Registry, name 
 		DisabledTools:     options.DisabledTools,
 		Progress:          progressCallback,
 		ProjectGuidelines: options.guidelineTrack.observer(),
+		ProjectSkillRoots: options.guidelineTrack.projectSkillRoots(),
 	})
 }
 
@@ -1992,6 +2042,7 @@ func runToolForUnsandboxedRetry(ctx context.Context, registry *tools.Registry, n
 		DisabledTools:     options.DisabledTools,
 		Progress:          progressCallback,
 		ProjectGuidelines: options.guidelineTrack.observer(),
+		ProjectSkillRoots: options.guidelineTrack.projectSkillRoots(),
 	})
 }
 
@@ -2284,6 +2335,7 @@ func askUserFallbackResult(ctx context.Context, registry *tools.Registry, call T
 			Depth:             options.Depth,
 			Cwd:               options.Cwd,
 			ProjectGuidelines: options.guidelineTrack.observer(),
+			ProjectSkillRoots: options.guidelineTrack.projectSkillRoots(),
 		})
 		return ToolResult{
 			ToolCallID:   call.ID,
@@ -3348,4 +3400,47 @@ func copyMessages(messages []Message) []Message {
 		copied[index].Images = kajicoderuntime.CloneImageBlocks(message.Images)
 	}
 	return copied
+}
+
+// dynamicSkillsCatalogRenderer builds the catalog-loader the guidelineTracker uses
+// to re-render the <available_skills> block when the project skill catalog changes
+// mid-run. It reads the actual skills from the observed project roots (via
+// internal/skills), merges them with the boot baseline (which already includes the
+// startup-cwd project skills and the global/plugin set), de-dups by name
+// (more-global wins: boot skills precede project skills in the load order), and
+// returns both the authoritative full set (for the tracker's reconcile name
+// inventory) and the rendered <available_skills> block (the model-facing discovery
+// surface, same shape as the boot catalog). options supplies the boot Skills
+// baseline.
+func dynamicSkillsCatalogRenderer(options Options) func(projectRoots []string, boot []SkillInfo) ([]SkillInfo, string) {
+	return func(projectRoots []string, boot []SkillInfo) ([]SkillInfo, string) {
+		// Global/plugin roots are already in boot; resolve only project roots here.
+		// Boot skills win a name clash against project skills (precedence global >
+		// plugins > project), so we load project skills last into a merged list.
+		merged := append([]SkillInfo{}, boot...)
+		byName := make(map[string]bool, len(boot))
+		for _, info := range boot {
+			if name := strings.TrimSpace(info.Name); name != "" {
+				byName[name] = true
+			}
+		}
+		if len(projectRoots) > 0 {
+			loaded, _, err := skills.ListFromRoots(projectRoots)
+			if err == nil {
+				for _, skill := range loaded {
+					name := strings.TrimSpace(skill.Name)
+					if name == "" || byName[name] {
+						continue
+					}
+					byName[name] = true
+					merged = append(merged, SkillInfo{
+						Name:        name,
+						Description: strings.TrimSpace(skill.Description),
+						Permission:  skills.NormalizePermission(skill.Permission),
+					})
+				}
+			}
+		}
+		return merged, renderSkillsContext(merged)
+	}
 }

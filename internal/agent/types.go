@@ -245,6 +245,10 @@ type SpecialistInfo struct {
 type SkillInfo struct {
 	Name        string
 	Description string
+	// Permission is the skill's load permission (allow/prompt/deny; see
+	// skills.NormalizePermission). Empty means allow. Shown as a marker in the
+	// catalog so the model knows a skill needs care or cannot be loaded.
+	Permission string
 }
 
 type CompactionEvent struct {
