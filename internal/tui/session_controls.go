@@ -310,10 +310,27 @@ func joinReasoningEfforts(efforts []modelregistry.ReasoningEffort) string {
 	return strings.Join(values, ", ")
 }
 
+// handleStyleCommand implements the /style command. No argument opens the
+// single-step style editor (the same freeform UX as /prompt, minus the slug);
+// "show" lists the current persisted style and its on-disk location; "clear"
+// removes the persisted global style; any other valid enum (balanced/concise/
+// explanatory/review) still sets the ephemeral per-session toggle.
 func (m model) handleStyleCommand(args string) (model, string) {
 	args = strings.TrimSpace(strings.ToLower(args))
-	if args == "" || args == "list" {
-		return m, m.styleText()
+	if args == "" {
+		// Editing the persisted global style is modal, so it cannot return a
+		// transcript line (the command dispatcher appends one). Route it via the
+		// dispatch path instead by returning a sentinel handled by the caller.
+		m = m.openStyleEditor()
+		return m, ""
+	}
+	switch args {
+	case "show":
+		return m, m.styleShowText()
+	case "clear":
+		return m.clearStyleEditor()
+	case "list":
+		return m, m.styleShowText()
 	}
 	if !responseStyleAllowed(args) {
 		return m, "Style\nUnknown response style: " + args
@@ -326,18 +343,37 @@ func (m model) handleStyleCommand(args string) (model, string) {
 	}, "\n")
 }
 
-func (m model) styleText() string {
-	return renderCommandOutput(commandOutput{
-		Title:  "Style",
-		Status: commandStatusOK,
-		Sections: []commandSection{{
-			Title: "State",
+// styleShowText lists the current persisted global style (if any) and the
+// session toggle.
+func (m model) styleShowText() string {
+	persisted := ""
+	if m.userStylePath() != "" {
+		persisted = readPersistedStyle(m.userStylePath())
+	}
+	sections := []commandSection{{
+		Title: "State",
+		Lines: []string{
+			"session style: " + m.responseStyle,
+			"available: " + strings.Join(responseStyles, ", "),
+		},
+	}}
+	if persisted != "" {
+		sections = append(sections, commandSection{
+			Title: "Persisted (global)",
 			Lines: []string{
-				"active style: " + m.responseStyle,
-				"available: " + strings.Join(responseStyles, ", "),
+				persisted,
+				"stored in " + m.userStylePath(),
+				"applies to every reply across sessions and projects",
 			},
-		}},
-		Hints: []string{"use /style <value> to update this TUI session"},
+		})
+	} else {
+		sections[0].Lines = append(sections[0].Lines, "no persisted global style; /style opens the editor")
+	}
+	return renderCommandOutput(commandOutput{
+		Title:    "Style",
+		Status:   commandStatusOK,
+		Sections: sections,
+		Hints:    []string{"use /style to open the editor", "/style clear removes it", "/style <value> overrides for this session only"},
 	})
 }
 

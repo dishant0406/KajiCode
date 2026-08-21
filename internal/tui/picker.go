@@ -40,6 +40,12 @@ const (
 	rolePickerDefault = "\x00role:default"
 )
 
+// modelPickerRefreshValue is the sentinel value of the "Refresh models" row pinned
+// to the top of the /model picker. It uses a NUL-prefixed control string so it can
+// never collide with a real model id; choosing it re-fetches every provider's full
+// live model list (all models, no coding-model filter).
+const modelPickerRefreshValue = "\x00model:refresh"
+
 // pickerItem is one selectable row: Label is shown, Value is passed to the
 // underlying command handler when chosen. Meta is the optional right-aligned
 // readout (ctx window · capabilities); the dot flags mark provider locality
@@ -374,16 +380,50 @@ func (m model) openModelPicker() (model, tea.Cmd) {
 	}
 	m.picker = picker
 	m.clearModelPickerLoadState()
-	// Live-discover every usable provider's real models in the background. The list
-	// shows immediately from the static catalog and each provider's section refreshes
-	// as its discovery returns — no blocking overlay.
-	return m, m.modelPickerDiscoveryCmds()
+	m.modelPickerForceShowAll = false
+	return m, m.bumpModelPickerEpisode()
 }
 
-// modelPickerDiscoveryCmds dispatches a live model-discovery command for each
-// usable provider (deduped by catalog descriptor), so /model shows the same real
-// models the provider-setup wizard discovers.
-func (m model) modelPickerDiscoveryCmds() tea.Cmd {
+// refreshModelPicker re-fetches every provider's FULL live model list (all models,
+// no coding-model filter) and reopens the picker against the fresh results. Unlike
+// openModelPicker, it drops the cached per-provider lists first and forces ShowAll
+// discovery, so nothing is left over from the last fetch and no curated filter hides
+// the full set.
+func (m model) refreshModelPicker() (model, tea.Cmd) {
+	m.modelPickerLiveByProvider = map[string][]providermodeldiscovery.Model{}
+	m.modelPickerForceShowAll = true
+	picker := m.newModelPicker()
+	if picker == nil {
+		return m, nil
+	}
+	m.picker = picker
+	m.clearModelPickerLoadState()
+	// Fall back to the static catalog rows so the list is never empty, but show
+	// the fetching overlay until every provider's live discovery returns.
+	m.modelPickerLoading = true
+	return m, m.bumpModelPickerEpisode()
+}
+
+// bumpModelPickerEpisode starts a new model-picker discovery round: it increments
+// the episode counter, binds a pending count to it, and dispatches a discovery
+// command per provider. Stale results belong to earlier episodes and are ignored.
+func (m *model) bumpModelPickerEpisode() tea.Cmd {
+	m.modelPickerEpisode++
+	m.modelPickerPendingProviders = 0
+	cmds, pending := m.modelPickerDiscoveryCmdsWithPending()
+	m.modelPickerPendingProviders = pending
+	if pending == 0 {
+		m.modelPickerLoading = false
+		return nil
+	}
+	return cmds
+}
+
+// modelPickerDiscoveryCmdsWithPending dispatches a live model-discovery command for
+// each usable provider (deduped by catalog descriptor), so /model shows the same real
+// models the provider-setup wizard discovers. It returns the batched command plus the
+// number of providers dispatched (the pending count the loading overlay waits on).
+func (m model) modelPickerDiscoveryCmdsWithPending() (tea.Cmd, int) {
 	cmds := []tea.Cmd{}
 	seen := map[string]bool{}
 	for _, profile := range m.modelPickerProviders() {
@@ -397,9 +437,9 @@ func (m model) modelPickerDiscoveryCmds() tea.Cmd {
 		}
 	}
 	if len(cmds) == 0 {
-		return nil
+		return nil, 0
 	}
-	return tea.Batch(cmds...)
+	return tea.Batch(cmds...), len(cmds)
 }
 
 // modelPickerProviderDiscoveryCmd discovers one provider's live models, resolving
@@ -418,10 +458,13 @@ func (m model) modelPickerProviderDiscoveryCmd(descriptor providercatalog.Descri
 	discover := m.discoverProviderModels
 	if discover == nil {
 		discover = func(ctx context.Context, p config.ProviderProfile) ([]providermodeldiscovery.Model, error) {
-			return providermodeldiscovery.DiscoverCatalog(ctx, descriptor, p, providermodeldiscovery.Options{})
+			return providermodeldiscovery.DiscoverCatalog(ctx, descriptor, p, providermodeldiscovery.Options{
+				ShowAll: m.modelPickerForceShowAll || config.ShowAllModelsEnabled(p),
+			})
 		}
 	}
 	providerID := descriptor.ID
+	episode := m.modelPickerEpisode
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(m.ctx, 8*time.Second)
 		defer cancel()
@@ -432,7 +475,7 @@ func (m model) modelPickerProviderDiscoveryCmd(descriptor providercatalog.Descri
 			}
 		}
 		models, err := discover(ctx, providerWizardDiscoveryProfile(descriptor, k, authed.BaseURL))
-		return modelPickerModelsDiscoveredMsg{providerID: providerID, models: models, err: err}
+		return modelPickerModelsDiscoveredMsg{providerID: providerID, models: models, err: err, episode: episode}
 	}
 }
 
@@ -460,6 +503,11 @@ func pickerItemDedupKey(item pickerItem) string {
 
 func (m model) assembleModelPickerItems(recent []pickerItem, catalog []pickerItem) []pickerItem {
 	result := []pickerItem{}
+	// A "Refresh models" action row is always pinned to the top (before any
+	// group), so from the open /model picker you can re-fetch every provider's
+	// full live model list in one click. Chosen values are funneled through
+	// choosePicker, which reroutes this sentinel into m.refreshModelPicker().
+	result = append(result, pickerItem{Label: "Refresh models", Value: modelPickerRefreshValue})
 	// Favorites keep the pre-provider-aware semantics: one row per favorited
 	// model ID, regardless of how many providers offer it. Track seen favorite
 	// model IDs by Value alone so a model favorited once doesn't surface twice
@@ -750,6 +798,9 @@ type modelPickerModelsDiscoveredMsg struct {
 	providerID string
 	models     []providermodeldiscovery.Model
 	err        error
+	// episode ties a result to the /model refresh (or open) that dispatched it, so
+	// stale results from an earlier refresh can't clear a newer one's loading state.
+	episode int
 }
 
 // ollamaContextWindowDiscoveredMsg carries the result of an async /api/show
@@ -835,8 +886,18 @@ func profileMatchesProviderBaseURL(profile config.ProviderProfile, provider prov
 }
 
 func (m model) applyModelPickerModelsDiscovered(msg modelPickerModelsDiscoveredMsg) model {
-	m.modelPickerLoading = false
+	if msg.episode != m.modelPickerEpisode {
+		// A result from a superseded refresh/open round: ignore it so it can't
+		// corrupt the current round's pending count or provider sections.
+		return m
+	}
 	m.modelPickerLoadingProviderID = ""
+	if m.modelPickerPendingProviders > 0 {
+		m.modelPickerPendingProviders--
+		if m.modelPickerPendingProviders == 0 {
+			m.modelPickerLoading = false
+		}
+	}
 	if msg.err != nil || len(msg.models) == 0 {
 		return m
 	}

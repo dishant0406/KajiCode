@@ -236,7 +236,9 @@ func (m model) providerModelDiscoveryCmd() tea.Cmd {
 	discover := m.discoverProviderModels
 	if discover == nil {
 		discover = func(ctx context.Context, profile config.ProviderProfile) ([]providermodeldiscovery.Model, error) {
-			return providermodeldiscovery.DiscoverCatalog(ctx, provider, profile, providermodeldiscovery.Options{})
+			return providermodeldiscovery.DiscoverCatalog(ctx, provider, profile, providermodeldiscovery.Options{
+				ShowAll: config.ShowAllModelsEnabled(profile),
+			})
 		}
 	}
 

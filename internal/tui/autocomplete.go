@@ -55,7 +55,7 @@ var fileSuggestionIndexCache = struct {
 // handling. A slash-command palette stays active even with zero matches so the
 // query remains in the palette instead of leaking back into the composer.
 func (m model) suggestionsActive() bool {
-	if m.pendingPermission != nil || m.pendingAskUser != nil || m.pendingSpecReview != nil || m.providerWizard != nil || m.mcpManager != nil || m.promptEditor != nil {
+	if m.pendingPermission != nil || m.pendingAskUser != nil || m.pendingSpecReview != nil || m.providerWizard != nil || m.mcpManager != nil || m.promptEditor != nil || m.styleEditor != nil {
 		return false
 	}
 	if len(m.suggestions) > 0 {
@@ -78,7 +78,7 @@ func (m *model) clearSuggestions() {
 // disappear once the user starts typing arguments. Modals suppress matching
 // entirely. The selected index is preserved when still in range, otherwise reset.
 func (m *model) recomputeSuggestions() {
-	if m.pendingPermission != nil || m.pendingAskUser != nil || m.pendingSpecReview != nil || m.providerWizard != nil || m.mcpManager != nil || m.promptEditor != nil {
+	if m.pendingPermission != nil || m.pendingAskUser != nil || m.pendingSpecReview != nil || m.providerWizard != nil || m.mcpManager != nil || m.promptEditor != nil || m.styleEditor != nil {
 		m.clearSuggestions()
 		return
 	}

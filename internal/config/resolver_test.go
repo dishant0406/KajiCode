@@ -1673,6 +1673,50 @@ func TestResolveProviderProfileParseThinkTagsFalseAlias(t *testing.T) {
 	}
 }
 
+func TestResolveProviderProfileShowAllModelsTrueAlias(t *testing.T) {
+	path := writeConfig(t, `{
+		"activeProvider": "custom",
+		"providers": [{
+			"name": "custom",
+			"provider_kind": "openai-compatible",
+			"base_url": "https://custom.example/v1",
+			"model_id": "custom-model",
+			"showAllModels": true
+		}]
+	}`)
+
+	resolved, err := Resolve(ResolveOptions{UserConfigPath: path, Env: map[string]string{}})
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if resolved.Provider.ShowAllModels == nil || !*resolved.Provider.ShowAllModels {
+		t.Fatalf("ShowAllModels = %#v, want explicit true", resolved.Provider.ShowAllModels)
+	}
+	if !ShowAllModelsEnabled(resolved.Provider) {
+		t.Fatal("ShowAllModelsEnabled = false, want true for showAllModels:true")
+	}
+}
+
+func TestResolveProviderProfileShowAllModelsDefaultsOff(t *testing.T) {
+	path := writeConfig(t, `{
+		"activeProvider": "custom",
+		"providers": [{
+			"name": "custom",
+			"provider_kind": "openai-compatible",
+			"base_url": "https://custom.example/v1",
+			"model_id": "custom-model"
+		}]
+	}`)
+
+	resolved, err := Resolve(ResolveOptions{UserConfigPath: path, Env: map[string]string{}})
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if ShowAllModelsEnabled(resolved.Provider) {
+		t.Fatal("ShowAllModelsEnabled = true, want false when showAllModels absent")
+	}
+}
+
 func TestResolveRejectsUnknownProviderCatalogID(t *testing.T) {
 	path := writeConfig(t, `{
 		"activeProvider": "bad",
@@ -2063,6 +2107,19 @@ func TestMergeProfilePreservesParseThinkTags(t *testing.T) {
 	keep := mergeProfile(ProviderProfile{ParseThinkTags: &yes}, ProviderProfile{})
 	if keep.ParseThinkTags == nil || !*keep.ParseThinkTags {
 		t.Fatalf("mergeProfile clobbered base ParseThinkTags with a nil next: %v", keep.ParseThinkTags)
+	}
+}
+
+func TestMergeProfilePreservesShowAllModels(t *testing.T) {
+	on := true
+	merged := mergeProfile(ProviderProfile{Name: "p"}, ProviderProfile{ShowAllModels: &on})
+	if merged.ShowAllModels == nil || !*merged.ShowAllModels {
+		t.Fatalf("mergeProfile dropped ShowAllModels from next: %v", merged.ShowAllModels)
+	}
+	// A nil next (default/unset) must not clobber an explicit base value.
+	keep := mergeProfile(ProviderProfile{ShowAllModels: &on}, ProviderProfile{})
+	if keep.ShowAllModels == nil || !*keep.ShowAllModels {
+		t.Fatalf("mergeProfile clobbered base ShowAllModels with a nil next: %v", keep.ShowAllModels)
 	}
 }
 

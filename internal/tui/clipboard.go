@@ -91,6 +91,9 @@ func (m model) routePaste(content string) (tea.Model, tea.Cmd) {
 	if m.promptEditor != nil {
 		return m.handlePromptEditorPaste(content), nil
 	}
+	if m.styleEditor != nil {
+		return m.handleStyleEditorPaste(content), nil
+	}
 	if m.transcriptDetailed || m.pendingSpecReview != nil || m.pendingPermission != nil || m.mcpAddWizard != nil || m.mcpManager != nil || m.picker != nil {
 		return m, nil
 	}

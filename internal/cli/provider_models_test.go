@@ -188,6 +188,51 @@ func TestRunProvidersModelsFiltersForCatalogProfile(t *testing.T) {
 	}
 }
 
+func TestRunProvidersModelsAllBypassesCatalogFilter(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	deps := commandCenterDeps(t)
+	deps.resolveConfig = func(_ string, _ config.Overrides) (config.ResolvedConfig, error) {
+		profile := config.ProviderProfile{
+			Name:         "opencode-go",
+			ProviderKind: config.ProviderKindAnthropicCompat,
+			CatalogID:    "opencode-go-anthropic-compatible",
+			BaseURL:      "https://api.example.com/zen/go/v1",
+			APIKey:       "sk-test",
+			Model:        "minimax-max",
+		}
+		return config.ResolvedConfig{
+			ActiveProvider: "opencode-go",
+			Providers:      []config.ProviderProfile{profile},
+			Provider:       profile,
+		}, nil
+	}
+	deps.discoverProviderModels = func(_ context.Context, _ config.ProviderProfile) ([]providermodeldiscovery.Model, error) {
+		return []providermodeldiscovery.Model{
+			{ID: "deepseek-chat", Description: "DeepSeek Chat"},
+			{ID: "qwen-max", Description: "Qwen Max"},
+			{ID: "kimi-k2", Description: "Kimi K2"},
+			{ID: "glm-4", Description: "GLM-4"},
+		}, nil
+	}
+
+	exitCode := runWithDeps([]string{"providers", "models", "--all"}, &stdout, &stderr, deps)
+
+	if exitCode != exitSuccess {
+		t.Fatalf("exit = %d, want %d: %s", exitCode, exitSuccess, stderr.String())
+	}
+	out := stdout.String()
+	// --all surfaces the raw provider list even for the restricted catalog.
+	for _, want := range []string{"deepseek-chat", "qwen-max", "kimi-k2", "glm-4"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("output missing model %q under --all:\n%s", want, out)
+		}
+	}
+	if !strings.Contains(out, "4 models discovered") {
+		t.Fatalf("output should show 4 models under --all:\n%s", out)
+	}
+}
+
 func TestRunProvidersModelsSurfacesDiscoveryError(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer

@@ -564,6 +564,11 @@ func mergeProfile(base ProviderProfile, next ProviderProfile) ProviderProfile {
 	if next.ParseThinkTags != nil {
 		base.ParseThinkTags = next.ParseThinkTags
 	}
+	// Same nil-*bool semantics for showAllModels: only an explicit value overrides,
+	// so the flag survives profile merges (catalog descriptor + user override).
+	if next.ShowAllModels != nil {
+		base.ShowAllModels = next.ShowAllModels
+	}
 	return base
 }
 

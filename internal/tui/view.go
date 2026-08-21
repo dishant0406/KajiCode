@@ -880,8 +880,8 @@ func (m model) modelPickerLoadingOverlay(width int) string {
 	overlayWidth := modelPickerLoadingOverlayWidth(width)
 	innerWidth := maxInt(1, overlayWidth-4)
 	lines := []string{
-		fillPaletteLine(kajicodeTheme.faint.Render("Checking available models..."), innerWidth, transparentSurface),
-		fillPaletteLine(kajicodeTheme.faint.Render("Built-in models will be used if discovery fails."), innerWidth, transparentSurface),
+		fillPaletteLine(kajicodeTheme.faint.Render("Fetching all models..."), innerWidth, transparentSurface),
+		fillPaletteLine(kajicodeTheme.faint.Render("Refresh fetches every provider's full model list."), innerWidth, transparentSurface),
 		kajicodeTheme.line.Render(strings.Repeat("─", innerWidth)),
 		fillPaletteLine(kajicodeTheme.faint.Render("Esc close"), innerWidth, transparentSurface),
 	}

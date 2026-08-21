@@ -15,6 +15,7 @@ import (
 type providerModelsOptions struct {
 	name string
 	json bool
+	all  bool
 }
 
 // runProvidersModels lists the models a saved provider actually serves by probing
@@ -52,10 +53,11 @@ func runProvidersModels(args []string, stdout io.Writer, stderr io.Writer, deps 
 		return writeAppError(stderr, err.Error(), exitProvider)
 	}
 
-	// Apply provider-specific model filtering for catalog-backed profiles.
-	// For example, opencode-go-anthropic-compatible only permits Qwen and
-	// MiniMax model IDs; the raw /zen/go/v1/models endpoint returns many more.
-	if profile.CatalogID != "" {
+	// Apply provider-specific model filtering for catalog-backed profiles, unless
+	// --all asks for the raw provider list. For example,
+	// opencode-go-anthropic-compatible only permits Qwen and MiniMax model IDs;
+	// --all surfaces the full /zen/go/v1/models response for inspection.
+	if profile.CatalogID != "" && !options.all {
 		filtered := make([]providermodeldiscovery.Model, 0, len(models))
 		for _, model := range models {
 			if providermodelcatalog.ModelIDAllowedForProvider(profile.CatalogID, model.ID) {
@@ -149,6 +151,8 @@ func parseProviderModelsArgs(args []string) (providerModelsOptions, bool, error)
 			return options, true, nil
 		case arg == "--json":
 			options.json = true
+		case arg == "--all":
+			options.all = true
 		case strings.HasPrefix(arg, "-"):
 			return options, false, execUsageError{fmt.Sprintf("unknown flag %q", arg)}
 		default:

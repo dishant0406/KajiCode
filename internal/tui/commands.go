@@ -95,9 +95,9 @@ var commandDefinitions = []commandDefinition{
 	},
 	{
 		name:        "/model",
-		usage:       "/model [list|id]",
+		usage:       "/model [list|refresh|id]",
 		group:       commandGroupModel,
-		description: "Show or switch the active model.",
+		description: "Show, switch, or refresh the active model.",
 		kind:        commandModel,
 	},
 	{
@@ -317,9 +317,9 @@ var commandDefinitions = []commandDefinition{
 	},
 	{
 		name:        "/style",
-		usage:       "/style [list|balanced|concise|explanatory|review]",
+		usage:       "/style [show|clear|balanced|concise|explanatory|review]",
 		group:       commandGroupSession,
-		description: "Show or set the response style preference.",
+		description: "Open the editor for your global speaking style (no arg), show/clear it, or set a per-session style.",
 		kind:        commandStyle,
 	},
 	{

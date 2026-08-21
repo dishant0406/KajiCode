@@ -170,7 +170,7 @@ func TestModelPickerShowsLoadingUntilDiscoveryCompletes(t *testing.T) {
 	}
 	// The list shows immediately (no blocking overlay) before discovery returns.
 	immediate := plainRender(t, m.pickerOverlay(100))
-	assertNotContains(t, immediate, "Checking available models...")
+	assertNotContains(t, immediate, "Fetching all models...")
 	assertNotContains(t, immediate, "Live Cloud A")
 	if m.picker == nil {
 		t.Fatal("picker should be open immediately")
@@ -180,10 +180,163 @@ func TestModelPickerShowsLoadingUntilDiscoveryCompletes(t *testing.T) {
 	updated, _ = m.Update(modelPickerModelsDiscoveredMsg{
 		providerID: "ollama-cloud",
 		models:     []providermodeldiscovery.Model{{ID: "live-cloud-a", Description: "Live Cloud A"}},
+		episode:    m.modelPickerEpisode,
 	})
 	m = updated.(model)
 	loaded := plainRender(t, m.pickerOverlay(100))
 	assertContains(t, loaded, "Live Cloud A")
+}
+
+func TestModelPickerRefreshItemClearsCacheAndForcesShowAll(t *testing.T) {
+	m := newModel(context.Background(), Options{
+		ProviderName: "ollama-cloud",
+		ModelName:    "minimax-m3",
+		ProviderProfile: config.ProviderProfile{
+			Name:         "ollama-cloud",
+			CatalogID:    "ollama-cloud",
+			ProviderKind: config.ProviderKindOpenAICompatible,
+			BaseURL:      "https://ollama.com/v1",
+			APIKey:       "ollama-key",
+			Model:        "minimax-m3",
+		},
+		DiscoverProviderModels: func(ctx context.Context, profile config.ProviderProfile) ([]providermodeldiscovery.Model, error) {
+			return []providermodeldiscovery.Model{
+				{ID: "live-cloud-a", Description: "Live Cloud A"},
+				{ID: "live-cloud-b", Description: "Live Cloud B"},
+			}, nil
+		},
+	})
+	// Stale cached models from a previous fetch must be dropped on refresh.
+	m.modelPickerLiveByProvider = map[string][]providermodeldiscovery.Model{
+		"ollama-cloud": {{ID: "stale-cached", Description: "Cached"}},
+	}
+	next, cmd := m.refreshModelPicker()
+	if next.picker == nil {
+		t.Fatal("refresh should reopen the model picker")
+	}
+	if len(next.modelPickerLiveByProvider) != 0 {
+		t.Fatalf("refresh should clear the live cache, got %#v", next.modelPickerLiveByProvider)
+	}
+	if !next.modelPickerForceShowAll {
+		t.Fatal("refresh should force ShowAll discovery (no coding-model filter)")
+	}
+	if !next.modelPickerLoading {
+		t.Fatal("refresh should show the fetching overlay until every provider resolves")
+	}
+	if cmd == nil {
+		t.Fatal("refresh should dispatch live model discovery")
+	}
+}
+
+func TestModelPickerRefreshReopensAfterAllProvidersResolve(t *testing.T) {
+	m := newModel(context.Background(), Options{
+		ProviderName: "ollama-cloud",
+		ModelName:    "minimax-m3",
+		SavedProviders: []config.ProviderProfile{
+			{Name: "ollama-cloud", CatalogID: "ollama-cloud", Model: "minimax-m3"},
+			{Name: "anthropic", CatalogID: "anthropic", Model: "claude"},
+		},
+		ProviderProfile: config.ProviderProfile{Name: "ollama-cloud", CatalogID: "ollama-cloud", Model: "minimax-m3"},
+		DiscoverProviderModels: func(ctx context.Context, profile config.ProviderProfile) ([]providermodeldiscovery.Model, error) {
+			return []providermodeldiscovery.Model{{ID: "fresh-" + profile.CatalogID}}, nil
+		},
+	})
+	next, cmd := m.refreshModelPicker()
+	if next.picker == nil || cmd == nil {
+		t.Fatalf("refresh should open a picker and dispatch discovery, picker=%v cmdNil=%v", next.picker != nil, cmd == nil)
+	}
+	episode := next.modelPickerEpisode
+	pending := next.modelPickerPendingProviders
+	if pending < 2 {
+		t.Fatalf("refresh should be waiting on every saved provider, pending=%d", pending)
+	}
+	// Resolve every pending provider at the same episode; the overlay must clear.
+	for _, id := range []string{"ollama-cloud", "anthropic"} {
+		mi, _ := next.Update(modelPickerModelsDiscoveredMsg{
+			providerID: id,
+			models:     []providermodeldiscovery.Model{{ID: "fresh-" + id}},
+			episode:    episode,
+		})
+		next = mi.(model)
+	}
+	if next.modelPickerLoading {
+		t.Fatal("loading overlay should clear after all providers resolve")
+	}
+	if len(next.modelPickerLiveByProvider) != 2 {
+		t.Fatalf("live cache should hold both refreshed providers, got %#v", next.modelPickerLiveByProvider)
+	}
+	got := pickerValues(next.picker.items)
+	if !contains(got, "fresh-ollama-cloud") || !contains(got, "fresh-anthropic") {
+		t.Fatalf("picker should show refreshed models, got %#v", got)
+	}
+}
+
+func TestModelCommandRefreshRunsFullDiscovery(t *testing.T) {
+	m := newModel(context.Background(), Options{
+		ProviderName: "ollama-cloud",
+		ModelName:    "minimax-m3",
+		SavedProviders: []config.ProviderProfile{
+			{Name: "ollama-cloud", CatalogID: "ollama-cloud", Model: "minimax-m3"},
+			{Name: "anthropic", CatalogID: "anthropic", Model: "claude"},
+		},
+		ProviderProfile: config.ProviderProfile{Name: "ollama-cloud", CatalogID: "ollama-cloud", Model: "minimax-m3"},
+		DiscoverProviderModels: func(ctx context.Context, profile config.ProviderProfile) ([]providermodeldiscovery.Model, error) {
+			return []providermodeldiscovery.Model{{ID: "live-" + profile.CatalogID}}, nil
+		},
+	})
+	m.input.SetValue("/model refresh")
+	updated, cmd := m.Update(testKey(tea.KeyEnter))
+	next := updated.(model)
+	if next.picker == nil {
+		t.Fatal("/model refresh should open the model picker")
+	}
+	if cmd == nil {
+		t.Fatal("/model refresh should dispatch full model discovery")
+	}
+	if !next.modelPickerForceShowAll {
+		t.Fatal("/model refresh should force ShowAll (fetch every model, no filter)")
+	}
+	if len(next.modelPickerLiveByProvider) != 0 {
+		t.Fatalf("/model refresh should drop cached models before refetch, got %#v", next.modelPickerLiveByProvider)
+	}
+}
+
+func TestModelPickerChoosingRefreshRowRefetchesAllProviders(t *testing.T) {
+	m := newModel(context.Background(), Options{
+		ProviderName: "ollama-cloud",
+		ModelName:    "minimax-m3",
+		ProviderProfile: config.ProviderProfile{
+			Name:         "ollama-cloud",
+			CatalogID:    "ollama-cloud",
+			ProviderKind: config.ProviderKindOpenAICompatible,
+			BaseURL:      "https://ollama.com/v1",
+			APIKey:       "ollama-key",
+			Model:        "minimax-m3",
+		},
+		DiscoverProviderModels: func(ctx context.Context, profile config.ProviderProfile) ([]providermodeldiscovery.Model, error) {
+			return []providermodeldiscovery.Model{{ID: "live-cloud-a", Description: "Live Cloud A"}}, nil
+		},
+	})
+	m.picker = m.newModelPicker()
+	if m.picker == nil {
+		t.Fatal("expected a model picker")
+	}
+	idx := pickerIndex(m.picker.items, modelPickerRefreshValue)
+	if idx < 0 {
+		t.Fatalf("expected a Refresh models row in the picker, got %#v", pickerValues(m.picker.items))
+	}
+	m.picker.selected = idx
+	next, cmd := m.choosePicker()
+	n := next.(model)
+	if n.picker == nil {
+		t.Fatal("choosing refresh should leave a picker open while refreshing")
+	}
+	if cmd == nil {
+		t.Fatal("choosing refresh should dispatch full model discovery")
+	}
+	if !n.modelPickerForceShowAll {
+		t.Fatal("choosing refresh should force ShowAll across all providers")
+	}
 }
 
 func TestModelPickerMetadataOmitsCredentialEnv(t *testing.T) {
@@ -252,10 +405,10 @@ func TestModelPickerFallsBackWhenDiscoveryFails(t *testing.T) {
 		t.Fatal("expected opening the model picker to start discovery")
 	}
 	// A failed discovery leaves the static catalog list in place — no crash, no block.
-	updated, _ = m.Update(modelPickerModelsDiscoveredMsg{providerID: "ollama-cloud", models: nil, err: errors.New("offline")})
+	updated, _ = m.Update(modelPickerModelsDiscoveredMsg{providerID: "ollama-cloud", models: nil, err: errors.New("offline"), episode: m.modelPickerEpisode})
 	m = updated.(model)
 	view := plainRender(t, m.pickerOverlay(100))
-	assertNotContains(t, view, "Checking available models...")
+	assertNotContains(t, view, "Fetching all models...")
 	if m.picker == nil || len(m.picker.items) == 0 {
 		t.Fatal("static catalog list should remain after a failed discovery")
 	}
@@ -389,8 +542,9 @@ func TestModelPickerFavoriteShortcutTogglesSelectedModel(t *testing.T) {
 	if !next.favoriteModels["qwen3-coder:480b"] {
 		t.Fatalf("favorite map = %#v, want qwen3-coder:480b favorited", next.favoriteModels)
 	}
-	if next.picker.items[0].Group != "Favorites" || next.picker.items[0].Value != "qwen3-coder:480b" {
-		t.Fatalf("first picker item = %#v, want favorite group row", next.picker.items[0])
+	rows := stripModelPickerRefresh(next.picker.items)
+	if rows[0].Group != "Favorites" || rows[0].Value != "qwen3-coder:480b" {
+		t.Fatalf("first picker item = %#v, want favorite group row", rows[0])
 	}
 	persisted := readTUIConfigFixture(t, configPath)
 	if len(persisted.Preferences.FavoriteModels) != 1 || persisted.Preferences.FavoriteModels[0] != "qwen3-coder:480b" {
@@ -402,8 +556,9 @@ func TestModelPickerFavoriteShortcutTogglesSelectedModel(t *testing.T) {
 	if next.favoriteModels["qwen3-coder:480b"] {
 		t.Fatalf("favorite map = %#v, want qwen3-coder:480b unfavorited", next.favoriteModels)
 	}
-	if len(next.picker.items) > 0 && next.picker.items[0].Group == "Favorites" {
-		t.Fatalf("favorites group should be gone after unfavorite, got first item %#v", next.picker.items[0])
+	rows = stripModelPickerRefresh(next.picker.items)
+	if len(rows) > 0 && rows[0].Group == "Favorites" {
+		t.Fatalf("favorites group should be gone after unfavorite, got first item %#v", rows[0])
 	}
 	persisted = readTUIConfigFixture(t, configPath)
 	if len(persisted.Preferences.FavoriteModels) != 0 {
@@ -422,8 +577,9 @@ func TestModelPickerLoadsFavoriteModelsFromOptions(t *testing.T) {
 	if picker == nil {
 		t.Fatal("expected model picker")
 	}
-	if picker.items[0].Group != "Favorites" || picker.items[0].Value != "qwen3-coder:480b" {
-		t.Fatalf("first picker item = %#v, want persisted favorite first", picker.items[0])
+	rows := stripModelPickerRefresh(picker.items)
+	if rows[0].Group != "Favorites" || rows[0].Value != "qwen3-coder:480b" {
+		t.Fatalf("first picker item = %#v, want persisted favorite first", rows[0])
 	}
 }
 
@@ -446,16 +602,17 @@ func TestModelPickerShowsRecentThenActiveProviderCatalog(t *testing.T) {
 	if picker == nil {
 		t.Fatal("expected a model picker")
 	}
-	if picker.items[0].Group != "Recent" {
-		t.Fatalf("first picker group = %q, want Recent", picker.items[0].Group)
+	rows := stripModelPickerRefresh(picker.items)
+	if rows[0].Group != "Recent" {
+		t.Fatalf("first picker group = %q, want Recent", rows[0].Group)
 	}
-	if picker.items[0].Value != "google/gemini-2.5-pro" {
-		t.Fatalf("first picker value = %q, want active recent model", picker.items[0].Value)
+	if rows[0].Value != "google/gemini-2.5-pro" {
+		t.Fatalf("first picker value = %q, want active recent model", rows[0].Value)
 	}
-	if picker.items[1].Group != "OpenRouter" {
-		t.Fatalf("second picker group = %q, want OpenRouter", picker.items[1].Group)
+	if rows[1].Group != "OpenRouter" {
+		t.Fatalf("second picker group = %q, want OpenRouter", rows[1].Group)
 	}
-	got := pickerValues(picker.items)
+	got := pickerValues(rows)
 	if !contains(got, "anthropic/claude-sonnet-4.5") || !contains(got, "minimax/minimax-m2.1") {
 		t.Fatalf("active provider catalog missing expected OpenRouter models: %#v", got)
 	}
@@ -545,7 +702,7 @@ func TestAssembleModelPickerItemsDedupesByProviderAndModelPairNotModelIDAlone(t 
 		{Value: "shared-model", OwnerProvider: "provider-a"},
 		{Value: "shared-model", OwnerProvider: "provider-b"},
 	}
-	items := m.assembleModelPickerItems(recent, nil)
+	items := stripModelPickerRefresh(m.assembleModelPickerItems(recent, nil))
 	if len(items) != 2 {
 		t.Fatalf("expected both provider-a and provider-b rows to survive de-dup, got %#v", items)
 	}
@@ -634,7 +791,7 @@ func TestRegistryModelPickerItemSetsOwnerProvider(t *testing.T) {
 		registryModelPickerItem(entryB, "Catalog"),
 	}
 	m := model{}
-	items := m.assembleModelPickerItems(nil, catalog)
+	items := stripModelPickerRefresh(m.assembleModelPickerItems(nil, catalog))
 	if len(items) != 2 {
 		t.Fatalf("expected both provider rows to survive de-dup, got %#v", items)
 	}
@@ -667,7 +824,7 @@ func TestModelPickerRecentSectionShowsHistoryPastTheActiveModel(t *testing.T) {
 		t.Fatal("expected a model picker")
 	}
 	recentValues := []string{}
-	for _, item := range picker.items {
+	for _, item := range stripModelPickerRefresh(picker.items) {
 		if item.Group != "Recent" {
 			break
 		}
@@ -1073,6 +1230,20 @@ func pickerIndex(items []pickerItem, value string) int {
 		}
 	}
 	return -1
+}
+
+// stripModelPickerRefresh removes the always-pinned "Refresh models" action row so
+// tests that assert on the list's real model rows (first row, group order, exact
+// lengths) stay coupled to what matters rather than the prepended action.
+func stripModelPickerRefresh(items []pickerItem) []pickerItem {
+	out := make([]pickerItem, 0, len(items))
+	for _, item := range items {
+		if item.Value == modelPickerRefreshValue {
+			continue
+		}
+		out = append(out, item)
+	}
+	return out
 }
 
 func readTUIConfigFixture(t *testing.T, path string) config.FileConfig {

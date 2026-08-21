@@ -109,6 +109,12 @@ func TestRoleInteractiveBindModel(t *testing.T) {
 	}
 
 	// Pick a model row and enter. It should bind to the role, not switch the model.
+	// Skip the pinned "Refresh models" action row and select a real model.
+	modelIdx := pickerIndex(nextModelPicker.picker.items, "gpt-4.1")
+	if modelIdx < 0 {
+		t.Fatalf("expected a gpt-4.1 row in the stage-2 model picker, items=%#v", pickerValues(nextModelPicker.picker.items))
+	}
+	nextModelPicker.picker.selected = modelIdx
 	npUpdated, _ := nextModelPicker.choosePicker()
 	np := npUpdated.(model)
 	if np.picker != nil {

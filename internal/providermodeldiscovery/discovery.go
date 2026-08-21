@@ -39,6 +39,13 @@ type Options struct {
 	HTTPClient     *http.Client
 	ModelsDevURL   string
 	OpenGatewayURL string
+	// ShowAll disables the curated "coding models only" filter and returns the
+	// provider's full model set (live probe ∪ curated catalog). When false (the
+	// default), DiscoverCatalog intersects the live probe with the curated
+	// catalog and drops non-coding models. ShowAll is the escape hatch that
+	// surfaces every model a provider actually serves (voice, embeddings, and
+	// coding models whose names don't match the coding-model heuristic).
+	ShowAll bool
 }
 
 func DiscoverCatalog(ctx context.Context, provider providercatalog.Descriptor, profile config.ProviderProfile, options Options) ([]Model, error) {
@@ -47,7 +54,14 @@ func DiscoverCatalog(ctx context.Context, provider providercatalog.Descriptor, p
 	if canProbeProvider {
 		liveModels, liveErr := Discover(ctx, profile, options)
 		if liveErr == nil {
-			if merged := mergeLiveModels(provider, liveModels, catalogModels); len(merged) > 0 {
+			if options.ShowAll {
+				// Union the live probe with the curated catalog with NO coding-model
+				// filter: every model the provider serves appears, and any catalog
+				// metadata (context window, cost, capabilities) enriches matching ids.
+				if merged := unionLiveModels(provider, liveModels, catalogModels); len(merged) > 0 {
+					return merged, nil
+				}
+			} else if merged := mergeLiveModels(provider, liveModels, catalogModels); len(merged) > 0 {
 				return merged, nil
 			}
 			// Live probe returned 200 but its model ids didn't match the catalog, so
@@ -83,6 +97,8 @@ func Discover(ctx context.Context, profile config.ProviderProfile, options Optio
 		return discoverAzureOpenAIModels(ctx, profile, options)
 	case config.ProviderKindAnthropic, config.ProviderKindAnthropicCompat:
 		return discoverAnthropicModels(ctx, profile, options)
+	case config.ProviderKindGoogle:
+		return discoverGeminiModels(ctx, profile, options)
 	default:
 		return nil, fmt.Errorf("provider %s does not expose model discovery", displayProviderName(profile))
 	}
@@ -235,7 +251,32 @@ func discoverAnthropicModels(ctx context.Context, profile config.ProviderProfile
 	})
 }
 
-func fetchProviderModels(ctx context.Context, endpoint string, profile config.ProviderProfile, options Options, auth providerio.AuthHeaders, configure func(*http.Request)) ([]Model, error) {
+func discoverGeminiModels(ctx context.Context, profile config.ProviderProfile, options Options) ([]Model, error) {
+	endpoint, err := geminiModelsEndpoint(profile.BaseURL)
+	if err != nil {
+		return nil, err
+	}
+	body, err := fetchProviderModelsBody(ctx, endpoint, profile, options, providerio.AuthHeaders{
+		APIKey:            profile.APIKey,
+		DefaultAuthHeader: "x-goog-api-key",
+		DefaultAuthScheme: "raw",
+		AuthHeader:        profile.AuthHeader,
+		AuthScheme:        profile.AuthScheme,
+		AuthHeaderValue:   profile.AuthHeaderValue,
+		CustomHeaders:     providerio.CopyHeaders(profile.CustomHeaders),
+	}, nil)
+	if err != nil {
+		return nil, err
+	}
+	return parseGeminiModelsResponse(body)
+}
+
+// fetchProviderModelsBody performs the authenticated GET to a provider's
+// model-listing endpoint and returns the raw response body (identity-redacted
+// on error). parseModelsResponse / parseGeminiModelsResponse interpret the body
+// into Model slices; returning the body lets callers with differing response
+// shapes (e.g. Gemini) reuse the same transport/error/redaction handling.
+func fetchProviderModelsBody(ctx context.Context, endpoint string, profile config.ProviderProfile, options Options, auth providerio.AuthHeaders, configure func(*http.Request)) ([]byte, error) {
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, err
@@ -260,24 +301,106 @@ func fetchProviderModels(ctx context.Context, endpoint string, profile config.Pr
 	}
 	defer response.Body.Close()
 
-	body, err := io.ReadAll(io.LimitReader(response.Body, 1<<20))
+	body, err := io.ReadAll(io.LimitReader(response.Body, 4<<20))
 	if err != nil {
 		return nil, redactDiscoveryError(err, profile)
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return nil, redactDiscoveryError(fmt.Errorf("models endpoint returned %s: %s", response.Status, strings.TrimSpace(string(body))), profile)
 	}
+	return body, nil
+}
 
+func fetchProviderModels(ctx context.Context, endpoint string, profile config.ProviderProfile, options Options, auth providerio.AuthHeaders, configure func(*http.Request)) ([]Model, error) {
+	body, err := fetchProviderModelsBody(ctx, endpoint, profile, options, auth, configure)
+	if err != nil {
+		return nil, err
+	}
 	models, err := parseModelsResponse(body)
 	if err != nil {
 		return nil, redactDiscoveryError(err, profile)
 	}
-	return models, nil
+	// Follow cursor pagination when the provider returns an `object: "list"`
+	// continuation. Both OpenAI-compatible and Anthropic-style listings may
+	// page; each page carries `has_more` + `last_id` (Anthropic) or OpenAI's
+	// `data[].id` last-seen marker. We support the Anthropic `last_id`
+	// convention plus a generic `next_page_token`, and cap total pages so a
+	// misbehaving endpoint can't loop forever.
+	next := paginationCursor(body)
+	for page := 1; next != "" && page < 20; page++ {
+		pageURL, perr := appendPaginationCursor(endpoint, next)
+		if perr != nil {
+			break
+		}
+		pageBody, perr := fetchProviderModelsBody(ctx, pageURL, profile, options, auth, configure)
+		if perr != nil {
+			break
+		}
+		var pageModels []Model
+		pageModels, perr = parseModelsResponse(pageBody)
+		if perr != nil || len(pageModels) == 0 {
+			break
+		}
+		models = append(models, pageModels...)
+		next = paginationCursor(pageBody)
+	}
+	return dedupeModelsByID(models), nil
+}
+
+// paginationCursor extracts a continuation token from a provider models
+// response body. Recognizes Anthropic's {"last_id","has_more"} and a generic
+// {"next_page_token"}. Returns "" when the response isn't paginated.
+func paginationCursor(body []byte) string {
+	var payload struct {
+		HasMore        bool   `json:"has_more"`
+		LastID         string `json:"last_id"`
+		NextPageToken  string `json:"next_page_token"`
+		NextPageCursor string `json:"next_page_cursor"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return ""
+	}
+	if payload.HasMore && payload.LastID != "" {
+		return payload.LastID
+	}
+	return strings.TrimSpace(payload.NextPageToken)
+}
+
+// appendPaginationCursor adds a page cursor to an existing /models URL for the
+// next page request. Cursor params are injected as query params (the common
+// convention); a provider that needs a different scheme can return "" from
+// paginationCursor to opt out.
+func appendPaginationCursor(endpoint, cursor string) (string, error) {
+	parsed, err := url.Parse(endpoint)
+	if err != nil {
+		return "", err
+	}
+	q := parsed.Query()
+	q.Set("after", cursor)
+	q.Set("page_token", cursor)
+	parsed.RawQuery = q.Encode()
+	return parsed.String(), nil
+}
+
+// dedupeModelsByID keeps the first occurrence of each model id, preserving
+// order. Page boundaries can repeat ids (the last of page N is commonly the
+// cursor's first of page N+1).
+func dedupeModelsByID(models []Model) []Model {
+	seen := map[string]bool{}
+	result := make([]Model, 0, len(models))
+	for _, model := range models {
+		if model.ID == "" || seen[model.ID] {
+			continue
+		}
+		seen[model.ID] = true
+		result = append(result, model)
+	}
+	return result
 }
 
 func modelDiscoveryAllowed(profile config.ProviderProfile) bool {
 	switch discoveryProviderKind(profile) {
-	case config.ProviderKindOpenAI, config.ProviderKindOpenAICompatible, config.ProviderKindAzureOpenAI, config.ProviderKindAnthropic, config.ProviderKindAnthropicCompat:
+	case config.ProviderKindOpenAI, config.ProviderKindOpenAICompatible, config.ProviderKindAzureOpenAI, config.ProviderKindAnthropic, config.ProviderKindAnthropicCompat, config.ProviderKindGoogle:
 		return true
 	default:
 		return false
@@ -325,6 +448,76 @@ func anthropicModelsEndpoint(baseURL string) (string, error) {
 	parsed.RawQuery = ""
 	parsed.Fragment = ""
 	return parsed.String(), nil
+}
+
+// geminiModelsEndpoint derives the Gemini models-listing URL from the provider
+// base URL. The Gemini REST API serves /v1beta/models (+?key=... or the
+// x-goog-api-key header added by fetchProviderModels). The gemini provider's
+// streamURL uses /v1beta/models/<model>:streamGenerateContent, so discovery
+// mirrors that root.
+func geminiModelsEndpoint(baseURL string) (string, error) {
+	baseURL = strings.TrimSpace(baseURL)
+	if baseURL == "" {
+		return "", fmt.Errorf("provider base URL is required for model discovery")
+	}
+	parsed, err := url.Parse(baseURL)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return "", fmt.Errorf("invalid provider base URL %q", baseURL)
+	}
+	path := strings.TrimRight(parsed.Path, "/")
+	if strings.HasSuffix(path, "/v1beta") {
+		parsed.Path = path + "/models"
+	} else {
+		parsed.Path = path + "/v1beta/models"
+	}
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return parsed.String(), nil
+}
+
+// geminiModelsResponse is the shape of GET /v1beta/models: {"models":[{name,
+// supportedGenerationMethods}...]}.
+func parseGeminiModelsResponse(body []byte) ([]Model, error) {
+	var payload struct {
+		Models []struct {
+			Name        string   `json:"name"`
+			DisplayName string   `json:"displayName"`
+			Methods     []string `json:"supportedGenerationMethods"`
+			InputLimits struct {
+				MaxInputTokens int `json:"maxInputTokens"`
+			} `json:"inputTokenLimit"`
+			OutputLimits struct {
+				MaxOutputTokens int `json:"maxOutputTokens"`
+			} `json:"outputTokenLimit"`
+		} `json:"models"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, fmt.Errorf("decode Gemini models response: %w", err)
+	}
+	seen := map[string]bool{}
+	models := make([]Model, 0, len(payload.Models))
+	for _, item := range payload.Models {
+		// Gemini lists full model paths like "models/gemini-2.5-pro"; strip the
+		// leading "models/" so IDs match the curated catalog / model registry.
+		id := strings.TrimSpace(item.Name)
+		id = strings.TrimPrefix(id, "models/")
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		models = append(models, Model{
+			ID:            id,
+			Description:   strings.TrimSpace(item.DisplayName),
+			ContextWindow: item.InputLimits.MaxInputTokens,
+		})
+	}
+	sort.SliceStable(models, func(i, j int) bool {
+		return models[i].ID < models[j].ID
+	})
+	if len(models) == 0 {
+		return nil, fmt.Errorf("models endpoint returned no model ids")
+	}
+	return models, nil
 }
 
 type modelsResponse struct {
@@ -420,6 +613,51 @@ func mergeLiveModels(provider providercatalog.Descriptor, liveModels []Model, ca
 		live.Source = firstDiscoverySource(live.Source, "live")
 		result = append(result, live)
 	}
+	return result
+}
+
+// unionLiveModels merges the live probe with the curated catalog with NO
+// coding-model filter: every model the provider actually serves is kept. Catalog
+// metadata (context window, tokens, capabilities, cost) enriches matching ids;
+// live-only ids keep their id/description. This is the ShowAll path that
+// surfaces the full provider model set (voice, embeddings, and coding models the
+// name heuristic would otherwise hide). Only the provider-level allowlist
+// (ModelIDAllowedForProvider) still applies, so provider-specific restrictions
+// (e.g. opencode-go-anthropic-compatible's qwen/minimax gate) are honored even
+// in full view.
+func unionLiveModels(provider providercatalog.Descriptor, liveModels []Model, catalogModels []Model) []Model {
+	catalogByID := map[string]Model{}
+	for _, model := range catalogModels {
+		catalogByID[model.ID] = model
+	}
+	hasCatalog := len(catalogByID) > 0
+	seen := map[string]bool{}
+	result := make([]Model, 0, len(liveModels)+len(catalogModels))
+	add := func(model Model) {
+		if model.ID == "" || seen[model.ID] || !providermodelcatalog.ModelIDAllowedForProvider(provider.ID, model.ID) {
+			return
+		}
+		seen[model.ID] = true
+		if catalog, ok := catalogByID[model.ID]; ok && hasCatalog {
+			catalog.Source = firstDiscoverySource(catalog.Source, "live")
+			result = append(result, catalog)
+			return
+		}
+		model.Source = firstDiscoverySource(model.Source, "live")
+		result = append(result, model)
+	}
+	// Live models first so their ordering (and the catalog-union membership) is
+	// stable; then catalog-only models (e.g. Gemini entries not served by the
+	// live probe, or curated defaults not in the live response).
+	for _, live := range liveModels {
+		add(live)
+	}
+	for _, catalog := range catalogModels {
+		add(catalog)
+	}
+	sort.SliceStable(result, func(i, j int) bool {
+		return result[i].ID < result[j].ID
+	})
 	return result
 }
 

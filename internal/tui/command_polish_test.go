@@ -33,7 +33,7 @@ func TestHelpCommandRendersGroupedSections(t *testing.T) {
 		"Runtime",
 		"Tools",
 		"Meta",
-		"  /model [list|id]",
+		"  /model [list|refresh|id]",
 		"  /permissions",
 		"hint: submit plain text to ask KajiCode",
 	} {

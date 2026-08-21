@@ -158,7 +158,7 @@ func TestFormatCommandOutputRendersPlainLinesAndCommandBullets(t *testing.T) {
 			{
 				Title: "Model",
 				Lines: []string{
-					"/model [list|id] - Show the active model.",
+					"/model [list|refresh|id] - Show, switch, or refresh the active model.",
 					commandBullet("gpt-5"),
 				},
 			},
@@ -169,7 +169,7 @@ func TestFormatCommandOutputRendersPlainLinesAndCommandBullets(t *testing.T) {
 		"Commands",
 		"status: info",
 		"Model",
-		"  /model [list|id] - Show the active model.",
+		"  /model [list|refresh|id] - Show, switch, or refresh the active model.",
 		"  - gpt-5",
 	}, "\n")
 

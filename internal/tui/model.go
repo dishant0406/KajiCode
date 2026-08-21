@@ -213,6 +213,7 @@ type model struct {
 	sttKeyPrompt          *sttKeyPromptState
 	webSearchForm         *webSearchFormState
 	promptEditor          *promptEditorState
+	styleEditor           *styleEditorState
 	// plan holds the sticky plan panel state (steps, expansion, timings)
 	// synced from the update_plan tool. See plan_panel.go.
 	plan            planPanelState
@@ -497,6 +498,17 @@ type model struct {
 	modelPickerLoading           bool
 	modelPickerLoadingProviderID string
 	modelPickerLoadError         string
+	// modelPickerEpisode counts refresh/open dispatches so discovery results can be
+	// tied to the round that launched them; modelPickerPendingProviders tracks how
+	// many providers a refresh is still waiting on so the loading overlay clears only
+	// after every provider resolves.
+	modelPickerEpisode          int
+	modelPickerPendingProviders int
+	// modelPickerForceShowAll forces --all-style discovery (union of live
+	// models without the coding-model filter) for the current /model refresh.
+	// It clears the per-provider cache on refresh so every model is fetched
+	// again, ignoring the specific provider's showAllModels setting.
+	modelPickerForceShowAll bool
 	// modelPickerLiveByProvider holds live-discovered models per provider (keyed by
 	// catalog descriptor ID), so /model shows each provider's real current models —
 	// the same list the provider-setup wizard discovers — not the static catalog.
@@ -1075,7 +1087,7 @@ func (m *model) stopPRWatcher() {
 func (m model) noBlockingModal() bool {
 	return m.pendingPermission == nil && m.pendingAskUser == nil && m.pendingSpecReview == nil &&
 		m.providerWizard == nil && m.mcpAddWizard == nil && m.mcpManager == nil && m.picker == nil &&
-		m.sttKeyPrompt == nil && m.promptEditor == nil
+		m.sttKeyPrompt == nil && m.promptEditor == nil && m.styleEditor == nil
 }
 
 func (m model) quit() (tea.Model, tea.Cmd) {
@@ -1324,6 +1336,9 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.promptEditor != nil {
 			return m.handlePromptEditorPaste(msg.Content), nil
 		}
+		if m.styleEditor != nil {
+			return m.handleStyleEditorPaste(msg.Content), nil
+		}
 		return m.routePaste(msg.Content)
 	case dictationStartedMsg:
 		return m.handleDictationStarted(msg)
@@ -1382,6 +1397,9 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.promptEditor != nil {
 			return m.handlePromptEditorKey(msg)
+		}
+		if m.styleEditor != nil {
+			return m.handleStyleEditorKey(msg)
 		}
 		m.transcriptSelection = transcriptSelectionState{}
 		m.composerSelection = composerSelectionState{}
@@ -2772,7 +2790,7 @@ func (m model) homePresentationActive() bool {
 	return m.transcriptEmpty() && !m.pending && m.pendingAskUser == nil &&
 		!m.helpOverlay && !m.leaderHelpOverlay && m.providerWizard == nil &&
 		m.mcpAddWizard == nil && m.mcpManager == nil && m.picker == nil &&
-		m.sttKeyPrompt == nil && m.promptEditor == nil && !m.suggestionsActive() && !m.transcriptDetailed
+		m.sttKeyPrompt == nil && m.promptEditor == nil && m.styleEditor == nil && !m.suggestionsActive() && !m.transcriptDetailed
 }
 
 // transcriptView renders the visible chat surface: in inline mode this is the
@@ -2823,10 +2841,13 @@ func (m model) transcriptView() string {
 	sttKeyOverlay := m.sttKeyPromptOverlay(width)
 	webSearchOverlay := m.webSearchFormOverlay(width)
 	promptEditorOverlay := m.promptEditorOverlay(width)
+	styleOverlay := m.styleEditorOverlay(width)
 	viewportOverlay := ""
 	switch {
 	case promptEditorOverlay != "":
 		viewportOverlay = promptEditorOverlay
+	case styleOverlay != "":
+		viewportOverlay = styleOverlay
 	case sttKeyOverlay != "":
 		viewportOverlay = sttKeyOverlay
 	case webSearchOverlay != "":
@@ -4350,6 +4371,12 @@ func (m model) choosePicker() (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	switch picker.kind {
 	case pickerModel:
+		// The pinned "Refresh models" action row re-fetches every provider's full
+		// live model list instead of picking a model.
+		if item.Value == modelPickerRefreshValue {
+			m.picker = nil
+			return m.refreshModelPicker()
+		}
 		// A role-bound model picker (opened from the interactive /role flow) binds
 		// the chosen model to the role instead of switching the active provider.
 		if role := strings.TrimSpace(m.roleBindTarget); role != "" {
@@ -4644,6 +4671,23 @@ func (m model) dispatchCommand(command parsedCommand) (tea.Model, tea.Cmd) {
 		m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: m.providerText()})
 		return m, nil
 	case commandModel:
+		switch strings.ToLower(strings.TrimSpace(command.text)) {
+		case "refresh", "reload", "sync":
+			if m.pending {
+				m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: "Model\nCannot refresh models while a run is active."})
+				return m, nil
+			}
+			if m.picker != nil && m.picker.kind == pickerModel {
+				m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: "Model\nRefreshing models..."})
+				return m.refreshModelPicker()
+			}
+			next, cmd := m.refreshModelPicker()
+			if next.picker != nil {
+				return next, cmd
+			}
+			m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: "Model\nRefresh failed: no providers available."})
+			return m, nil
+		}
 		if strings.TrimSpace(command.text) == "" {
 			if m.pending {
 				m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: pickerBusyText(command.name)})
@@ -4807,7 +4851,9 @@ func (m model) dispatchCommand(command parsedCommand) (tea.Model, tea.Cmd) {
 	case commandStyle:
 		text := ""
 		m, text = m.handleStyleCommand(command.text)
-		m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: text})
+		if text != "" {
+			m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: text})
+		}
 		return m, nil
 	case commandSelfCorrect:
 		text := ""

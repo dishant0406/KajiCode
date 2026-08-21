@@ -42,6 +42,10 @@ type ProviderProfile struct {
 	Model           string            `json:"model,omitempty"`
 	ParseThinkTags  *bool             `json:"parseThinkTags,omitempty"`
 	Description     string            `json:"description,omitempty"`
+	// ShowAllModels, when true, lists the full model set the provider serves in
+	// the /model picker and setup wizard instead of the curated "coding models"
+	// subset. Defaults to false (curated subset with metadata).
+	ShowAllModels *bool `json:"showAllModels,omitempty"`
 }
 
 func HasProviderProfile(profile ProviderProfile) bool {
@@ -59,7 +63,15 @@ func HasProviderProfile(profile ProviderProfile) bool {
 		profile.CustomHeaders != nil ||
 		strings.TrimSpace(profile.Model) != "" ||
 		profile.ParseThinkTags != nil ||
+		profile.ShowAllModels != nil ||
 		strings.TrimSpace(profile.Description) != ""
+}
+
+// ShowAllModelsEnabled reports whether a profile opts into listing the full
+// model set the provider serves (vs. the curated coding-model subset). A nil
+// pointer (default) means false.
+func ShowAllModelsEnabled(profile ProviderProfile) bool {
+	return profile.ShowAllModels != nil && *profile.ShowAllModels
 }
 
 type SandboxConfig struct {
@@ -801,6 +813,7 @@ func (profile *ProviderProfile) UnmarshalJSON(data []byte) error {
 		ModelID              string            `json:"model_id"`
 		ParseThinkTags       *bool             `json:"parseThinkTags"`
 		ParseThinkTagsSnake  *bool             `json:"parse_think_tags"`
+		ShowAllModels        *bool             `json:"showAllModels"`
 		Description          string            `json:"description"`
 	}
 
@@ -824,6 +837,7 @@ func (profile *ProviderProfile) UnmarshalJSON(data []byte) error {
 	profile.CustomHeaders = firstNonNilMap(raw.CustomHeaders, raw.CustomHeadersSnake)
 	profile.Model = strings.TrimSpace(firstNonEmpty(raw.Model, raw.ModelID))
 	profile.ParseThinkTags = firstNonNilBool(raw.ParseThinkTags, raw.ParseThinkTagsSnake)
+	profile.ShowAllModels = raw.ShowAllModels
 	profile.Description = strings.TrimSpace(raw.Description)
 	return nil
 }

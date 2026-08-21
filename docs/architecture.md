@@ -184,6 +184,33 @@ CLI-prompted role always wins. `RoleContext`'s `PromptedRole` signal is what
 wires explicit `/role` / `--role` intent ahead of the heuristic, keeping the
 heuristic from overriding an explicit choice.
 
+### Model Discovery
+
+KajiCode discovers a provider's available models through
+`internal/providermodeldiscovery`, which merges the curated
+`models.dev/api.json` catalog (`internal/providermodelcatalog`) with a live
+`/v1/models` probe (and `/v1beta/models` for Gemini providers). Live responses
+are paginated (cursor-based for OpenAI/Anthropic, page-token based otherwise,
+capped at 20 pages and 4 MiB) and deduplicated by model id. Gemini discovery
+uses `x-goog-api-key` auth and parses `name`/`displayName`/`inputTokenLimit`.
+
+By default the merged list is filtered to "coding models" via
+`IsCodingModel`/`LooksLikeCodingModelID`. Users who want every model a provider
+serves can opt out in two ways:
+
+- Set `"showAllModels": true` on a provider profile in `kajicode.json` (field
+  `ProviderProfile.ShowAllModels`); this threads through `internal/config`
+  (upstreams from catalog fallbacks) into the TUI picker, onboarding wizard,
+  and `exec` model resolution via `ShowAllModelsEnabled`.
+- Run `kajicode providers models` (live, unfiltered probe) or pass `--all` to it
+  for one-off raw inspection.
+- In the interactive TUI, `/model` opens a picker with a pinned **Refresh
+  models** row at the top; choosing it (or running `/model refresh`) re-fetches
+  every saved provider's FULL live model list in one shot — forcing ShowAll
+  discovery across all providers and dropping the cached per-provider lists
+  first, so nothing is left over and no curated filter hides the full set. A
+  fetching overlay stays up until every provider resolves.
+
 ## Self-Learning
 
 KajiCode can learn durable, cross-session lessons about a project's conventions
@@ -286,6 +313,29 @@ KajiCode persists local session state through `internal/sessions`:
 
 Resume, fork, rewind, sub-agent history, and stream replay should be implemented
 from session metadata/events rather than hidden TUI-only state.
+
+### Response style
+
+The operator's freeform speaking style is a first-class, globally-persisted
+setting that applies to every reply across sessions and projects:
+
+- **Storage.** `/style` writes a `RESPONSE_STYLE.md` file under the per-user
+  config dir (`config.UserConfigDir()/kajicode/`), the same directory that holds
+  the per-user `config.json` and `KAJICODE.md`. The file is the source of truth
+  for the global style and is readable (case-insensitively) on macOS/Windows.
+- **Injection.** `internal/agent` reads that file at run start via
+  `responseStyleContext` (in `system_prompt.go`) and injects it verbatim into the
+  `promptSectionResponseStyle` section of the system prompt every run. A
+  missing/empty file adds nothing, so the prompt stays byte-identical and the
+  existing `Options.ResponseStyle` enum (balanced/concise/explanatory/review)
+  still applies as a session-only fallback.
+- **TUI surface.** `/style` with no argument opens a single-step modal editor
+  (the same freeform UX as the `/prompt` editor, minus the slug step) seeded
+  from the persisted file; `/style show` lists the current persisted style and
+  its on-disk location; `/style clear` removes it; a valid enum argument still
+  sets the ephemeral per-session toggle. The editor saves atomically
+  (`internal/fsutil` rename) with `0o600` permissions and caps the injected body
+  at 4 KiB to bound prompt size.
 
 ## Extensions
 

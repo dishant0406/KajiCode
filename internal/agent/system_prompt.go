@@ -45,6 +45,17 @@ var projectContextFiles = []string{"AGENTS.md", "KAJICODE.md", ".kajicode/AGENTS
 // of individual repositories.
 const userContextFile = "KAJICODE.md"
 
+// userStyleFile is the per-user speaking-style file, resolved under the same
+// per-user config dir as KAJICODE.md (config.UserConfigDir()/kajicode/). It
+// holds the operator's freeform response style, persisted /style editor output,
+// and is injected into the system prompt on every run across sessions and
+// projects. An empty or missing file adds nothing (prompt stays byte-identical).
+const userStyleFile = "RESPONSE_STYLE.md"
+
+// maxUserStyleBytes caps how much of the persisted speaking style is injected so
+// a huge style can't bloat the prompt.
+const maxUserStyleBytes = 4 << 10 // 4 KiB
+
 // userConfigDirForPrompt is the resolver for the per-user config dir; tests stub
 // it so prompt assertions don't read a developer's real ~/.config/kajicode.
 var userConfigDirForPrompt = config.UserConfigDir
@@ -175,16 +186,59 @@ func learningContext(options Options) string {
 }
 
 func responseStyleContext(options Options) string {
+	// The persisted (global, /style-edited) speaking style wins over the
+	// session enum. An empty/missing file falls through to the enum below so the
+	// pre-existing behavior is preserved byte-for-byte.
+	if persisted := readUserStyle(); persisted != "" {
+		return styleDirective(persisted)
+	}
 	switch strings.ToLower(strings.TrimSpace(options.ResponseStyle)) {
 	case "concise":
-		return "Response style: concise. Lead with the result and keep answers short and direct; omit preamble, restating the question, and any explanation not needed to be correct."
+		return styleDirective("concise. Lead with the result and keep answers short and direct; omit preamble, restating the question, and any explanation not needed to be correct.")
 	case "explanatory":
-		return "Response style: explanatory. Explain the reasoning behind your answers and changes, surface relevant trade-offs, and add brief context a learner would want — while staying on task and not padding."
+		return styleDirective("explanatory. Explain the reasoning behind your answers and changes, surface relevant trade-offs, and add brief context a learner would want — while staying on task and not padding.")
 	case "review":
-		return "Response style: review. Work like a critical reviewer: call out risks, edge cases, and unstated assumptions, flag anything questionable, and prefer precise, evidence-backed statements over reassurance."
+		return styleDirective("review. Work like a critical reviewer: call out risks, edge cases, and unstated assumptions, flag anything questionable, and prefer precise, evidence-backed statements over reassurance.")
 	default:
 		return ""
 	}
+}
+
+// styleDirective wraps a response-style body in an emphatic, strict directive so
+// the persisted freeform style (or an enum) is treated as a binding rule rather
+// than a soft suggestion. The surrounding backticks set the prose off from the
+// rest of the prompt and the imperative framing tells the model to enforce it
+// literally. The body itself is injected verbatim.
+func styleDirective(body string) string {
+	return "Response style (STRICT, must follow for every reply): apply the following style verbatim and do not drift from it:\n\n`" + body + "`"
+}
+
+// readUserStyle returns the operator's persisted global speaking style, or ""
+// when unset/unreadable. It reads userStyleFile under userConfigDirForPrompt (the
+// same resolver userGuidelines uses), so tests stub it identically. When both a
+// persisted style and its own session marker exist, this file is authoritative.
+func readUserStyle() string {
+	dir, err := userConfigDirForPrompt()
+	if err != nil {
+		return ""
+	}
+	dir = strings.TrimSpace(dir)
+	if dir == "" {
+		return ""
+	}
+	match := findCaseInsensitiveFile(filepath.Join(dir, "kajicode"), userStyleFile)
+	if match == "" {
+		return ""
+	}
+	data, err := os.ReadFile(match)
+	if err != nil {
+		return ""
+	}
+	content := strings.TrimSpace(string(data))
+	if content == "" {
+		return ""
+	}
+	return truncateGuidelineContent(content, maxUserStyleBytes)
 }
 
 func approvedCommandPrefixContext(options Options) string {

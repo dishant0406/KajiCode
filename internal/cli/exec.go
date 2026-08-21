@@ -1450,7 +1450,9 @@ func discoveredModelContextWindow(ctx context.Context, profile config.ProviderPr
 	}
 	dctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	models, err := providermodeldiscovery.DiscoverCatalog(dctx, descriptor, authed, providermodeldiscovery.Options{})
+	models, err := providermodeldiscovery.DiscoverCatalog(dctx, descriptor, authed, providermodeldiscovery.Options{
+		ShowAll: config.ShowAllModelsEnabled(authed),
+	})
 	if err != nil {
 		return 0
 	}

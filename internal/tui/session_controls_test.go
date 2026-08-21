@@ -2,6 +2,8 @@ package tui
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -139,16 +141,32 @@ func TestCycleReasoningEffortNoOpOnUnsupportedModel(t *testing.T) {
 }
 
 func TestStyleCommandListsAndSetsSessionPreference(t *testing.T) {
+	// No arg opens the editor; Esc cancels without starting a run or adding a
+	// transcript line.
 	m := newModel(context.Background(), Options{})
 	m.input.SetValue("/style")
-
 	updated, cmd := m.Update(testKey(tea.KeyEnter))
 	next := updated.(model)
-
 	if cmd != nil {
 		t.Fatal("expected /style to be handled without starting an agent run")
 	}
-	if !transcriptContains(next.transcript, "active style: concise") || !transcriptContains(next.transcript, "explanatory") {
+	if next.styleEditor == nil {
+		t.Fatal("no-arg /style should open the style editor")
+	}
+	updated, _ = next.Update(testKey(tea.KeyEsc))
+	next = updated.(model)
+	if next.styleEditor != nil {
+		t.Fatal("Esc should cancel the style editor")
+	}
+
+	// /style show lists the session style and available enums.
+	next.input.SetValue("/style show")
+	updated, cmd = next.Update(testKey(tea.KeyEnter))
+	next = updated.(model)
+	if cmd != nil {
+		t.Fatal("expected /style show to be handled without starting an agent run")
+	}
+	if !transcriptContains(next.transcript, "session style: concise") || !transcriptContains(next.transcript, "explanatory") {
 		t.Fatalf("expected style list transcript, got %#v", next.transcript)
 	}
 
@@ -164,6 +182,75 @@ func TestStyleCommandListsAndSetsSessionPreference(t *testing.T) {
 	}
 	if !transcriptContains(next.transcript, "active style: explanatory") {
 		t.Fatalf("expected style switch transcript, got %#v", next.transcript)
+	}
+}
+
+func TestStyleEditorOpensSavesAndPersists(t *testing.T) {
+	root := t.TempDir()
+	cfgPath := filepath.Join(root, "kajicode", "config.json")
+	m := newModel(context.Background(), Options{UserConfigPath: cfgPath})
+	m, _ = m.handleStyleCommand("") // no arg opens the editor
+	if m.styleEditor == nil {
+		t.Fatal("expected /style (no arg) to open the editor")
+	}
+
+	expectedBody := "Talk like a friendly engineer: lead with the answer, keep facts exact, drop jargon."
+	m = m.handleStyleEditorPaste(expectedBody)
+	updated, _ := m.saveStyleEditor()
+	m = updated.(model)
+	if m.styleEditor != nil {
+		t.Fatalf("save should close the editor: %#v", m.styleEditor)
+	}
+
+	stylePath := filepath.Join(root, "kajicode", "RESPONSE_STYLE.md")
+	raw, err := os.ReadFile(stylePath)
+	if err != nil {
+		t.Fatalf("read persisted style: %v", err)
+	}
+	if strings.TrimSpace(string(raw)) != expectedBody {
+		t.Fatalf("persisted style = %q", raw)
+	}
+
+	// A fresh model (next session) should still see the persisted style via show.
+	m2 := newModel(context.Background(), Options{UserConfigPath: cfgPath})
+	if got := readPersistedStyle(m2.userStylePath()); got != expectedBody {
+		t.Fatalf("persisted style loaded in new session = %q", got)
+	}
+}
+
+func TestStyleEditorClearRemovesPersistedStyle(t *testing.T) {
+	root := t.TempDir()
+	cfgPath := filepath.Join(root, "kajicode", "config.json")
+	m := newModel(context.Background(), Options{UserConfigPath: cfgPath})
+
+	// Seed a persisted style.
+	m, _ = m.handleStyleCommand("")
+	m = m.handleStyleEditorPaste("some style")
+	updated, _ := m.saveStyleEditor()
+	m = updated.(model)
+
+	updated, text := m.handleStyleCommand("clear")
+	m = updated.(model)
+	if !strings.Contains(text, "Cleared") {
+		t.Fatalf("clear text = %q", text)
+	}
+	if _, err := os.Stat(m.userStylePath()); !os.IsNotExist(err) {
+		t.Fatalf("style file should be removed, stat err = %v", err)
+	}
+}
+
+func TestStyleEditorPasteIsModal(t *testing.T) {
+	root := t.TempDir()
+	m := newModel(context.Background(), Options{UserConfigPath: filepath.Join(root, "kajicode", "config.json")})
+	m.setComposerState(composerState{text: "underlying", cursor: 3})
+	m = m.openStyleEditor()
+
+	m = m.handleStyleEditorPaste("your style here")
+	if got := m.styleEditor.body.text; got != "your style here" {
+		t.Fatalf("style editor body = %q", got)
+	}
+	if got := m.composerValue(); got != "underlying" {
+		t.Fatalf("style editor paste leaked into composer: %q", got)
 	}
 }
 

@@ -251,7 +251,8 @@ func (m model) openRoleModelPicker(role string) (model, tea.Cmd) {
 	m.roleBindTarget = role
 	m.picker = picker
 	m.clearModelPickerLoadState()
-	return m, m.modelPickerDiscoveryCmds()
+	m.modelPickerForceShowAll = false
+	return m, m.bumpModelPickerEpisode()
 }
 
 // handleRolePickerChoice applies a stage-1 /role selection. A role row advances to
