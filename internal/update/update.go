@@ -3,6 +3,7 @@ package update
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -261,12 +262,33 @@ func fetchRelease(ctx context.Context, endpoint string) (release Release, err er
 		}
 	}()
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
-		return Release{}, fmt.Errorf("github release check failed (%s)", response.Status)
+		return Release{}, statusError(response)
 	}
 	if err := json.NewDecoder(response.Body).Decode(&release); err != nil {
 		return Release{}, err
 	}
 	return release, nil
+}
+
+// statusError renders an error for a non-2xx release check response. For a
+// GitHub 403 caused by rate limiting it reads the X-RateLimit-Reset header so
+// the user knows when they can retry instead of seeing a bare "403".
+func statusError(response *http.Response) error {
+	base := fmt.Sprintf("github release check failed (%s)", response.Status)
+	limit := strings.TrimSpace(response.Header.Get("X-RateLimit-Limit"))
+	reset := strings.TrimSpace(response.Header.Get("X-RateLimit-Reset"))
+	if response.StatusCode == http.StatusForbidden && limit != "" && reset != "" {
+		unix, err := strconv.ParseInt(reset, 10, 64)
+		if err != nil || unix <= 0 {
+			return errors.New(base)
+		}
+		next := time.Until(time.Unix(unix, 0)).Round(time.Second)
+		if next < 0 {
+			next = 0
+		}
+		return fmt.Errorf("%s: GitHub API rate limit (limit %s) reached; retry in about %s", base, limit, next)
+	}
+	return errors.New(base)
 }
 
 func fetchDataRelease(endpoint string) (Release, error) {

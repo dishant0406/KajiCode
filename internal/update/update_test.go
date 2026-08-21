@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -368,6 +369,32 @@ func TestCheckReportsHTTPError(t *testing.T) {
 
 	if err == nil || !strings.Contains(err.Error(), "github release check failed") {
 		t.Fatalf("Check error = %v, want HTTP status error", err)
+	}
+}
+
+func TestCheckReportsRateLimitReset(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-RateLimit-Limit", "60")
+		reset := time.Now().Add(90 * time.Second).Unix()
+		w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(reset, 10))
+		http.Error(w, "rate limited", http.StatusForbidden)
+	}))
+	defer server.Close()
+
+	_, err := Check(context.Background(), Options{
+		CurrentVersion: "0.1.0",
+		Endpoint:       server.URL,
+	})
+
+	if err == nil {
+		t.Fatal("Check should report a rate-limit error")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "GitHub API rate limit") {
+		t.Fatalf("Check error = %q, want rate-limit hint", msg)
+	}
+	if !strings.Contains(msg, "retry in about") {
+		t.Fatalf("Check error = %q, want reset time hint", msg)
 	}
 }
 
