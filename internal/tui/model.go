@@ -3645,8 +3645,24 @@ func (m model) workingActivity() string {
 func phaseActivityLabel(phase agent.PhaseEvent) string {
 	switch phase.Kind {
 	case agent.PhaseProviderRequest:
+		// Heartbeat ticks carry live elapsed time ("waiting for model… 45s");
+		// prefer the tick text over the static label so the user sees silence
+		// being counted instead of a frozen word.
+		if phase.Detail != "" {
+			return phase.Detail
+		}
 		return "waiting for model"
+	case agent.PhasePermissionWaiting:
+		if phase.Detail != "" {
+			return phase.Detail
+		}
+		return "waiting for approval"
 	case agent.PhaseStreaming:
+		// Streaming ticks carry elapsed silence since the last output; show
+		// them so a paused generation still looks alive.
+		if phase.Detail != "" {
+			return phase.Detail
+		}
 		return "streaming"
 	case agent.PhaseToolRunning:
 		if phase.Detail != "" {

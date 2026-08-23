@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/dishant0406/KajiCode/internal/config"
 	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
@@ -35,6 +36,13 @@ type Options struct {
 	// independent lookup that could pick a different login (a backend-rejected
 	// mismatch).
 	OAuthLoginKey string
+	// StreamIdleTimeout overrides the per-provider stream idle watchdog (no data
+	// for this long aborts the stream). When 0, each provider falls back to
+	// providerio.ResolveStreamIdleTimeout (KAJICODE_STREAM_IDLE_TIMEOUT env or
+	// providerio.DefaultStreamIdleTimeout). The CLI wires a profile/config value
+	// here so a slow reasoning model can opt into longer silent stretches without
+	// touching environment variables.
+	StreamIdleTimeout time.Duration
 }
 
 // New creates a runtime provider for a resolved provider profile.
@@ -43,6 +51,10 @@ func New(profile config.ProviderProfile, options Options) (kajicoderuntime.Provi
 	if err != nil {
 		return nil, err
 	}
+	// One idle-timeout decision shared by every adapter branch below: an explicit
+	// Options value wins; 0 defers to each provider's ResolveStreamIdleTimeout
+	// (env override or the package default).
+	idleTimeout := options.StreamIdleTimeout
 
 	// The ChatGPT (Codex) catalog requires the Codex-flavored provider: the
 	// Codex backend (chatgpt.com/backend-api/codex) 401s on every request that
@@ -51,7 +63,7 @@ func New(profile config.ProviderProfile, options Options) (kajicoderuntime.Provi
 	// (not the provider kind) so other "openai-compatible" providers keep
 	// using the openai.New path unchanged.
 	if isCodexCatalog(profile, resolved) {
-		return newCodexProvider(profile, resolved, options)
+		return newCodexProvider(profile, resolved, options, idleTimeout)
 	}
 
 	switch resolved.providerKind {
@@ -75,49 +87,53 @@ func New(profile config.ProviderProfile, options Options) (kajicoderuntime.Provi
 			UserAgent:             options.UserAgent,
 			ParseThinkTags:        parseThinkTagsForProfile(profile, resolved),
 			DisablePromptCacheKey: resolved.providerKind == config.ProviderKindOpenAICompatible,
+			StreamIdleTimeout:     idleTimeout,
 		})
 	case config.ProviderKindAnthropic, config.ProviderKindAnthropicCompat:
 		return anthropic.New(anthropic.Options{
-			APIKey:          profile.APIKey,
-			BaseURL:         resolved.baseURL,
-			Model:           resolved.apiModel,
-			AuthHeader:      profile.AuthHeader,
-			AuthScheme:      profile.AuthScheme,
-			AuthHeaderValue: profile.AuthHeaderValue,
-			CustomHeaders:   providerio.CopyHeaders(profile.CustomHeaders),
-			OAuthResolver:   options.OAuthResolver,
-			MaxTokens:       resolved.maxOutputTokens,
-			HTTPClient:      options.HTTPClient,
-			UserAgent:       options.UserAgent,
+			APIKey:            profile.APIKey,
+			BaseURL:           resolved.baseURL,
+			Model:             resolved.apiModel,
+			AuthHeader:        profile.AuthHeader,
+			AuthScheme:        profile.AuthScheme,
+			AuthHeaderValue:   profile.AuthHeaderValue,
+			CustomHeaders:     providerio.CopyHeaders(profile.CustomHeaders),
+			OAuthResolver:     options.OAuthResolver,
+			MaxTokens:         resolved.maxOutputTokens,
+			HTTPClient:        options.HTTPClient,
+			UserAgent:         options.UserAgent,
+			StreamIdleTimeout: idleTimeout,
 		})
 	case config.ProviderKindAzureOpenAI:
 		return azureopenai.New(azureopenai.Options{
-			APIKey:          profile.APIKey,
-			BaseURL:         resolved.baseURL,
-			Model:           resolved.apiModel,
-			AuthHeader:      profile.AuthHeader,
-			AuthScheme:      profile.AuthScheme,
-			AuthHeaderValue: profile.AuthHeaderValue,
-			CustomHeaders:   providerio.CopyHeaders(profile.CustomHeaders),
-			OAuthResolver:   options.OAuthResolver,
-			MaxTokens:       resolved.maxOutputTokens,
-			HTTPClient:      options.HTTPClient,
-			UserAgent:       options.UserAgent,
-			ParseThinkTags:  parseThinkTagsForProfile(profile, resolved),
+			APIKey:            profile.APIKey,
+			BaseURL:           resolved.baseURL,
+			Model:             resolved.apiModel,
+			AuthHeader:        profile.AuthHeader,
+			AuthScheme:        profile.AuthScheme,
+			AuthHeaderValue:   profile.AuthHeaderValue,
+			CustomHeaders:     providerio.CopyHeaders(profile.CustomHeaders),
+			OAuthResolver:     options.OAuthResolver,
+			MaxTokens:         resolved.maxOutputTokens,
+			HTTPClient:        options.HTTPClient,
+			UserAgent:         options.UserAgent,
+			ParseThinkTags:    parseThinkTagsForProfile(profile, resolved),
+			StreamIdleTimeout: idleTimeout,
 		})
 	case config.ProviderKindGoogle:
 		return gemini.New(gemini.Options{
-			APIKey:          profile.APIKey,
-			BaseURL:         resolved.baseURL,
-			Model:           resolved.apiModel,
-			AuthHeader:      profile.AuthHeader,
-			AuthScheme:      profile.AuthScheme,
-			AuthHeaderValue: profile.AuthHeaderValue,
-			CustomHeaders:   providerio.CopyHeaders(profile.CustomHeaders),
-			OAuthResolver:   options.OAuthResolver,
-			MaxTokens:       resolved.maxOutputTokens,
-			HTTPClient:      options.HTTPClient,
-			UserAgent:       options.UserAgent,
+			APIKey:            profile.APIKey,
+			BaseURL:           resolved.baseURL,
+			Model:             resolved.apiModel,
+			AuthHeader:        profile.AuthHeader,
+			AuthScheme:        profile.AuthScheme,
+			AuthHeaderValue:   profile.AuthHeaderValue,
+			CustomHeaders:     providerio.CopyHeaders(profile.CustomHeaders),
+			OAuthResolver:     options.OAuthResolver,
+			MaxTokens:         resolved.maxOutputTokens,
+			HTTPClient:        options.HTTPClient,
+			UserAgent:         options.UserAgent,
+			StreamIdleTimeout: idleTimeout,
 		})
 	default:
 		return nil, fmt.Errorf("unsupported provider kind %q", resolved.providerKind)
@@ -382,7 +398,7 @@ func isCodexCatalog(profile config.ProviderProfile, _ resolvedProfile) bool {
 // key independently here (a second oauth.FirstStored) could, after a transient
 // per-candidate load error or a mid-session `kajicode auth login`, pick a different
 // login than the bearer — a mismatch the backend rejects.
-func newCodexProvider(profile config.ProviderProfile, resolved resolvedProfile, options Options) (kajicoderuntime.Provider, error) {
+func newCodexProvider(profile config.ProviderProfile, resolved resolvedProfile, options Options, idleTimeout time.Duration) (kajicoderuntime.Provider, error) {
 	accountKey := options.OAuthLoginKey
 	resolver := openai.CodexAccountResolver(func(ctx context.Context) (string, bool, error) {
 		account := codexAccountForKey(accountKey)
@@ -393,17 +409,18 @@ func newCodexProvider(profile config.ProviderProfile, resolved resolvedProfile, 
 	})
 	return openai.NewCodexProvider(openai.CodexOptions{
 		Options: openai.Options{
-			BaseURL:         resolved.baseURL,
-			Model:           resolved.apiModel,
-			AuthHeader:      profile.AuthHeader,
-			AuthScheme:      profile.AuthScheme,
-			AuthHeaderValue: profile.AuthHeaderValue,
-			CustomHeaders:   profile.CustomHeaders,
-			OAuthResolver:   options.OAuthResolver,
-			MaxTokens:       resolved.maxOutputTokens,
-			HTTPClient:      options.HTTPClient,
-			UserAgent:       options.UserAgent,
-			ParseThinkTags:  parseThinkTagsForProfile(profile, resolved),
+			BaseURL:           resolved.baseURL,
+			Model:             resolved.apiModel,
+			AuthHeader:        profile.AuthHeader,
+			AuthScheme:        profile.AuthScheme,
+			AuthHeaderValue:   profile.AuthHeaderValue,
+			CustomHeaders:     profile.CustomHeaders,
+			OAuthResolver:     options.OAuthResolver,
+			MaxTokens:         resolved.maxOutputTokens,
+			HTTPClient:        options.HTTPClient,
+			UserAgent:         options.UserAgent,
+			ParseThinkTags:    parseThinkTagsForProfile(profile, resolved),
+			StreamIdleTimeout: idleTimeout,
 		},
 		// The chatgpt catalog overrides this with the Codex baseURL
 		// (https://chatgpt.com/backend-api/codex) when the user does not

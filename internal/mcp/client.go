@@ -65,6 +65,15 @@ type dispatchResult struct {
 
 const stdioCloseWaitTimeout = 500 * time.Millisecond
 
+// defaultToolCallTimeout bounds ONE MCP tool call when the caller's context
+// carries no deadline. The agent loop's ctx is deadline-free, so without this a
+// hung server froze the whole turn silently until the user pressed Esc. 120s
+// stays generous for slow-but-real tools (browser automation, big searches);
+// per-server overrides can raise it later via config if a real workload needs
+// more. A deadline already on ctx (tests, callers with their own budget) wins.
+// Var (not const) so tests can shrink it instead of waiting two minutes.
+var defaultToolCallTimeout = 120 * time.Second
+
 const (
 	// initializeTimeout bounds the MCP handshake so a non-responsive peer fails
 	// fast instead of hanging startup.
@@ -190,7 +199,17 @@ func (client *Client) ListTools(ctx context.Context) ([]RemoteTool, error) {
 
 func (client *Client) CallTool(ctx context.Context, name string, args map[string]any) (CallToolResult, error) {
 	var result CallToolResult
-	if err := client.request(ctx, "tools/call", map[string]any{
+	// Default deadline: a hung MCP server previously waited on ctx forever (the
+	// agent loop's ctx has no deadline), silently freezing the turn. The timeout
+	// returns a readable error the MODEL sees and can react to — the turn is not
+	// killed, only this tool call fails like any other tool error.
+	callCtx := ctx
+	if _, hasDeadline := ctx.Deadline(); !hasDeadline && defaultToolCallTimeout > 0 {
+		var cancel context.CancelFunc
+		callCtx, cancel = context.WithTimeout(ctx, defaultToolCallTimeout)
+		defer cancel()
+	}
+	if err := client.request(callCtx, "tools/call", map[string]any{
 		"name":      name,
 		"arguments": args,
 	}, &result); err != nil {
@@ -285,6 +304,12 @@ func (client *Client) request(ctx context.Context, method string, params any, ta
 		Params: rawParams,
 	}); err != nil {
 		client.removePending(id)
+		// The deadline/cancellation may have fired while the write was stuck
+		// (a full pipe blocks forever). Prefer the caller's ctx error so a
+		// timed-out call surfaces as DeadlineExceeded, not a write error.
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
+		}
 		client.mu.Unlock()
 		return err
 	}

@@ -46,6 +46,13 @@ type ProviderProfile struct {
 	// the /model picker and setup wizard instead of the curated "coding models"
 	// subset. Defaults to false (curated subset with metadata).
 	ShowAllModels *bool `json:"showAllModels,omitempty"`
+	// StreamIdleTimeoutSeconds overrides how long a provider stream may stay
+	// completely silent (no data at all) before it is aborted and retried. 0 or
+	// omitted keeps the built-in default (providerio.DefaultStreamIdleTimeout,
+	// still overridable by KAJICODE_STREAM_IDLE_TIMEOUT). Slow reasoning models
+	// that pause minutes between tokens should raise this instead of disabling
+	// the watchdog.
+	StreamIdleTimeoutSeconds int `json:"streamIdleTimeoutSeconds,omitempty"`
 }
 
 func HasProviderProfile(profile ProviderProfile) bool {
@@ -64,7 +71,8 @@ func HasProviderProfile(profile ProviderProfile) bool {
 		strings.TrimSpace(profile.Model) != "" ||
 		profile.ParseThinkTags != nil ||
 		profile.ShowAllModels != nil ||
-		strings.TrimSpace(profile.Description) != ""
+		strings.TrimSpace(profile.Description) != "" ||
+		profile.StreamIdleTimeoutSeconds != 0
 }
 
 // ShowAllModelsEnabled reports whether a profile opts into listing the full

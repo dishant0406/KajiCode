@@ -141,9 +141,10 @@ func defaultAppDeps() appDeps {
 			// account-header resolver so it never re-selects independently).
 			resolver, loginKey := oauthLoginForProfile(profile)
 			return providers.New(profile, providers.Options{
-				UserAgent:     userAgent(),
-				OAuthResolver: resolver,
-				OAuthLoginKey: loginKey,
+				UserAgent:         userAgent(),
+				OAuthResolver:     resolver,
+				OAuthLoginKey:     loginKey,
+				StreamIdleTimeout: profileStreamIdleTimeout(profile),
 			})
 		},
 		probeProviderHealth:    providerhealth.Probe,

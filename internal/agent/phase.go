@@ -16,6 +16,10 @@ const (
 	PhaseRetrying        PhaseKind = "retrying"
 	PhaseCompacting      PhaseKind = "compacting"
 	PhaseFinalizing      PhaseKind = "finalizing"
+	// PhasePermissionWaiting marks the loop blocked on a permission/approval
+	// decision. Distinct from PhaseProviderRequest so surfaces can show
+	// "waiting for you" instead of "waiting for the model" during approval.
+	PhasePermissionWaiting PhaseKind = "permission_waiting"
 )
 
 // PhaseEvent reports a live agent-loop phase to the caller.

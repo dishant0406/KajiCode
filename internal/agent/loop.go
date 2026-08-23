@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/dishant0406/KajiCode/internal/hooks"
 	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
@@ -522,8 +523,15 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 		// a context-limit / image-rejection / cancellation is NOT retried here —
 		// those fall through to their own handlers below.
 		emitPhase(options, PhaseProviderRequest, "waiting for model")
+		// Silent-wait accounting for THIS generation stretch: the heartbeat makes
+		// waiting visible (OnPhase ticks) and turnSilentStart bounds how long the
+		// retry loops below may keep re-issuing silent streams before surfacing
+		// the timeout error instead of hanging the session.
+		hb := startWaitingHeartbeat(ctx, options, PhaseProviderRequest, "waiting for model")
+		turnSilentStart := time.Now()
 		stream, err := streamWithReconnect(ctx, provider, request, reconnectNoticeFor(options))
 		if err != nil {
+			hb.Stop()
 			if isImageRejectionError(err) {
 				result.Messages = copyMessages(messages)
 				return result, fmt.Errorf("model %s rejected the image: %s. The model may not support image input%s", options.Model, err.Error(), imageRejectHint(options.RoleRouting))
@@ -551,6 +559,7 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 				// reconnect helper so a transient upstream hiccup here doesn't fail the
 				// whole run and re-burn every token (AUDIT-L1).
 				emitPhase(options, PhaseProviderRequest, "waiting for model after compaction")
+				hb.bump(PhaseProviderRequest, "waiting for model after compaction")
 				stream, err = streamWithReconnect(ctx, provider, request, reconnectNoticeFor(options))
 			}
 			if err != nil {
@@ -663,8 +672,10 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 
 		generationSpan := options.Trace.Span(trace.SpanGeneration)
 		emitPhase(options, PhaseStreaming, "streaming model response")
+		hb.bump(PhaseStreaming, "streaming model response")
 		collected := kajicoderuntime.CollectStreamWithOptions(ctx, stream, forwardingOpts)
 		generationSpan.End()
+		hb.Stop()
 		if collected.Error != "" {
 			updated, stop := recoverStreamError(collected)
 			collected = updated
@@ -735,7 +746,7 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 		// exponential backoff, with a user-visible notice per attempt.
 		for attempt := 1; attempt <= maxStreamStallRetries &&
 			isStreamTimeoutError(collected.Error) && !forwardedVisibleText &&
-			collected.Text == ""; attempt++ {
+			collected.Text == "" && turnSilentBudgetRemaining(ctx, turnSilentStart); attempt++ {
 			emitPhase(options, PhaseRetrying, fmt.Sprintf("model stalled; retrying %d/%d", attempt, maxStreamStallRetries))
 			if notify := stallRetryNoticeFor(options); notify != nil {
 				notify(attempt, maxStreamStallRetries)
@@ -757,8 +768,10 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 			}
 			stallGenSpan := options.Trace.Span(trace.SpanGeneration)
 			emitPhase(options, PhaseStreaming, "streaming model response")
+			hb = startWaitingHeartbeat(ctx, options, PhaseStreaming, "streaming model response after stall retry")
 			collected = kajicoderuntime.CollectStreamWithOptions(ctx, retryStream, forwardingOpts)
 			stallGenSpan.End()
+			hb.Stop()
 		}
 		if collected.Error != "" {
 			// Route a reissued stream's non-stall error through the SAME recovery as
@@ -2436,8 +2449,16 @@ func requestPermission(ctx context.Context, request PermissionRequest, options O
 	if options.OnPermissionRequest == nil {
 		return PermissionDecision{Action: PermissionDecisionDeny, Reason: request.Reason}, nil
 	}
+	emitPhase(options, PhasePermissionWaiting, "waiting for approval")
+	// Approval-wait heartbeat: the loop blocks here on the surface's decision,
+	// which can legitimately take minutes. Periodic OnPhase ticks keep the wait
+	// visible (and distinguishable from a network stall) while the prompt row
+	// itself is rendered by the surface.
+	hb := startWaitingHeartbeat(ctx, options, PhasePermissionWaiting, "waiting for approval")
+	defer hb.Stop()
 	permSpan := options.Trace.Span(trace.SpanPermissionWait)
 	decision, err := options.OnPermissionRequest(ctx, request)
+	hb.Stop()
 	permSpan.End()
 	return decision, err
 }
