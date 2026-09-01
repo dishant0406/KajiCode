@@ -717,7 +717,7 @@ func runInteractiveTUIWithSetup(stderr io.Writer, deps appDeps, permissionMode a
 
 	registry := newCoreRegistryScoped(workspaceRoot, scope)
 	registerLocalControlTools(registry, workspaceRoot, resolved.LocalControl)
-	specialistRuntime, err := registerSpecialistTools(registry, workspaceRoot, resolved.Swarm.MaxTeamSize)
+	specialistRuntime, err := registerSpecialistTools(registry, workspaceRoot, resolved.Swarm.MaxTeamSize, resolved.Swarm.SpecialistDepth)
 	if err != nil {
 		return writeAppError(stderr, "failed to initialize specialist tools: "+err.Error(), 1)
 	}
@@ -902,6 +902,9 @@ func runInteractiveTUIWithSetup(stderr io.Writer, deps appDeps, permissionMode a
 			DeferThreshold: resolved.Tools.DeferThreshold,
 			Specialists:    specialistRuntime.specialists,
 			Skills:         pluginActivation.skillInfos(deps.skillsDir(), workspaceRoot),
+			// Background sub-agent completion push: the interactive run learns a
+			// finished task's result on its next turn instead of polling TaskOutput.
+			TaskCompletions: specialistRuntime.specialist,
 		},
 		// LoadSkills backs /skills and direct /<skill-name> invocation in the TUI.
 		// It resolves against the same merged set (default dir + plugin skill
@@ -1096,16 +1099,19 @@ func (r *agentToolRuntime) specialistInfos() []agent.SpecialistInfo {
 	return r.specialists
 }
 
-func registerSpecialistTools(registry *tools.Registry, workspaceRoot string, maxTeamSize int) (*agentToolRuntime, error) {
+func registerSpecialistTools(registry *tools.Registry, workspaceRoot string, maxTeamSize int, specialistDepth int) (*agentToolRuntime, error) {
 	paths, err := specialist.DefaultPaths(workspaceRoot)
 	if err != nil {
 		return nil, err
 	}
-	executor := specialist.Executor{Paths: paths}
+	executor := specialist.Executor{Paths: paths, MaxDepth: specialistDepth}
 	runtime, err := specialist.RegisterTools(registry, executor)
 	if err != nil {
 		return nil, err
 	}
+	// Interactive surfaces deliver finished background-task results to the run;
+	// the headless exec path constructs its own runtime and stays poll-only.
+	runtime.NotifyCompletions(true)
 	// The swarm reuses the same specialist executor to launch each member, so
 	// every member runs under the orchestrator's sandbox + policy. Mailbox state
 	// lives under the workspace so its files fall within the sandbox write rules.
@@ -1136,6 +1142,12 @@ func specialistSummaries(paths specialist.Paths) []agent.SpecialistInfo {
 	for _, manifest := range result.Specialists {
 		name := strings.TrimSpace(manifest.Metadata.Name)
 		if name == "" {
+			continue
+		}
+		// Hidden specialists (and primary-mode reservations) stay spawnable via
+		// Task but stay out of the delegation menu, so utility agents don't tempt
+		// the orchestrator.
+		if manifest.Metadata.Hidden || specialist.NormalizeMode(manifest.Metadata.Mode) == specialist.ModePrimary {
 			continue
 		}
 		summaries = append(summaries, agent.SpecialistInfo{

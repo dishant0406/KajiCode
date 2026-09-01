@@ -170,3 +170,25 @@ func ValidateToolCapabilities(tool Tool) []string {
 	}
 	return ValidateCapabilities(tool.Name(), CapabilitiesOf(tool))
 }
+
+// ArgsCapabilityProvider is the args-aware extension of CapabilityProvider for
+// tools whose effect depends on arguments (the Task tool delegating to a
+// read-only specialist is safe to parallelize; a write-capable one is not).
+// The returned capabilities go through the same normalizeCapabilities gate as
+// static metadata, so only EffectReadOnly can surface ThreadSafe.
+type ArgsCapabilityProvider interface {
+	CapabilitiesForArgs(args map[string]any) ToolCapabilities
+}
+
+// CapabilitiesForArgsOf returns args-aware capabilities when the tool provides
+// them, falling back to static CapabilitiesOf otherwise. Fail-closed: an
+// unparseable-args call yields unknown, non-thread-safe capabilities.
+func CapabilitiesForArgsOf(tool Tool, args map[string]any) ToolCapabilities {
+	if tool == nil {
+		return UnknownCapabilities()
+	}
+	if provider, ok := tool.(ArgsCapabilityProvider); ok {
+		return normalizeCapabilities(provider.CapabilitiesForArgs(args))
+	}
+	return CapabilitiesOf(tool)
+}

@@ -340,7 +340,7 @@ func TestBuildArgsRejectsInvalidInputs(t *testing.T) {
 func TestRunRejectsDepthExceedingMax(t *testing.T) {
 	_, err := (Executor{}).Run(context.Background(), TaskParameters{
 		Prompt: "hi",
-	}, TaskRunOptions{CurrentDepth: maxSpecialistDepth + 1})
+	}, TaskRunOptions{CurrentDepth: DefaultMaxSpecialistDepth + 1})
 	if err == nil || !strings.Contains(err.Error(), "depth") {
 		t.Fatalf("Run error = %v, want depth error", err)
 	}
@@ -362,7 +362,7 @@ func TestRunRejectsDepthAtMax(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := (Executor{}).Run(context.Background(), tc.params, TaskRunOptions{CurrentDepth: maxSpecialistDepth})
+			_, err := (Executor{}).Run(context.Background(), tc.params, TaskRunOptions{CurrentDepth: DefaultMaxSpecialistDepth})
 			if err == nil || !strings.Contains(err.Error(), "depth") {
 				t.Fatalf("Run error = %v, want depth error", err)
 			}
@@ -409,4 +409,50 @@ func containsSequence(values []string, sequence []string) bool {
 		}
 	}
 	return false
+}
+
+func TestBuildArgsForwardsStepsCap(t *testing.T) {
+	executor := Executor{BinaryPath: "/bin/true"}
+	manifest := Manifest{Metadata: Metadata{Name: "looping", Steps: 25}, SystemPrompt: "p", ResolvedTools: []string{"read_file"}}
+	built, err := executor.BuildArgs(BuildArgsInput{Manifest: manifest, Prompt: "do it"})
+	if err != nil {
+		t.Fatalf("BuildArgs: %v", err)
+	}
+	assertArgsContain(t, built.Args, "--max-turns", "25")
+
+	manifest.Metadata.Steps = 0
+	built, err = executor.BuildArgs(BuildArgsInput{Manifest: manifest, Prompt: "do it"})
+	if err != nil {
+		t.Fatalf("BuildArgs no-steps: %v", err)
+	}
+	for i, arg := range built.Args {
+		if arg == "--max-turns" {
+			t.Fatalf("unexpected --max-turns in %v at %d", built.Args, i)
+		}
+	}
+}
+
+func TestExecutorMaxDepthOverride(t *testing.T) {
+	executor := Executor{}
+	if got := executor.maxDepth(); got != DefaultMaxSpecialistDepth {
+		t.Fatalf("default maxDepth = %d, want %d", got, DefaultMaxSpecialistDepth)
+	}
+	capped := Executor{MaxDepth: 2}
+	if got := capped.maxDepth(); got != 2 {
+		t.Fatalf("override maxDepth = %d, want 2", got)
+	}
+	params := TaskParameters{Prompt: "hi"}
+	if _, err := capped.Run(context.Background(), params, TaskRunOptions{CurrentDepth: 2}); err == nil || !strings.Contains(err.Error(), "depth") {
+		t.Fatalf("depth-2 spawn with cap 2 should fail with depth error, got %v", err)
+	}
+}
+
+func assertArgsContain(t *testing.T, args []string, flag string, value string) {
+	t.Helper()
+	for i, arg := range args {
+		if arg == flag && i+1 < len(args) && args[i+1] == value {
+			return
+		}
+	}
+	t.Fatalf("args %v missing %s %s", args, flag, value)
 }

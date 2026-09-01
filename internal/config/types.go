@@ -338,6 +338,11 @@ func (cfg LocalControlDriverConfig) Empty() bool {
 // load / rate-limit pressure) without dropping work.
 type SwarmConfig struct {
 	MaxTeamSize int `json:"maxTeamSize,omitempty"`
+	// SpecialistDepth caps how deeply specialists may nest via the Task tool:
+	// a specialist spawning a specialist counts as one level. 0 uses the built-in
+	// default (8). Lower it to bound runaway delegation chains; raising it is
+	// allowed but each level costs a full child process.
+	SpecialistDepth int `json:"specialistDepth,omitempty"`
 }
 
 type HarnessConfig struct {

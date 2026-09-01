@@ -15,10 +15,29 @@ func FormatList(result LoadResult) string {
 		return strings.Join(lines, "\n")
 	}
 	for _, manifest := range result.Specialists {
-		lines = append(lines, fmt.Sprintf("  %s [%s] - %s", manifest.Metadata.Name, manifest.Location, manifest.Metadata.Description))
+		label := manifest.Metadata.Name
+		if manifest.Metadata.Hidden {
+			// Hidden specialists remain spawnable; the marker keeps `list`
+			// truthful about why they don't appear in delegation prompts.
+			label += " (hidden)"
+		}
+		lines = append(lines, fmt.Sprintf("  %s [%s] - %s", label, manifest.Location, manifest.Metadata.Description))
 		tools := formatTools(manifest)
 		if tools != "" {
 			lines = append(lines, "    tools: "+tools)
+		}
+		if steps := manifest.Metadata.Steps; steps > 0 {
+			lines = append(lines, fmt.Sprintf("    steps: %d", steps))
+		}
+		if manifest.Metadata.Temperature > 0 || manifest.Metadata.TopP > 0 {
+			sampling := []string{}
+			if manifest.Metadata.Temperature > 0 {
+				sampling = append(sampling, fmt.Sprintf("temperature=%g", manifest.Metadata.Temperature))
+			}
+			if manifest.Metadata.TopP > 0 {
+				sampling = append(sampling, fmt.Sprintf("topP=%g", manifest.Metadata.TopP))
+			}
+			lines = append(lines, "    sampling: "+strings.Join(sampling, " "))
 		}
 		if len(manifest.Warnings) > 0 {
 			lines = append(lines, "    warnings: "+strings.Join(manifest.Warnings, "; "))

@@ -108,6 +108,9 @@ func Resolve(options ResolveOptions) (ResolvedConfig, error) {
 	if cfg.Swarm.MaxTeamSize < 0 {
 		return ResolvedConfig{}, fmt.Errorf("invalid swarm.maxTeamSize %d: must be >= 0 (0 uses the default)", cfg.Swarm.MaxTeamSize)
 	}
+	if cfg.Swarm.SpecialistDepth < 0 {
+		return ResolvedConfig{}, fmt.Errorf("invalid swarm.specialistDepth %d: must be >= 0 (0 uses the default)", cfg.Swarm.SpecialistDepth)
+	}
 
 	if network := strings.TrimSpace(cfg.Sandbox.Network); network != "" {
 		switch sandbox.NetworkMode(network) {
@@ -258,6 +261,9 @@ func mergeConfig(dst *FileConfig, src FileConfig) {
 	if src.Swarm.MaxTeamSize != 0 {
 		dst.Swarm.MaxTeamSize = src.Swarm.MaxTeamSize
 	}
+	if src.Swarm.SpecialistDepth != 0 {
+		dst.Swarm.SpecialistDepth = src.Swarm.SpecialistDepth
+	}
 	mergeHarnessConfig(&dst.Harness, src.Harness)
 	mergeLearningConfig(&dst.Learning, src.Learning)
 	if src.Preferences.FavoriteModels != nil {
@@ -339,6 +345,9 @@ func mergeProjectConfig(dst *FileConfig, src FileConfig) error {
 	}
 	if src.Swarm.MaxTeamSize != 0 {
 		dst.Swarm.MaxTeamSize = src.Swarm.MaxTeamSize
+	}
+	if src.Swarm.SpecialistDepth != 0 {
+		dst.Swarm.SpecialistDepth = src.Swarm.SpecialistDepth
 	}
 	if err := mergeProjectHarnessConfig(&dst.Harness, src.Harness); err != nil {
 		return err

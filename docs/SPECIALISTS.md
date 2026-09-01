@@ -57,10 +57,39 @@ Supported frontmatter keys:
 | --- | --- |
 | `name` | Lowercase specialist id. Use letters, numbers, and dashes. |
 | `description` | Short summary shown in listings and task metadata. |
-| `extends` | Optional base specialist to inherit prompt/model/tools from. |
+| `extends` | Optional base specialist to inherit prompt/model/tools/sampling from. |
 | `model` | Optional model override. Empty means inherit the parent model. |
 | `reasoningEffort` | Optional reasoning effort override. |
 | `tools` | Array of tool categories or tool ids. |
+| `mode` | `all` (default), `subagent`, or `primary`. Primary-mode specialists are reserved names: they stay spawnable but never appear in delegation prompts. |
+| `hidden` | Boolean. Keeps the specialist spawnable via Task but removes it from the orchestrator's delegation prompt; `specialist list` marks it `(hidden)`. |
+| `temperature` | Sampling override forwarded to the child run (0–2). |
+| `topP` | Sampling override forwarded to the child run (0–1). |
+| `steps` | Iteration cap for the child run, forcing a wrap-up instead of an unbounded tool loop (1–200). `maxSteps` is accepted as a deprecated alias — set only one. |
+| `disable` | Boolean. A project/user manifest with `disable: true` suppresses a lower-precedence specialist of the same name entirely. |
+
+### Background completion push
+
+When a background Task finishes, the interactive session delivers its final
+summary to the running agent automatically as a `<task_result>` nudge on the
+next turn — no `TaskOutput` polling loop required. `TaskOutput` still works for
+manual checks. Headless one-shot runs keep the poll-only behavior.
+
+### Parallel delegations
+
+Fresh Task calls to read-only specialists run concurrently with other
+read-only tools in the same turn (capped at 4 concurrent child processes), so a
+turn may launch several explorers at once. Write-capable specialists, resume
+calls, and background launches stay sequential by design.
+
+### Nesting depth
+
+Specialist nesting via Task is capped by `swarm.specialistDepth` in
+`kajicode.json` (default 8). Lower it to bound runaway delegation chains:
+
+```json
+{ "swarm": { "specialistDepth": 3 } }
+```
 
 If the body is empty and `description` is set, KajiCode uses the description as the
 system prompt and reports a warning in `kajicode specialist show`.

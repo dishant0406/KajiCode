@@ -359,7 +359,13 @@ Extension loading happens before `agent.Run`:
   tool resolves loadable skills across the boot roots plus the run's discovered
   project roots.
 - Specialists and swarm members expose sub-agent tools through
-  `internal/specialist` and `internal/swarm`.
+  `internal/specialist` and `internal/swarm`. Fresh Task calls to read-only
+  specialists join the parallel read batch (args-aware capabilities, capped at
+  4 concurrent children); finished background tasks are pushed back into the
+  parent run as `<task_result>` nudges instead of being polled; manifest
+  metadata supports mode/hidden/temperature/topP/steps/disable; the nesting cap
+  is configurable via `swarm.specialistDepth`; and the read-only tool set is
+  derived from one category source so it cannot drift.
 - User commands are file-backed commands surfaced by CLI/TUI command layers.
 
 New extension types should attach through the existing registry/prompt/hook

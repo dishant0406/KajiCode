@@ -398,6 +398,16 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 				Content: nudge,
 			})
 		}
+		// Deliver finished background sub-agent results (TaskCompletions): each
+		// block is a rendered <task_result> the model can act on without having
+		// polled TaskOutput. Injected before compaction like the diagnostics
+		// nudge; nil source (headless default) injects nothing.
+		for _, block := range drainTaskCompletions(options.TaskCompletions) {
+			messages = append(messages, kajicoderuntime.Message{
+				Role:    kajicoderuntime.MessageRoleUser,
+				Content: block,
+			})
+		}
 		// Inject project guide files discovered wherever the previous turn's tools
 		// actually resolved directories (a cd'd command cwd, a subdirectory file).
 		// Appended after the diagnostics nudge, before compaction, so they ride the

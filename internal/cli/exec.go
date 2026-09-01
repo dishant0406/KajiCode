@@ -234,11 +234,13 @@ func runExec(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) in
 		// overrides, so an empty-overrides resolve yields the same value; a resolve
 		// error falls back to the swarm's built-in default (0 => 8).
 		maxTeamSize := 0
+		specialistDepth := 0
 		if swarmCfg, cfgErr := deps.resolveConfig(workspaceRoot, config.Overrides{}); cfgErr == nil {
 			maxTeamSize = swarmCfg.Swarm.MaxTeamSize
+			specialistDepth = swarmCfg.Swarm.SpecialistDepth
 		}
 		var err error
-		specialistRuntime, err = registerSpecialistTools(registry, workspaceRoot, maxTeamSize)
+		specialistRuntime, err = registerSpecialistTools(registry, workspaceRoot, maxTeamSize, specialistDepth)
 		if err != nil {
 			return writeExecProviderError(stdout, stderr, options.outputFormat, "specialist_error", err.Error())
 		}

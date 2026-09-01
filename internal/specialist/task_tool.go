@@ -66,6 +66,43 @@ func (tool *TaskTool) Safety() tools.Safety {
 	}
 }
 
+// CapabilitiesForArgs implements tools.ArgsCapabilityProvider so the agent
+// loop's parallel batcher can classify THIS call by the target specialist's
+// resolved effect instead of the tool's static shell classification. A fresh
+// delegation to a read-only specialist is a pure workspace read: EffectReadOnly
+// + ThreadSafe makes it eligible for the concurrent read-ahead batch (multiple
+// explorer/code-review delegations in one turn now actually run in parallel).
+// Resume re-enters an existing session whose current toolset may differ from the
+// manifest, and background launches mutate background-manager state, so both
+// fall back to the fail-closed unknown default (sequential).
+func (tool *TaskTool) CapabilitiesForArgs(args map[string]any) tools.ToolCapabilities {
+	params, err := parseTaskParameters(args)
+	if err != nil {
+		return tools.UnknownCapabilities()
+	}
+	if params.Resume != "" || params.RunInBackground {
+		return tools.UnknownCapabilities()
+	}
+	if params.Name == "" {
+		// parseTaskParameters requires name or resume, so this mirrors the run
+		// path failing; fail closed either way.
+		return tools.UnknownCapabilities()
+	}
+	if !tool.executor.IsReadOnlySpecialist(params.Name) {
+		return tools.UnknownCapabilities()
+	}
+	return tools.ToolCapabilities{
+		Effect:     tools.EffectReadOnly,
+		ThreadSafe: true,
+		ResourceKeys: func(args map[string]any) []string {
+			// One conflict key per specialist name: two concurrent delegations to
+			// the SAME read-only specialist still serialize (they duplicate work on
+			// identical inputs), while different specialists run side by side.
+			return []string{"specialist:" + params.Name}
+		},
+	}
+}
+
 // PermissionForArgs auto-approves delegating to a READ-ONLY specialist — it can
 // only read the workspace, so spawning it is harmless — while keeping the static
 // prompt for write-capable specialists (e.g. worker) and for resume. This lets

@@ -438,3 +438,215 @@ func contains(values []string, want string) bool {
 	}
 	return false
 }
+
+func TestParseMarkdownExtendedMetadata(t *testing.T) {
+	content := `---
+name: sampler
+description: Sampling overrides
+mode: subagent
+hidden: true
+temperature: 0.4
+topP: 0.9
+steps: 12
+---
+Body prompt.
+`
+	manifest, err := ParseMarkdown(content)
+	if err != nil {
+		t.Fatalf("ParseMarkdown: %v", err)
+	}
+	if manifest.Metadata.Mode != ModeSubagent {
+		t.Errorf("Mode = %q, want %q", manifest.Metadata.Mode, ModeSubagent)
+	}
+	if !manifest.Metadata.Hidden {
+		t.Error("Hidden = false, want true")
+	}
+	if manifest.Metadata.Temperature != 0.4 {
+		t.Errorf("Temperature = %v, want 0.4", manifest.Metadata.Temperature)
+	}
+	if manifest.Metadata.TopP != 0.9 {
+		t.Errorf("TopP = %v, want 0.9", manifest.Metadata.TopP)
+	}
+	if manifest.Metadata.Steps != 12 {
+		t.Errorf("Steps = %d, want 12", manifest.Metadata.Steps)
+	}
+}
+
+func TestParseMarkdownMaxStepsDeprecated(t *testing.T) {
+	manifest, err := ParseMarkdown("---\nname: legacy\ndescription: d\nmaxSteps: 7\n---\nbody")
+	if err != nil {
+		t.Fatalf("ParseMarkdown maxSteps: %v", err)
+	}
+	if manifest.Metadata.Steps != 7 {
+		t.Errorf("Steps = %d, want 7 (maxSteps normalized)", manifest.Metadata.Steps)
+	}
+	if _, err := ParseMarkdown("---\nname: both\ndescription: d\nsteps: 3\nmaxSteps: 5\n---\nbody"); err == nil {
+		t.Fatal("steps+maxSteps together should be rejected")
+	}
+}
+
+func TestParseMarkdownValidationRanges(t *testing.T) {
+	cases := []struct {
+		name    string
+		front   string
+		wantErr string
+	}{
+		{"bad mode", "mode: chief", "unknown mode"},
+		{"bad temperature", "temperature: 3", "between 0 and 2"},
+		{"negative temperature", "temperature: -1", "must be a number or between"},
+		{"bad topP", "topP: 1.5", "between 0 and 1"},
+		{"zero steps", "steps: 0", "positive integer"},
+		{"huge steps", "steps: 5000", "exceeds the maximum"},
+		{"string steps ok", "steps: \"9\"", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := ParseMarkdown("---\nname: ranged\ndescription: d\n" + tc.front + "\n---\nbody")
+			if tc.wantErr == "" {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("expected error containing %q", tc.wantErr)
+			}
+			// The negative-temperature case fails in manifestFromRaw before
+			// Validate; both messages are acceptable, so match loosely.
+			if !strings.Contains(err.Error(), "temperature") && !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("error %q does not mention %q", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestMergeByNameDisableSuppressesBuiltin(t *testing.T) {
+	builtin := Manifest{Metadata: Metadata{Name: "worker", Description: "builtin"}}
+	override := Manifest{Metadata: Metadata{Name: "worker", Description: "gone", Disable: true}}
+	merged := mergeByName([]Manifest{builtin, override})
+	if len(merged) != 0 {
+		t.Fatalf("disabled specialist still present: %+v", merged)
+	}
+
+	reenabled := Manifest{Metadata: Metadata{Name: "worker", Description: "back"}}
+	merged = mergeByName([]Manifest{builtin, override, reenabled})
+	if len(merged) != 1 || merged[0].Metadata.Description != "back" {
+		t.Fatalf("re-enabled specialist not restored: %+v", merged)
+	}
+
+	disableLast := Manifest{Metadata: Metadata{Name: "worker", Disable: true}}
+	merged = mergeByName([]Manifest{builtin, reenabled, disableLast})
+	if len(merged) != 0 {
+		t.Fatalf("final disable not honored: %+v", merged)
+	}
+}
+
+func TestExtendsInheritsSamplingFields(t *testing.T) {
+	base := Manifest{
+		Metadata:     Metadata{Name: "base", Description: "base", Temperature: 0.2, TopP: 0.5, Steps: 30},
+		SystemPrompt: "base prompt",
+	}
+	child := Manifest{
+		Metadata:     Metadata{Name: "child", Description: "", Extends: "base", Steps: 10},
+		SystemPrompt: "",
+	}
+	byName := map[string]Manifest{"base": base, "child": child}
+	resolved, err := resolveManifestExtends("child", byName, map[string]Manifest{}, map[string]bool{})
+	if err != nil {
+		t.Fatalf("resolveManifestExtends: %v", err)
+	}
+	if resolved.Metadata.Temperature != 0.2 || resolved.Metadata.TopP != 0.5 {
+		t.Errorf("sampling fields not inherited: temp=%v topP=%v", resolved.Metadata.Temperature, resolved.Metadata.TopP)
+	}
+	if resolved.Metadata.Steps != 10 {
+		t.Errorf("explicit child Steps overridden: %d, want 10", resolved.Metadata.Steps)
+	}
+	if resolved.Metadata.Description != "base" {
+		t.Errorf("Description not inherited: %q", resolved.Metadata.Description)
+	}
+}
+
+func TestNormalizeMode(t *testing.T) {
+	if NormalizeMode("") != ModeAll {
+		t.Error("empty mode should normalize to all")
+	}
+	if NormalizeMode(ModePrimary) != ModePrimary {
+		t.Error("primary should stay primary")
+	}
+}
+
+func TestReadOnlyToolsDerivedFromCategory(t *testing.T) {
+	safe := readOnlySpecialistTools()
+	if len(safe) == 0 {
+		t.Fatal("derived read-only set is empty")
+	}
+	// Every tool in the category must appear in the derived set.
+	for _, tool := range toolCategories["read-only"] {
+		if !safe[tool] {
+			t.Errorf("category tool %q missing from derived set", tool)
+		}
+	}
+	// The set must NOT contain any tool that only exists in mutator categories —
+	// edit/execute are supersets that also carry the read tools, so only the
+	// tools unique to them are genuine mutators.
+	mutatorOnly := map[string]bool{}
+	for _, category := range []string{"edit", "execute"} {
+		for _, tool := range toolCategories[category] {
+			mutatorOnly[tool] = true
+		}
+	}
+	for _, tool := range toolCategories["read-only"] {
+		delete(mutatorOnly, tool)
+	}
+	for tool := range mutatorOnly {
+		if safe[tool] {
+			t.Errorf("mutator %q leaked into the derived read-only set", tool)
+		}
+	}
+}
+
+func TestManifestIsReadOnlyRejectsMixedToolsets(t *testing.T) {
+	readOnly, err := ResolveTools([]string{"read-only"})
+	if err != nil {
+		t.Fatalf("ResolveTools read-only: %v", err)
+	}
+	mixed, err := ResolveTools([]string{"read-only", "edit"})
+	if err != nil {
+		t.Fatalf("ResolveTools mixed: %v", err)
+	}
+	if !manifestIsReadOnly(Manifest{ResolvedTools: readOnly}) {
+		t.Error("pure read-only manifest should classify as read-only")
+	}
+	if manifestIsReadOnly(Manifest{ResolvedTools: mixed}) {
+		t.Error("mixed manifest must not classify as read-only")
+	}
+	if manifestIsReadOnly(Manifest{}) {
+		t.Error("empty resolved tools must not classify as read-only")
+	}
+}
+
+func TestFormatListShowsHiddenAndSampling(t *testing.T) {
+	result := LoadResult{Specialists: []Manifest{
+		{
+			Metadata:      Metadata{Name: "plain", Description: "ordinary"},
+			Location:      LocationBuiltin,
+			ResolvedTools: []string{"read_file"},
+		},
+		{
+			Metadata:      Metadata{Name: "tuned", Description: "tuned child", Hidden: true, Steps: 9, Temperature: 0.3, TopP: 0.8},
+			Location:      LocationProject,
+			FilePath:      "/tmp/tuned.md",
+			ResolvedTools: []string{"read_file"},
+		},
+	}}
+	out := FormatList(result)
+	if !strings.Contains(out, "plain [builtin]") {
+		t.Errorf("list missing plain entry:\n%s", out)
+	}
+	if !strings.Contains(out, "tuned (hidden) [project]") {
+		t.Errorf("hidden marker missing:\n%s", out)
+	}
+	if !strings.Contains(out, "steps: 9") || !strings.Contains(out, "temperature=0.3") || !strings.Contains(out, "topP=0.8") {
+		t.Errorf("sampling/steps lines missing:\n%s", out)
+	}
+}

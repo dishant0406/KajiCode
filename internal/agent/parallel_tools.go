@@ -31,6 +31,11 @@ import (
 // maxParallelReadTools bounds concurrent read-only tool executions in a turn.
 const maxParallelReadTools = 8
 
+// maxParallelTaskTools bounds concurrent read-only Task (sub-agent) calls
+// within a batch. Each Task is a whole child process (CPU/memory heavy), far
+// costlier than an in-process read, so it gets a tighter cap than plain reads.
+const maxParallelTaskTools = 4
+
 // precomputedToolResult is one parallel read-ahead execution, keyed back to
 // its batch index by the caller.
 type precomputedToolResult struct {
@@ -51,13 +56,18 @@ func parallelSafeToolCall(registry *tools.Registry, call ToolCall, options Optio
 	if !found {
 		return false
 	}
-	caps := tools.CapabilitiesOf(tool)
-	// Fail-closed: only audited concurrent-safe pure reads.
-	if caps.Effect != tools.EffectReadOnly || !caps.ThreadSafe {
-		return false
-	}
 	args, ok := decodeCallArgs(call)
 	if !ok {
+		return false
+	}
+	// Args-aware lookup: for most tools this equals the static capabilities; for
+	// the Task tool it classifies by the TARGET specialist's resolved effect, so a
+	// fresh delegation to a read-only specialist (explorer, code-review) becomes
+	// batch-eligible while write-capable ones stay sequential. Fail-closed on
+	// malformed args via CapabilitiesForArgsOf's unknown default.
+	caps := tools.CapabilitiesForArgsOf(tool, args)
+	// Fail-closed: only audited concurrent-safe pure reads.
+	if caps.Effect != tools.EffectReadOnly || !caps.ThreadSafe {
 		return false
 	}
 	return effectivePermission(tool, args) == tools.PermissionAllow
@@ -77,18 +87,20 @@ func decodeCallArgs(call ToolCall) (map[string]any, bool) {
 }
 
 // resourceKeysForCall returns the conflict keys for a call, or nil when the
-// tool has no ResourceKeys function / no keys for these args.
+// tool has no ResourceKeys function / no keys for these args. It resolves
+// capabilities through the args-aware path so argument-dependent tools (Task)
+// contribute their per-target conflict keys.
 func resourceKeysForCall(registry *tools.Registry, call ToolCall) []string {
 	tool, found := registry.Get(call.Name)
 	if !found {
 		return nil
 	}
-	caps := tools.CapabilitiesOf(tool)
-	if caps.ResourceKeys == nil {
-		return nil
-	}
 	args, ok := decodeCallArgs(call)
 	if !ok {
+		return nil
+	}
+	caps := tools.CapabilitiesForArgsOf(tool, args)
+	if caps.ResourceKeys == nil {
 		return nil
 	}
 	return caps.ResourceKeys(args)
@@ -181,6 +193,11 @@ func executeParallelReadBatch(ctx context.Context, registry *tools.Registry, cal
 
 	results := make([]precomputedToolResult, end-start)
 	semaphore := make(chan struct{}, maxParallelReadTools)
+	// Task calls get their own tighter gate: they are already inside the
+	// read-only-safe window, but each one spawns a child process, so cap them
+	// below the plain-read concurrency. A Task slot also holds a read slot, so a
+	// mixed batch can never exceed maxParallelReadTools processes total.
+	taskSemaphore := make(chan struct{}, maxParallelTaskTools)
 	var waitGroup sync.WaitGroup
 	for index := start; index < end; index++ {
 		waitGroup.Add(1)
@@ -188,6 +205,10 @@ func executeParallelReadBatch(ctx context.Context, registry *tools.Registry, cal
 			defer waitGroup.Done()
 			semaphore <- struct{}{}
 			defer func() { <-semaphore }()
+			if calls[index].Name == "Task" {
+				taskSemaphore <- struct{}{}
+				defer func() { <-taskSemaphore }()
+			}
 			result, abortErr := executeToolCall(ctx, registry, calls[index], permissionMode, batchOptions)
 			results[index-start] = precomputedToolResult{result: result, abortErr: abortErr}
 		}(index)

@@ -237,6 +237,15 @@ type SpecialistInfo struct {
 	WhenToUse string
 }
 
+// TaskCompletionSource delivers finished background sub-agent results to the
+// running loop. The specialist runtime implements it; the loop drains once per
+// turn and injects each block as a user-role message (async-diagnostics style),
+// so the model never polls TaskOutput to notice a finished task. Implementations
+// must be safe for concurrent use with the background exit callbacks.
+type TaskCompletionSource interface {
+	DrainCompletedTasks() []string
+}
+
 // SkillInfo is a one-line summary of a reusable, on-demand skill (its name and
 // frontmatter description) surfaced to the system prompt so the model can invoke
 // the right skill with the skill tool on the first try instead of guessing a name
@@ -443,6 +452,14 @@ type Options struct {
 	// a ≥300ms debounce, 10s cap). Build one with NewFileDiagnostics. nil
 	// disables post-edit diagnostics.
 	FileDiagnostics func(ctx context.Context, absPath string) string
+
+	// TaskCompletions, when set, lets the loop deliver finished background
+	// sub-agent results without the model polling TaskOutput. DrainCompletedTasks
+	// returns rendered nudge blocks for tasks that exited since the previous
+	// call (empty when none); the loop injects them as user-role messages before
+	// the next request, exactly like async post-edit diagnostics. nil (headless
+	// one-shot default) disables delivery — TaskOutput stays available there.
+	TaskCompletions TaskCompletionSource
 
 	// RequireCompletionSignal gates run completion for HEADLESS exec. Without it,
 	// any assistant turn that produces text but no tool call is accepted as the

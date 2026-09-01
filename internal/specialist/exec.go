@@ -25,7 +25,11 @@ import (
 const (
 	sessionTagSpecialist     = "specialist"
 	promptFileThresholdBytes = 4 * 1024
-	maxSpecialistDepth       = 8 // hard cap to prevent infinite recursion/resource exhaustion via Task
+	// DefaultMaxSpecialistDepth is the nesting cap when the operator has not
+	// configured one (swarm.specialistDepth). It exists to prevent infinite
+	// recursion/resource exhaustion via Task; config may lower it (or raise it)
+	// per workspace.
+	DefaultMaxSpecialistDepth = 8
 )
 
 const SessionTagSpecialist = sessionTagSpecialist
@@ -38,6 +42,10 @@ type LaunchBackgroundFunc func(binaryPath string, args []string, outputFile stri
 type BackgroundManagerFunc func() (*background.Manager, error)
 
 type Executor struct {
+	// MaxDepth, when > 0, overrides DefaultMaxSpecialistDepth as the nesting cap
+	// enforced in Run. 0/negative keeps the default, so zero-value Executors keep
+	// the historical behavior.
+	MaxDepth              int
 	NewSessionID          NewSessionIDFunc
 	WritePromptFile       WritePromptFileFunc
 	PromptFileMaxSize     int
@@ -160,19 +168,18 @@ func memberAwareAutonomy(permissionMode string, member bool) string {
 // to this mode.
 const permissionModeUnsafe = "unsafe"
 
-// readOnlySpecialistTools are the tools a "safe" specialist may hold — pure reads
-// plus planning. A specialist whose resolved tools are ALL in this set cannot
-// modify the workspace or run commands, so spawning it is harmless and the Task
-// tool auto-approves it (no permission prompt).
-var readOnlySpecialistTools = map[string]bool{
-	"read_file":          true,
-	"read_minified_file": true,
-	"list_directory":     true,
-	"grep":               true,
-	"glob":               true,
-	"lsp_navigate":       true,
-	"skill":              true,
-	"update_plan":        true,
+// readOnlySpecialistTools derives the "safe" tool set from the read-only
+// category — the single source of truth in manifest.go. A specialist whose
+// resolved tools are ALL in this set cannot modify the workspace or run
+// commands, so spawning it is harmless and the Task tool auto-approves it (no
+// permission prompt). Deriving instead of hand-copying the list removes the
+// drift risk when the category gains tools.
+func readOnlySpecialistTools() map[string]bool {
+	tools := map[string]bool{}
+	for _, tool := range toolCategories["read-only"] {
+		tools[tool] = true
+	}
+	return tools
 }
 
 // IsReadOnlySpecialist reports whether the named specialist resolves to a
@@ -190,8 +197,9 @@ func manifestIsReadOnly(manifest Manifest) bool {
 	if len(manifest.ResolvedTools) == 0 {
 		return false
 	}
+	safe := readOnlySpecialistTools()
 	for _, tool := range manifest.ResolvedTools {
-		if !readOnlySpecialistTools[tool] {
+		if !safe[tool] {
 			return false
 		}
 	}
@@ -225,8 +233,9 @@ func (executor Executor) Run(ctx context.Context, params TaskParameters, options
 	// parent already AT the cap must still be rejected here rather than being
 	// allowed to launch one more level before the child's own next call trips
 	// the guard.
-	if options.CurrentDepth >= maxSpecialistDepth {
-		return ExecResult{}, fmt.Errorf("spawning a specialist at depth %d would exceed maximum nesting depth %d", options.CurrentDepth+1, maxSpecialistDepth)
+	maxDepth := executor.maxDepth()
+	if options.CurrentDepth >= maxDepth {
+		return ExecResult{}, fmt.Errorf("spawning a specialist at depth %d would exceed maximum nesting depth %d", options.CurrentDepth+1, maxDepth)
 	}
 	if strings.TrimSpace(params.Prompt) == "" {
 		return ExecResult{}, fmt.Errorf("specialist prompt is required")
@@ -238,6 +247,15 @@ func (executor Executor) Run(ctx context.Context, params TaskParameters, options
 		return executor.runResume(ctx, params, options)
 	}
 	return executor.runFresh(ctx, params, options)
+}
+
+// maxDepth resolves the effective nesting cap: an explicit positive override
+// wins; anything else falls back to the built-in default.
+func (executor Executor) maxDepth() int {
+	if executor.MaxDepth > 0 {
+		return executor.MaxDepth
+	}
+	return DefaultMaxSpecialistDepth
 }
 
 func (executor Executor) BuildArgs(input BuildArgsInput) (BuildArgsResult, error) {
@@ -264,6 +282,11 @@ func (executor Executor) BuildArgs(input BuildArgsInput) (BuildArgsResult, error
 	args := []string{"exec", "--init-session-id", sessionID}
 	args = append(args, promptArgs...)
 	args = appendModelArgs(args, input.Manifest, input.ParentModel, input.ParentReasoningEffort)
+	if steps := input.Manifest.Metadata.Steps; steps > 0 {
+		// Per-specialist iteration cap: forces the child to wrap up with a final
+		// text answer instead of looping on tools (opencode's agent "steps").
+		args = append(args, "--max-turns", strconv.Itoa(steps))
+	}
 	args = append(args, "--auto", memberAwareAutonomy(input.PermissionMode, input.MemberAutonomy), "--output-format", "stream-json")
 	toolAllowlist, err := resolvedToolAllowlist(input.Manifest)
 	if err != nil {
@@ -316,6 +339,9 @@ func (executor Executor) BuildResumeArgs(input BuildResumeArgsInput) (BuildArgsR
 	}
 	args := []string{"exec", "--resume", sessionID}
 	args = append(args, promptArgs...)
+	if steps := input.Manifest.Metadata.Steps; steps > 0 {
+		args = append(args, "--max-turns", strconv.Itoa(steps))
+	}
 	args = append(args, "--auto", specialistAutonomy(input.PermissionMode), "--output-format", "stream-json")
 	toolAllowlist, err := resolvedToolAllowlist(input.Manifest)
 	if err != nil {
@@ -476,6 +502,17 @@ func (executor Executor) runBackground(ctx context.Context, built BuildArgsResul
 				summary, _ = summarizeTaskData(string(data), task.ExitCode)
 			}
 			executor.recordBackgroundTaskAccounting(task, summary)
+			// Queue the finished child's summary so the parent run delivers it as
+			// a <task_result> nudge on its next turn (no polling). Disabled
+			// collectors (headless runs) drop the push inside.
+			executor.BackgroundRuntime.recordBackgroundExit(
+				built.SessionID,
+				manifest.Metadata.Name,
+				params.Description,
+				status,
+				task.ExitCode,
+				summary.Events,
+			)
 		}
 		executor.cleanupBackgroundPromptFile(built.SessionID, built.PromptFile)
 	})

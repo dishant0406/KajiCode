@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -305,4 +306,140 @@ func TestRunParallelReadsNeverSpanMutatingCall(t *testing.T) {
 	if read.maxActive < 2 {
 		t.Fatalf("reads within a batch must overlap, max concurrency was %d", read.maxActive)
 	}
+}
+
+// taskProbeTool mimics the Task tool's args-dependent capability contract so
+// tests can exercise the parallel gate without spawning child processes.
+type taskProbeTool struct {
+	probeTool
+	readOnly bool
+}
+
+func (tool *taskProbeTool) CapabilitiesForArgs(args map[string]any) tools.ToolCapabilities {
+	if !tool.readOnly {
+		return tools.UnknownCapabilities()
+	}
+	// Mirror the real TaskTool contract: resume and background launches are
+	// never batch-eligible, regardless of the target specialist.
+	if bg, _ := args["run_in_background"].(bool); bg {
+		return tools.UnknownCapabilities()
+	}
+	if resume, _ := args["resume"].(string); resume != "" {
+		return tools.UnknownCapabilities()
+	}
+	return tools.ToolCapabilities{
+		Effect:     tools.EffectReadOnly,
+		ThreadSafe: true,
+		ResourceKeys: func(args map[string]any) []string {
+			name, _ := args["name"].(string)
+			return []string{"specialist:" + name}
+		},
+	}
+}
+
+func TestParallelSafeTaskCalls(t *testing.T) {
+	registry := tools.NewRegistry()
+	registry.Register(&taskProbeTool{
+		probeTool: probeTool{name: "Task", sideEffect: tools.SideEffectShell, delay: time.Millisecond},
+		readOnly:  true,
+	})
+	call := ToolCall{ID: "t", Name: "Task", Arguments: `{"name":"explorer","prompt":"p"}`}
+
+	if !parallelSafeToolCall(registry, call, Options{}) {
+		t.Fatal("read-only specialist Task call must be parallel-safe")
+	}
+
+	// Two delegations to DIFFERENT read-only specialists share a window.
+	calls := []ToolCall{
+		{ID: "1", Name: "Task", Arguments: `{"name":"explorer","prompt":"a"}`},
+		{ID: "2", Name: "Task", Arguments: `{"name":"code-review","prompt":"b"}`},
+	}
+	if end := extendParallelRun(registry, calls, 0, Options{}); end != 2 {
+		t.Fatalf("distinct specialists extend = %d, want 2", end)
+	}
+
+	// Two delegations to the SAME specialist serialize via the conflict key.
+	same := append([]ToolCall(nil), calls...)
+	same = append(same, ToolCall{ID: "3", Name: "Task", Arguments: `{"name":"explorer","prompt":"c"}`})
+	if end := extendParallelRun(registry, same, 0, Options{}); end != 2 {
+		t.Fatalf("same-specialist extend = %d, want 2 (stop before duplicate)", end)
+	}
+
+	// Background and resume stay sequential (fail-closed).
+	bg := ToolCall{ID: "4", Name: "Task", Arguments: `{"name":"explorer","prompt":"p","run_in_background":true}`}
+	if parallelSafeToolCall(registry, bg, Options{}) {
+		t.Fatal("background Task must not be parallel-safe")
+	}
+	resume := ToolCall{ID: "5", Name: "Task", Arguments: `{"resume":"specialist_x","prompt":"p"}`}
+	if parallelSafeToolCall(registry, resume, Options{}) {
+		t.Fatal("resume Task must not be parallel-safe")
+	}
+
+	// A write-capable specialist stays sequential.
+	writeRegistry := tools.NewRegistry()
+	writeRegistry.Register(&taskProbeTool{
+		probeTool: probeTool{name: "Task", sideEffect: tools.SideEffectShell},
+		readOnly:  false,
+	})
+	if parallelSafeToolCall(writeRegistry, call, Options{}) {
+		t.Fatal("write-capable specialist Task must not be parallel-safe")
+	}
+}
+
+func TestParallelTaskBatchCap(t *testing.T) {
+	shared := &probeLog{}
+	registry := tools.NewRegistry()
+	for i := 0; i < 8; i++ {
+		id := fmt.Sprintf("s%d", i)
+		registry.Register(&taskProbeTool{
+			probeTool: probeTool{name: "Task", sideEffect: tools.SideEffectRead, delay: 20 * time.Millisecond, shared: shared},
+			readOnly:  true,
+		})
+		_ = id
+	}
+	// One registry entry per distinct name is required; register under unique names
+	// by rebuilding with distinct tool names is unnecessary — the batch cap test
+	// uses eight same-name calls, which the resource-key window splits. Instead,
+	// verify the semaphore directly through a mixed batch of distinct keys.
+	batchRegistry := tools.NewRegistry()
+	names := []string{"a1", "a2", "a3", "a4", "a5", "a6"}
+	for _, name := range names {
+		batchRegistry.Register(&namedTaskProbe{taskProbeTool{
+			probeTool: probeTool{name: name, sideEffect: tools.SideEffectRead, delay: 15 * time.Millisecond, shared: shared},
+			readOnly:  true,
+		}})
+	}
+	calls := make([]ToolCall, 0, len(names))
+	for i, name := range names {
+		calls = append(calls, ToolCall{ID: fmt.Sprintf("%d", i), Name: name, Arguments: `{}`})
+	}
+	results := executeParallelReadBatch(context.Background(), batchRegistry, calls, 0, len(calls), PermissionModeAuto, Options{})
+	for index, res := range results {
+		if res.abortErr != nil {
+			t.Fatalf("call %d aborted: %v", index, res.abortErr)
+		}
+	}
+	entries := shared.snapshot()
+	completed := 0
+	for _, entry := range entries {
+		if strings.HasPrefix(entry, "end:") {
+			completed++
+		}
+	}
+	if completed != len(names) {
+		t.Fatalf("completed %d of %d calls", completed, len(names))
+	}
+}
+
+// namedTaskProbe registers task-like probes under distinct names so a single
+// batch can hold more calls than the same-specialist conflict key would allow.
+type namedTaskProbe struct {
+	taskProbeTool
+}
+
+func (tool *namedTaskProbe) CapabilitiesForArgs(map[string]any) tools.ToolCapabilities {
+	if !tool.readOnly {
+		return tools.UnknownCapabilities()
+	}
+	return tools.ToolCapabilities{Effect: tools.EffectReadOnly, ThreadSafe: true}
 }

@@ -23,6 +23,27 @@ const (
 	LocationProject Location = "project"
 )
 
+// Mode classifies where a specialist may appear. ModeAll (the default) is
+// spawnable via Task and listed for delegation; ModeSubagent behaves the same
+// today but stays a distinct value for future primary-agent duality; ModePrimary
+// reserves a name so a project cannot shadow it into a Task-only role.
+type Mode string
+
+const (
+	ModeAll      Mode = "all"
+	ModeSubagent Mode = "subagent"
+	ModePrimary  Mode = "primary"
+)
+
+const (
+	// MaxStepsUnset means no per-specialist iteration cap: the child keeps the
+	// runtime default. Manifests set Steps to force an earlier wrap-up.
+	MaxStepsUnset = 0
+	// MaxStepsLimit bounds a declared Steps value; children inherit the exec
+	// runtime's own hard ceiling, so a manifest cannot demand unbounded loops.
+	MaxStepsLimit = 200
+)
+
 type Metadata struct {
 	Name            string   `json:"name"`
 	Description     string   `json:"description"`
@@ -30,6 +51,20 @@ type Metadata struct {
 	Model           string   `json:"model,omitempty"`
 	ReasoningEffort string   `json:"reasoningEffort,omitempty"`
 	Tools           []string `json:"tools,omitempty"`
+	// Mode defaults to ModeAll when empty (see NormalizeMode).
+	Mode Mode `json:"mode,omitempty"`
+	// Hidden removes the specialist from the orchestrator's delegation prompt and
+	// `kajicode specialist list` default output without disabling it.
+	Hidden bool `json:"hidden,omitempty"`
+	// Temperature/TopP are sampling overrides forwarded to the child run when set.
+	Temperature float64 `json:"temperature,omitempty"`
+	TopP        float64 `json:"topP,omitempty"`
+	// Steps caps the child's agentic iterations, forcing a text-only wrap-up
+	// instead of an unbounded tool loop. 0 = unset (runtime default).
+	Steps int `json:"steps,omitempty"`
+	// Disable marks a project/user override that suppresses a lower-precedence
+	// (builtin) specialist of the same name entirely.
+	Disable bool `json:"disable,omitempty"`
 }
 
 type Manifest struct {
@@ -50,6 +85,11 @@ type Summary struct {
 	ReasoningEffort string   `json:"reasoningEffort,omitempty"`
 	Tools           []string `json:"tools,omitempty"`
 	ResolvedTools   []string `json:"resolvedTools,omitempty"`
+	Mode            Mode     `json:"mode,omitempty"`
+	Hidden          bool     `json:"hidden,omitempty"`
+	Temperature     float64  `json:"temperature,omitempty"`
+	TopP            float64  `json:"topP,omitempty"`
+	Steps           int      `json:"steps,omitempty"`
 	Location        Location `json:"location"`
 	FilePath        string   `json:"filePath"`
 	Warnings        []string `json:"warnings,omitempty"`
@@ -79,6 +119,14 @@ var knownMetadataKeys = map[string]bool{
 	"model":           true,
 	"reasoningEffort": true,
 	"tools":           true,
+	"mode":            true,
+	"hidden":          true,
+	"temperature":     true,
+	"topP":            true,
+	// maxSteps is the deprecated spelling of steps (normalized in manifestFromRaw).
+	"steps":    true,
+	"maxSteps": true,
+	"disable":  true,
 }
 
 var toolCategories = map[string][]string{
@@ -193,6 +241,11 @@ func Summaries(manifests []Manifest) []Summary {
 			ReasoningEffort: manifest.Metadata.ReasoningEffort,
 			Tools:           append([]string(nil), manifest.Metadata.Tools...),
 			ResolvedTools:   append([]string(nil), manifest.ResolvedTools...),
+			Mode:            manifest.Metadata.Mode,
+			Hidden:          manifest.Metadata.Hidden,
+			Temperature:     manifest.Metadata.Temperature,
+			TopP:            manifest.Metadata.TopP,
+			Steps:           manifest.Metadata.Steps,
 			Location:        manifest.Location,
 			FilePath:        manifest.FilePath,
 			Warnings:        append([]string(nil), manifest.Warnings...),
@@ -240,6 +293,7 @@ func Validate(manifest *Manifest) error {
 	manifest.Metadata.Extends = strings.TrimSpace(manifest.Metadata.Extends)
 	manifest.Metadata.Model = strings.TrimSpace(manifest.Metadata.Model)
 	manifest.Metadata.ReasoningEffort = strings.TrimSpace(manifest.Metadata.ReasoningEffort)
+	manifest.Metadata.Mode = NormalizeMode(manifest.Metadata.Mode)
 	if manifest.Metadata.Name == "" {
 		return fmt.Errorf("specialist name is required")
 	}
@@ -269,6 +323,18 @@ func Validate(manifest *Manifest) error {
 			return fmt.Errorf("specialist %q references unknown reasoning effort %q", manifest.Metadata.Name, manifest.Metadata.ReasoningEffort)
 		}
 		manifest.Metadata.ReasoningEffort = effort
+	}
+	if manifest.Metadata.Steps < 0 {
+		return fmt.Errorf("specialist %q steps must be a positive integer", manifest.Metadata.Name)
+	}
+	if manifest.Metadata.Steps > MaxStepsLimit {
+		return fmt.Errorf("specialist %q steps %d exceeds the maximum of %d", manifest.Metadata.Name, manifest.Metadata.Steps, MaxStepsLimit)
+	}
+	if manifest.Metadata.Temperature < 0 || manifest.Metadata.Temperature > 2 {
+		return fmt.Errorf("specialist %q temperature must be between 0 and 2", manifest.Metadata.Name)
+	}
+	if manifest.Metadata.TopP < 0 || manifest.Metadata.TopP > 1 {
+		return fmt.Errorf("specialist %q topP must be between 0 and 1", manifest.Metadata.Name)
 	}
 	resolved, err := ResolveTools(manifest.Metadata.Tools)
 	if err != nil {
@@ -392,9 +458,128 @@ func manifestFromRaw(raw map[string]any) (Manifest, error) {
 				return Manifest{}, fmt.Errorf("tools must be an array")
 			}
 			metadata.Tools = values
+		case "mode":
+			text := stringValue(value)
+			if text == "" {
+				return Manifest{}, fmt.Errorf("mode must be one of %q, %q, %q", ModeAll, ModeSubagent, ModePrimary)
+			}
+			mode, err := ParseMode(text)
+			if err != nil {
+				return Manifest{}, err
+			}
+			metadata.Mode = mode
+		case "hidden", "disable":
+			flag, ok := value.(bool)
+			if !ok {
+				if text := stringValue(value); text == "true" || text == "false" {
+					flag = text == "true"
+				} else {
+					return Manifest{}, fmt.Errorf("%s must be a boolean", key)
+				}
+			}
+			if key == "hidden" {
+				metadata.Hidden = flag
+			} else {
+				metadata.Disable = flag
+			}
+		case "temperature", "topP":
+			number, err := numericValue(value, key)
+			if err != nil {
+				return Manifest{}, err
+			}
+			if number < 0 || number > 2 {
+				return Manifest{}, fmt.Errorf("%s must be between 0 and 2", key)
+			}
+			if key == "temperature" {
+				metadata.Temperature = number
+			} else {
+				metadata.TopP = number
+			}
+		case "steps":
+			steps, err := positiveIntValue(value, "steps")
+			if err != nil {
+				return Manifest{}, err
+			}
+			metadata.Steps = steps
+		case "maxSteps":
+			// Deprecated spelling of steps; a manifest may not set both.
+			if _, exists := raw["steps"]; exists {
+				return Manifest{}, fmt.Errorf("use steps (maxSteps is deprecated) — set only one")
+			}
+			steps, err := positiveIntValue(value, "maxSteps")
+			if err != nil {
+				return Manifest{}, err
+			}
+			metadata.Steps = steps
 		}
 	}
 	return Manifest{Metadata: metadata}, nil
+}
+
+// ParseMode validates a mode string from frontmatter or JSON.
+func ParseMode(text string) (Mode, error) {
+	switch Mode(strings.TrimSpace(text)) {
+	case ModeAll:
+		return ModeAll, nil
+	case ModeSubagent:
+		return ModeSubagent, nil
+	case ModePrimary:
+		return ModePrimary, nil
+	default:
+		return "", fmt.Errorf("unknown mode %q: use %q, %q, or %q", text, ModeAll, ModeSubagent, ModePrimary)
+	}
+}
+
+func positiveIntValue(value any, key string) (int, error) {
+	switch typed := value.(type) {
+	case int:
+		if typed <= 0 {
+			return 0, fmt.Errorf("%s must be a positive integer", key)
+		}
+		return typed, nil
+	case float64:
+		if typed <= 0 || typed != float64(int(typed)) {
+			return 0, fmt.Errorf("%s must be a positive integer", key)
+		}
+		return int(typed), nil
+	case string:
+		parsed, err := strconv.Atoi(strings.TrimSpace(typed))
+		if err != nil || parsed <= 0 {
+			return 0, fmt.Errorf("%s must be a positive integer", key)
+		}
+		return parsed, nil
+	default:
+		return 0, fmt.Errorf("%s must be a positive integer", key)
+	}
+}
+
+func numericValue(value any, key string) (float64, error) {
+	switch typed := value.(type) {
+	case int:
+		return float64(typed), nil
+	case float64:
+		return typed, nil
+	case string:
+		parsed, err := strconv.ParseFloat(strings.TrimSpace(typed), 64)
+		if err != nil {
+			return 0, fmt.Errorf("%s must be a number", key)
+		}
+		return parsed, nil
+	default:
+		return 0, fmt.Errorf("%s must be a number", key)
+	}
+}
+
+// NormalizeMode resolves an empty/unknown stored mode to the default. Stored
+// modes come from ParseMode so unknown values cannot reach here from files;
+// programmatically built manifests (builtins, swarm inline) rely on this.
+func NormalizeMode(mode Mode) Mode {
+	switch mode {
+	case ModeSubagent, ModePrimary:
+		return mode
+	default:
+		return ModeAll
+	}
 }
 
 func isListKey(key string) bool {
@@ -510,18 +695,44 @@ func loadDirectory(dir string, location Location) ([]Manifest, []string, error) 
 }
 
 func mergeByName(manifests []Manifest) []Manifest {
-	byName := map[string]Manifest{}
+	// Later entries carry higher precedence (project > user > builtin order at the
+	// call site), so the LAST definition of a name wins. A higher-precedence
+	// manifest sets disable: true to suppress a lower-precedence specialist of the
+	// same name entirely — mirroring opencode's agent disable override. A disabled
+	// entry that is itself later re-enabled by an even newer definition is just a
+	// normal override: only the final definition's Disable flag counts.
+	type entry struct {
+		manifest Manifest
+		disabled bool
+	}
+	byName := map[string]*entry{}
+	order := make([]string, 0, len(manifests))
 	for _, manifest := range manifests {
-		byName[manifest.Metadata.Name] = manifest
+		item, ok := byName[manifest.Metadata.Name]
+		if !ok {
+			order = append(order, manifest.Metadata.Name)
+			item = &entry{}
+			byName[manifest.Metadata.Name] = item
+		}
+		if manifest.Metadata.Disable {
+			// The overriding manifest itself carries no usable identity beyond the
+			// name; keep the earlier body so a future re-definition can still merge
+			// from it via extends if needed.
+			item.disabled = true
+			continue
+		}
+		item.manifest = manifest
+		item.disabled = false
 	}
-	names := make([]string, 0, len(byName))
-	for name := range byName {
-		names = append(names, name)
-	}
+	names := append([]string(nil), order...)
 	sort.Strings(names)
 	merged := make([]Manifest, 0, len(names))
 	for _, name := range names {
-		merged = append(merged, byName[name])
+		item := byName[name]
+		if item.disabled {
+			continue
+		}
+		merged = append(merged, item.manifest)
 	}
 	return merged
 }
@@ -589,6 +800,20 @@ func mergeExtends(base Manifest, child Manifest) Manifest {
 	if merged.Metadata.ReasoningEffort == "" {
 		merged.Metadata.ReasoningEffort = base.Metadata.ReasoningEffort
 	}
+	// Sampling/step overrides only inherit when the child leaves them zero-valued,
+	// mirroring how model/effort extend. Explicit child values always win.
+	if merged.Metadata.Temperature == 0 {
+		merged.Metadata.Temperature = base.Metadata.Temperature
+	}
+	if merged.Metadata.TopP == 0 {
+		merged.Metadata.TopP = base.Metadata.TopP
+	}
+	if merged.Metadata.Steps == 0 {
+		merged.Metadata.Steps = base.Metadata.Steps
+	}
+	// Mode/hidden are positional traits, not capabilities: the child's own value
+	// (after NormalizeMode in Validate) always decides, so extending a hidden
+	// specialist does not silently hide the child.
 	if len(merged.Metadata.Tools) == 0 {
 		merged.Metadata.Tools = append([]string(nil), base.Metadata.Tools...)
 	} else {

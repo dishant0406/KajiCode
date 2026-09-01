@@ -17,13 +17,27 @@ type Runtime struct {
 	manager     *background.Manager
 	managerFunc BackgroundManagerFunc
 	promptFiles map[string]string
+	// completions queues finished background specialist results for delivery to
+	// the parent run (see completions.go). Created eagerly so push/drain never
+	// race a lazy init.
+	completions *completionCollector
 }
 
 func NewRuntime(options RuntimeOptions) *Runtime {
 	return &Runtime{
 		manager:     options.Manager,
-		managerFunc: options.ManagerFunc,
+		managerFunc: options.managerFuncOrDefault(),
 		promptFiles: map[string]string{},
+		completions: newCompletionCollector(),
+	}
+}
+
+func (options RuntimeOptions) managerFuncOrDefault() BackgroundManagerFunc {
+	if options.ManagerFunc != nil {
+		return options.ManagerFunc
+	}
+	return func() (*background.Manager, error) {
+		return background.NewManager("")
 	}
 }
 
