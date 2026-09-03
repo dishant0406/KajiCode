@@ -65,10 +65,10 @@ func TestSkillMentionSuggestionsMatchPrefixAndSkipTaken(t *testing.T) {
 
 func TestSplitLeadingSlashToken(t *testing.T) {
 	cases := []struct {
-		in        string
-		token     string
-		rest      string
-		ok        bool
+		in    string
+		token string
+		rest  string
+		ok    bool
 	}{
 		{in: "/code-review fix it", token: "/code-review", rest: " fix it", ok: true},
 		{in: "/skills", token: "/skills", rest: "", ok: true},
