@@ -358,6 +358,13 @@ type model struct {
 	// lastPrompt is the verbatim text of the most recent submitted prompt, so
 	// /retry can resend it and /edit can recall it into the composer.
 	lastPrompt string
+	// promptEchoOverride, when non-empty, is echoed to the transcript INSTEAD of
+	// the expanded prompt for the next launchPrompt call. Skill/user-command
+	// invocations expand a SKILL.md body into the agent-facing prompt; echoing
+	// that body would flood the transcript with instructions the user never
+	// typed, so the UI shows the compact "/slug args" form instead (the full
+	// body still reaches the agent and the session record).
+	promptEchoOverride string
 	// lastImages/lastImageLabels/lastDocuments remember the attachments consumed
 	// by the most recent submitted prompt. launchPrompt clears the pending queues
 	// once a turn is sent, so /retry re-stages these to reproduce the exact same
@@ -5054,11 +5061,19 @@ func (m model) launchPrompt(prompt string) (model, tea.Cmd) {
 	// re-stages these to resend an identical vision/PDF-backed request rather than
 	// a degraded text-only one.
 	m.lastPrompt = prompt
+	// Skill invocations stage a compact echo ("/slug args") here; launchPrompt
+	// consumes it once so the transcript shows what the user typed, not the
+	// expanded SKILL.md body the agent receives.
+	echo := prompt
+	if m.promptEchoOverride != "" {
+		echo = m.promptEchoOverride
+		m.promptEchoOverride = ""
+	}
 	m.lastImages = m.pendingImages
 	m.lastImageLabels = m.pendingImageLabels
 	m.lastDocuments = m.pendingDocuments
 	m.homeNotice = ""
-	m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendUser, text: prompt})
+	m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendUser, text: echo})
 	if m.provider == nil {
 		m.transcript = reduceTranscript(m.transcript, transcriptAction{
 			kind: actionAppendAssistant,
@@ -5070,6 +5085,12 @@ func (m model) launchPrompt(prompt string) (model, tea.Cmd) {
 	// directive for the agent only; the transcript above keeps the user's verbatim
 	// "@mention". Non-mentions and mid-message "@file" references are unchanged.
 	if expanded, ok := expandSpecialistMention(prompt, m.agentOptions.Specialists); ok {
+		prompt = expanded
+	}
+	// Mid-message "@skill-slug" mentions expand into skill-load directives for
+	// the agent only; the verbatim "@mention" above stays in the transcript and
+	// session record. Unknown @tokens (files) pass through untouched.
+	if expanded, changed := expandSkillMentions(prompt, m.agentOptions.Skills); changed {
 		prompt = expanded
 	}
 	// Prepend any staged PDF document text as a model-facing preamble. The

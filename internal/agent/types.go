@@ -258,6 +258,11 @@ type SkillInfo struct {
 	// skills.NormalizePermission). Empty means allow. Shown as a marker in the
 	// catalog so the model knows a skill needs care or cannot be loaded.
 	Permission string
+	// WhenToUse is the skill's space/comma-separated glob scoping (see
+	// skills.Skill.WhenToUse), carried so the guideline tracker can proactively
+	// coach loading a global/plugin skill when a touched path matches it.
+	// Empty means the skill is never path-auto-coached.
+	WhenToUse []string
 }
 
 type CompactionEvent struct {

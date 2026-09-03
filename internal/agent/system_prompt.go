@@ -299,20 +299,8 @@ func specialistDelegationContext(options Options) string {
 // names + one-line descriptions only (never skill bodies), and it renders nothing
 // when no skills are installed, so a skill-less run reproduces the previous prompt
 // byte-for-byte.
-// skillsContextListBudget bounds the bytes spent listing individual skills so a
-// workspace with an extreme number of them can't bloat every turn's prompt.
-// Skills past the budget are summarized as a count rather than dropped — the
-// model can still load any of them by name (an unknown name returns the full
-// list from the skill tool).
 //
-// The budget is deliberately generous — roughly 18 skills with maximally long
-// (200-rune, ASCII) descriptions, or 40+ with typical terser ones; non-ASCII
-// descriptions consume it faster since the budget counts bytes. This list is
-// the model's ONLY discovery surface, so a skill squeezed out of it effectively
-// never triggers. The previous 640-byte cap silently broke invocation for
-// anyone with more than ~6 skills — the model cannot match a request against a
-// skill it cannot see.
-const skillsContextListBudget = 4096
+// The list is deliberately UNBUDGETED (matching opencode's skill guidance): the
 
 // skillsContext formats the available-skill catalog (names + one-line
 // descriptions only, never bodies) into a single <available_skills> block, or ""
@@ -335,7 +323,9 @@ func renderSkillsContext(skills []SkillInfo) string {
 	var b strings.Builder
 	b.WriteString("<available_skills>\n")
 	b.WriteString("Reusable, on-demand instruction sets you can load with the skill tool. Before acting on a request, scan this list; when the request matches a skill's name or description, call skill with its exact name FIRST and follow the loaded guidance — do not guess names, do not skip a matching skill, and do not substitute your own approach for its instructions.\n")
-	listed, spent, omitted := 0, 0, 0
+	// Every skill is listed in full — no budget, no description truncation. The
+	// catalog is the model's only discovery surface, so a skill squeezed out of it
+	// effectively never triggers.
 	for _, info := range skills {
 		name := strings.TrimSpace(info.Name)
 		if name == "" {
@@ -343,7 +333,7 @@ func renderSkillsContext(skills []SkillInfo) string {
 		}
 		line := "- " + name
 		if desc := strings.TrimSpace(info.Description); desc != "" {
-			line += ": " + truncateForSkillLine(desc)
+			line += ": " + desc
 		}
 		// Surface the load permission so the model knows a deny skill must not be
 		// called and a prompt skill may require approval. Permissions are
@@ -355,34 +345,10 @@ func renderSkillsContext(skills []SkillInfo) string {
 			line += " [prompt]"
 		}
 		line += "\n"
-		// Always list at least one skill; past the budget, summarize the remainder
-		// as a count instead of silently dropping it.
-		if listed > 0 && spent+len(line) > skillsContextListBudget {
-			omitted++
-			continue
-		}
 		b.WriteString(line)
-		spent += len(line)
-		listed++
-	}
-	if omitted > 0 {
-		b.WriteString("- …and " + strconv.Itoa(omitted) + " more (call skill with a name; an unknown name lists them all)\n")
 	}
 	b.WriteString("</available_skills>")
 	return b.String()
-}
-
-// truncateForSkillLine keeps a skill's one-line description short so a single
-// verbose description can't dominate the skills-list budget. The cap is roomy on
-// purpose: the description carries the skill's trigger conditions ("use when…"),
-// and truncating those is what stops the model from ever invoking the skill.
-func truncateForSkillLine(desc string) string {
-	const maxDescRunes = 200
-	runes := []rune(desc)
-	if len(runes) <= maxDescRunes {
-		return desc
-	}
-	return strings.TrimSpace(string(runes[:maxDescRunes])) + "…"
 }
 
 func sessionRuntimeContext(options Options) string {
@@ -471,9 +437,17 @@ func projectGuidelines(cwd, gitRoot string) string {
 		if remaining := maxProjectContextTotalBytes - totalUsed; remaining < limit {
 			limit = remaining
 		}
+		// Surface truncation loudly: silently cut rules are the "AGENTS.md not
+		// followed" failure mode — the model cannot obey a rule it never saw.
+		originalLen := len(content)
 		content = truncateGuidelineContent(content, limit)
 		label := projectGuidelineLabel(match, gitRoot)
 		b.WriteString("\n\n## Project guidelines (" + label + ")\n\n" + content)
+		if originalLen > limit {
+			b.WriteString("\n\n[WARNING: this guidelines file was truncated (" + strconv.Itoa(originalLen) +
+				" bytes total, showing the first " + strconv.Itoa(limit) + "). Rules near the end are missing — " +
+				"read the full file at " + match + " before relying on rules it may contain.]")
+		}
 		totalUsed += len(content)
 	}
 	return b.String()

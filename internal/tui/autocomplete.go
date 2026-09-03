@@ -107,6 +107,15 @@ func (m *model) recomputeSuggestions() {
 		m.filePaletteOpen = true
 		m.suggestionsAreFiles = true
 		m.suggestions = fileSuggestions(m.cwd, query.Query)
+		// Skill mentions ride the same @-palette (opencode mixes files, agents
+		// and skills in one mention menu): when the query matches no file but
+		// names an installed skill, offer the skill rows so "@code-review"
+		// completes mid-sentence instead of dead-ending.
+		if len(m.suggestions) == 0 {
+			if skillRows := m.skillMentionSuggestions(query.Query); len(skillRows) > 0 {
+				m.suggestions = skillRows
+			}
+		}
 		if m.suggestionIdx >= len(m.suggestions) || m.suggestionIdx < 0 {
 			m.suggestionIdx = 0
 		}

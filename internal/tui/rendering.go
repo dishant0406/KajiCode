@@ -525,10 +525,42 @@ func renderUserRow(row transcriptRow, width int) string {
 	// The ▌ accent gutter alone marks it as the user's, matching the clean
 	// reference agents instead of a heavy chat bubble.
 	lines = append(lines, "")
-	for _, line := range wrapped {
-		lines = append(lines, renderUserPromptStyledLine(kajicodeTheme.ink.Bold(true).Render(line), contentWidth))
+	for i, line := range wrapped {
+		styled := kajicodeTheme.ink.Bold(true).Render(line)
+		// Skill/user-command invocations: the leading "/slug" token is painted
+		// in the theme accent so a skill turn reads at a glance without flooding
+		// the transcript with the expanded SKILL.md body.
+		if i == 0 {
+			if token, rest, ok := splitLeadingSlashToken(line); ok {
+				styled = kajicodeTheme.accent.Bold(true).Render(token) +
+					kajicodeTheme.ink.Bold(true).Render(rest)
+			}
+		}
+		lines = append(lines, renderUserPromptStyledLine(styled, contentWidth))
 	}
 	return strings.Join(lines, "\n")
+}
+
+// splitLeadingSlashToken splits a leading "/command" off the front of a line:
+// the token is the "/"+slug (letters, digits, dot, underscore, hyphen), rest
+// includes the separating space onward. ok=false for non-"/" lines, a bare "/",
+// or a token containing characters outside the slug shape.
+func splitLeadingSlashToken(line string) (token string, rest string, ok bool) {
+	if !strings.HasPrefix(line, "/") || len(line) < 2 {
+		return "", "", false
+	}
+	for i := 1; i < len(line); i++ {
+		r := line[i]
+		valid := (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') ||
+			r == '-' || r == '_' || r == '.'
+		if !valid {
+			if i == 1 {
+				return "", "", false
+			}
+			return line[:i], line[i:], true
+		}
+	}
+	return line, "", true
 }
 
 const userPromptPrefix = "▌  "

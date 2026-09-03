@@ -46,11 +46,17 @@ func TestSkillCommandInvokesAndSubmits(t *testing.T) {
 	if transcriptContains(next.transcript, "unknown command") {
 		t.Fatalf("an installed skill must not be 'unknown', got %#v", next.transcript)
 	}
-	if !transcriptContains(next.transcript, "Run every verification step and summarize failures.") {
-		t.Fatalf("skill body should be inlined into the prompt, got %#v", next.transcript)
+	// The transcript shows the compact "/slug args" echo the user typed; the
+	// expanded SKILL.md body goes to the agent via lastPrompt, not the UI.
+	if !transcriptContains(next.transcript, "/deploy-checks ship v2 to production") {
+		t.Fatalf("skill invocation should echo the compact /slug form, got %#v", next.transcript)
 	}
-	if !transcriptContains(next.transcript, "ship v2 to production") {
-		t.Fatalf("typed args should follow the skill body, got %#v", next.transcript)
+	if transcriptContains(next.transcript, "Run every verification step and summarize failures.") {
+		t.Fatalf("skill body must NOT be echoed to the transcript, got %#v", next.transcript)
+	}
+	if !strings.Contains(next.lastPrompt, "Run every verification step and summarize failures.") ||
+		!strings.Contains(next.lastPrompt, "ship v2 to production") {
+		t.Fatalf("agent-facing prompt should carry the expanded body + args, got %q", next.lastPrompt)
 	}
 }
 
@@ -59,13 +65,17 @@ func TestSkillCommandWithoutArgs(t *testing.T) {
 
 	next := submitInput(t, m, "/reviewer")
 
-	if !transcriptContains(next.transcript, "Review the diff for correctness.") {
-		t.Fatalf("bare skill invocation should submit the body, got %#v", next.transcript)
+	// Compact echo in the transcript; body + clarify-first note reach the agent.
+	if !transcriptContains(next.transcript, "/reviewer") {
+		t.Fatalf("bare invocation should echo the /slug form, got %#v", next.transcript)
+	}
+	if !strings.Contains(next.lastPrompt, "Review the diff for correctness.") {
+		t.Fatalf("bare skill invocation should submit the body to the agent, got %q", next.lastPrompt)
 	}
 	// A bare invocation carries the ask-first note: instructions with no target
 	// must make the model ask ("which PR?") instead of improvising one.
-	if !transcriptContains(next.transcript, "ask for them first") {
-		t.Fatalf("bare invocation should carry the clarify-first note, got %#v", next.transcript)
+	if !strings.Contains(next.lastPrompt, "ask for them first") {
+		t.Fatalf("bare invocation should carry the clarify-first note, got %q", next.lastPrompt)
 	}
 }
 
@@ -88,8 +98,11 @@ func TestSkillCommandNameIsCaseInsensitive(t *testing.T) {
 
 	next := submitInput(t, m, "/deploy-checks")
 
-	if !transcriptContains(next.transcript, "Check things.") {
-		t.Fatalf("uppercase frontmatter name should be invocable lowercased, got %#v", next.transcript)
+	if !strings.Contains(next.lastPrompt, "Check things.") {
+		t.Fatalf("uppercase frontmatter name should be invocable lowercased, got %q", next.lastPrompt)
+	}
+	if !transcriptContains(next.transcript, "/deploy-checks") {
+		t.Fatalf("compact /slug echo expected, got %#v", next.transcript)
 	}
 }
 
@@ -276,8 +289,11 @@ func TestSkillPickerEnterFillsComposer(t *testing.T) {
 	// A second Enter submits the (bare) invocation and runs the skill.
 	final, _ := after.Update(testKey(tea.KeyEnter))
 	done := final.(model)
-	if !transcriptContains(done.transcript, "Review the diff for correctness.") {
-		t.Fatalf("submitting the filled composer should run the skill, got %#v", done.transcript)
+	if !strings.Contains(done.lastPrompt, "Review the diff for correctness.") {
+		t.Fatalf("submitting the filled composer should run the skill, got %q", done.lastPrompt)
+	}
+	if !transcriptContains(done.transcript, "/reviewer") {
+		t.Fatalf("picker invocation should echo the compact /slug form, got %#v", done.transcript)
 	}
 }
 
@@ -293,8 +309,8 @@ func TestSkillPickerRunsBuiltinShadowedSkill(t *testing.T) {
 	updated, _ := next.Update(testKey(tea.KeyEnter))
 	after := updated.(model)
 
-	if !transcriptContains(after.transcript, "Shadowed skill body.") {
-		t.Fatalf("picker must run the shadowed skill directly, got %#v", after.transcript)
+	if !strings.Contains(after.lastPrompt, "Shadowed skill body.") {
+		t.Fatalf("picker must run the shadowed skill directly, got %q", after.lastPrompt)
 	}
 }
 

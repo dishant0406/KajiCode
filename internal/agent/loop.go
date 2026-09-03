@@ -3468,6 +3468,7 @@ func dynamicSkillsCatalogRenderer(options Options) func(projectRoots []string, b
 						Name:        name,
 						Description: strings.TrimSpace(skill.Description),
 						Permission:  skills.NormalizePermission(skill.Permission),
+						WhenToUse:   skill.WhenToUse,
 					})
 				}
 			}

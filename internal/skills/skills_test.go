@@ -461,6 +461,36 @@ func TestDiscoveryRootsOrderAndOmission(t *testing.T) {
 	}
 }
 
+// ~/.claude/skills is a read-only compatibility root (opencode's
+// CLAUDE_EXTERNAL_DIR): it must be discovered AFTER ~/.agents/skills so an
+// identical skill installed under agents shadows the Claude copy.
+func TestDiscoveryRootsIncludesClaudeAfterAgents(t *testing.T) {
+	home := t.TempDir()
+	agents := filepath.Join(home, ".agents", "skills")
+	claude := filepath.Join(home, ".claude", "skills")
+	if err := os.MkdirAll(agents, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(claude, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	primary := filepath.Join(home, "kajicode-skills")
+	env := map[string]string{
+		"HOME":                home,
+		"KAJICODE_SKILLS_DIR": primary,
+	}
+	roots := DiscoveryRoots(env, nil)
+	want := []string{primary, agents, claude}
+	if len(roots) != len(want) {
+		t.Fatalf("DiscoveryRoots = %#v, want %#v", roots, want)
+	}
+	for i := range want {
+		if roots[i] != want[i] {
+			t.Fatalf("DiscoveryRoots[%d] = %q, want %q (full %#v)", i, roots[i], want[i], roots)
+		}
+	}
+}
+
 func TestDiscoveryRootsOmitsMissingAgents(t *testing.T) {
 	home := t.TempDir()
 	primary := filepath.Join(home, "kajicode-skills")
@@ -600,6 +630,26 @@ func TestGlobalRootsIncludesAgents(t *testing.T) {
 	roots := GlobalRoots(primary)
 	if len(roots) != 2 || roots[0] != primary || roots[1] != agents {
 		t.Fatalf("GlobalRoots = %#v, want [primary, agents]", roots)
+	}
+}
+
+// GlobalRoots must also pick up ~/.claude/skills when present, after agents.
+func TestGlobalRootsIncludesClaude(t *testing.T) {
+	home := t.TempDir()
+	agents := filepath.Join(home, ".agents", "skills")
+	claude := filepath.Join(home, ".claude", "skills")
+	if err := os.MkdirAll(agents, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(claude, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	primary := filepath.Join(home, "primary")
+	roots := GlobalRoots(primary)
+	if len(roots) != 3 || roots[0] != primary || roots[1] != agents || roots[2] != claude {
+		t.Fatalf("GlobalRoots = %#v, want [primary, agents, claude]", roots)
 	}
 }
 

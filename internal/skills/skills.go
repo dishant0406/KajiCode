@@ -129,22 +129,56 @@ func AgentsDir(env map[string]string) string {
 	return dir
 }
 
+// ClaudeDir returns ~/.claude/skills when that path exists and is a directory.
+// It is a read-only, cross-tool compatibility root (opencode's
+// CLAUDE_EXTERNAL_DIR): many users keep their skills installed for Claude Code
+// and expect KajiCode to surface them too. It sits AFTER AgentsDir in the
+// discovery order, so an identical skill installed under ~/.agents/skills
+// shadows the Claude copy. Never a target of install/remove/lock. Missing,
+// non-directory, or unresolvable home yields "" with no error and no directory
+// creation. KAJICODE_SKILLS_DIR is intentionally ignored — this is a pure
+// convention path, not a KajiCode-specific override.
+func ClaudeDir(env map[string]string) string {
+	home := strings.TrimSpace(firstNonEmpty(
+		envValue(env, "HOME"),
+		envValue(env, "USERPROFILE"),
+	))
+	if home == "" {
+		userHome, err := os.UserHomeDir()
+		if err != nil || strings.TrimSpace(userHome) == "" {
+			return ""
+		}
+		home = userHome
+	}
+	dir := filepath.Join(home, ".claude", "skills")
+	info, err := os.Stat(dir)
+	if err != nil || !info.IsDir() {
+		return ""
+	}
+	return dir
+}
+
 // DiscoveryRoots returns ordered skill roots for runtime discovery: primary
-// DefaultDir, optional AgentsDir when present, then pluginRoots. Empty strings
-// are omitted. Earlier entries win on name clashes.
+// DefaultDir, optional AgentsDir when present, optional ClaudeDir when present,
+// then pluginRoots. Empty strings are omitted. Earlier entries win on name
+// clashes.
 func DiscoveryRoots(env map[string]string, pluginRoots []string) []string {
-	return collectRoots(DefaultDir(env), AgentsDir(env), pluginRoots)
+	return collectRoots(DefaultDir(env), AgentsDir(env), ClaudeDir(env), pluginRoots)
 }
 
 // collectRoots assembles ordered non-empty skill roots. primary is typically
-// DefaultDir (or an injected test dir); agents is typically AgentsDir's result.
-func collectRoots(primary string, agents string, pluginRoots []string) []string {
-	roots := make([]string, 0, 2+len(pluginRoots))
+// DefaultDir (or an injected test dir); agents is typically AgentsDir's result;
+// claude is typically ClaudeDir's result.
+func collectRoots(primary string, agents string, claude string, pluginRoots []string) []string {
+	roots := make([]string, 0, 3+len(pluginRoots))
 	if primary = strings.TrimSpace(primary); primary != "" {
 		roots = append(roots, primary)
 	}
 	if agents = strings.TrimSpace(agents); agents != "" {
 		roots = append(roots, agents)
+	}
+	if claude = strings.TrimSpace(claude); claude != "" {
+		roots = append(roots, claude)
 	}
 	for _, root := range pluginRoots {
 		if root = strings.TrimSpace(root); root != "" {
@@ -155,10 +189,11 @@ func collectRoots(primary string, agents string, pluginRoots []string) []string 
 }
 
 // GlobalRoots returns discovery roots for management CLI list/info: an explicit
-// primary write/root dir (usually skillsDir / DefaultDir) plus AgentsDir when
-// present. Plugin roots are excluded from management UX.
+// primary write/root dir (usually skillsDir / DefaultDir) plus the optional
+// shared convention roots (AgentsDir, ClaudeDir) when present. Plugin roots are
+// excluded from management UX.
 func GlobalRoots(primary string) []string {
-	return collectRoots(primary, AgentsDir(nil), nil)
+	return collectRoots(primary, AgentsDir(nil), ClaudeDir(nil), nil)
 }
 
 // DuplicateName records two skills that resolved to the same frontmatter name.

@@ -116,6 +116,7 @@ func (a pluginActivation) skillInfos(defaultDir string, cwd string) []agent.Skil
 			Name:        name,
 			Description: strings.TrimSpace(skill.Description),
 			Permission:  skills.NormalizePermission(skill.Permission),
+			WhenToUse:   skill.WhenToUse,
 		})
 	}
 	return infos

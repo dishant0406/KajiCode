@@ -39,6 +39,14 @@ func (m model) handleSkillCommand(raw string) (model, tea.Cmd, bool) {
 		})
 		return m, nil, true
 	}
+	// The transcript echoes the compact "/slug args" form the user typed; the
+	// expanded body below goes to the agent only. Without the override the whole
+	// SKILL.md renders as the user's message.
+	echo := "/" + name
+	if strings.TrimSpace(args) != "" {
+		echo += " " + strings.TrimSpace(args)
+	}
+	m.promptEchoOverride = echo
 	return m.launchOrDeferExpandedPrompt(raw, skillInvocationPrompt(body, args))
 }
 
@@ -78,6 +86,11 @@ func (m model) launchOrDeferExpandedPrompt(raw, prompt string) (model, tea.Cmd, 
 		return m, nil, true
 	}
 	if m.pending {
+		// Queue the EXPANDED prompt (the flush path resubmits text literally) but
+		// drop the echo override: queued text is re-echoed verbatim on flush, and
+		// a stale override would mislabel a later plain prompt. The queued body
+		// itself is instructions the user chose to send, so echoing it is honest.
+		m.promptEchoOverride = ""
 		return m.queueMessage(prompt), nil, true
 	}
 	if m.compactInFlight {
@@ -145,6 +158,9 @@ func (m model) invokeSkillByName(name string) (model, tea.Cmd) {
 			})
 			return m, nil
 		}
+		// The picker runs by exact name with no typed form: echo the "/slug"
+		// token so the transcript stays compact (body goes to the agent only).
+		m.promptEchoOverride = "/" + skillSlashName(name)
 		next, teaCmd, _ := m.launchOrDeferExpandedPrompt("", skillInvocationPrompt(body, ""))
 		return next, teaCmd
 	}

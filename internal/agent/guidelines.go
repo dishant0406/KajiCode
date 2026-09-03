@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -236,8 +237,21 @@ func (t *guidelineTracker) recordAutoLoadsFor(observedDir, base string) {
 		t.maybeQueueAutoLoad(observedDir, builtin.Name, builtin.Scope)
 	}
 
-	// Load project skills once per observed dir; project roots are small and the
-	// match set is checked only when a root's why-to-use patterns could apply.
+	// Boot-catalog skills (global DefaultDir + ~/.agents/skills + plugins, seeded
+	// from the system prompt via setCatalog): their when_to_use globs are grounded
+	// against the observed git/workspace base the same way project skills are, so
+	// globally-installed skills get proactive coaching too — not just project ones.
+	for _, info := range t.bootSkills {
+		if len(info.WhenToUse) == 0 {
+			continue
+		}
+		if skills.MatchWhenToUse(base, info.WhenToUse, observedDir) {
+			t.maybeQueueAutoLoad(observedDir, info.Name, info.Description)
+		}
+	}
+
+	// Project skills: roots are small and the match set is checked only when a
+	// root's when-to-use patterns could apply.
 	roots := make([]string, 0, len(t.skillRoots))
 	for root := range t.skillRoots {
 		roots = append(roots, root)
@@ -455,11 +469,11 @@ func (t *guidelineTracker) drain() []string {
 
 	blocks := make([]string, 0, len(paths))
 	for _, path := range paths {
-		content := readGuidelineFile(path)
+		content, truncated := readGuidelineFile(path)
 		if content == "" {
 			continue
 		}
-		blocks = append(blocks, formatGuidelineInstruction(path, content))
+		blocks = append(blocks, formatGuidelineInstruction(path, content, truncated))
 	}
 	if len(blocks) == 0 {
 		return nil
@@ -474,14 +488,26 @@ func (t *guidelineTracker) drain() []string {
 	return blocks
 }
 
+// guidelineTruncationWarning renders the loud truncation notice appended after a
+// capped guideline file, so the model knows rules near the end were cut and where
+// to read the rest. path is the guideline file's absolute path; originalLen the
+// pre-truncation byte length; limit the applied byte cap.
+func guidelineTruncationWarning(path string, originalLen, limit int) string {
+	return "[WARNING: this guidelines file was truncated (" + strconv.Itoa(originalLen) +
+		" bytes total, showing the first " + strconv.Itoa(limit) + "). Rules near the end are missing — " +
+		"read the full file at " + path + " before relying on rules it may contain.]"
+}
+
 // formatGuidelineInstruction renders a discovered project context file as an
 // authoritative, compaction-preserved instruction block. path is the guideline
-// file's absolute path; content is its already-truncated body. The heading must
+// file's absolute path; content is its already-truncated body; truncated reports
+// whether content was cut (a loud warning is appended so the model knows rules
+// are missing and where to read them). The heading must
 // start with "# " and contain " instructions for " — and the body must be wrapped
 // in <INSTRUCTIONS>…</INSTRUCTIONS> — for compaction_preserve.projectInstructionBlock
 // to recognize and carry it across compaction. Directories keep distinct sources
 // so root and subdirectory AGENTS.md files merge independently.
-func formatGuidelineInstruction(path, content string) string {
+func formatGuidelineInstruction(path, content string, truncated bool) string {
 	label := guidelineLabel(path)
 	if label == "" {
 		label = "project"
@@ -491,8 +517,12 @@ func formatGuidelineInstruction(path, content string) string {
 		dir = "workspace"
 	}
 	heading := "# " + label + projectInstructionsHeadingMarker + dir
+	body := strings.TrimSpace(content)
+	if truncated {
+		body += "\n\n" + guidelineTruncationWarning(path, len(body), maxProjectContextBytes)
+	}
 	return heading + "\n\n" + projectInstructionsOpenTag + "\n" +
-		strings.TrimSpace(content) + "\n" + projectInstructionsCloseTag
+		body + "\n" + projectInstructionsCloseTag
 }
 
 // guidelineLabel renders path as a short label relative to its git root.
@@ -505,20 +535,24 @@ func guidelineLabel(path string) string {
 
 // readGuidelineFile reads and trims a project context file, capping it at the same
 // per-file limit the system-prompt builder uses so a runaway AGENTS.md cannot blow
-// the context budget.
-func readGuidelineFile(path string) string {
+// the context budget. The second return value reports whether the file was
+// truncated, so the drain can warn the model that rules near the end were cut —
+// silently dropping rules is the "AGENTS.md not followed" failure mode.
+func readGuidelineFile(path string) (string, bool) {
 	if path == "" {
-		return ""
+		return "", false
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return ""
+		return "", false
 	}
 	content := strings.TrimSpace(string(data))
 	if content == "" {
-		return ""
+		return "", false
 	}
-	return truncateGuidelineContent(content, maxProjectContextBytes)
+	originalLen := len(content)
+	truncated := truncateGuidelineContent(content, maxProjectContextBytes)
+	return truncated, originalLen > maxProjectContextBytes
 }
 
 // guidelineLookupDirs is a pass-through to projectGuidelineDirs so the tracker's
@@ -554,11 +588,11 @@ func (t *guidelineTracker) reassertGuidelines(cwd string) []string {
 			continue
 		}
 		seen[path] = true
-		content := readGuidelineFile(path)
+		content, truncated := readGuidelineFile(path)
 		if content == "" {
 			continue
 		}
-		blocks = append(blocks, formatGuidelineInstruction(path, content))
+		blocks = append(blocks, formatGuidelineInstruction(path, content, truncated))
 	}
 	return blocks
 }

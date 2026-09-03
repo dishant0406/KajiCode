@@ -6,10 +6,11 @@ import (
 	"testing"
 )
 
-func TestSkillsContextCapsLongList(t *testing.T) {
-	// 60 skills with realistic trigger-rich descriptions (~180 chars each, under
-	// the 200-rune truncation) total well past the 4096-byte list budget, so the
-	// overflow summary must kick in while the block stays bounded.
+// 60 skills with realistic trigger-rich descriptions must ALL be listed. The old
+// 4096-byte budget summarized skills past the cap as "…and N more", making them
+// invisible to the model — the catalog is the model's ONLY discovery surface, so
+// it is deliberately unbudgeted (matching opencode's skill guidance).
+func TestSkillsContextListsLargeSetInFull(t *testing.T) {
 	longDesc := strings.Repeat("use when the request touches deployments, release notes, or verification; ", 2) + "number "
 	skills := make([]SkillInfo, 0, 60)
 	for i := 0; i < 60; i++ {
@@ -17,15 +18,13 @@ func TestSkillsContextCapsLongList(t *testing.T) {
 		skills = append(skills, SkillInfo{Name: "skill-" + n, Description: longDesc + n})
 	}
 	got := skillsContext(Options{Skills: skills})
-	if len(got) > skillsContextListBudget+1000 {
-		t.Fatalf("skills block should stay bounded near the %d-byte budget, got %d bytes:\n%s", skillsContextListBudget, len(got), got)
+	if strings.Contains(got, "more (call skill") {
+		t.Fatalf("overflow summary must not appear; every skill must be listed, got:\n%.400s", got)
 	}
-	if !strings.Contains(got, "more (call skill") {
-		t.Fatalf("expected an overflow summary line, got:\n%s", got)
-	}
-	// The first skill is always listed regardless of budget.
-	if !strings.Contains(got, "- skill-0:") {
-		t.Fatalf("expected the first skill to always be listed, got:\n%s", got)
+	for i := 0; i < 60; i++ {
+		if !strings.Contains(got, "- skill-"+strconv.Itoa(i)+":") {
+			t.Fatalf("skill-%d missing from the list", i)
+		}
 	}
 }
 
