@@ -215,7 +215,7 @@ type model struct {
 	promptEditor          *promptEditorState
 	styleEditor           *styleEditorState
 	// plan holds the sticky plan panel state (steps, expansion, timings)
-	// synced from the update_plan tool. See plan_panel.go.
+	// synced from the todo_write tool. See plan_panel.go.
 	plan            planPanelState
 	specialists     specialistTracker
 	stepWork        map[string][]planStepWork // file mutations + commands captured per in_progress plan step, for the clickable step detail
@@ -629,7 +629,7 @@ type agentRowMsg struct {
 	row   transcriptRow
 }
 
-// planUpdateMsg carries a snapshot of plan items from the update_plan tool
+// planUpdateMsg carries a snapshot of plan items from the todo_write tool
 // result callback to the live model. The callback runs on the agent goroutine
 // and captures model by value, so it cannot mutate m.plan directly — it sends
 // this message through the runtimeMessageSink instead.
@@ -2373,7 +2373,7 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.activeRunID = 0
 		m.plan.frozenAt = m.now() // freeze the plan clock while idle (no run in flight)
 		// A fully successful turn means the task is done. Weaker models often
-		// forget the final update_plan, leaving the panel stuck mid-progress;
+		// forget the final todo_write, leaving the panel stuck mid-progress;
 		// reconcile it to complete here. Read pendingAskUser/pendingPermission
 		// BEFORE the reset below clears them, and skip spec-draft reviews — those
 		// are legitimate mid-plan err==nil yields where the plan is NOT done.
@@ -3698,10 +3698,10 @@ func phaseActivityLabel(phase agent.PhaseEvent) string {
 
 // toolCardSuppressedInTranscript reports tools whose transcript card is redundant
 // because a dedicated UI surface already shows their state: Task (its specialist
-// card) and update_plan (the pinned plan panel + PLAN sidebar). Their session
+// card) and todo_write (the pinned plan panel + PLAN sidebar). Their session
 // events are still recorded; only the visible card is skipped.
 func toolCardSuppressedInTranscript(name string) bool {
-	return name == "Task" || name == "update_plan"
+	return name == "Task" || name == "todo_write"
 }
 
 func (m model) workingStatusLine() string {
@@ -3736,7 +3736,7 @@ func (m model) workingStatusLine() string {
 	}
 	// A second line carries live plan progress (how far along + the current step)
 	// so a long working stretch shows the task advancing without consulting the
-	// sidebar. Replaces the old per-call update_plan transcript cards. Empty when
+	// sidebar. Replaces the old per-call todo_write transcript cards. Empty when
 	// there is no active plan.
 	if planLine := m.workingPlanLine(); planLine != "" {
 		line += "\n" + planLine
@@ -5553,7 +5553,7 @@ func (m model) runAgentWithOptions(runID int, runCtx context.Context, prompt str
 				arg:    argHintSecondary(call.Arguments),
 				runID:  runID,
 			}
-			// A Task delegation is shown by the specialist card below, and update_plan
+			// A Task delegation is shown by the specialist card below, and todo_write
 			// is shown by the pinned plan panel + PLAN sidebar, so skip both redundant
 			// transcript cards — the dedicated UI supersedes them.
 			if !toolCardSuppressedInTranscript(call.Name) {
@@ -5638,18 +5638,18 @@ func (m model) runAgentWithOptions(runID int, runCtx context.Context, prompt str
 				runID:        runID,
 				changedFiles: result.ChangedFiles,
 			}
-			// A Task result is shown by the specialist card, and update_plan by the
+			// A Task result is shown by the specialist card, and todo_write by the
 			// plan panel/sidebar, so skip both redundant transcript rows.
 			if !toolCardSuppressedInTranscript(result.Name) {
 				rows = append(rows, row)
 				m.sendAgentRow(runID, row)
 			}
-			// Sync the sticky plan panel when update_plan runs.
-			if result.Name == "update_plan" && m.registry != nil {
-				if planTool, ok := m.registry.Get("update_plan"); ok {
-					if reader, ok := planTool.(interface{ CurrentPlan() []tools.PlanItem }); ok {
+			// Sync the sticky plan panel when todo_write runs.
+			if result.Name == "todo_write" && m.registry != nil {
+				if planTool, ok := m.registry.Get("todo_write"); ok {
+					if reader, ok := planTool.(interface{ CurrentTodos() []tools.PlanItem }); ok {
 						if m.runtimeMessageSink != nil {
-							m.runtimeMessageSink(planUpdateMsg{runID: runID, items: reader.CurrentPlan()})
+							m.runtimeMessageSink(planUpdateMsg{runID: runID, items: reader.CurrentTodos()})
 						}
 					}
 				}

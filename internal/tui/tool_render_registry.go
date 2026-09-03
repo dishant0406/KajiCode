@@ -70,15 +70,15 @@ func newDefaultToolBodyRegistry() *toolBodyRegistry {
 	} {
 		registry.register(name, localControlRenderer)
 	}
-	// update_plan's full plan is already shown live by the sticky plan panel
+	// todo_write's full plan is already shown live by the sticky plan panel
 	// (renderPlanPanel); collapse its transcript card to a one-line summary so the
 	// plan isn't re-dumped into the transcript on every call.
-	registry.register("update_plan", toolBodyRendererFunc(planSummaryCardBody))
+	registry.register("todo_write", toolBodyRendererFunc(planSummaryCardBody))
 
 	return registry
 }
 
-// planSummaryCardBody collapses an update_plan card to a single status line
+// planSummaryCardBody collapses an todo_write card to a single status line
 // (step counts) instead of the full "Current Plan:" body, which the plan panel
 // already renders. Falls back to the generic body if the text isn't a plan.
 func planSummaryCardBody(req toolBodyRequest) cardBody {

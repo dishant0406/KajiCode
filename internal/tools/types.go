@@ -189,3 +189,14 @@ func promptSafety(sideEffect SideEffect, reason string) Safety {
 		Reason:     reason,
 	}
 }
+
+// allowSafety marks a tool as auto-allowed despite the given side effect. Used
+// for tools whose writes never leave their own bookkeeping state (e.g. the
+// session todo list), matching the old update_plan classification.
+func allowSafety(sideEffect SideEffect, reason string) Safety {
+	return Safety{
+		SideEffect: sideEffect,
+		Permission: PermissionAllow,
+		Reason:     reason,
+	}
+}

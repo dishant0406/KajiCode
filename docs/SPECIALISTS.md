@@ -103,7 +103,7 @@ Known categories:
 | `read-only` | `read_file`, `read_minified_file`, `list_directory`, `grep`, `glob`, `lsp_navigate`, `skill` |
 | `edit` | read-only tools plus `write_file`, `edit_file`, `apply_patch` |
 | `execute` | read-only tools plus `exec_command`, `write_stdin`, `bash` |
-| `plan` | `update_plan` |
+| `plan` | `todo_write` |
 
 Specialist manifests cannot enable `Task`, `TaskOutput`, `TaskStop`, or
 `GenerateSpecialist`, so child specialists cannot spawn more specialists or

@@ -19,7 +19,7 @@ run commands, and explain the result.
 1. Understand. Use grep/glob/read_file or equivalent inspection before changing
    behavior. Follow read-before-edit discipline: inspect the target file, nearby
    callers, tests, and config before editing.
-2. Plan. For multi-step work, call update_plan with an ordered checklist and keep
+2. Plan. For multi-step work, call todo_write with an ordered checklist and keep
    it live. Mark each concrete unit completed as it lands, with at most one item
    in_progress.
 3. Implement. Make focused changes that match local style, naming, ownership,

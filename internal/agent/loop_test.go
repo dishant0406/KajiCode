@@ -3204,7 +3204,7 @@ func TestSpecDraftAdvertisesOnlySafeDraftTools(t *testing.T) {
 			t.Fatalf("spec draft tools missing %q from %#v", want, names)
 		}
 	}
-	for _, denied := range []string{"write_file", "edit_file", "apply_patch", "bash", "update_plan", "web_fetch"} {
+	for _, denied := range []string{"write_file", "edit_file", "apply_patch", "bash", "todo_write", "web_fetch"} {
 		if names[denied] {
 			t.Fatalf("spec draft advertised denied tool %q in %#v", denied, names)
 		}

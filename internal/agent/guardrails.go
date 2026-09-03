@@ -18,11 +18,11 @@ const (
 	maxEmptyTurns = 3
 
 	// staleToolCallThreshold injects a one-shot reminder once this many tool
-	// calls have executed since the last update_plan call.
+	// calls have executed since the last todo_write call.
 	staleToolCallThreshold = 10
 
 	// stalePlanTurnThreshold injects the same one-shot reminder once this many
-	// turns have passed since the last update_plan while plan items are still
+	// turns have passed since the last todo_write while plan items are still
 	// pending — the turn-based complement to staleToolCallThreshold, catching a
 	// plan that drifts stale across many turns that each make few tool calls.
 	stalePlanTurnThreshold = 8
@@ -34,13 +34,13 @@ const (
 	toolOnlyProgressReminderAt = 6
 
 	// planReminderTurn is the turn (1-based) by the end of which a multi-step
-	// task should have called update_plan; if it hasn't, a one-time reminder is
+	// task should have called todo_write; if it hasn't, a one-time reminder is
 	// injected. Set to 3 (not 2) so short, legitimate two-step tasks finish
 	// without a spurious planning nag.
 	planReminderTurn = 3
 
 	// planToolName is the planning tool the loop watches for by name.
-	planToolName = "update_plan"
+	planToolName = "todo_write"
 
 	// toolFailureHintAt injects a one-shot corrective hint (the tool's schema +
 	// the exact error) after a tool fails this many times in a row with the same
@@ -73,7 +73,7 @@ const continueNudgeMarker = "the task is not finished"
 func continueNudge(reason string) string {
 	return "You stopped without calling a tool, but " + continueNudgeMarker + " (" + reason + "). " +
 		"Do not stop here: take the next concrete action with a tool now. " +
-		"If you are genuinely finished, first mark the plan complete with update_plan, then give your final summary."
+		"If you are genuinely finished, first mark the plan complete with todo_write, then give your final summary."
 }
 
 // endsWithContinuationCue reports whether an assistant message ends mid-thought —
@@ -121,9 +121,9 @@ func endsWithContinuationCue(text string) bool {
 	return false
 }
 
-// planStatusRemaining reports whether a raw update_plan status string represents
+// planStatusRemaining reports whether a raw todo_write status string represents
 // unfinished work. Anything not clearly completed/failed (incl. empty/unknown,
-// which the update_plan tool coerces to "pending") counts as remaining, matching
+// which the todo_write tool coerces to "pending") counts as remaining, matching
 // that tool's own status normalization.
 func planStatusRemaining(status string) bool {
 	switch normalizeTaskPlanStatus(status) {
@@ -411,21 +411,22 @@ func IsNoProgressStop(content string) bool {
 // Reminder markers are stable substrings used both to build the reminder text
 // and to assert in tests that the right reminder was injected exactly once.
 const (
-	planNotCalledReminderMarker    = "you have not called update_plan"
-	planStaleReminderMarker        = "haven't updated the plan via update_plan"
+	planNotCalledReminderMarker    = "you have not called todo_write"
+	planStaleReminderMarker        = "haven't updated the plan via todo_write"
 	toolOnlyProgressReminderMarker = "consecutive tool-only turns"
 )
 
 // planNotCalledReminder nudges the model to track a multi-step task with
-// update_plan. Injected at most once per run.
+// todo_write. Injected at most once per run.
 func planNotCalledReminder() string {
 	return "Reminder: this looks like a multi-step task and " + planNotCalledReminderMarker +
-		". Use the update_plan tool to record the steps and keep progress visible. " +
+		". Use the todo_write tool to record the steps and keep progress visible. " +
 		"Continue with your work after updating the plan."
 }
 
-// planStaleReminder nudges the model to refresh the plan after a stretch of
-// tool calls without a plan update. Injected at most once per stale interval.
+// planStaleReminder nudges the model to refresh the plan (via todo_write) after
+// a stretch of tool calls without a plan update. Injected at most once per
+// stale interval.
 func planStaleReminder(callsSinceUpdate int) string {
 	return "Reminder: you've made " + strconv.Itoa(callsSinceUpdate) +
 		" tool calls but " + planStaleReminderMarker +
@@ -444,7 +445,7 @@ type guardState struct {
 	totalToolCalls           int
 	toolCallsSincePlanUpdate int
 	// turnsSincePlanUpdate counts turns (not individual tool calls) since the last
-	// update_plan, so a plan that goes stale across many low-tool-call turns is
+	// todo_write, so a plan that goes stale across many low-tool-call turns is
 	// still caught — the tool-call counter alone can take many turns to trip when
 	// the model makes only one call per turn.
 	turnsSincePlanUpdate  int
@@ -457,7 +458,7 @@ type guardState struct {
 	toolOnlyTurns        int
 	toolOnlyReminderSent bool
 	// planItemsPending is the number of remaining (pending/in_progress) items in
-	// the most recent update_plan call, so the headless completion gate can tell
+	// the most recent todo_write call, so the headless completion gate can tell
 	// whether work is unfinished when the model stops without a tool call.
 	planItemsPending int
 	// toolFailures tracks consecutive same-error failures per tool, keyed by tool
@@ -545,13 +546,13 @@ func (state *guardState) observeTurn(collected kajicoderuntime.CollectedStream) 
 	return state.emptyTurns >= maxEmptyTurns
 }
 
-// pendingPlanItems reports whether the most recent update_plan call still has
+// pendingPlanItems reports whether the most recent todo_write call still has
 // unfinished (pending/in_progress) items. False when no plan was ever recorded.
 func (state *guardState) pendingPlanItems() bool {
 	return state.planItemsPending > 0
 }
 
-// observePlanUpdate parses an update_plan call's raw arguments and records how
+// observePlanUpdate parses a todo_write call's raw arguments and records how
 // many items are still remaining. Malformed arguments leave the prior count
 // unchanged (best-effort — the plan panel itself tolerates the same).
 func (state *guardState) observePlanUpdate(arguments string) {
@@ -592,7 +593,7 @@ func (state *guardState) planReminder(turn int) string {
 	}
 
 	// NOT-CALLED reminder: by the end of planReminderTurn the model should have
-	// called update_plan if it's doing a multi-step task (>=1 other tool call).
+	// called todo_write if it's doing a multi-step task (>=1 other tool call).
 	// One-shot for the whole run.
 	if !state.notCalledReminderSent &&
 		!state.planEverCalled &&

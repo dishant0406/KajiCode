@@ -132,7 +132,7 @@ func TestAcceptanceCannotPhrasingIsIncomplete(t *testing.T) {
 // forces INCOMPLETE; see TestCompletionGate* and TestAcceptance*Admission*.)
 func TestPendingPlanAloneDoesNotForceIncomplete(t *testing.T) {
 	registry := tools.NewRegistry()
-	registry.Register(tools.NewUpdatePlanTool())
+	registry.Register(tools.NewTodoWriteTool())
 	done := "All set." // confident; no cue, no admission — only the plan is stale
 	provider := &mockProvider{turns: [][]kajicoderuntime.StreamEvent{
 		planTurn("completed", "in_progress"),

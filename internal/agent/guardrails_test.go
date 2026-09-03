@@ -320,11 +320,11 @@ func TestRunDoesNotInjectNotCalledReminderWhenPlanUsed(t *testing.T) {
 	writeAgentTestFile(t, root+"/notes.txt", "alpha")
 	registry := tools.NewRegistry()
 	registry.Register(tools.NewReadFileTool(root))
-	registry.Register(tools.NewUpdatePlanTool())
+	registry.Register(tools.NewTodoWriteTool())
 
 	provider := &mockProvider{
 		turns: [][]kajicoderuntime.StreamEvent{
-			toolTurn("call-1", "update_plan", `{"plan":[{"content":"step one"}]}`),
+			toolTurn("call-1", "todo_write", `{"todos":[{"content":"step one"}]}`),
 			toolTurn("call-2", "read_file", `{"path":"notes.txt"}`),
 			textTurn("done"),
 		},
@@ -350,12 +350,12 @@ func TestRunInjectsStalePlanReminderAfterManyToolCalls(t *testing.T) {
 	writeAgentTestFile(t, root+"/notes.txt", "alpha")
 	registry := tools.NewRegistry()
 	registry.Register(tools.NewReadFileTool(root))
-	registry.Register(tools.NewUpdatePlanTool())
+	registry.Register(tools.NewTodoWriteTool())
 
 	// Turn 1 calls update_plan (so the not-called reminder never triggers), then
 	// many read_file turns accumulate without another plan update.
 	turns := [][]kajicoderuntime.StreamEvent{
-		toolTurn("plan-1", "update_plan", `{"plan":[{"content":"step one"}]}`),
+		toolTurn("plan-1", "todo_write", `{"todos":[{"content":"step one"}]}`),
 	}
 	for i := 0; i < staleToolCallThreshold+2; i++ {
 		turns = append(turns, toolTurn("call", "read_file", `{"path":"notes.txt"}`))
@@ -384,10 +384,10 @@ func TestRunStalePlanReminderIsOneShotPerInterval(t *testing.T) {
 	writeAgentTestFile(t, root+"/notes.txt", "alpha")
 	registry := tools.NewRegistry()
 	registry.Register(tools.NewReadFileTool(root))
-	registry.Register(tools.NewUpdatePlanTool())
+	registry.Register(tools.NewTodoWriteTool())
 
 	turns := [][]kajicoderuntime.StreamEvent{
-		toolTurn("plan-1", "update_plan", `{"plan":[{"content":"step one"}]}`),
+		toolTurn("plan-1", "todo_write", `{"todos":[{"content":"step one"}]}`),
 	}
 	// Enough tool calls to exceed the threshold by a wide margin; the reminder
 	// must fire once for the interval, not on every subsequent turn.

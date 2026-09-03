@@ -133,7 +133,7 @@ var toolCategories = map[string][]string{
 	"read-only": {"read_file", "read_minified_file", "list_directory", "grep", "glob", "lsp_navigate", "skill"},
 	"edit":      {"read_file", "read_minified_file", "list_directory", "grep", "glob", "lsp_navigate", "skill", "write_file", "edit_file", "apply_patch"},
 	"execute":   {"read_file", "read_minified_file", "list_directory", "grep", "glob", "lsp_navigate", "skill", "exec_command", "write_stdin", "bash"},
-	"plan":      {"update_plan"},
+	"plan":      {"todo_write"},
 }
 
 var forbiddenToolNames = map[string]bool{
@@ -160,7 +160,6 @@ var knownToolNames = map[string]bool{
 	"write_file":          true,
 	"edit_file":           true,
 	"apply_patch":         true,
-	"update_plan":         true,
 	"exec_command":        true,
 	"write_stdin":         true,
 	"bash":                true,

@@ -7,7 +7,7 @@ import (
 
 func TestPlanSummaryCardBodyCollapses(t *testing.T) {
 	detail := "Current Plan:\n1. [completed] Explore workspace\n2. [in_progress] Create pages\n3. [pending] Build CSS\n4. [pending] Add JS\n5. [failed] Verify"
-	body := planSummaryCardBody(toolBodyRequest{name: "update_plan", detail: detail})
+	body := planSummaryCardBody(toolBodyRequest{name: "todo_write", detail: detail})
 	if len(body.lines) != 1 {
 		t.Fatalf("expected one summary line, got %d: %#v", len(body.lines), body.lines)
 	}
@@ -23,7 +23,7 @@ func TestPlanSummaryCardBodyCollapses(t *testing.T) {
 }
 
 func TestPlanSummaryFallsBackOnNonPlan(t *testing.T) {
-	body := planSummaryCardBody(toolBodyRequest{name: "update_plan", detail: "unexpected error text"})
+	body := planSummaryCardBody(toolBodyRequest{name: "todo_write", detail: "unexpected error text"})
 	if len(body.lines) == 0 {
 		t.Error("non-plan detail should fall back to a generic body, not collapse to nothing")
 	}

@@ -55,7 +55,7 @@ func (policy *completionPolicy) evaluate(text string, context completionContext)
 			policy.continueNudges++
 			reason := "your message ended mid-step"
 			if !cue {
-				reason = "pending plan items remain — finish them, or mark them complete with update_plan if you are done"
+				reason = "pending plan items remain — finish them, or mark them complete with todo_write if you are done"
 			}
 			return completionEvaluation{
 				Decision: CompletionUncertain,

@@ -9,7 +9,7 @@ import (
 
 func planUpdateTurn(status string) kajicoderuntime.CollectedStream {
 	return kajicoderuntime.CollectedStream{ToolCalls: []kajicoderuntime.ToolCall{
-		{Name: "update_plan", Arguments: `{"plan":[{"content":"step one","status":"` + status + `"}]}`},
+		{Name: "todo_write", Arguments: `{"todos":[{"content":"step one","status":"` + status + `"}]}`},
 	}}
 }
 

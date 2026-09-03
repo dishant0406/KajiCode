@@ -53,7 +53,7 @@ func testDeps(t *testing.T) Deps {
 		RunAgent: agent.Run,
 		BuildWorkspace: func(string, config.ResolvedConfig) (*tools.Registry, *sandbox.Engine, error) {
 			r := tools.NewRegistry()
-			r.Register(tools.NewUpdatePlanTool())
+			r.Register(tools.NewTodoWriteTool())
 			return r, nil, nil
 		},
 		ResolveWorkspaceRoot: func(cwd string) (string, error) { return cwd, nil },
@@ -197,7 +197,7 @@ func TestACPSetModeUpdatesSession(t *testing.T) {
 func TestACPRunTurnWiresSandboxAndScopedRegistry(t *testing.T) {
 	deps := testDeps(t)
 	reg := tools.NewRegistry()
-	reg.Register(tools.NewUpdatePlanTool())
+	reg.Register(tools.NewTodoWriteTool())
 	engine := sandbox.NewEngine(sandbox.EngineOptions{WorkspaceRoot: t.TempDir()})
 	deps.BuildWorkspace = func(string, config.ResolvedConfig) (*tools.Registry, *sandbox.Engine, error) {
 		return reg, engine, nil

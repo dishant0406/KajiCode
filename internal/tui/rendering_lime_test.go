@@ -52,10 +52,10 @@ func TestStyleAssistantMarkdownLinePassesAnsiVerbatim(t *testing.T) {
 	}
 }
 
-// update_plan and Task render as a dedicated UI (plan panel / specialist card),
+// todo_write and Task render as a dedicated UI (plan panel / specialist card),
 // so their transcript tool cards are suppressed; everything else still shows.
 func TestToolCardSuppressedInTranscript(t *testing.T) {
-	for _, name := range []string{"Task", "update_plan"} {
+	for _, name := range []string{"Task", "todo_write"} {
 		if !toolCardSuppressedInTranscript(name) {
 			t.Errorf("%q should be suppressed from the transcript (shown by a dedicated UI)", name)
 		}

@@ -12,7 +12,7 @@ import (
 
 func TestTaskStateReplayIsDeterministic(t *testing.T) {
 	events := []taskStateEvent{
-		{kind: taskStateEventPlan, arguments: `{"plan":[{"content":"inspect","status":"done"},{"content":"implement","status":"in progress"},{"content":"verify"}]}`},
+		{kind: taskStateEventPlan, arguments: `{"todos":[{"content":"inspect","status":"done"},{"content":"implement","status":"in progress"},{"content":"verify"}]}`},
 		{kind: taskStateEventToolResult, toolResult: ToolResult{Name: "apply_patch", Status: tools.StatusOK, ChangedFiles: []string{"a.go", "a.go", "b.go"}}},
 		{kind: taskStateEventToolResult, toolResult: ToolResult{Name: "go test", Status: tools.StatusError}},
 		{kind: taskStateEventVerification, verification: OutcomePassed},
@@ -65,11 +65,11 @@ func TestTaskStateCoalescesToolResultsIntoNextTraceEvent(t *testing.T) {
 
 func TestRunEmitsTaskStateFromExistingLoopEvents(t *testing.T) {
 	registry := tools.NewRegistry()
-	registry.Register(tools.NewUpdatePlanTool())
+	registry.Register(tools.NewTodoWriteTool())
 	provider := &mockProvider{turns: [][]kajicoderuntime.StreamEvent{
 		{
 			{Type: kajicoderuntime.StreamEventToolCallStart, ToolCallID: "plan-1", ToolName: planToolName},
-			{Type: kajicoderuntime.StreamEventToolCallDelta, ToolCallID: "plan-1", ArgumentsFragment: `{"plan":[{"content":"implement","status":"completed"}]}`},
+			{Type: kajicoderuntime.StreamEventToolCallDelta, ToolCallID: "plan-1", ArgumentsFragment: `{"todos":[{"content":"implement","status":"completed"}]}`},
 			{Type: kajicoderuntime.StreamEventToolCallEnd, ToolCallID: "plan-1"},
 			{Type: kajicoderuntime.StreamEventDone},
 		},
@@ -102,7 +102,7 @@ func TestRunEmitsTaskStateFromExistingLoopEvents(t *testing.T) {
 
 func TestTaskStateSnapshotIsImmutable(t *testing.T) {
 	state := newTaskState("objective", nil)
-	state.observe(taskStateEvent{kind: taskStateEventPlan, arguments: `{"plan":[{"content":"one","status":"pending"}]}`})
+	state.observe(taskStateEvent{kind: taskStateEventPlan, arguments: `{"todos":[{"content":"one","status":"pending"}]}`})
 	state.observe(taskStateEvent{kind: taskStateEventToolResult, toolResult: ToolResult{Status: tools.StatusOK, ChangedFiles: []string{"one.go"}}})
 
 	snapshot := state.snapshot()
@@ -117,17 +117,17 @@ func TestTaskStateSnapshotIsImmutable(t *testing.T) {
 
 func TestTaskStatePlanParityUsesLatestPlan(t *testing.T) {
 	state := newTaskState("objective", nil)
-	state.observe(taskStateEvent{kind: taskStateEventPlan, arguments: `{"plan":[{"content":"old","status":"completed"}]}`})
-	state.observe(taskStateEvent{kind: taskStateEventPlan, arguments: `{"plan":[{"content":"new","status":"in_progress"}]}`})
+	state.observe(taskStateEvent{kind: taskStateEventPlan, arguments: `{"todos":[{"content":"old","status":"completed"}]}`})
+	state.observe(taskStateEvent{kind: taskStateEventPlan, arguments: `{"todos":[{"content":"new","status":"in_progress"}]}`})
 
 	messages := []kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleAssistant, ToolCalls: []kajicoderuntime.ToolCall{
-		{Name: planToolName, Arguments: `{"plan":[{"content":"new","status":"in_progress"}]}`},
+		{Name: planToolName, Arguments: `{"todos":[{"content":"new","status":"in_progress"}]}`},
 	}}}
 	if parity := state.observePlanParity(messages); parity != taskPlanParityMatch {
 		t.Fatalf("parity = %q, want match", parity)
 	}
 
-	messages[0].ToolCalls[0].Arguments = `{"plan":[{"content":"different","status":"pending"}]}`
+	messages[0].ToolCalls[0].Arguments = `{"todos":[{"content":"different","status":"pending"}]}`
 	if parity := state.observePlanParity(messages); parity != taskPlanParityMismatch {
 		t.Fatalf("parity = %q, want mismatch", parity)
 	}
@@ -135,7 +135,7 @@ func TestTaskStatePlanParityUsesLatestPlan(t *testing.T) {
 
 func TestTaskStateMatchesPlanToolNormalization(t *testing.T) {
 	state := newTaskState("objective", nil)
-	arguments := `{"plan":[{"content":"first","status":"in_progress"},{"content":"second","status":"in_progress"}]}`
+	arguments := `{"todos":[{"content":"first","status":"in_progress"},{"content":"second","status":"in_progress"}]}`
 	state.observe(taskStateEvent{kind: taskStateEventPlan, arguments: arguments})
 
 	snapshot := state.snapshot()
@@ -148,8 +148,8 @@ func TestTaskStateMatchesPlanToolNormalization(t *testing.T) {
 	}
 
 	empty := newTaskState("objective", nil)
-	empty.observe(taskStateEvent{kind: taskStateEventPlan, arguments: `{"plan":[]}`})
-	emptyMessages := []kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleAssistant, ToolCalls: []kajicoderuntime.ToolCall{{Name: planToolName, Arguments: `{"plan":[]}`}}}}
+	empty.observe(taskStateEvent{kind: taskStateEventPlan, arguments: `{"todos":[]}`})
+	emptyMessages := []kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleAssistant, ToolCalls: []kajicoderuntime.ToolCall{{Name: planToolName, Arguments: `{"todos":[]}`}}}}
 	if parity := empty.observePlanParity(emptyMessages); parity != taskPlanParityMatch {
 		t.Fatalf("explicit empty plan should match transcript, got %q", parity)
 	}
@@ -157,9 +157,9 @@ func TestTaskStateMatchesPlanToolNormalization(t *testing.T) {
 
 func TestTaskStateContextFallsBackWhenTranscriptDiffers(t *testing.T) {
 	state := newTaskState("objective", nil)
-	state.observe(taskStateEvent{kind: taskStateEventPlan, arguments: `{"plan":[{"content":"tracked","status":"completed"}]}`})
+	state.observe(taskStateEvent{kind: taskStateEventPlan, arguments: `{"todos":[{"content":"tracked","status":"completed"}]}`})
 	messages := []kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleAssistant, ToolCalls: []kajicoderuntime.ToolCall{
-		{Name: planToolName, Arguments: `{"plan":[{"content":"transcript","status":"pending"}]}`},
+		{Name: planToolName, Arguments: `{"todos":[{"content":"transcript","status":"pending"}]}`},
 	}}}
 
 	context := state.completionContext(messages, true)
@@ -173,16 +173,16 @@ func TestTaskStateContextFallsBackWhenTranscriptDiffers(t *testing.T) {
 
 func TestTaskStateCompactionSnapshotRetainsObjectiveOnPlanMismatch(t *testing.T) {
 	state := newTaskState("objective", nil)
-	state.observe(taskStateEvent{kind: taskStateEventPlan, arguments: `{"plan":[{"content":"verify","status":"pending"}]}`})
+	state.observe(taskStateEvent{kind: taskStateEventPlan, arguments: `{"todos":[{"content":"verify","status":"pending"}]}`})
 	matching := []kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleAssistant, ToolCalls: []kajicoderuntime.ToolCall{
-		{Name: planToolName, Arguments: `{"plan":[{"content":"verify","status":"pending"}]}`},
+		{Name: planToolName, Arguments: `{"todos":[{"content":"verify","status":"pending"}]}`},
 	}}}
 	if snapshot := state.snapshotForCompaction(matching); snapshot == nil || snapshot.Objective != "objective" {
 		t.Fatalf("matching transcript should produce compact state, got %#v", snapshot)
 	}
 
 	mismatching := append([]kajicoderuntime.Message(nil), matching...)
-	mismatching[0].ToolCalls = []kajicoderuntime.ToolCall{{Name: planToolName, Arguments: `{"plan":[{"content":"other","status":"pending"}]}`}}
+	mismatching[0].ToolCalls = []kajicoderuntime.ToolCall{{Name: planToolName, Arguments: `{"todos":[{"content":"other","status":"pending"}]}`}}
 	if snapshot := state.snapshotForCompaction(mismatching); snapshot == nil || snapshot.Objective != "objective" || snapshot.PlanParity != taskPlanParityMismatch {
 		t.Fatalf("plan mismatch must retain immutable objective and mark mutable state uncorroborated, got %#v", snapshot)
 	}
@@ -191,11 +191,11 @@ func TestTaskStateCompactionSnapshotRetainsObjectiveOnPlanMismatch(t *testing.T)
 func TestParseTaskPlanRejectsArgumentsTheToolWouldReject(t *testing.T) {
 	for _, arguments := range []string{
 		`{}`,
-		`{"plan":null}`,
-		`{"plan":[{"step":"alias is not accepted"}]}`,
-		`{"plan":[{"content":""}]}`,
-		`{"plan":[{"content":"valid"},{"content":""}]}`,
-		`{"plan":[{"id":4,"content":"valid"}]}`,
+		`{"todos":null}`,
+		`{"todos":[{"step":"alias is not accepted"}]}`,
+		`{"todos":[{"content":""}]}`,
+		`{"todos":[{"content":"valid"},{"content":""}]}`,
+		`{"todos":[{"id":4,"content":"valid"}]}`,
 	} {
 		if plan, ok := parseTaskPlan(arguments); ok {
 			t.Fatalf("parseTaskPlan(%s) = %#v, true; want rejected", arguments, plan)

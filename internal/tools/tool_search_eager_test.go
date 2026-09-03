@@ -7,7 +7,7 @@ import (
 )
 
 // searchEagerTool is a minimal EAGER tool: it does NOT implement Deferred(), so
-// IsDeferred returns false — it's always in the model's list (like Task/update_plan).
+// IsDeferred returns false — it's always in the model's list (like Task/todo_write).
 type searchEagerTool struct{ name string }
 
 func (t searchEagerTool) Name() string        { return t.name }
@@ -23,14 +23,14 @@ func (t searchEagerTool) Run(context.Context, map[string]any) Result { return Re
 func TestToolSearchRedirectsEagerSelectToCallDirectly(t *testing.T) {
 	reg := newDeferredFixtureRegistry() // weather_lookup + stock_quote (deferred)
 	reg.Register(searchEagerTool{name: "Task"})
-	reg.Register(searchEagerTool{name: "update_plan"})
+	reg.Register(searchEagerTool{name: "todo_write"})
 	tool := NewToolSearchTool(reg).(optionsAwareTool)
 
-	res := tool.RunWithOptions(context.Background(), map[string]any{"query": "select:Task,update_plan"}, RunOptions{})
+	res := tool.RunWithOptions(context.Background(), map[string]any{"query": "select:Task,todo_write"}, RunOptions{})
 	if strings.Contains(res.Output, "No tools matched") {
 		t.Errorf("eager tools must NOT report 'No tools matched':\n%s", res.Output)
 	}
-	for _, want := range []string{"Task", "update_plan", "already in your tool list", "call them directly"} {
+	for _, want := range []string{"Task", "todo_write", "already in your tool list", "call them directly"} {
 		if !strings.Contains(res.Output, want) {
 			t.Errorf("expected %q in:\n%s", want, res.Output)
 		}
@@ -68,10 +68,10 @@ func TestToolSearchUnknownStillReportsNoMatch(t *testing.T) {
 // Keyword search for an eager tool name also redirects.
 func TestToolSearchKeywordEagerRedirects(t *testing.T) {
 	reg := newDeferredFixtureRegistry()
-	reg.Register(searchEagerTool{name: "update_plan"})
+	reg.Register(searchEagerTool{name: "todo_write"})
 	tool := NewToolSearchTool(reg).(optionsAwareTool)
-	res := tool.RunWithOptions(context.Background(), map[string]any{"query": "update_plan"}, RunOptions{})
-	if !strings.Contains(res.Output, "update_plan is already in your tool list") {
+	res := tool.RunWithOptions(context.Background(), map[string]any{"query": "todo_write"}, RunOptions{})
+	if !strings.Contains(res.Output, "todo_write is already in your tool list") {
 		t.Errorf("keyword search for an eager tool should redirect:\n%s", res.Output)
 	}
 }

@@ -35,7 +35,7 @@ func toolKindFor(name string) string {
 		return ToolKindExecute
 	case "web_fetch", "web_search":
 		return ToolKindFetch
-	case "update_plan":
+	case "todo_write":
 		return ToolKindThink
 	default:
 		return ToolKindOther

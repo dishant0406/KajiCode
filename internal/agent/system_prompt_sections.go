@@ -74,7 +74,7 @@ func modeContractContext(options Options) string {
 		return `<mode_contract>
 Mode: spec-draft.
 This is a planning/specification pass. Use only read-only inspection tools plus ask_user when genuinely blocked.
-Do not edit files, run shell commands, spawn specialists, request extra permissions, or call update_plan.
+Do not edit files, run shell commands, spawn specialists, request extra permissions, or call todo_write.
 The only write-capable exception is submit_spec, which saves the completed draft under .kajicode/specs and stops for review.
 </mode_contract>`
 	default:

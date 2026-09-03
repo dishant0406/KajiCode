@@ -16,7 +16,7 @@ func executorWithReadOnlyAndWriteSpecialists() Executor {
 				},
 				{
 					Metadata:      Metadata{Name: "worker", Description: "writes + runs", Tools: []string{"read-only", "edit", "execute", "plan"}},
-					ResolvedTools: []string{"read_file", "grep", "write_file", "edit_file", "bash", "update_plan"},
+					ResolvedTools: []string{"read_file", "grep", "write_file", "edit_file", "bash", "todo_write"},
 				},
 			}}, nil
 		},

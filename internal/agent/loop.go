@@ -3351,7 +3351,7 @@ func toolAdvertisedInSpecDraft(tool tools.Tool) bool {
 	switch tool.Name() {
 	case "ask_user", "submit_spec":
 		return true
-	case "update_plan":
+	case "todo_write":
 		return false
 	}
 	safety := tool.Safety()

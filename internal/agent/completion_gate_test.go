@@ -29,7 +29,7 @@ func planTurn(statuses ...string) []kajicoderuntime.StreamEvent {
 	for i, s := range statuses {
 		items[i] = `{"content":"step ` + s + `","status":"` + s + `"}`
 	}
-	return toolTurn("plan", "update_plan", `{"plan":[`+strings.Join(items, ",")+`]}`)
+	return toolTurn("plan", "todo_write", `{"todos":[`+strings.Join(items, ",")+`]}`)
 }
 
 // BUG #1 regression: a no-tool-call turn that ends mid-step while plan items are
@@ -40,7 +40,7 @@ func TestCompletionGatePendingPlanContinuesThenIncomplete(t *testing.T) {
 	// keeps emitting "…Let me check the SSH configuration:" without acting.
 	cue := "Now I need to configure the SSH server. Let me check the current SSH configuration:"
 	registry := tools.NewRegistry()
-	registry.Register(tools.NewUpdatePlanTool())
+	registry.Register(tools.NewTodoWriteTool())
 
 	provider := &mockProvider{turns: [][]kajicoderuntime.StreamEvent{
 		planTurn("completed", "pending", "pending"),
@@ -182,8 +182,8 @@ func TestContinuationCueMatching(t *testing.T) {
 // gate, a max-turns cutoff is INCOMPLETE — the agent was stopped mid-run, not done.
 func TestMaxTurnsCutoffIsIncompleteUnderGate(t *testing.T) {
 	registry := tools.NewRegistry()
-	registry.Register(tools.NewUpdatePlanTool())
-	toolEvery := toolTurn("c", "update_plan", `{"plan":[{"content":"step","status":"in_progress"}]}`)
+	registry.Register(tools.NewTodoWriteTool())
+	toolEvery := toolTurn("c", "todo_write", `{"todos":[{"content":"step","status":"in_progress"}]}`)
 	provider := &mockProvider{turns: [][]kajicoderuntime.StreamEvent{
 		toolEvery, toolEvery, toolEvery, toolEvery,
 	}}

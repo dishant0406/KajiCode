@@ -32,7 +32,8 @@ type RunOptions struct {
 	// SessionStore, when set, persists per-session key/value metadata (used by
 	// todo_read / todo_write). Tools that need session state fall back to an
 	// in-process store keyed by SessionID when nil, so they stay functional
-	// without CLI wiring.
+	// without CLI wiring. todo_write also mirrors the list in memory
+	// (CurrentTodos) for TUI/ACP plan rendering.
 	SessionStore SessionStore
 	// EnabledTools / DisabledTools carry the run's operator tool filters so a
 	// filter-aware tool (tool_search) never discloses or loads an operator-hidden
@@ -331,7 +332,6 @@ func CoreWriteToolsScoped(workspaceRoot string, scope PathScope) []Tool {
 		NewScopedWriteFileTool(workspaceRoot, scope),
 		NewScopedEditFileTool(workspaceRoot, scope),
 		NewScopedApplyPatchTool(workspaceRoot, scope),
-		NewUpdatePlanTool(),
 	}
 }
 

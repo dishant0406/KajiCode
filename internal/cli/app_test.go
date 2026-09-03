@@ -1785,7 +1785,7 @@ func assertCoreRegistry(t *testing.T, registry *tools.Registry) {
 		"write_file",
 		"edit_file",
 		"apply_patch",
-		"update_plan",
+		"todo_write",
 		"bash",
 		"web_fetch",
 	} {

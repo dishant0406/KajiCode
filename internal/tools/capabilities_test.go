@@ -281,7 +281,7 @@ func TestWorkspaceWriteClassifications(t *testing.T) {
 
 func TestInteractiveClassifications(t *testing.T) {
 	root := t.TempDir()
-	for _, name := range []string{"ask_user", "exec_command", "write_stdin", "update_plan", "escalate_model", "request_permissions", "browser_open", "terminal_session", "desktop_action"} {
+	for _, name := range []string{"ask_user", "exec_command", "write_stdin", "todo_write", "escalate_model", "request_permissions", "browser_open", "terminal_session", "desktop_action"} {
 		var found Tool
 		for _, tool := range BuiltinCatalog(root) {
 			if tool.Name() == name {

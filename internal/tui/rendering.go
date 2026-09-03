@@ -114,13 +114,13 @@ func buildRowContext(rows []transcriptRow) rowContext {
 }
 
 // isHiddenPlumbingTool reports whether a tool is internal mechanism the user
-// never needs to see in the transcript: update_plan (the plan is surfaced live
+// never needs to see in the transcript: todo_write (the plan is surfaced live
 // in the context sidebar and the clickable step detail) and tool_search (the
 // on-demand loading of tool schemas — the "select:…" noise). Their cards are
 // suppressed so the chat reads as a clean narrative of real work.
 func isHiddenPlumbingTool(name string) bool {
 	switch name {
-	case "update_plan", "tool_search":
+	case "todo_write", "tool_search":
 		return true
 	}
 	return false
@@ -141,7 +141,7 @@ func (rc rowContext) skip(row transcriptRow) bool {
 		}
 		return row.id != "" && rc.resolved[rcKey(row.runID, row.id)]
 	case rowToolResult:
-		// Hide only SUCCESSFUL plumbing results; a failed update_plan/tool_search
+		// Hide only SUCCESSFUL plumbing results; a failed todo_write/tool_search
 		// must still surface its error.
 		return isHiddenPlumbingTool(row.tool) && row.status != tools.StatusError
 	case rowPermission:

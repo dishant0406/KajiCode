@@ -491,18 +491,16 @@ func TestPermissionsCommandListsPersistentSandboxGrants(t *testing.T) {
 	assertNotContains(t, text, "Permission mode:")
 }
 
-func TestPlanCommandShowsCurrentPlan(t *testing.T) {
+func TestPlanCommandShowsCurrentTodos(t *testing.T) {
 	registry := tools.NewRegistry()
-	planTool := tools.NewUpdatePlanTool()
+	planTool := tools.NewTodoWriteTool()
 	result := planTool.Run(context.Background(), map[string]any{
-		"plan": []any{
+		"todos": []any{
 			map[string]any{
-				"id":      "one",
 				"content": "Wire model catalog",
 				"status":  "completed",
 			},
 			map[string]any{
-				"id":      "two",
 				"content": "Add max turns",
 				"status":  "in_progress",
 				"notes":   "Go exec parity",
@@ -510,7 +508,7 @@ func TestPlanCommandShowsCurrentPlan(t *testing.T) {
 		},
 	})
 	if result.Status != tools.StatusOK {
-		t.Fatalf("update_plan setup failed: %#v", result)
+		t.Fatalf("todo_write setup failed: %#v", result)
 	}
 	registry.Register(planTool)
 	m := newModel(context.Background(), Options{Registry: registry})

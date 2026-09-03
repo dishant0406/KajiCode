@@ -31,7 +31,7 @@ func TestStorageCreateWritesValidManifestAndDeleteRemovesIt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("created manifest did not parse: %v\n%s", err, string(data))
 	}
-	if loaded.Metadata.Name != "triage" || !contains(loaded.ResolvedTools, "update_plan") {
+	if loaded.Metadata.Name != "triage" || !contains(loaded.ResolvedTools, "todo_write") {
 		t.Fatalf("unexpected loaded manifest: %#v", loaded)
 	}
 

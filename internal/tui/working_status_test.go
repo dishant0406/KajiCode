@@ -39,13 +39,13 @@ func TestWorkingPlanLine(t *testing.T) {
 	}
 }
 
-// TestHiddenPlumbingToolsSkippedFromTranscript: the plumbing tools (update_plan,
+// TestHiddenPlumbingToolsSkippedFromTranscript: the plumbing tools (todo_write,
 // tool_search) render nothing — their call AND result rows are dropped; real
 // work tools still render.
 func TestHiddenPlumbingToolsSkippedFromTranscript(t *testing.T) {
 	rows := []transcriptRow{
-		{kind: rowToolCall, tool: "update_plan", id: "c1", runID: 1},
-		{kind: rowToolResult, tool: "update_plan", id: "c1", runID: 1, text: "10 steps · 2 done"},
+		{kind: rowToolCall, tool: "todo_write", id: "c1", runID: 1},
+		{kind: rowToolResult, tool: "todo_write", id: "c1", runID: 1, text: "10 steps · 2 done"},
 		{kind: rowToolCall, tool: "tool_search", id: "c2", runID: 1},
 		{kind: rowToolResult, tool: "tool_search", id: "c2", runID: 1, text: "select:swarm_spawn,…"},
 		{kind: rowToolResult, tool: "bash", id: "c3", runID: 1, text: "ok"},
@@ -61,13 +61,13 @@ func TestHiddenPlumbingToolsSkippedFromTranscript(t *testing.T) {
 	}
 
 	// A FAILED plumbing result must still render — its error has to surface.
-	failed := transcriptRow{kind: rowToolResult, tool: "update_plan", id: "c9", runID: 1, status: tools.StatusError, text: "tool result: update_plan error boom"}
+	failed := transcriptRow{kind: rowToolResult, tool: "todo_write", id: "c9", runID: 1, status: tools.StatusError, text: "tool result: todo_write error boom"}
 	if buildRowContext([]transcriptRow{failed}).skip(failed) {
 		t.Error("a failed plumbing result must NOT be skipped (the error must show)")
 	}
 
-	if !isHiddenPlumbingTool("update_plan") || !isHiddenPlumbingTool("tool_search") {
-		t.Error("update_plan and tool_search must be hidden plumbing")
+	if !isHiddenPlumbingTool("todo_write") || !isHiddenPlumbingTool("tool_search") {
+		t.Error("todo_write and tool_search must be hidden plumbing")
 	}
 	if isHiddenPlumbingTool("write_file") || isHiddenPlumbingTool("web_search") {
 		t.Error("real work tools must NOT be hidden")

@@ -47,7 +47,8 @@ func BuiltinCatalog(workspaceRoot string) []Tool {
 	all = append(all, NewLocalTerminalTools(localcontrol.TerminalOptions{})...)
 	all = append(all, NewLocalControlArtifactTools(LocalControlArtifactOptions{})...)
 	// Session-tracking tools are core in opencode (todo_read/todo_write are
-	// registered for every agent). They persist via the wired SessionStore.
+	// registered for every agent). They persist via the wired SessionStore;
+	// todo_write mirrors the list in memory for TUI/ACP plan rendering.
 	all = append(all, NewTodoReadTool(), NewTodoWriteTool())
 	// Multi-edit: atomic batch editing of one file.
 	all = append(all, NewMultiEditTool(workspaceRoot))

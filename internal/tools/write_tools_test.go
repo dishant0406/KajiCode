@@ -28,12 +28,12 @@ func TestCoreToolsExposeWriteAndPlanTools(t *testing.T) {
 		}
 	}
 
-	planTool, ok := byName["update_plan"]
+	todoTool, ok := byName["todo_write"]
 	if !ok {
-		t.Fatalf("expected core tools to include update_plan")
+		t.Fatalf("expected core tools to include todo_write")
 	}
-	if planTool.Safety().Permission != PermissionAllow {
-		t.Fatalf("update_plan permission = %s, want allow", planTool.Safety().Permission)
+	if todoTool.Safety().Permission != PermissionAllow {
+		t.Fatalf("todo_write permission = %s, want allow", todoTool.Safety().Permission)
 	}
 }
 

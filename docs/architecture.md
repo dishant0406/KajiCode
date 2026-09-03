@@ -269,8 +269,12 @@ tools, the catalog now includes:
   (`internal/tools/multi_edit.go`), in `tools.CoreTools`.
 - `ls` — recursive ignore-aware directory tree (`internal/tools/ls.go`).
 - `code_search` — web-search-backed code search (`internal/tools/code_search.go`).
-- `todo_read` / `todo_write` — session-persisted todo list
-  (`internal/tools/todo.go` + `internal/sessions/state.go`).
+- `todo_read` / `todo_write` — the canonical task-planning surface: a
+  session-persisted todo list (`internal/tools/todo.go` +
+  `internal/sessions/state.go`). `todo_write` also mirrors the list in memory
+  (`CurrentTodos`) so the TUI plan panel, ACP plan updates, and the agent
+  guardrails/completion gate all read one source of truth. The former
+  `update_plan` tool was removed in favor of this tool.
 - `batch` — explicit batcher that fans out up to 10 sub-calls to
   `Registry.RunWithOptions`, parallelizing only ReadOnly + ThreadSafe + permitted
   calls with non-conflicting resource keys and serializing the rest

@@ -259,12 +259,15 @@ func (state *taskState) emit() {
 	})
 }
 
+// parseTaskPlan parses a todo_write tool call's arguments ({"todos":[{content,
+// status,...}]}) into plan items. Returns ok=false on malformed arguments or
+// items missing content.
 func parseTaskPlan(arguments string) ([]taskPlanItem, bool) {
 	var object map[string]json.RawMessage
 	if json.Unmarshal([]byte(strings.TrimSpace(arguments)), &object) != nil {
 		return nil, false
 	}
-	rawPlan, ok := object["plan"]
+	rawPlan, ok := object["todos"]
 	if !ok || string(rawPlan) == "null" {
 		return nil, false
 	}

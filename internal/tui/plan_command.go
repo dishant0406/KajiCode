@@ -8,11 +8,11 @@ import (
 )
 
 type currentPlanReader interface {
-	CurrentPlan() []tools.PlanItem
+	CurrentTodos() []tools.PlanItem
 }
 
 func (m model) planText() string {
-	tool, ok := m.registry.Get("update_plan")
+	tool, ok := m.registry.Get("todo_write")
 	if !ok {
 		return "No plan is active."
 	}
@@ -22,7 +22,7 @@ func (m model) planText() string {
 		return "No plan is active."
 	}
 
-	plan := reader.CurrentPlan()
+	plan := reader.CurrentTodos()
 	if len(plan) == 0 {
 		return "No plan is active."
 	}

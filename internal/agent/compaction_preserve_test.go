@@ -16,7 +16,7 @@ func stateConversation() []kajicoderuntime.Message {
 		{Role: kajicoderuntime.MessageRoleSystem, Content: "system"},
 		{Role: kajicoderuntime.MessageRoleUser, Content: "build the thing"},
 		{Role: kajicoderuntime.MessageRoleAssistant, Content: "planning", ToolCalls: []kajicoderuntime.ToolCall{
-			{ID: "p1", Name: "update_plan", Arguments: `{"plan":[{"content":"write code","status":"in_progress"},{"content":"add tests","status":"pending"}]}`},
+			{ID: "p1", Name: "todo_write", Arguments: `{"todos":[{"content":"write code","status":"in_progress"},{"content":"add tests","status":"pending"}]}`},
 		}},
 		{Role: kajicoderuntime.MessageRoleTool, Content: "plan updated", ToolCallID: "p1"},
 		{Role: kajicoderuntime.MessageRoleAssistant, Content: "loading skill", ToolCalls: []kajicoderuntime.ToolCall{
@@ -63,7 +63,7 @@ func TestCompactPreservesActivePlan(t *testing.T) {
 func TestCompactPreservesBoundedTaskContext(t *testing.T) {
 	objective := strings.Repeat("世", maxTaskObjectiveBytes)
 	task := newTaskState(objective, nil)
-	task.observe(taskStateEvent{kind: taskStateEventPlan, arguments: `{"plan":[{"content":"write code","status":"in_progress"},{"content":"add tests","status":"pending"}]}`})
+	task.observe(taskStateEvent{kind: taskStateEventPlan, arguments: `{"todos":[{"content":"write code","status":"in_progress"},{"content":"add tests","status":"pending"}]}`})
 	messages := stateConversation()
 	compacted, err := Compact(messages, CompactionOptions{
 		PreserveLast: 2,
@@ -119,7 +119,7 @@ func TestCompactPreservesObjectiveAfterPlanParityMismatch(t *testing.T) {
 
 func TestTaskObjectiveSurvivesRepeatedCompactionWithoutPlanRefresh(t *testing.T) {
 	task := newTaskState("keep this objective", nil)
-	task.observe(taskStateEvent{kind: taskStateEventPlan, arguments: `{"plan":[{"content":"write code","status":"in_progress"},{"content":"add tests","status":"pending"}]}`})
+	task.observe(taskStateEvent{kind: taskStateEventPlan, arguments: `{"todos":[{"content":"write code","status":"in_progress"},{"content":"add tests","status":"pending"}]}`})
 	messages := stateConversation()
 
 	first, err := Compact(messages, CompactionOptions{
@@ -371,10 +371,10 @@ func TestCompactPreservesSkillBodyWithMarkdownHeadings(t *testing.T) {
 func TestExtractLatestPlanReturnsMostRecent(t *testing.T) {
 	messages := []kajicoderuntime.Message{
 		{Role: kajicoderuntime.MessageRoleAssistant, ToolCalls: []kajicoderuntime.ToolCall{
-			{ID: "a", Name: "update_plan", Arguments: `{"plan":[{"content":"old step","status":"completed"}]}`},
+			{ID: "a", Name: "todo_write", Arguments: `{"todos":[{"content":"old step","status":"completed"}]}`},
 		}},
 		{Role: kajicoderuntime.MessageRoleAssistant, ToolCalls: []kajicoderuntime.ToolCall{
-			{ID: "b", Name: "update_plan", Arguments: `{"plan":[{"content":"new step","status":"in_progress"}]}`},
+			{ID: "b", Name: "todo_write", Arguments: `{"todos":[{"content":"new step","status":"in_progress"}]}`},
 		}},
 	}
 	got := extractLatestPlan(messages)
@@ -384,14 +384,14 @@ func TestExtractLatestPlanReturnsMostRecent(t *testing.T) {
 }
 
 func TestFormatPlanArgumentsRejectsUnsupportedStepAlias(t *testing.T) {
-	got := formatPlanArguments(`{"plan":[{"step":"write failing test","status":"in_progress"},{"content":"keep existing shape","status":"pending"}]}`)
+	got := formatPlanArguments(`{"todos":[{"step":"write failing test","status":"in_progress"},{"content":"keep existing shape","status":"pending"}]}`)
 	if got != "" {
 		t.Fatalf("unsupported alias should reject the whole plan like update_plan, got %q", got)
 	}
 }
 
 func TestFormatPlanArgumentsPreservesNotes(t *testing.T) {
-	got := formatPlanArguments(`{"plan":[{"content":"finish preservation","status":"in_progress","notes":"keep TUI untouched"}]}`)
+	got := formatPlanArguments(`{"todos":[{"content":"finish preservation","status":"in_progress","notes":"keep TUI untouched"}]}`)
 	if !strings.Contains(got, "- [in_progress] finish preservation") || !strings.Contains(got, "Notes: keep TUI untouched") {
 		t.Fatalf("expected plan content and notes to be preserved, got %q", got)
 	}

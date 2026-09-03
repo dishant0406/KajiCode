@@ -16,13 +16,16 @@ const (
 	TodoStatusCancelled  = "cancelled"
 )
 
-// TodoItem is one entry in a session's todo list.
+// TodoItem is one entry in a session's todo list. PlanItem is kept as an alias
+// so TUI/ACP renderers can keep their PlanItem-typed signatures.
 type TodoItem struct {
 	Content  string `json:"content"`
 	Status   string `json:"status"`
 	Priority string `json:"priority,omitempty"`
 	Notes    string `json:"notes,omitempty"`
 }
+
+type PlanItem = TodoItem
 
 // stateTodoKey is the session-state key holding a session's todo list.
 const stateTodoKey = "todo"
@@ -194,6 +197,7 @@ func (tool todoReadTool) Run(ctx context.Context, args map[string]any) Result {
 	return tool.RunWithOptions(ctx, args, RunOptions{})
 }
 
+//nolint:staticcheck // todoReadTool stays a value receiver like its sibling tools.
 func (tool todoReadTool) RunWithOptions(_ context.Context, args map[string]any, options RunOptions) Result {
 	if options.SessionID == "" {
 		return errorResult("Error: todo_read requires a session context")
@@ -225,29 +229,40 @@ func todoWriteSpecs() []*ArgSpec {
 	}
 }
 
-// NewTodoWriteTool builds the todo_write tool: replace the session's todo list.
-func NewTodoWriteTool() Tool {
-	return todoWriteTool{baseTool: baseTool{
-		name:         "todo_write",
-		description:  "Replace the session todo list with a new one. Each item needs content; status defaults to pending; at most one item may be in_progress.",
-		parameters:   SpecsToSchema(todoWriteSpecs()),
-		safety:       promptSafety(SideEffectWrite, "Updates the session todo list."),
-		capabilities: ToolCapabilities{Effect: EffectInteractive, ThreadSafe: false, ResourceKeys: sessionResourceKeys},
+// todoWriteTool is stateful: it keeps the last-written list in memory (guarded
+// by mu) so the TUI plan panel and ACP plan updates can read it via
+// CurrentTodos, mirroring the old update_plan tool's reader surface.
+type todoWriteTool struct {
+	baseTool
+	// mu guards currentTodos: RunWithOptions writes it on the agent goroutine
+	// while CurrentTodos()/ClearTodos() are called from the TUI/ACP goroutine.
+	mu           sync.Mutex
+	currentTodos []TodoItem
+}
+
+func NewTodoWriteTool() *todoWriteTool {
+	return &todoWriteTool{baseTool: baseTool{
+		name: "todo_write",
+		description: "Create or update the session's task plan (todo list). " +
+			"Pass the full ordered list of steps each call; it replaces the previous list. " +
+			"Each item needs a `content` string; `status` defaults to \"pending\" and loose " +
+			"status values are coerced (done→completed, blocked→cancelled). " +
+			"Non-canonical statuses never fail the call, and at most one item stays in_progress " +
+			"(earlier ones are marked completed).",
+		parameters: SpecsToSchema(todoWriteSpecs()),
+		safety:     allowSafety(SideEffectWrite, "Updates only the session's todo list state."),
+		capabilities: ToolCapabilities{Effect: EffectInteractive, ThreadSafe: false,
+			ResourceKeys: sessionResourceKeys},
 	}}
 }
 
-type todoWriteTool struct {
-	baseTool
-}
-
-func (tool todoWriteTool) Run(ctx context.Context, args map[string]any) Result {
+// Pointer receiver so Run's mirror write lands on the same instance the TUI
+// and ACP read via CurrentTodos.
+func (tool *todoWriteTool) Run(ctx context.Context, args map[string]any) Result {
 	return tool.RunWithOptions(ctx, args, RunOptions{})
 }
 
-func (tool todoWriteTool) RunWithOptions(_ context.Context, args map[string]any, options RunOptions) Result {
-	if options.SessionID == "" {
-		return errorResult("Error: todo_write requires a session context")
-	}
+func (tool *todoWriteTool) RunWithOptions(_ context.Context, args map[string]any, options RunOptions) Result {
 	parsed, err := ParseArgs(todoWriteSpecs(), args)
 	if err != nil {
 		return errorResult("Error: Invalid arguments for todo_write: " + err.Error())
@@ -267,8 +282,34 @@ func (tool todoWriteTool) RunWithOptions(_ context.Context, args map[string]any,
 		items[i].Status = NormalizeTodoStatus(items[i].Status)
 	}
 	items = EnforceSingleInProgress(items)
+	// Mirror the list in memory first so plan rendering works even when no
+	// session store is wired (sessionless runs fall back to the mirror only).
+	tool.mu.Lock()
+	tool.currentTodos = append([]TodoItem(nil), items...)
+	tool.mu.Unlock()
+	// Without a session context there is nothing to persist; the in-memory
+	// mirror above is the tool's state, matching the old update_plan behavior.
+	if options.SessionID == "" {
+		return okResult(formatTodoList(items))
+	}
 	if err := writeTodos(options, options.SessionID, items); err != nil {
 		return errorResult("Error writing todos: " + err.Error())
 	}
 	return okResult(formatTodoList(items))
+}
+
+// CurrentTodos returns a copy of the most recent todo list this tool wrote, for
+// TUI plan-panel and ACP plan-update rendering. Empty until the first write.
+func (tool *todoWriteTool) CurrentTodos() []TodoItem {
+	tool.mu.Lock()
+	defer tool.mu.Unlock()
+	return append([]TodoItem{}, tool.currentTodos...)
+}
+
+// ClearTodos resets the in-memory mirror (the durable session state is not
+// touched). Mirrors the old update_plan tool's ClearPlan lifecycle.
+func (tool *todoWriteTool) ClearTodos() {
+	tool.mu.Lock()
+	tool.currentTodos = nil
+	tool.mu.Unlock()
 }

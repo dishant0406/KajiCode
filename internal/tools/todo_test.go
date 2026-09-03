@@ -113,9 +113,22 @@ func TestTodoToolsEndToEnd(t *testing.T) {
 	}
 }
 
-func TestTodoMissingSessionErrors(t *testing.T) {
+func TestTodoMissingSessionStillMirrors(t *testing.T) {
 	read := runWithOptions(context.Background(), NewTodoReadTool(), nil, RunOptions{}, t)
 	if read.Status != StatusError || !strings.Contains(read.Output, "session") {
 		t.Fatalf("expected session error, got: %s", read.Output)
+	}
+	writeRes := runWithOptions(context.Background(), NewTodoWriteTool(), map[string]any{
+		"todos": []any{map[string]any{"content": "step one", "status": "pending"}},
+	}, RunOptions{}, t)
+	if writeRes.Status != StatusOK || !strings.Contains(writeRes.Output, "step one") {
+		t.Fatalf("sessionless todo_write should still succeed via in-memory mirror: %s", writeRes.Output)
+	}
+	writeTool := NewTodoWriteTool()
+	runWithOptions(context.Background(), writeTool, map[string]any{
+		"todos": []any{map[string]any{"content": "step one", "status": "pending"}},
+	}, RunOptions{}, t)
+	if len(writeTool.CurrentTodos()) != 1 {
+		t.Fatalf("sessionless todo_write should update the in-memory mirror")
 	}
 }

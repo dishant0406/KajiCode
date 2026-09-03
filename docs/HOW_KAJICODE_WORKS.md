@@ -729,7 +729,7 @@ Core tool groups include:
 
 - **Read-only tools**: file reads, directory listing, glob, grep, LSP navigation,
   skills, `ask_user`, permission requests.
-- **Write tools**: `write_file`, `edit_file`, `apply_patch`, `update_plan`.
+- **Write tools**: `write_file`, `edit_file`, `apply_patch`, `todo_write`.
 - **Shell tools**: `exec_command`, `write_stdin`, legacy `bash`.
 - **Network tools**: `web_fetch` and optional web search backend.
 - **Local-control tools**: config-gated wrappers for browser, terminal, desktop,

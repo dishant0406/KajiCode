@@ -469,7 +469,7 @@ type Options struct {
 	// RequireCompletionSignal gates run completion for HEADLESS exec. Without it,
 	// any assistant turn that produces text but no tool call is accepted as the
 	// final answer. With it, a no-tool-call turn is NOT treated as "done" while
-	// work clearly remains — pending update_plan items, or a message that ends on a
+	// work clearly remains — pending todo_write items, or a message that ends on a
 	// continuation cue ("…Let me check the config:"). The loop then nudges the
 	// model to continue instead, bounded by maxContinueNudges (and still by
 	// MaxTurns and the run deadline); if the model keeps stalling, the run

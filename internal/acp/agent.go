@@ -244,7 +244,7 @@ func (a *Agent) runTurn(ctx context.Context, sess *acpSession, userText string, 
 		OnToolCall:     note.toolCall,
 		OnToolResult: func(result agent.ToolResult) {
 			note.toolResult(result)
-			if result.Name == "update_plan" {
+			if result.Name == "todo_write" {
 				a.emitPlan(registry, note)
 			}
 		},
@@ -307,15 +307,15 @@ func (a *Agent) requestPermission(ctx context.Context, sessionID string, req age
 }
 
 func (a *Agent) emitPlan(registry *tools.Registry, note *notifier) {
-	t, ok := registry.Get("update_plan")
+	t, ok := registry.Get("todo_write")
 	if !ok {
 		return
 	}
-	planner, ok := t.(interface{ CurrentPlan() []tools.PlanItem })
+	planner, ok := t.(interface{ CurrentTodos() []tools.PlanItem })
 	if !ok {
 		return
 	}
-	note.plan(planner.CurrentPlan())
+	note.plan(planner.CurrentTodos())
 }
 
 // ---- mode + model selection ----

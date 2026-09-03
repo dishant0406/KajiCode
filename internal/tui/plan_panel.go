@@ -1,5 +1,5 @@
 // plan_panel.go renders the sticky plan panel for the KajiCode TUI. The panel
-// surfaces the in-progress task plan produced by the update_plan tool: a
+// surfaces the in-progress task plan produced by the todo_write tool: a
 // one-line header with a live spinner and progress count, a text progress
 // bar, and (while running or expanded) the per-step list with status icons
 // and timings. planPanelState tracks per-step start/completion timestamps
@@ -16,7 +16,7 @@ import (
 )
 
 // planStep is one rendered plan item. The timestamps are preserved across
-// update_plan calls (which replace the whole plan each time) by matching on
+// todo_write calls (which replace the whole plan each time) by matching on
 // content, so a step that flips from in_progress to completed keeps the
 // startedAt it was first marked in_progress with.
 type planStep struct {
@@ -28,7 +28,7 @@ type planStep struct {
 }
 
 // planPanelState holds the sticky plan panel's view state. It lives on the
-// model and is synced from the update_plan tool's CurrentPlan() output.
+// model and is synced from the todo_write tool's CurrentTodos() output.
 type planPanelState struct {
 	steps       []planStep
 	expanded    bool
@@ -45,7 +45,7 @@ type planPanelState struct {
 // collapsed panel hides itself to reclaim screen space.
 const completedHideAfter = 30 * time.Second
 
-// updateFromItems syncs the planStep slice from the update_plan tool. The
+// updateFromItems syncs the planStep slice from the todo_write tool. The
 // tool replaces the entire plan each call, so steps are matched by content
 // to preserve start/completion timestamps. Timestamps are filled in for
 // newly-transitioned steps: startedAt on first in_progress, completedAt on
@@ -157,7 +157,7 @@ func (s planPanelState) isComplete() bool {
 }
 
 // completeRemaining force-completes the plan when the agent finished the whole
-// task but never sent a final update_plan marking the last steps done. It flips
+// task but never sent a final todo_write marking the last steps done. It flips
 // every non-terminal step to "completed" and backfills any missing timestamps,
 // then stamps the panel-level completedAt — the same end state updateFromItems
 // produces for a fully-completed plan — so the panel reads "PLAN COMPLETE"

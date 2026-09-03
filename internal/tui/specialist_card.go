@@ -422,7 +422,7 @@ func toolCallSummary(event streamjson.Event) string {
 		default:
 			return fmt.Sprintf("send input to session %d", sessionID)
 		}
-	case "update_plan":
+	case "todo_write":
 		return "plan"
 	}
 	return ""

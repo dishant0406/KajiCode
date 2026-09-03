@@ -31,7 +31,7 @@ func TestToolKindFor(t *testing.T) {
 		"bash":           ToolKindExecute,
 		"exec_command":   ToolKindExecute,
 		"web_fetch":      ToolKindFetch,
-		"update_plan":    ToolKindThink,
+		"todo_write":     ToolKindThink,
 		"some_mcp_tool":  ToolKindOther,
 	}
 	for name, want := range cases {

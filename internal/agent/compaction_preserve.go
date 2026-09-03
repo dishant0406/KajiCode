@@ -17,7 +17,7 @@ import (
 // rather than being paraphrased away.
 
 const (
-	toolNameUpdatePlan = "update_plan"
+	toolNameTodoWrite  = "todo_write"
 	toolNameToolSearch = "tool_search"
 	toolNameSkill      = "skill"
 	toolNameWriteFile  = "write_file"
@@ -58,14 +58,14 @@ const preservedStateLabel = "## Preserved state (active plan + loaded skills; ca
 // needs the rest.
 const maxPreservedSkillBytes = 2 << 10 // 2 KiB
 
-// extractLatestPlan returns a formatted view of the most recent update_plan tool
+// extractLatestPlan returns a formatted view of the most recent todo_write tool
 // call in messages, so an in-progress plan survives when its turns are elided by
 // compaction. Returns "" when no plan was issued.
 func extractLatestPlan(messages []kajicoderuntime.Message) string {
 	for i := len(messages) - 1; i >= 0; i-- {
 		calls := messages[i].ToolCalls
 		for j := len(calls) - 1; j >= 0; j-- {
-			if calls[j].Name != toolNameUpdatePlan {
+			if calls[j].Name != toolNameTodoWrite {
 				continue
 			}
 			if formatted := formatPlanArguments(calls[j].Arguments); formatted != "" {
@@ -76,9 +76,9 @@ func extractLatestPlan(messages []kajicoderuntime.Message) string {
 	return ""
 }
 
-// formatPlanArguments renders an update_plan tool call's JSON arguments
-// ({"plan":[{content,status,...}]}) as terse status-tagged bullet lines. Returns
-// "" on malformed arguments or an empty plan.
+// formatPlanArguments renders a todo_write tool call's JSON arguments
+// ({"todos":[{content,status,...}]}) as terse status-tagged bullet lines. Returns
+// "" on malformed arguments or an empty list.
 func formatPlanArguments(arguments string) string {
 	plan, ok := parseTaskPlan(arguments)
 	if !ok {
@@ -485,7 +485,7 @@ func appendPreservedState(summary string, middle []kajicoderuntime.Message, task
 		}
 	}
 
-	// Plan: a fresh update_plan in middle is authoritative; otherwise carry the
+	// Plan: a fresh todo_write in middle is authoritative; otherwise carry the
 	// plan preserved by an earlier compaction.
 	plan := extractLatestPlan(middle)
 	if plan == "" {
