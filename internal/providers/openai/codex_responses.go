@@ -67,6 +67,12 @@ const (
 	responsesEventReasoningTextDelta = "response.reasoning_text.delta"
 	responsesEventReasoningTextDone  = "response.reasoning_text.done"
 	responsesEventReasoningDone      = "response.reasoning_summary_text.done"
+	// Summary-part framing events wrap each reasoning summary part. They carry
+	// no new text (added opens with an empty part; done echoes the part's full
+	// text, already streamed as deltas) — listed so the dispatcher handles
+	// them explicitly instead of falling into the unknown-event bucket.
+	responsesEventReasoningPartAdded = "response.reasoning_summary_part.added"
+	responsesEventReasoningPartDone  = "response.reasoning_summary_part.done"
 	responsesEventRefusalDelta       = "response.refusal.delta"
 	responsesEventRefusalDone        = "response.refusal.done"
 	responsesEventOutputTextDone     = "response.output_text.done"
@@ -302,12 +308,17 @@ func (p *responsesTransport) buildResponsesRequest(request kajicoderuntime.Compl
 	// Codex / o-series reasoning models take the effort tier nested under
 	// `reasoning` on the Responses API (the chat-completions `reasoning_effort`
 	// moved here). Reuse the chat normalizer so only API-accepted values are sent
-	// and an empty or unsupported effort simply omits the field — without this the
-	// caller's chosen effort was silently dropped for every Codex model.
-	if effort := openAIReasoningEffort(request.ReasoningEffort); effort != "" {
-		// Summary "auto" makes the backend stream reasoning_summary_text deltas so a
-		// long thinking phase shows live progress instead of looking hung.
-		req.Reasoning = &responsesReasoning{Effort: effort, Summary: "auto"}
+	// and an empty or unsupported effort simply omits the effort field — the
+	// summary request below always applies: without summary="auto" the backend
+	// emits no reasoning events, so a long thinking phase shows nothing and
+	// reads as a hang (verified live on OpenCode Go: no reasoning request →
+	// zero reasoning deltas; summary="auto" → live reasoning_summary_text
+	// deltas). Effort is left unset unless the caller chose one so we never
+	// force a heavier reasoning tier than requested.
+	effort := openAIReasoningEffort(request.ReasoningEffort)
+	req.Reasoning = &responsesReasoning{Summary: "auto"}
+	if effort != "" {
+		req.Reasoning.Effort = effort
 	}
 	return req, nil
 }
@@ -538,11 +549,15 @@ func (p *responsesTransport) emitResponsesEvent(
 	switch event.Type {
 	case responsesEventCreated, responsesEventInProgress,
 		responsesEventContentPartAdded, responsesEventContentPartDone,
+		responsesEventReasoningPartAdded, responsesEventReasoningPartDone,
 		responsesEventIncomplete:
 		// Informational or terminal-without-error events we don't surface to
 		// the runtime. response.incomplete is folded into a length finish at
 		// scan-end (state.done stays false so the wrapper emits the
-		// StreamEventDone with FinishReasonLength).
+		// StreamEventDone with FinishReasonLength). Reasoning part framing
+		// carries no new text: added opens with an empty part, and done
+		// echoes the part's full text already streamed as deltas (emitting it
+		// would duplicate the thinking).
 		return true
 	case responsesEventOutputTextDone:
 		// Finalized text for one content part. Deltas already streamed it, so

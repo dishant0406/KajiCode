@@ -586,8 +586,9 @@ func TestCodexProviderStreamsReasoningSummaryDeltas(t *testing.T) {
 }
 
 func TestCodexProviderOmitsReasoningWhenUnset(t *testing.T) {
-	// No effort (and unsupported values) must omit the `reasoning` field entirely
-	// rather than send an empty object, which the backend would reject.
+	// Summary "auto" is always requested (even with no effort) so the backend
+	// streams reasoning deltas — without it a long think shows nothing (verified
+	// live on OpenCode Go). The effort field is omitted unless chosen.
 	var rec codexRequest
 	srv := newCodexTestServer(t, &rec)
 	defer srv.Close()
@@ -608,8 +609,58 @@ func TestCodexProviderOmitsReasoningWhenUnset(t *testing.T) {
 	}
 	drainCodexEvents(t, stream)
 
-	if _, ok := rec.body["reasoning"]; ok {
-		t.Fatalf("body.reasoning must be omitted when no effort is requested, got %#v", rec.body["reasoning"])
+	reasoning, ok := rec.body["reasoning"].(map[string]any)
+	if !ok {
+		t.Fatalf("body.reasoning = %#v, want summary-auto object", rec.body["reasoning"])
+	}
+	if reasoning["summary"] != "auto" {
+		t.Fatalf("body.reasoning.summary = %#v, want auto", reasoning["summary"])
+	}
+	if _, ok := reasoning["effort"]; ok {
+		t.Fatalf("body.reasoning.effort must be omitted when unset, got %#v", reasoning["effort"])
+	}
+}
+
+func TestCodexProviderIgnoresReasoningPartFraming(t *testing.T) {
+	// reasoning_summary_part added/done frame each summary part but carry no new
+	// text (added opens empty; done echoes already-streamed deltas). They must
+	// not duplicate thinking or surface as errors.
+	var rec codexRequest
+	srv := newCodexResponsesServer(t, &rec,
+		`{"type":"response.created","response":{"id":"resp-1","status":"in_progress"}}`,
+		`{"type":"response.reasoning_summary_part.added","part":{"type":"summary_text","text":""}}`,
+		`{"type":"response.reasoning_summary_text.delta","delta":"Thinking."}`,
+		`{"type":"response.reasoning_summary_text.done","text":"Thinking."}`,
+		`{"type":"response.reasoning_summary_part.done","part":{"type":"summary_text","text":"Thinking."}}`,
+		`{"type":"response.output_text.delta","delta":"done"}`,
+		`{"type":"response.completed","response":{"id":"resp-1","status":"completed"}}`,
+	)
+	defer srv.Close()
+
+	provider, err := NewCodexProvider(CodexOptions{
+		Options:   Options{APIKey: "sk-test", BaseURL: srv.URL, Model: "gpt-5"},
+		AccountID: "acc-x",
+	})
+	if err != nil {
+		t.Fatalf("NewCodexProvider: %v", err)
+	}
+	stream, err := provider.StreamCompletion(context.Background(), kajicoderuntime.CompletionRequest{
+		Messages: []kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleUser, Content: "solve it"}},
+	})
+	if err != nil {
+		t.Fatalf("StreamCompletion: %v", err)
+	}
+	var reasoning []string
+	for ev := range stream {
+		switch ev.Type {
+		case kajicoderuntime.StreamEventReasoning:
+			reasoning = append(reasoning, ev.Content)
+		case kajicoderuntime.StreamEventError:
+			t.Fatalf("unexpected error event: %q", ev.Error)
+		}
+	}
+	if got := strings.Join(reasoning, ""); got != "Thinking." {
+		t.Fatalf("reasoning = %q, want %q (no duplication from part.done)", got, "Thinking.")
 	}
 }
 
