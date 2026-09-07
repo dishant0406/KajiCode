@@ -54,20 +54,32 @@ import (
 // Codex Responses API event type names. Only the ones the Codex backend
 // actually emits are listed; unknown event types are ignored.
 const (
-	responsesEventCreated           = "response.created"
-	responsesEventInProgress        = "response.in_progress"
-	responsesEventOutputItemAdded   = "response.output_item.added"
-	responsesEventContentPartAdded  = "response.content_part.added"
-	responsesEventOutputTextDelta   = "response.output_text.delta"
-	responsesEventReasoningDelta    = "response.reasoning_summary_text.delta"
-	responsesEventOutputTextDone    = "response.output_text.done"
-	responsesEventFunctionArgsDelta = "response.function_call_arguments.delta"
-	responsesEventContentPartDone   = "response.content_part.done"
-	responsesEventOutputItemDone    = "response.output_item.done"
-	responsesEventCompleted         = "response.completed"
-	responsesEventFailed            = "response.failed"
-	responsesEventError             = "response.error"
-	responsesEventIncomplete        = "response.incomplete"
+	responsesEventCreated          = "response.created"
+	responsesEventInProgress       = "response.in_progress"
+	responsesEventOutputItemAdded  = "response.output_item.added"
+	responsesEventContentPartAdded = "response.content_part.added"
+	responsesEventOutputTextDelta  = "response.output_text.delta"
+	responsesEventReasoningDelta   = "response.reasoning_summary_text.delta"
+	// Additional reasoning variants emitted across backends: the o-series
+	// streams reasoning_text deltas, and every summary part closes with a
+	// .done event carrying the full text (not a delta). All surface as live
+	// thinking; without them a thinking phase shows nothing.
+	responsesEventReasoningTextDelta = "response.reasoning_text.delta"
+	responsesEventReasoningTextDone  = "response.reasoning_text.done"
+	responsesEventReasoningDone      = "response.reasoning_summary_text.done"
+	responsesEventRefusalDelta       = "response.refusal.delta"
+	responsesEventRefusalDone        = "response.refusal.done"
+	responsesEventOutputTextDone     = "response.output_text.done"
+	responsesEventFunctionArgsDelta  = "response.function_call_arguments.delta"
+	// Some gateways emit the full argument string once (instead of streaming
+	// deltas). Without this the call dispatches with empty arguments.
+	responsesEventFunctionArgsDone = "response.function_call_arguments.done"
+	responsesEventContentPartDone  = "response.content_part.done"
+	responsesEventOutputItemDone   = "response.output_item.done"
+	responsesEventCompleted        = "response.completed"
+	responsesEventFailed           = "response.failed"
+	responsesEventError            = "response.error"
+	responsesEventIncomplete       = "response.incomplete"
 )
 
 // responsesRequest is the wire shape POSTed to {baseURL}/responses.
@@ -129,12 +141,19 @@ type responsesEvent struct {
 	Type string `json:"type"`
 	// delta payloads (response.output_text.delta / function_call_arguments.delta)
 	Delta string `json:"delta,omitempty"`
+	// done payloads (response.output_text.done / refusal.done / reasoning .done /
+	// function_call_arguments.done) carry the full finalized string, not a delta.
+	Text string `json:"text,omitempty"`
+	// arguments payload for response.function_call_arguments.done.
+	Arguments string `json:"arguments,omitempty"`
 	// item payloads (response.output_item.added / done)
 	ItemID string `json:"item_id,omitempty"`
 	// OutputIndex is a *int so a real 0 (the first output) is distinguishable from
 	// "absent" — a plain int defaulting to 0 dropped a no-item_id call's args (M1).
-	OutputIndex *int         `json:"output_index,omitempty"`
-	Item        *itemPayload `json:"item,omitempty"`
+	OutputIndex *int `json:"output_index,omitempty"`
+	// Item carries output_item.added/done payloads AND function_call_arguments.done
+	// (which nests the call identity + full arguments under item).
+	Item *itemPayload `json:"item,omitempty"`
 	// completed / failed / incomplete
 	Response *responsePayload `json:"response,omitempty"`
 	// error
@@ -157,6 +176,26 @@ type responsePayload struct {
 	Status string        `json:"status"`
 	Usage  *usagePayload `json:"usage,omitempty"`
 	Error  *errorPayload `json:"error,omitempty"`
+	// Non-streaming-shaped terminal payloads (some gateways echo the final
+	// response object on the stream) carry the full output array. When the
+	// stream delivered no text/tool deltas (e.g. a buffered gateway), we
+	// recover text + tool calls from here instead of ending the turn empty.
+	Output []outputItemPayload `json:"output,omitempty"`
+}
+
+// outputItemPayload is one element of a terminal response.output array.
+type outputItemPayload struct {
+	Type    string `json:"type"`
+	ID      string `json:"id,omitempty"`
+	CallID  string `json:"call_id,omitempty"`
+	Status  string `json:"status,omitempty"`
+	Role    string `json:"role,omitempty"`
+	Name    string `json:"name,omitempty"`
+	Content []struct {
+		Type string `json:"type"`
+		Text string `json:"text,omitempty"`
+	} `json:"content,omitempty"`
+	Arguments string `json:"arguments,omitempty"`
 }
 
 type usagePayload struct {
@@ -199,6 +238,11 @@ type responsesState struct {
 	toolCalls map[string]*toolCallBuilder
 	usage     *usagePayload
 	done      bool
+	// sawText / sawReasoning record whether any text or reasoning content
+	// was already streamed. The completed-output fallback and .done
+	// handlers consult them so already-streamed content is never replayed.
+	sawText      bool
+	sawReasoning bool
 }
 
 func newResponsesState() *responsesState {
@@ -494,36 +538,88 @@ func (p *responsesTransport) emitResponsesEvent(
 	switch event.Type {
 	case responsesEventCreated, responsesEventInProgress,
 		responsesEventContentPartAdded, responsesEventContentPartDone,
-		responsesEventOutputTextDone, responsesEventIncomplete:
+		responsesEventIncomplete:
 		// Informational or terminal-without-error events we don't surface to
 		// the runtime. response.incomplete is folded into a length finish at
 		// scan-end (state.done stays false so the wrapper emits the
 		// StreamEventDone with FinishReasonLength).
+		return true
+	case responsesEventOutputTextDone:
+		// Finalized text for one content part. Deltas already streamed it, so
+		// only emit when the stream carried no deltas (buffered gateways).
+		if event.Text != "" && !state.sawText {
+			state.sawText = true
+			providerio.SendEvent(ctx, events, kajicoderuntime.StreamEvent{
+				Type:    kajicoderuntime.StreamEventText,
+				Content: event.Text,
+			})
+		}
 		return true
 	case responsesEventOutputItemAdded:
 		p.handleOutputItemAdded(ctx, &event, state, events)
 		return true
 	case responsesEventOutputTextDelta:
 		if event.Delta != "" {
+			state.sawText = true
 			providerio.SendEvent(ctx, events, kajicoderuntime.StreamEvent{
 				Type:    kajicoderuntime.StreamEventText,
 				Content: event.Delta,
 			})
 		}
 		return true
-	case responsesEventReasoningDelta:
-		// Reasoning summary deltas: surface as live "thinking" so a long reasoning
+	case responsesEventRefusalDelta:
+		// Refusals stream separately from normal text. Surface them as text so
+		// the turn shows the model's refusal instead of ending empty.
+		if event.Delta != "" {
+			state.sawText = true
+			providerio.SendEvent(ctx, events, kajicoderuntime.StreamEvent{
+				Type:    kajicoderuntime.StreamEventText,
+				Content: event.Delta,
+			})
+		}
+		return true
+	case responsesEventRefusalDone:
+		// The finalized refusal string. Only emit when no refusal deltas were
+		// already streamed for it (some backends send both).
+		if event.Text != "" && !state.sawText {
+			state.sawText = true
+			providerio.SendEvent(ctx, events, kajicoderuntime.StreamEvent{
+				Type:    kajicoderuntime.StreamEventText,
+				Content: event.Text,
+			})
+		}
+		return true
+	case responsesEventReasoningDelta, responsesEventReasoningTextDelta:
+		// Reasoning deltas: surface as live "thinking" so a long reasoning
 		// phase shows progress (and keeps the activity clock fresh) instead of
 		// looking like a hang. Requested via reasoning.summary="auto".
 		if event.Delta != "" {
+			state.sawReasoning = true
 			providerio.SendEvent(ctx, events, kajicoderuntime.StreamEvent{
 				Type:    kajicoderuntime.StreamEventReasoning,
 				Content: event.Delta,
 			})
 		}
 		return true
+	case responsesEventReasoningDone, responsesEventReasoningTextDone:
+		// A finalized reasoning part (full text, not a delta). Emit it as one
+		// thinking chunk so models that never stream summary deltas still show
+		// their thinking instead of a silent gap. Deltas already streamed for
+		// the same part are not replayed twice — .done events carry the full
+		// text, so only emit when nothing was streamed yet.
+		if text := strings.TrimSpace(event.Text); text != "" && !state.sawReasoning {
+			state.sawReasoning = true
+			providerio.SendEvent(ctx, events, kajicoderuntime.StreamEvent{
+				Type:    kajicoderuntime.StreamEventReasoning,
+				Content: text,
+			})
+		}
+		return true
 	case responsesEventFunctionArgsDelta:
 		p.handleFunctionArgsDelta(ctx, &event, state, events)
+		return true
+	case responsesEventFunctionArgsDone:
+		p.handleFunctionArgsDone(ctx, &event, state, events)
 		return true
 	case responsesEventOutputItemDone:
 		p.handleOutputItemDone(ctx, &event, state, events)
@@ -620,6 +716,62 @@ func (p *responsesTransport) handleFunctionArgsDelta(
 	})
 }
 
+// handleFunctionArgsDone handles a one-shot
+// response.function_call_arguments.done event: the full argument string in
+// one payload instead of streamed deltas. It attributes the arguments to the
+// in-flight call (creating one when the added event never arrived) and emits
+// them as a single delta so the collector accumulates the real arguments
+// instead of dispatching the call with an empty string.
+func (p *responsesTransport) handleFunctionArgsDone(
+	ctx context.Context,
+	event *responsesEvent,
+	state *responsesState,
+	events chan<- kajicoderuntime.StreamEvent,
+) {
+	key := p.toolCallKey(event)
+	if key == "" {
+		// The done payload nests identity under item when no item_id is set.
+		if event.Item != nil {
+			if event.Item.CallID != "" {
+				key = event.Item.CallID
+			} else if event.Item.ID != "" {
+				key = event.Item.ID
+			} else if event.Item.Name != "" {
+				key = event.Item.Name
+			}
+		}
+		if key == "" {
+			return
+		}
+	}
+	args := event.Arguments
+	if args == "" && event.Item != nil {
+		args = event.Item.Arguments
+	}
+	if args == "" {
+		args = event.Text
+	}
+	builder, ok := state.toolCalls[key]
+	if !ok {
+		builder = &toolCallBuilder{ID: key}
+		if event.Item != nil && event.Item.Name != "" {
+			builder.Name = event.Item.Name
+		}
+		state.toolCalls[key] = builder
+	}
+	if event.Item != nil && event.Item.Name != "" && builder.Name == "" {
+		builder.Name = event.Item.Name
+	}
+	if args != "" && builder.Arguments.Len() == 0 {
+		builder.Arguments.WriteString(args)
+		providerio.SendEvent(ctx, events, kajicoderuntime.StreamEvent{
+			Type:              kajicoderuntime.StreamEventToolCallDelta,
+			ToolCallID:        key,
+			ArgumentsFragment: args,
+		})
+	}
+}
+
 // handleOutputItemDone finalizes a tool call when the item type is
 // function_call. The accumulated arguments and the (possibly late)
 // function name are written to the builder before StreamEventToolCallEnd
@@ -648,6 +800,13 @@ func (p *responsesTransport) handleOutputItemDone(
 	}
 	if event.Item.Arguments != "" && builder.Arguments.Len() == 0 {
 		builder.Arguments.WriteString(event.Item.Arguments)
+		// Late-arriving arguments (added event carried no deltas): emit them
+		// as one delta so the collector dispatches the real arguments.
+		providerio.SendEvent(ctx, events, kajicoderuntime.StreamEvent{
+			Type:              kajicoderuntime.StreamEventToolCallDelta,
+			ToolCallID:        key,
+			ArgumentsFragment: event.Item.Arguments,
+		})
 	}
 	if !builder.started {
 		providerio.SendEvent(ctx, events, kajicoderuntime.StreamEvent{
@@ -734,9 +893,81 @@ func (p *responsesTransport) handleTerminalResponse(
 		state.done = true
 		return false
 	}
+	p.emitCompletedOutput(ctx, event.Response.Output, state, events)
 	providerio.SendEvent(ctx, events, kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventDone})
 	state.done = true
 	return false
+}
+
+// emitCompletedOutput replays a terminal response.completed's output array as
+// stream events. Some gateways buffer the whole response and emit a completed
+// envelope with no prior deltas — without this the turn ends with empty text
+// and zero tool calls even though the model answered. Already-streamed content
+// is skipped so nothing replays twice.
+func (p *responsesTransport) emitCompletedOutput(
+	ctx context.Context,
+	output []outputItemPayload,
+	state *responsesState,
+	events chan<- kajicoderuntime.StreamEvent,
+) {
+	for _, item := range output {
+		switch item.Type {
+		case "message":
+			for _, part := range item.Content {
+				if part.Text == "" || state.sawText {
+					continue
+				}
+				state.sawText = true
+				providerio.SendEvent(ctx, events, kajicoderuntime.StreamEvent{
+					Type:    kajicoderuntime.StreamEventText,
+					Content: part.Text,
+				})
+			}
+		case "function_call":
+			key := item.CallID
+			if key == "" {
+				key = item.ID
+			}
+			if key == "" {
+				key = item.Name
+			}
+			if key == "" {
+				continue
+			}
+			builder, ok := state.toolCalls[key]
+			if !ok {
+				builder = &toolCallBuilder{ID: key, Name: item.Name}
+				state.toolCalls[key] = builder
+			}
+			if item.Name != "" && builder.Name == "" {
+				builder.Name = item.Name
+			}
+			if !builder.started {
+				providerio.SendEvent(ctx, events, kajicoderuntime.StreamEvent{
+					Type:       kajicoderuntime.StreamEventToolCallStart,
+					ToolCallID: key,
+					ToolName:   builder.Name,
+				})
+				builder.started = true
+			}
+			if item.Arguments != "" && builder.Arguments.Len() == 0 {
+				builder.Arguments.WriteString(item.Arguments)
+				providerio.SendEvent(ctx, events, kajicoderuntime.StreamEvent{
+					Type:              kajicoderuntime.StreamEventToolCallDelta,
+					ToolCallID:        key,
+					ArgumentsFragment: item.Arguments,
+				})
+			}
+			if !builder.ended {
+				providerio.SendEvent(ctx, events, kajicoderuntime.StreamEvent{
+					Type:       kajicoderuntime.StreamEventToolCallEnd,
+					ToolCallID: key,
+					ToolName:   builder.Name,
+				})
+				builder.ended = true
+			}
+		}
+	}
 }
 
 // toolCallKey returns the canonical id used to track an in-flight
