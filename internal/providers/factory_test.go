@@ -625,6 +625,77 @@ func TestNewRoutesChatGPTCatalogWithStoredAccountID(t *testing.T) {
 	}
 }
 
+// TestNewInjectsOpencodeSessionHeader verifies that an opencode-compatible
+// profile (chat-completions) always sends the x-opencode-session header OpenCode
+// requires (MissingSessionID 400 otherwise), and that non-opencode providers do
+// NOT get the header.
+func TestNewInjectsOpencodeSessionHeaderOnChatCompletions(t *testing.T) {
+	transport := &captureTransport{
+		responseBody: "data: [DONE]\n\n",
+	}
+	provider, err := New(config.ProviderProfile{
+		Name:         "opencode-go",
+		ProviderKind: config.ProviderKindOpenAICompatible,
+		BaseURL:      "https://opencode.ai/zen/go/v1",
+		APIKey:       "sk-go",
+		Model:        "deepseek-v4-flash",
+	}, Options{
+		HTTPClient: &http.Client{Transport: transport},
+		UserAgent:  "kajicode-factory-test",
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	stream, err := provider.StreamCompletion(context.Background(), kajicoderuntime.CompletionRequest{
+		Messages: []kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleUser, Content: "hi"}},
+	})
+	if err != nil {
+		t.Fatalf("StreamCompletion() error = %v", err)
+	}
+	for range stream {
+	}
+	if transport.request == nil {
+		t.Fatal("HTTP client was not used")
+	}
+	// Still the default chat-completions path (no responses override).
+	if !strings.HasSuffix(transport.request.URL.Path, "/chat/completions") {
+		t.Fatalf("request URL path = %q, want .../chat/completions", transport.request.URL.Path)
+	}
+	if got := transport.request.Header.Get(opencodeSessionHeader); got == "" {
+		t.Fatal("x-opencode-session header must be set on opencode chat-completions")
+	}
+}
+
+func TestNewOmitsOpencodeSessionHeaderForNonOpencodeProvider(t *testing.T) {
+	transport := &captureTransport{
+		responseBody: "data: [DONE]\n\n",
+	}
+	provider, err := New(config.ProviderProfile{
+		Name:         "openai",
+		ProviderKind: config.ProviderKindOpenAI,
+		BaseURL:      "https://api.openai.com/v1",
+		APIKey:       "sk-oai",
+		Model:        "gpt-4.1-mini",
+	}, Options{
+		HTTPClient: &http.Client{Transport: transport},
+		UserAgent:  "kajicode-factory-test",
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	stream, err := provider.StreamCompletion(context.Background(), kajicoderuntime.CompletionRequest{
+		Messages: []kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleUser, Content: "hi"}},
+	})
+	if err != nil {
+		t.Fatalf("StreamCompletion() error = %v", err)
+	}
+	for range stream {
+	}
+	if got := transport.request.Header.Get(opencodeSessionHeader); got != "" {
+		t.Fatalf("x-opencode-session = %q, want empty for a non-opencode provider", got)
+	}
+}
+
 func TestIsCodexCatalog(t *testing.T) {
 	cases := []struct {
 		catalogID string
@@ -648,6 +719,52 @@ type captureTransport struct {
 	request      *http.Request
 	requestBody  string
 	responseBody string
+}
+
+// TestNewRoutesResponsesOverrideToResponsesAPI verifies that a per-model
+// "responses" modelOverride routes an openai-compatible profile to
+// {baseURL}/responses with the x-opencode-session header, instead of the
+// default chat-completions path.
+func TestNewRoutesResponsesOverrideToResponsesAPI(t *testing.T) {
+	transport := &captureTransport{
+		responseBody: "data: [DONE]\n\n",
+	}
+	provider, err := New(config.ProviderProfile{
+		Name:         "opencode-go",
+		ProviderKind: config.ProviderKindOpenAICompatible,
+		BaseURL:      "https://opencode.ai/zen/go/v1",
+		APIKey:       "sk-go",
+		Model:        "muse-spark-1.3-contributor",
+	}, Options{
+		HTTPClient: &http.Client{Transport: transport},
+		UserAgent:  "kajicode-factory-test",
+		ModelOverrides: map[string]config.ModelOverride{
+			"muse-spark-1.3-contributor": {Type: "responses"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	stream, err := provider.StreamCompletion(context.Background(), kajicoderuntime.CompletionRequest{
+		Messages: []kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleUser, Content: "hi"}},
+	})
+	if err != nil {
+		t.Fatalf("StreamCompletion() error = %v", err)
+	}
+	for range stream {
+	}
+	if transport.request == nil {
+		t.Fatal("HTTP client was not used")
+	}
+	if got := transport.request.URL.Path; !strings.HasSuffix(got, "/responses") {
+		t.Fatalf("request URL path = %q, want .../responses", got)
+	}
+	if got := transport.request.URL.String(); !strings.Contains(got, "zen/go/v1/responses") {
+		t.Fatalf("request URL = %q, want it to include zen/go/v1/responses", got)
+	}
+	if got := transport.request.Header.Get("x-opencode-session"); got == "" {
+		t.Fatal("x-opencode-session header must be set (OpenCode Go requires it)")
+	}
 }
 
 func (transport *captureTransport) RoundTrip(request *http.Request) (*http.Response, error) {

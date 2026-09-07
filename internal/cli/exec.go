@@ -310,6 +310,10 @@ func runExec(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) in
 		}
 		return writeExecProviderError(stdout, stderr, options.outputFormat, "provider_error", err.Error())
 	}
+	// Capture this run's per-model transport routing so every provider built here
+	// (launch, role dispatch, path of the run) routes a resolved model to
+	// /responses when its modelOverride says so.
+	setModelOverrides(&deps, resolved.ModelOverrides)
 	// Multi-model task routing: build the RoleRouter once and share it across exec
 	// (role dispatch, DefaultModel seeding, vision routing) and the TUI. deps.newProvider
 	// is wrapped by fillAppDeps to apply the stored key, so role/vision routing builds a

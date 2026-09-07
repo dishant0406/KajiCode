@@ -209,7 +209,7 @@ func newResponsesState() *responsesState {
 // Responses API wire format. System messages fold into a top-level
 // `instructions` field; everything else (user/assistant turns, tool
 // calls, tool results) becomes items in the `input` array.
-func (p *CodexProvider) buildResponsesRequest(request kajicoderuntime.CompletionRequest) (*responsesRequest, error) {
+func (p *responsesTransport) buildResponsesRequest(request kajicoderuntime.CompletionRequest) (*responsesRequest, error) {
 	if p.inner == nil || strings.TrimSpace(p.inner.model) == "" {
 		return nil, errors.New("codex provider: model is required")
 	}
@@ -272,7 +272,7 @@ func (p *CodexProvider) buildResponsesRequest(request kajicoderuntime.Completion
 // one input_text part (and one input_image part per attached image, if
 // any). The image bytes are base64-encoded into a data: URI exactly like
 // the chat-completions transport does.
-func (p *CodexProvider) userInputItem(msg kajicoderuntime.Message) inputItem {
+func (p *responsesTransport) userInputItem(msg kajicoderuntime.Message) inputItem {
 	parts := []contentItem{}
 	if msg.Content != "" {
 		parts = append(parts, contentItem{Type: "input_text", Text: msg.Content})
@@ -292,7 +292,7 @@ func (p *CodexProvider) userInputItem(msg kajicoderuntime.Message) inputItem {
 // per tool call. Tool-call IDs use ToolCall.ID directly — Responses
 // accepts `id` and `call_id` interchangeably, and the runtime already
 // guarantees non-empty IDs at construction time.
-func (p *CodexProvider) assistantInputItems(msg kajicoderuntime.Message) ([]inputItem, error) {
+func (p *responsesTransport) assistantInputItems(msg kajicoderuntime.Message) ([]inputItem, error) {
 	items := []inputItem{}
 	if msg.Content != "" {
 		items = append(items, inputItem{
@@ -325,7 +325,7 @@ func (p *CodexProvider) assistantInputItems(msg kajicoderuntime.Message) ([]inpu
 // OAuth-refresh retry), the SSE scanner (with the idle watchdog), and
 // the upstream-unreachable humanizer. Returns when the stream is
 // exhausted, an error event is emitted, or ctx is cancelled.
-func (p *CodexProvider) streamResponses(
+func (p *responsesTransport) streamResponses(
 	ctx context.Context,
 	body []byte,
 	events chan<- kajicoderuntime.StreamEvent,
@@ -347,10 +347,13 @@ func (p *CodexProvider) streamResponses(
 		inner.oauthResolver,
 		func(request *http.Request) {
 			request.Header.Set("Content-Type", "application/json")
-			// injectCodexHeaders sets originator, chatgpt-account-id, and a
-			// branded User-Agent. It also runs on the 401-refresh retry, so
-			// per-request state (account id, fresh token) is re-derivable.
-			p.injectCodexHeaders(request)
+			// The transport's requestExtra hook injects the caller's specialized
+			// headers (Codex originator / chatgpt-account-id, or OpenCode Go's
+			// x-opencode-session). It also runs on the 401-refresh retry, so
+			// per-request state is re-derivable.
+			if p.requestExtra != nil {
+				p.requestExtra(request)
+			}
 		}, 0)
 	if err != nil {
 		// Surface ctx errors verbatim so caller-driven cancels are not
@@ -418,7 +421,7 @@ func (p *CodexProvider) streamResponses(
 // StreamEventError, redacting API keys / bearer tokens that may appear
 // in the body. Mirrors the openai provider's emitHTTPError so callers
 // see the same error shape regardless of which provider produced it.
-func (p *CodexProvider) emitResponsesHTTPError(
+func (p *responsesTransport) emitResponsesHTTPError(
 	ctx context.Context,
 	response *http.Response,
 	events chan<- kajicoderuntime.StreamEvent,
@@ -460,7 +463,7 @@ func (p *CodexProvider) emitResponsesHTTPError(
 // emitResponsesEvent decodes one Responses SSE data payload and converts
 // it into zero or more runtime events. Returns false to stop the scan
 // after emitting a terminal event (error / completion-with-error).
-func (p *CodexProvider) emitResponsesEvent(
+func (p *responsesTransport) emitResponsesEvent(
 	ctx context.Context,
 	data string,
 	state *responsesState,
@@ -556,7 +559,7 @@ func (p *CodexProvider) emitResponsesEvent(
 // tracked in case the backend ever ties text deltas to it — currently
 // text deltas carry their own item_id and the message itself is a
 // no-op for the runtime.
-func (p *CodexProvider) handleOutputItemAdded(
+func (p *responsesTransport) handleOutputItemAdded(
 	ctx context.Context,
 	event *responsesEvent,
 	state *responsesState,
@@ -589,7 +592,7 @@ func (p *CodexProvider) handleOutputItemAdded(
 // to the in-flight builder and emits StreamEventToolCallDelta. The
 // Codex backend uses either `item_id` or `output_index` to attribute
 // the delta; we honor both.
-func (p *CodexProvider) handleFunctionArgsDelta(
+func (p *responsesTransport) handleFunctionArgsDelta(
 	ctx context.Context,
 	event *responsesEvent,
 	state *responsesState,
@@ -622,7 +625,7 @@ func (p *CodexProvider) handleFunctionArgsDelta(
 // function name are written to the builder before StreamEventToolCallEnd
 // is emitted. A non-function_call done event (typically the assistant
 // `message` that wraps the text) is a no-op for the runtime.
-func (p *CodexProvider) handleOutputItemDone(
+func (p *responsesTransport) handleOutputItemDone(
 	ctx context.Context,
 	event *responsesEvent,
 	state *responsesState,
@@ -666,7 +669,7 @@ func (p *CodexProvider) handleOutputItemDone(
 // response.completed / response.failed. response.failed carries an
 // error payload that we surface as a runtime error after the usage
 // chunk, so token accounting is preserved even on a failure path.
-func (p *CodexProvider) handleTerminalResponse(
+func (p *responsesTransport) handleTerminalResponse(
 	ctx context.Context,
 	event *responsesEvent,
 	state *responsesState,
@@ -740,7 +743,7 @@ func (p *CodexProvider) handleTerminalResponse(
 // function call across multiple SSE events. The Codex backend may emit
 // `item_id` (the call id) or rely on `output_index` (the position in
 // the response.output array); we accept both for robustness.
-func (p *CodexProvider) toolCallKey(event *responsesEvent) string {
+func (p *responsesTransport) toolCallKey(event *responsesEvent) string {
 	if event.ItemID != "" {
 		return event.ItemID
 	}
@@ -763,7 +766,7 @@ func (p *CodexProvider) toolCallKey(event *responsesEvent) string {
 // for its own error messages — provided as a method on CodexProvider so
 // the Responses stream path can call it without reaching across the
 // inner Provider.
-func (p *CodexProvider) redact(message string) string {
+func (p *responsesTransport) redact(message string) string {
 	if p.inner == nil {
 		return providerio.Redact(message)
 	}
@@ -773,7 +776,7 @@ func (p *CodexProvider) redact(message string) string {
 // classifiedError wraps a non-2xx body with the same status-code-aware
 // prefix the openai provider uses ("auth error: ", "rate limit error: ",
 // "provider error: ", "provider request error: ").
-func (p *CodexProvider) classifiedError(statusCode int, message string) string {
+func (p *responsesTransport) classifiedError(statusCode int, message string) string {
 	if p.inner == nil {
 		return providerio.ClassifiedError(statusCode, message)
 	}

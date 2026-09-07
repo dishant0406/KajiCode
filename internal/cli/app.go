@@ -55,6 +55,12 @@ type appDeps struct {
 	resolveConfig    func(workspaceRoot string, overrides config.Overrides) (config.ResolvedConfig, error)
 	resolveMCPConfig func(workspaceRoot string, excludeProject bool) (config.MCPConfig, error)
 	newProvider      func(config.ProviderProfile) (kajicoderuntime.Provider, error)
+	// modelOverrides is the per-model transport routing. It lives behind a pointer
+	// shared with the defaultAppDeps newProvider closure: the closure reads the
+	// current value at each build (launch /model switch, role routing, onboarding),
+	// and the launch paths stamp it once "resolved" is available by writing through
+	// the same pointer. Empty when a run declares no overrides.
+	modelOverrides *map[string]config.ModelOverride
 	// exportActiveProvider pins spawned children to the run's provider (production:
 	// config.SetActiveProviderEnv, set in defaultAppDeps — deliberately NOT filled
 	// by fillAppDeps, so tests never mutate the process environment unless they
@@ -114,7 +120,9 @@ func Run(args []string, stdout io.Writer, stderr io.Writer) int {
 }
 
 func defaultAppDeps() appDeps {
-	return appDeps{
+	var modelOverrides map[string]config.ModelOverride
+	deps := appDeps{
+		modelOverrides:       &modelOverrides,
 		getwd:                os.Getwd,
 		stdin:                os.Stdin,
 		userConfigPath:       config.DefaultUserConfigPath,
@@ -145,6 +153,7 @@ func defaultAppDeps() appDeps {
 				OAuthResolver:     resolver,
 				OAuthLoginKey:     loginKey,
 				StreamIdleTimeout: profileStreamIdleTimeout(profile),
+				ModelOverrides:    modelOverrides,
 			})
 		},
 		probeProviderHealth:    providerhealth.Probe,
@@ -197,10 +206,21 @@ func defaultAppDeps() appDeps {
 		applyUpdate:      update.Apply,
 		now:              time.Now,
 	}
+	return deps
 }
 
 func userAgent() string {
 	return "kajicode/" + version
+}
+
+// setModelOverrides stamps the run's per-model transport routing into the
+// shared holder the default newProvider closure reads. Writing through the
+// pointer — not reassigning the field — is what lets every later newProvider
+// call (launch, /model switch, role routing, onboarding) see the value.
+func setModelOverrides(deps *appDeps, overrides map[string]config.ModelOverride) {
+	if deps.modelOverrides != nil {
+		*deps.modelOverrides = overrides
+	}
 }
 
 // defaultUserPluginsDir resolves the user-scoped plugins root
@@ -709,6 +729,11 @@ func runInteractiveTUIWithSetup(stderr io.Writer, deps appDeps, permissionMode a
 	if err != nil {
 		return writeAppError(stderr, err.Error(), 1)
 	}
+	// Capture this run's per-model transport routing before building the provider.
+	// deps.modelOverrides is read by the newProvider closure so /model switches,
+	// role routing, and onboarding rebuilds route a resolved model to /responses
+	// exactly like the launch build.
+	setModelOverrides(&deps, resolved.ModelOverrides)
 
 	provider, err := buildProvider(resolved, deps)
 	if err != nil {

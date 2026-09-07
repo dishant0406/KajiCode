@@ -230,6 +230,7 @@ func runChanges(args []string, stdout io.Writer, stderr io.Writer, deps appDeps)
 			if !config.HasProviderProfile(resolved.Provider) {
 				return writeExecUsageError(stderr, "no provider configured for auto-commit message")
 			}
+			setModelOverrides(&deps, resolved.ModelOverrides)
 			provider, err := deps.newProvider(resolved.Provider)
 			if err != nil {
 				return writeExecUsageError(stderr, fmt.Sprintf("failed to create provider: %v", err))

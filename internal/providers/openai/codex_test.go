@@ -24,6 +24,7 @@ type codexRequest struct {
 	auth        string
 	otherHeader map[string]string
 	body        map[string]any
+	sessionID   string
 }
 
 // newCodexTestServer returns an httptest.Server that records each request's
@@ -56,6 +57,7 @@ func newCodexResponsesServer(t *testing.T, rec *codexRequest, payloads ...string
 		rec.accountID = r.Header.Get(codexAccountHeader)
 		rec.userAgent = r.Header.Get("User-Agent")
 		rec.auth = r.Header.Get("Authorization")
+		rec.sessionID = r.Header.Get("x-opencode-session")
 		rec.otherHeader = map[string]string{}
 		for _, k := range []string{"Content-Type", "X-Extra"} {
 			rec.otherHeader[k] = r.Header.Get(k)
@@ -126,6 +128,50 @@ func TestCodexProviderSetsExpectedHeaders(t *testing.T) {
 	}
 	if rec.userAgent == "" {
 		t.Fatalf("User-Agent = empty, want the Codex default (codex_cli_rs)")
+	}
+}
+
+// TestNewResponsesProviderHitsResponsesEndpointWithSession verifies the generic
+// Responses-API provider used for modelOverrides routes to {baseURL}/responses
+// and always sets x-opencode-session (auto-generated when none is supplied).
+func TestNewResponsesProviderHitsResponsesEndpointWithSession(t *testing.T) {
+	var rec codexRequest
+	srv := newCodexResponsesServer(t, &rec,
+		`{"type":"response.created","response":{"id":"resp-1","status":"in_progress"}}`,
+		`{"type":"response.completed","response":{"id":"resp-1","status":"completed","usage":{"input_tokens":1,"output_tokens":1}}}`,
+	)
+	defer srv.Close()
+
+	provider, err := NewResponsesProvider(Options{
+		APIKey:  "sk-test",
+		BaseURL: srv.URL,
+		Model:   "muse-spark-1.3-contributor",
+	}, "")
+	if err != nil {
+		t.Fatalf("NewResponsesProvider: %v", err)
+	}
+	stream, err := provider.StreamCompletion(context.Background(), kajicoderuntime.CompletionRequest{
+		Messages: []kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleUser, Content: "hi"}},
+	})
+	if err != nil {
+		t.Fatalf("StreamCompletion: %v", err)
+	}
+	drainCodexEvents(t, stream)
+
+	if rec.method != http.MethodPost {
+		t.Fatalf("method = %q, want POST", rec.method)
+	}
+	if rec.path != "/responses" {
+		t.Fatalf("path = %q, want /responses", rec.path)
+	}
+	// No codex headers: this is the generic transport, not the Codex shim.
+	if rec.originator != "" {
+		t.Fatalf("originator = %q, want empty on the generic responses provider", rec.originator)
+	}
+	// x-opencode-session must be present (OpenCode Go 400s MissingSessionID
+	// without it). Auto-generated since we passed "".
+	if rec.sessionID == "" {
+		t.Fatal("x-opencode-session = empty, want an auto-generated session id")
 	}
 }
 

@@ -932,6 +932,59 @@ func TestResolvePreservesActiveRoleFromUserConfig(t *testing.T) {
 	}
 }
 
+func TestResolveMergesModelOverridesFromFileAndOverridesLayer(t *testing.T) {
+	path := writeConfig(t, `{
+		"activeProvider": "opencode-go",
+		"providers": [{
+			"name": "opencode-go",
+			"baseURL": "https://opencode.ai/zen/go/v1",
+			"provider": "openai-compatible",
+			"model": "muse-spark-1.3-contributor"
+		}],
+		"modelOverrides": {
+			"muse-spark-1.3-contributor": {"type": "responses"},
+			"legacy-model": {"type": "chat"}
+		}
+	}`)
+
+	resolved, err := Resolve(ResolveOptions{
+		UserConfigPath: path,
+		Env: map[string]string{
+			ActiveProviderEnv: "opencode-go",
+		},
+		Overrides: Overrides{
+			ModelOverrides: map[string]ModelOverride{
+				// CLI override wins wholesale for an overlapping slug; a new
+				// slug is added; an untouched slug keeps its file entry.
+				"muse-spark-1.3-contributor": {Type: "completion"},
+				"cli-only-model":             {Type: "responses"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if resolved.ModelOverrides == nil {
+		t.Fatal("ModelOverrides = nil, want merged map")
+	}
+	// Overridden slug reflects the CLI layer (wholesale overlay).
+	if got := resolved.ModelOverrides["muse-spark-1.3-contributor"].NormalizedType(); got != "completion" {
+		t.Fatalf("muse NormalizedType = %q, want completion (CLI overlay wins)", got)
+	}
+	// NormalizedType metadynamics: aliases and empty collapse to completion,
+	// "responses" stays verbatim.
+	if got := resolved.ModelOverrides["legacy-model"].NormalizedType(); got != "completion" {
+		t.Fatalf("legacy-model NormalizedType = %q, want completion (chat alias)", got)
+	}
+	if got := resolved.ModelOverrides["legacy-model"].UsesResponses(); got {
+		t.Fatal("legacy-model UsesResponses = true, want false")
+	}
+	// New slug from the CLI layer is present.
+	if !resolved.ModelOverrides["cli-only-model"].UsesResponses() {
+		t.Fatal("cli-only-model should use responses")
+	}
+}
+
 func TestResolveUsesOpenAIAPIKeyOnlyWithDefaultModel(t *testing.T) {
 	resolved, err := Resolve(ResolveOptions{
 		Env: map[string]string{

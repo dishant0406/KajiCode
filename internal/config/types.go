@@ -392,9 +392,46 @@ func (cfg *ToolsConfig) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// ModelOverride is a per-model routing override keyed by the model slug (the
+// resolved model id sent to the provider). A provider can serve models on
+// different transports (e.g. OpenCode Go serves Muse Spark only on the
+// Responses API while the rest use chat-completions), so routing is chosen per
+// model rather than per provider. Type defaults to "completion" and may be
+// "responses" so a request is sent to {baseURL}/responses instead of
+// /chat/completions.
+type ModelOverride struct {
+	// Provider is the name of the provider profile this override applies to.
+	// Empty means any provider that resolves the model.
+	Provider string `json:"provider,omitempty"`
+	// Type is the request transport: "completion" (default) or "responses".
+	// "chat", "chat-completions", "chat-completions" and "" normalize to
+	// "completion"; "responses" is kept verbatim.
+	Type string `json:"type,omitempty"`
+}
+
+// NormalizedType returns the canonical transport value for the override,
+// collapsing aliases and empty to the default "completion".
+func (o ModelOverride) NormalizedType() string {
+	switch strings.ToLower(strings.TrimSpace(o.Type)) {
+	case "responses":
+		return "responses"
+	default:
+		return "completion"
+	}
+}
+
+// UsesResponses reports whether the override routes to the Responses API.
+func (o ModelOverride) UsesResponses() bool {
+	return o.NormalizedType() == "responses"
+}
+
 type FileConfig struct {
 	ActiveProvider string            `json:"activeProvider,omitempty"`
 	Providers      []ProviderProfile `json:"providers,omitempty"`
+	// ModelOverrides routes specific model slugs to a request transport
+	// (coordinates) independently of the provider profile's apiFormat. See
+	// ModelOverride.
+	ModelOverrides map[string]ModelOverride `json:"modelOverrides,omitempty"`
 	// ModelRoles maps a task role name to a model selector ("provider:model", a
 	// registry alias, or "@role" to reference another role). Roles not present fall
 	// back to the active model / DefaultModel.
@@ -449,28 +486,30 @@ func (c ImagesConfig) Empty() bool {
 
 func (cfg FileConfig) MarshalJSON() ([]byte, error) {
 	type rawConfig struct {
-		ActiveProvider string              `json:"activeProvider,omitempty"`
-		Providers      []ProviderProfile   `json:"providers,omitempty"`
-		ModelRoles     map[string]string   `json:"modelRoles,omitempty"`
-		DefaultModel   string              `json:"defaultModel,omitempty"`
-		ActiveRole     string              `json:"activeRole,omitempty"`
-		MaxTurns       int                 `json:"maxTurns,omitempty"`
-		MCP            MCPConfig           `json:"mcp,omitempty"`
-		Sandbox        SandboxConfig       `json:"sandbox,omitempty"`
-		Notify         NotifyConfig        `json:"notify,omitempty"`
-		Tools          ToolsConfig         `json:"tools,omitempty"`
-		Swarm          SwarmConfig         `json:"swarm,omitempty"`
-		Harness        *HarnessConfig      `json:"harness,omitempty"`
-		Learning       *LearningConfig     `json:"learning,omitempty"`
-		Preferences    PreferencesConfig   `json:"preferences,omitempty"`
-		KeyBindings    KeyBindingsConfig   `json:"keybindings,omitempty"`
-		LocalControl   *LocalControlConfig `json:"localControl,omitempty"`
-		Images         *ImagesConfig       `json:"images,omitempty"`
-		STT            *STTConfig          `json:"stt,omitempty"`
+		ActiveProvider string                   `json:"activeProvider,omitempty"`
+		Providers      []ProviderProfile        `json:"providers,omitempty"`
+		ModelOverrides map[string]ModelOverride `json:"modelOverrides,omitempty"`
+		ModelRoles     map[string]string        `json:"modelRoles,omitempty"`
+		DefaultModel   string                   `json:"defaultModel,omitempty"`
+		ActiveRole     string                   `json:"activeRole,omitempty"`
+		MaxTurns       int                      `json:"maxTurns,omitempty"`
+		MCP            MCPConfig                `json:"mcp,omitempty"`
+		Sandbox        SandboxConfig            `json:"sandbox,omitempty"`
+		Notify         NotifyConfig             `json:"notify,omitempty"`
+		Tools          ToolsConfig              `json:"tools,omitempty"`
+		Swarm          SwarmConfig              `json:"swarm,omitempty"`
+		Harness        *HarnessConfig           `json:"harness,omitempty"`
+		Learning       *LearningConfig          `json:"learning,omitempty"`
+		Preferences    PreferencesConfig        `json:"preferences,omitempty"`
+		KeyBindings    KeyBindingsConfig        `json:"keybindings,omitempty"`
+		LocalControl   *LocalControlConfig      `json:"localControl,omitempty"`
+		Images         *ImagesConfig            `json:"images,omitempty"`
+		STT            *STTConfig               `json:"stt,omitempty"`
 	}
 	raw := rawConfig{
 		ActiveProvider: cfg.ActiveProvider,
 		Providers:      cfg.Providers,
+		ModelOverrides: cfg.ModelOverrides,
 		ModelRoles:     cfg.ModelRoles,
 		DefaultModel:   cfg.DefaultModel,
 		ActiveRole:     cfg.ActiveRole,
@@ -519,6 +558,9 @@ type Overrides struct {
 	Providers      []ProviderProfile
 	Provider       ProviderProfile
 	ModelRoles     map[string]string
+	// ModelOverrides is the CLI override layer's per-model transport routing. It
+	// merges over the file config's ModelOverrides map (per-model entries win).
+	ModelOverrides map[string]ModelOverride
 	DefaultModel   string
 	ActiveRole     string
 	MaxTurns       int
@@ -539,6 +581,7 @@ type ResolvedConfig struct {
 	Providers      []ProviderProfile
 	Provider       ProviderProfile
 	ModelRoles     map[string]string
+	ModelOverrides map[string]ModelOverride
 	DefaultModel   string
 	ActiveRole     string
 	MaxTurns       int
@@ -605,6 +648,7 @@ func (cfg *FileConfig) UnmarshalJSON(data []byte) error {
 	type rawConfig struct {
 		ActiveProvider  string                     `json:"activeProvider"`
 		Providers       []ProviderProfile          `json:"providers"`
+		ModelOverrides  map[string]ModelOverride   `json:"modelOverrides"`
 		ModelRoles      map[string]string          `json:"modelRoles"`
 		DefaultModel    string                     `json:"defaultModel"`
 		ActiveRole      string                     `json:"activeRole"`
@@ -631,6 +675,7 @@ func (cfg *FileConfig) UnmarshalJSON(data []byte) error {
 	}
 	cfg.ActiveProvider = raw.ActiveProvider
 	cfg.Providers = raw.Providers
+	cfg.ModelOverrides = raw.ModelOverrides
 	cfg.ModelRoles = raw.ModelRoles
 	cfg.DefaultModel = raw.DefaultModel
 	cfg.ActiveRole = raw.ActiveRole

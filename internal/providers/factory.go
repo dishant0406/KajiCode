@@ -2,6 +2,7 @@ package providers
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"net/http"
 	"strings"
@@ -43,6 +44,11 @@ type Options struct {
 	// here so a slow reasoning model can opt into longer silent stretches without
 	// touching environment variables.
 	StreamIdleTimeout time.Duration
+	// ModelOverrides is the per-model transport routing. When the resolved model
+	// id has a "responses" override, the provider is built as a Responses-API
+	// provider ({baseURL}/responses) instead of chat-completions. Keyed by the
+	// resolved model slug. See config.ModelOverride.
+	ModelOverrides map[string]config.ModelOverride
 }
 
 // New creates a runtime provider for a resolved provider profile.
@@ -68,6 +74,28 @@ func New(profile config.ProviderProfile, options Options) (kajicoderuntime.Provi
 
 	switch resolved.providerKind {
 	case config.ProviderKindOpenAI, config.ProviderKindOpenAICompatible:
+		// A per-model "responses" override routes this model to the Responses API
+		// ({baseURL}/responses) instead of chat-completions — required by OpenCode Go
+		// for Muse-style models that only serve /responses. The shared responses
+		// transport injects x-opencode-session so the request is routable.
+		if resolved.useResponses {
+			return openai.NewResponsesProvider(openai.Options{
+				APIKey:                profile.APIKey,
+				BaseURL:               resolved.baseURL,
+				Model:                 resolved.apiModel,
+				AuthHeader:            profile.AuthHeader,
+				AuthScheme:            profile.AuthScheme,
+				AuthHeaderValue:       profile.AuthHeaderValue,
+				CustomHeaders:         providerio.CopyHeaders(profile.CustomHeaders),
+				OAuthResolver:         options.OAuthResolver,
+				MaxTokens:             resolved.maxOutputTokens,
+				HTTPClient:            options.HTTPClient,
+				UserAgent:             options.UserAgent,
+				ParseThinkTags:        parseThinkTagsForProfile(profile, resolved),
+				DisablePromptCacheKey: resolved.providerKind == config.ProviderKindOpenAICompatible,
+				StreamIdleTimeout:     idleTimeout,
+			}, opencodeSessionID())
+		}
 		// prompt_cache_key is an OpenAI-only chat-completions field. Strict
 		// openai-compatible gateways (NVIDIA NIM, etc.) reject it with a 400
 		// instead of ignoring unknown parameters — so omit it for every
@@ -80,7 +108,7 @@ func New(profile config.ProviderProfile, options Options) (kajicoderuntime.Provi
 			AuthHeader:            profile.AuthHeader,
 			AuthScheme:            profile.AuthScheme,
 			AuthHeaderValue:       profile.AuthHeaderValue,
-			CustomHeaders:         providerio.CopyHeaders(profile.CustomHeaders),
+			CustomHeaders:         opencodeHeaders(resolved.baseURL, profile.CustomHeaders),
 			OAuthResolver:         options.OAuthResolver,
 			MaxTokens:             resolved.maxOutputTokens,
 			HTTPClient:            options.HTTPClient,
@@ -97,7 +125,7 @@ func New(profile config.ProviderProfile, options Options) (kajicoderuntime.Provi
 			AuthHeader:        profile.AuthHeader,
 			AuthScheme:        profile.AuthScheme,
 			AuthHeaderValue:   profile.AuthHeaderValue,
-			CustomHeaders:     providerio.CopyHeaders(profile.CustomHeaders),
+			CustomHeaders:     opencodeHeaders(resolved.baseURL, profile.CustomHeaders),
 			OAuthResolver:     options.OAuthResolver,
 			MaxTokens:         resolved.maxOutputTokens,
 			HTTPClient:        options.HTTPClient,
@@ -231,6 +259,10 @@ type resolvedProfile struct {
 	apiModel        string
 	baseURL         string
 	maxOutputTokens int
+	// useResponses routes requests to {baseURL}/responses (Responses API) instead
+	// of the default chat-completions path. Set when the resolved model id has a
+	// `responses` model override matching this provider.
+	useResponses bool
 }
 
 // RuntimeMetadata describes the provider identity and concrete API model used
@@ -304,6 +336,7 @@ func resolveProfile(profile config.ProviderProfile, options Options) (resolvedPr
 			apiModel:        entry.APIModel,
 			baseURL:         baseURL,
 			maxOutputTokens: entry.ContextLimits.MaxOutputTokens,
+			useResponses:    responsesOverrideActive(entry.APIModel, profile, options.ModelOverrides),
 		}, nil
 	}
 
@@ -317,7 +350,71 @@ func resolveProfile(profile config.ProviderProfile, options Options) (resolvedPr
 		providerKind: providerKind,
 		apiModel:     model,
 		baseURL:      baseURL,
+		useResponses: responsesOverrideActive(model, profile, options.ModelOverrides),
 	}, nil
+}
+
+// opencodeHostname is the canonical OpenCode base URL host. Both OpenCode Zen
+// (https://opencode.ai/zen/...) and OpenCode Go (https://opencode.ai/zen/go/...)
+// route through it. OpenCode requires every request to carry an
+// `x-opencode-session` header — a stable id identifying the conversation —
+// otherwise the gateway 400s with MissingSessionID (verified live across
+// chat/completions and /responses).
+const opencodeHost = "opencode.ai"
+
+// opencodeSessionHeader is the per-request header OpenCode requires for
+// request routing.
+const opencodeSessionHeader = "x-opencode-session"
+
+// opencodeBaseURL reports whether the profile's base URL targets an OpenCode
+// endpoint (Zen or Go), which requires the x-opencode-session header.
+func opencodeBaseURL(baseURL string) bool {
+	return strings.Contains(strings.ToLower(strings.TrimSpace(baseURL)), opencodeHost)
+}
+
+// opencodeSessionID returns a stable id for the current run (same across every
+// request the process issues, so OpenCode can route a conversation). A fresh
+// random id per provider construction is a valid stable-per-conversation value
+// for a single agent run; it reuses the generator already used by the responses
+// transport.
+func opencodeSessionID() string {
+	var buf [16]byte
+	if _, err := rand.Read(buf[:]); err == nil {
+		return fmt.Sprintf("kajicode-%x", buf[:])
+	}
+	return "kajicode-session"
+}
+
+// opencodeHeaders copies the profile's custom headers and, when the base URL is
+// an OpenCode endpoint, injects the required x-opencode-session header. The openai
+// chat-completions path has no SetRequestExtra hook of its own, so this is the
+// cleanest injection point; the responses transport injects it directly.
+func opencodeHeaders(baseURL string, customHeaders map[string]string) map[string]string {
+	headers := providerio.CopyHeaders(customHeaders)
+	if headers == nil {
+		headers = map[string]string{}
+	}
+	if opencodeBaseURL(baseURL) {
+		if strings.TrimSpace(headers[opencodeSessionHeader]) == "" {
+			headers[opencodeSessionHeader] = opencodeSessionID()
+		}
+	}
+	return headers
+}
+
+func responsesOverrideActive(model string, profile config.ProviderProfile, overrides map[string]config.ModelOverride) bool {
+	if len(overrides) == 0 {
+		return false
+	}
+	override, ok := overrides[model]
+	if !ok {
+		return false
+	}
+	if other := strings.TrimSpace(override.Provider); other != "" &&
+		!strings.EqualFold(other, strings.TrimSpace(profile.Name)) {
+		return false
+	}
+	return override.UsesResponses()
 }
 
 // validateModelAllowedForProvider enforces provider-scoped model allowlists at
