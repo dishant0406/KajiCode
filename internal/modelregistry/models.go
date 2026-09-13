@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -372,12 +373,99 @@ func NewRegistry(entries []ModelEntry) (Registry, error) {
 }
 
 func (registry Registry) Get(pattern string) (ModelEntry, bool) {
-	entry, ok := registry.entries[normalizePattern(pattern)]
-	if !ok {
+	if entry, ok := registry.entries[normalizePattern(pattern)]; ok {
+		return cloneModelEntry(entry), true
+	}
+	// Not in the curated catalog. models.dev may still know the model (a proxy,
+	// custom, or newly released id). Synthesize an entry from its facts so every
+	// consumer — vision gate, compaction sizing, /effort, cost math, pickers —
+	// reads one record without knowing about models.dev. Synthesis is memoized and
+	// is a no-op when the snapshot is disabled, so hermetic tests and library
+	// consumers keep the pure curated catalog.
+	if entry, ok := synthesizedEntry(normalizePattern(pattern)); ok {
+		return entry, true
+	}
+	return ModelEntry{}, false
+}
+
+// synthesizedCache memoizes models.dev-derived entries per process. Keyed by the
+// normalized lookup pattern. Negative results are cached too (ok=false): the
+// snapshot is read once per process, so a miss cannot later be filled within the
+// same run, and Get sits on hot paths (usage records, pickers) that must not
+// re-scan the catalog on every call.
+var (
+	synthesizedMu    sync.RWMutex
+	synthesizedCache = map[string]synthesizedResult{}
+)
+
+type synthesizedResult struct {
+	entry ModelEntry
+	ok    bool
+}
+
+// synthesizedEntry returns a models.dev-derived entry for pattern, memoized.
+func synthesizedEntry(key string) (ModelEntry, bool) {
+	if key == "" {
 		return ModelEntry{}, false
 	}
+	synthesizedMu.RLock()
+	cached, found := synthesizedCache[key]
+	synthesizedMu.RUnlock()
+	if found {
+		return cloneModelEntry(cached.entry), cached.ok
+	}
+	entry, ok := synthesizeModelEntry(key)
+	if !ok {
+		storeSynthesized(key, ModelEntry{}, false)
+		return ModelEntry{}, false
+	}
+	// Check the minimal invariants before caching: a record without positive
+	// limits must not be handed to callers that assume a well-formed entry. Full
+	// ModelEntry.Validate is intentionally NOT run — it requires a first-party
+	// primary provider, which an openai-compatible models.dev model is not.
+	if !validSynthesizedEntry(entry) {
+		storeSynthesized(key, ModelEntry{}, false)
+		return ModelEntry{}, false
+	}
+	storeSynthesized(key, entry, true)
 	return cloneModelEntry(entry), true
 }
+
+// storeSynthesized records a synthesized result (positive or negative).
+func storeSynthesized(key string, entry ModelEntry, ok bool) {
+	synthesizedMu.Lock()
+	synthesizedCache[key] = synthesizedResult{entry: entry, ok: ok}
+	synthesizedMu.Unlock()
+}
+
+// validSynthesizedEntry checks the minimal invariants a synthesized entry must
+// satisfy.
+func validSynthesizedEntry(entry ModelEntry) bool {
+	if strings.TrimSpace(entry.ID) == "" || strings.TrimSpace(entry.APIModel) == "" {
+		return false
+	}
+	if entry.ContextLimits.ContextWindow <= 0 || entry.ContextLimits.MaxOutputTokens <= 0 {
+		return false
+	}
+	if entry.ContextLimits.MaxOutputTokens > entry.ContextLimits.ContextWindow {
+		return false
+	}
+	return len(entry.Capabilities) > 0
+}
+
+// ResetSynthesizedCache clears the synthesized-entry memoization so the next Get
+// re-synthesizes from the current models.dev snapshot. Call it after
+// modelsource.Reload() so synthesized entries reflect the freshly loaded catalog
+// instead of the rows cached before the refresh. Exported (unlike the test
+// helper) because the live refresh path is a production caller.
+func ResetSynthesizedCache() {
+	synthesizedMu.Lock()
+	synthesizedCache = map[string]synthesizedResult{}
+	synthesizedMu.Unlock()
+}
+
+// ResetSynthesizedCacheForTest clears the synthesized-entry memoization.
+func ResetSynthesizedCacheForTest() { ResetSynthesizedCache() }
 
 func (registry Registry) register(pattern string, entry ModelEntry) error {
 	normalized := normalizePattern(pattern)

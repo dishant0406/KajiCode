@@ -723,9 +723,9 @@ construction): run `go run golang.org/x/vuln/cmd/govulncheck@v1.3.0 ./...`.
   `options.Model`, and keeps `messages` intact — the exact template for role switches.
 - Known limitation NOT yet fixed: context-window budget fixed at run start
   (`loop.go:895-899`) — Phase C1 fixes it.
-- Vision capability: `modelregistry.SupportsVision` (vision.go:17-27) + name heuristic
-  `VisionCapableByName` (vision.go:33-71). Caveat: it returns `false` (not unknown) for a
-  catalog-known non-vision model, and falls back to name-match for unknown ids.
+- Vision capability: `modelregistry.SupportsVision` (vision.go) — curated facts first, then
+  models.dev (snapshot, then embedded seed) for unknown ids, in both directions. No name
+  heuristic: an unknown model is treated as not vision-capable.
 - Images: `ImageBlock{MediaType,Data}`, `Message.Images`, `Options.Images`
   (`kajicoderuntime/types.go:223-226,95-102`; `agent/types.go:308`). `--image` flag
   (`exec_parse.go:118-130`); ACP `image` content blocks (`acp/agent.go:509`); stream-json

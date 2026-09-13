@@ -13,8 +13,24 @@ import (
 	"github.com/dishant0406/KajiCode/internal/config"
 	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
 	"github.com/dishant0406/KajiCode/internal/modelregistry"
+	"github.com/dishant0406/KajiCode/internal/modelsource"
 	"github.com/dishant0406/KajiCode/internal/tools"
 )
+
+// enableModelSourceForTest turns on the models.dev snapshot (embedded seed, no
+// network) for tests that exercise the vision gate, mirroring what the CLI does at
+// startup. Without it the gate has no model facts to consult and only the curated
+// registry answers.
+func enableModelSourceForTest(t *testing.T) {
+	t.Helper()
+	modelsource.Enable()
+	modelregistry.ResetSynthesizedCacheForTest()
+	t.Cleanup(func() {
+		modelregistry.ResetSynthesizedCacheForTest()
+		modelsource.Bind("", "")
+		modelsource.Disable()
+	})
+}
 
 func TestModelSupportsVisionTUI(t *testing.T) {
 	cases := []struct {
@@ -566,6 +582,7 @@ func TestRetryResendsAttachments(t *testing.T) {
 // discovery id's owner slug to that provider, so the effective model is the
 // vision-capable routed model and the image attaches (not refused).
 func TestImageCommandAzureDiscoveryIdVisionRoleAttaches(t *testing.T) {
+	enableModelSourceForTest(t)
 	root := t.TempDir()
 	writeTestPNG(t, root, "photo.png")
 
@@ -620,6 +637,7 @@ func visionRoleModel(opts Options) Options {
 }
 
 func TestImageCommandVisionRoleRoutedModelAttaches(t *testing.T) {
+	enableModelSourceForTest(t)
 	root := t.TempDir()
 	writeTestPNG(t, root, "photo.png")
 
@@ -650,18 +668,20 @@ func TestImageCommandVisionRoleRoutedModelAttaches(t *testing.T) {
 }
 
 func TestImageCommandNonVisionRoleRoutedModelRefuses(t *testing.T) {
+	enableModelSourceForTest(t)
 	root := t.TempDir()
 	writeTestPNG(t, root, "photo.png")
 
 	// Default model is vision-capable, but the active role routes to a NON-vision
-	// model — the gate must follow the routed model and refuse.
+	// model — the gate must follow the routed model and refuse. (models.dev reports
+	// o3-mini as text-only; kimi-for-coding is actually image-capable.)
 	m := newModel(context.Background(), Options{
 		Cwd:             root,
 		ModelName:       "gpt-4.1", // would accept images on its own
-		SavedProviders:  []config.ProviderProfile{{Name: "textprovider", Model: "kimi-for-coding"}},
-		ModelRoles:      map[string]string{"implement": "textprovider:kimi-for-coding"},
+		SavedProviders:  []config.ProviderProfile{{Name: "textprovider", Model: "o3-mini"}},
+		ModelRoles:      map[string]string{"implement": "textprovider:o3-mini"},
 		DefaultModel:    "gpt-4.1",
-		ProviderProfile: config.ProviderProfile{Name: "textprovider", Model: "kimi-for-coding"},
+		ProviderProfile: config.ProviderProfile{Name: "textprovider", Model: "o3-mini"},
 	})
 	m.activeRole = "implement"
 
@@ -669,8 +689,8 @@ func TestImageCommandNonVisionRoleRoutedModelRefuses(t *testing.T) {
 	nextAny, _ := m.handleSubmit()
 	next := nextAny.(model)
 
-	if m.effectiveModelName() != "kimi-for-coding" {
-		t.Fatalf("effectiveModelName = %q, want kimi-for-coding", m.effectiveModelName())
+	if m.effectiveModelName() != "o3-mini" {
+		t.Fatalf("effectiveModelName = %q, want o3-mini", m.effectiveModelName())
 	}
 	if !strings.Contains(lastTranscriptText(next), "does not support image input") {
 		t.Fatal("routed text-only model must refuse the image")

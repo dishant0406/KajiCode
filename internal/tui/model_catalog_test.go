@@ -25,7 +25,7 @@ func TestModelSupportsVisionTUITrustsCachedCatalog(t *testing.T) {
 	m := model{modelName: "gpt-5-text-only", modelCatalog: registry}
 
 	if m.modelSupportsVisionTUI() {
-		t.Fatal("catalog-known text-only model must not fall through to vision name heuristic")
+		t.Fatal("catalog-known text-only model must not be reported as vision-capable")
 	}
 }
 
@@ -42,7 +42,7 @@ func TestModelSupportsVisionTUIChecksDiscoveredBeforeHeuristic(t *testing.T) {
 	}
 
 	if m.modelSupportsVisionTUI() {
-		t.Fatal("discovered text-only model must not fall through to vision name heuristic")
+		t.Fatal("discovered text-only model must not be reported as vision-capable")
 	}
 }
 

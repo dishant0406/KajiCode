@@ -137,8 +137,15 @@ func TestCtrlVDoesNotPasteIntoComposer(t *testing.T) {
 	updated, cmd := m.Update(testKeyCtrl('v'))
 	next := updated.(model)
 
-	if cmd != nil {
-		t.Fatal("ctrl+v should not run the textinput clipboard paste command")
+	// Ctrl+V now routes through our own asynchronous clipboard read
+	// (pasteFromClipboardCmd) rather than the textinput's synchronous paste: the
+	// command must be ours, and the composer must stay untouched until the
+	// clipboardReadMsg is applied.
+	if cmd == nil {
+		t.Fatal("ctrl+v should dispatch the async clipboard-read command")
+	}
+	if _, ok := cmd().(clipboardReadMsg); !ok {
+		t.Fatalf("ctrl+v produced %T, want clipboardReadMsg", cmd())
 	}
 	if got := next.composerValue(); got != "hello" {
 		t.Fatalf("composer value after ctrl+v = %q, want unchanged", got)

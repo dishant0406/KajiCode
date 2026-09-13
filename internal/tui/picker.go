@@ -401,7 +401,10 @@ func (m model) refreshModelPicker() (model, tea.Cmd) {
 	// Fall back to the static catalog rows so the list is never empty, but show
 	// the fetching overlay until every provider's live discovery returns.
 	m.modelPickerLoading = true
-	return m, m.bumpModelPickerEpisode()
+	// Also refresh the models.dev snapshot that backs model facts (vision,
+	// limits, reasoning tiers, cost). Independent of provider discovery: a
+	// provider may be perfectly reachable while the models.dev cache is stale.
+	return m, tea.Batch(m.bumpModelPickerEpisode(), m.modelSourceRefreshCmd())
 }
 
 // bumpModelPickerEpisode starts a new model-picker discovery round: it increments

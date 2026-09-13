@@ -19,6 +19,7 @@ import (
 	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
 	"github.com/dishant0406/KajiCode/internal/lsp"
 	"github.com/dishant0406/KajiCode/internal/modelregistry"
+	"github.com/dishant0406/KajiCode/internal/modelsource"
 	"github.com/dishant0406/KajiCode/internal/notify"
 	"github.com/dishant0406/KajiCode/internal/providercatalog"
 	"github.com/dishant0406/KajiCode/internal/providermodeldiscovery"
@@ -177,7 +178,7 @@ func runExec(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) in
 	// Refresh the models.dev pricing/limits cache in the background when stale;
 	// the overlay is read at registry construction from the cache file, so this
 	// benefits the next run and never blocks or fails this one.
-	go func() { _ = modelregistry.RefreshModelsDevCache(context.Background()) }()
+	go func() { _ = modelsource.Refresh(context.Background()) }()
 
 	// A mode seeds model/effort/max-turns/tool filters as a preset. Expand it up
 	// front — before tool-filter validation and the --list-tools branch — so a
@@ -314,6 +315,11 @@ func runExec(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) in
 	// (launch, role dispatch, path of the run) routes a resolved model to
 	// /responses when its modelOverride says so.
 	setModelOverrides(&deps, resolved.ModelOverrides)
+	// Bind the resolved model to the models.dev snapshot so every later read of a
+	// model fact (vision gate, compaction window, reasoning tiers, pricing) agrees
+	// on one record. The provider slug is the provider's catalog id; Resolve falls
+	// back to the canonical row when that slug has no row of its own.
+	modelsource.Bind(resolved.Provider.CatalogID, resolved.Provider.Model)
 	// Multi-model task routing: build the RoleRouter once and share it across exec
 	// (role dispatch, DefaultModel seeding, vision routing) and the TUI. deps.newProvider
 	// is wrapped by fillAppDeps to apply the stored key, so role/vision routing builds a
@@ -1417,7 +1423,20 @@ func modelContextWindow(registry modelregistry.Registry, modelID string) int {
 	if entry, ok := registry.Resolve(trimmed); ok {
 		return entry.ContextLimits.ContextWindow
 	}
+	// Not curated: consult models.dev, whose limit is authoritative for a proxy or
+	// custom id the curated catalog will never list.
+	if facts, ok := modelsource.Lookup(activeProviderSlug(registry), trimmed); ok {
+		return facts.ContextWindow
+	}
 	return 0
+}
+
+// activeProviderSlug returns the bound session's models.dev provider slug, if any.
+// Kept as a tiny indirection so the resolver stays decoupled from where the slug
+// is sourced.
+func activeProviderSlug(_ modelregistry.Registry) string {
+	provider, _ := modelsource.Bound()
+	return provider
 }
 
 // resolveAgentContextWindow returns the context window used to enable/size agent

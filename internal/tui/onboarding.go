@@ -877,6 +877,8 @@ func (m model) completeSetup() (tea.Model, tea.Cmd) {
 	if result.Provider.Name != "" {
 		m.providerProfile = result.Provider
 		m.providerName = result.Provider.Name
+		m.providerProfile = result.Provider
+		m.modelSourceRebind(result.Provider.Model)
 		m.modelName = result.Provider.Model
 		// Export KAJICODE_PROVIDER alongside the committed profile fields (and the
 		// config setupSave already persisted as active). Unlike command_center's

@@ -54,6 +54,14 @@ func (m model) buildKeybindingGroups() []keybindingGroup {
 			},
 		},
 		{
+			title: "Clipboard",
+			bindings: []keybinding{
+				{pasteChordLabel() + " / Ctrl+Shift+V", "paste text, or attach a clipboard image (vision models)"},
+				{"Right-click", "paste the clipboard (same as the paste chord)"},
+				{labelOr(m.keyBindings.toggleMouse, "Ctrl+E"), "release the mouse to drag-select & copy text"},
+			},
+		},
+		{
 			title: "Model & run controls",
 			bindings: []keybinding{
 				{labelOr(m.keyBindings.cycleReasoning, "Ctrl+T"), "cycle reasoning effort (auto \u2192 low \u2192 medium \u2192 high)"},
@@ -80,7 +88,6 @@ func (m model) buildKeybindingGroups() []keybindingGroup {
 				{"\u2191 / Esc (in a sub-session)", "return to the main chat"},
 				{"Ctrl+F (in /model)", "toggle the highlighted model as a favorite"},
 				{"Click a tool card", "expand / collapse its output"},
-				{"Right-click", "paste the clipboard"},
 			},
 		},
 	}

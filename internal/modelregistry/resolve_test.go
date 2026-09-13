@@ -1,6 +1,10 @@
 package modelregistry
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/dishant0406/KajiCode/internal/modelsource"
+)
 
 func mkEntry(id, alias string) ModelEntry {
 	return ModelEntry{
@@ -80,42 +84,42 @@ func TestEffectiveReasoningEffort(t *testing.T) {
 	}
 }
 
-// TestEffectiveReasoningEffortUsesNameFallback pins that the run-time resolver
-// honors the same name-based fallback the /effort picker uses. A model that the
-// catalog enumerates with no efforts but whose name is a known reasoning family
-// (e.g. a GPT-5 variant served via a proxy) must have its requested effort
-// honored — not silently coerced to "none" while the picker advertises controls.
-func TestEffectiveReasoningEffortUsesNameFallback(t *testing.T) {
-	// Registered model, no explicit efforts, GPT-5 api model -> fallback infers
-	// {minimal, low, medium, high}.
-	gpt5 := ModelEntry{ID: "gpt-5-proxy", APIModel: "gpt-5", Provider: ProviderOpenAI}
-	if got := EffectiveReasoningEffort(gpt5, ReasoningEffortHigh); got != ReasoningEffortHigh {
-		t.Errorf("supported (via name fallback) effort = %q; want high", got)
+// TestEffectiveReasoningEffortFromModelsDev pins that the run-time resolver and
+// the /effort picker share one models.dev-backed source and never disagree. A real
+// reasoning model (o3-mini, synthesized from models.dev) has its requested tier
+// honored; a non-reasoning model coerces to "none" with no name-based guess.
+func TestEffectiveReasoningEffortFromModelsDev(t *testing.T) {
+	usingSeed(t)
+	modelsource.Bind("openai", "")
+	reg, err := DefaultRegistry()
+	if err != nil {
+		t.Fatal(err)
 	}
-	if got := EffectiveReasoningEffort(gpt5, ReasoningEffortMinimal); got != ReasoningEffortMinimal {
-		t.Errorf("minimal (via name fallback) = %q; want minimal", got)
+	reasoning, ok := reg.Get("o3-mini")
+	if !ok {
+		t.Fatal("o3-mini should resolve from models.dev")
 	}
-	// xhigh is outside the inferred set and there is no declared default, so it
-	// coerces to the first inferred tier rather than to "none".
-	if got := EffectiveReasoningEffort(gpt5, ReasoningEffortXHigh); got != ReasoningEffortMinimal {
-		t.Errorf("unsupported effort on a fallback model = %q; want minimal (first inferred)", got)
+	if got := EffectiveReasoningEffort(reasoning, ReasoningEffortHigh); got != ReasoningEffortHigh {
+		t.Errorf("supported effort = %q; want high", got)
 	}
-
-	// Non-reasoning model: name matches nothing, stays "none".
-	gpt4o := ModelEntry{ID: "gpt-4o", APIModel: "gpt-4o", Provider: ProviderOpenAI}
-	if got := EffectiveReasoningEffort(gpt4o, ReasoningEffortHigh); got != ReasoningEffortNone {
-		t.Errorf("non-reasoning model = %q; want none", got)
+	// xhigh is outside o3-mini's set and it declares no default, so it coerces to
+	// the first supported tier rather than to "none".
+	if got := EffectiveReasoningEffort(reasoning, ReasoningEffortXHigh); got != ReasoningEffortLow {
+		t.Errorf("unsupported effort = %q; want low (first supported)", got)
 	}
-
 	// The picker and the resolver must agree on the supported set for the same id.
-	reg := resolveTestRegistry(t)
-	picker := reg.ReasoningEfforts("gpt-5") // unknown -> name fallback
-	if len(picker) == 0 {
-		t.Fatal("picker should advertise efforts for a gpt-5 name")
-	}
-	for _, tier := range picker {
-		if got := EffectiveReasoningEffort(gpt5, tier); got != tier {
+	for _, tier := range reg.ReasoningEfforts("o3-mini") {
+		if got := EffectiveReasoningEffort(reasoning, tier); got != tier {
 			t.Errorf("picker advertises %q but resolver returns %q", tier, got)
 		}
+	}
+
+	// Non-reasoning model: no tiers, stays "none".
+	plain, ok := reg.Get("gpt-4.1")
+	if !ok {
+		t.Fatal("gpt-4.1 should be in the curated registry")
+	}
+	if got := EffectiveReasoningEffort(plain, ReasoningEffortHigh); got != ReasoningEffortNone {
+		t.Errorf("non-reasoning model = %q; want none", got)
 	}
 }

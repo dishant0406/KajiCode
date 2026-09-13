@@ -449,6 +449,7 @@ func (m model) handleModelCommand(args string) (model, string) {
 	m.providerName = displayValue(nextProfile.Name, string(metadata.ProviderKind))
 	// Keep sub-agent child processes on the same provider we just switched to.
 	config.SetActiveProviderEnv(nextProfile.Name)
+	m.modelSourceRebind(target.modelID)
 	m.modelName = target.modelID
 	// Record the outgoing pair too, not just the destination: otherwise the
 	// model a session started on (never itself the target of a recordRecentModel
@@ -552,6 +553,7 @@ func (m model) switchProviderModel(providerName, modelID string) (model, string,
 	m.provider = next
 	m.providerProfile = target
 	m.providerName = target.Name
+	m.modelSourceRebind(target.Model)
 	m.modelName = target.Model
 	// An active profile's effort fill is per-model: re-derive it for the
 	// destination, exactly like handleModelCommand does. No generic

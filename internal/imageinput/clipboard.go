@@ -93,37 +93,84 @@ func readClipboardImageWindows() ([]byte, error) {
 	return data, nil
 }
 
-// readClipboardImageDarwin uses osascript to check for and read a clipboard
-// image. Returns (nil, nil) when no image is present.
+// readClipboardImageDarwin extracts image bytes from the macOS clipboard.
+//
+// It deliberately does NOT depend on pngpaste (a Homebrew formula that is
+// usually absent) or on Python's AppKit bindings (pyobjc, also usually
+// absent): both being missing made image paste fail silently on a stock Mac.
+// Instead it uses `osascript` — always present on macOS — to address the
+// clipboard via the native «class PNGf» AppleScript class and write the bytes
+// straight to a temp file. `clipboard info` is a cheap pre-check so an
+// image-less clipboard stays a fast no-op.
+//
+// The temp path is passed as an argv argument (`on run argv`), never
+// interpolated into the script text, so a hostile path can't inject AppleScript.
 func readClipboardImageDarwin() ([]byte, error) {
-	// Check clipboard info for image classes.
-	check := `osascript -e 'clipboard info'`
-	out, err := exec.Command("sh", "-c", check).Output()
+	// Fast pre-check: skip the extraction when the clipboard holds no image.
+	out, err := exec.Command("osascript", "-e", "clipboard info").Output()
 	if err != nil {
 		return nil, nil
 	}
 	info := string(out)
-	if !strings.Contains(info, "PNG") && !strings.Contains(info, "JPEG") && !strings.Contains(info, "TIFF") && !strings.Contains(info, "GIF") {
+	if !strings.Contains(info, "«class PNGf»") &&
+		!strings.Contains(info, "JPEG picture") &&
+		!strings.Contains(info, "TIFF picture") &&
+		!strings.Contains(info, "GIF picture") {
 		return nil, nil
 	}
-	// Write clipboard image to a temp file via AppleScript, then read it.
-	// Using pngpaste if available, falling back to a Python one-liner.
-	cmd := exec.Command("sh", "-c", `pngpaste - 2>/dev/null || python3 -c "
-import AppKit, sys
-pb = AppKit.NSPasteboard.generalPasteboard()
-data = pb.dataForType_(AppKit.NSPasteboardTypePNG)
-if data:
-    sys.stdout.buffer.write(data.bytes())
-"`)
-	var stdout bytes.Buffer
-	cmd.Stdout = &stdout
+
+	// Address the clipboard as PNG — macOS re-encodes a JPEG/TIFF/GIF clipboard
+	// to PNG on demand, which is why this one class covers every case. Run the
+	// extraction in a loop over the image classes so a clipboard that lacks PNG
+	// but has, say, only TIFF still works.
+	for _, class := range []string{"«class PNGf»", "«class JPEG»", "TIFF picture"} {
+		data, err := runDarwinClipboardExtract(class)
+		if err != nil {
+			continue
+		}
+		if len(data) > 0 {
+			return data, nil
+		}
+	}
+	return nil, nil
+}
+
+// darwinClipboardExtractScript writes the clipboard's `class` data to the file
+// path given as argv item 1. The class is embedded (a fixed literal, never user
+// input); the path is read from argv so it is not subject to script injection.
+const darwinClipboardExtractScript = `on run argv
+	set targetPath to item 1 of argv
+	set imageData to (the clipboard as %s)
+	set fileHandle to open for access (POSIX file targetPath) with write permission
+	set eof fileHandle to 0
+	write imageData to fileHandle
+	close access fileHandle
+end run`
+
+// runDarwinClipboardExtract runs the extraction script for one clipboard class
+// and returns the bytes it wrote, deleting the temp file afterward.
+func runDarwinClipboardExtract(class string) ([]byte, error) {
+	temp, err := os.CreateTemp("", "kajicode-clipboard-*.img")
+	if err != nil {
+		return nil, err
+	}
+	tempPath := temp.Name()
+	temp.Close()
+	defer os.Remove(tempPath)
+
+	script := darwinClipboardExtractScript
+	if len(class) > 0 {
+		script = strings.Replace(script, "%s", class, 1)
+	}
+	cmd := exec.Command("osascript", "-e", script, tempPath)
 	if err := cmd.Run(); err != nil {
+		return nil, err
+	}
+	data, err := os.ReadFile(tempPath)
+	if err != nil || len(data) == 0 {
 		return nil, nil
 	}
-	if stdout.Len() == 0 {
-		return nil, nil
-	}
-	return stdout.Bytes(), nil
+	return data, nil
 }
 
 // readClipboardImageLinux tries wl-paste (Wayland) then xclip (X11) to read

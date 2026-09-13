@@ -210,8 +210,7 @@ func resolveCapabilities(profile config.ProviderProfile, options Options) (kajic
 		caps.SupportsPromptCache = entry.Supports(modelregistry.ModelCapabilityPromptCache)
 		// Read efforts through Registry.ReasoningEfforts (not the raw entry) so
 		// the projection matches what the /effort picker and the run-time
-		// resolver advertise — including the name-based fallback for catalog
-		// entries that enumerate no efforts of their own.
+		// resolver advertise — the entry's models.dev-derived tiers.
 		for _, effort := range registry.ReasoningEfforts(entry.ID) {
 			caps.ReasoningEfforts = append(caps.ReasoningEfforts, string(effort))
 		}

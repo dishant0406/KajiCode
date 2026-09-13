@@ -1457,6 +1457,17 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if keyCtrl(msg, 'x') && m.canArmLeader() {
 			return m.armLeader()
 		}
+		// An explicit paste chord (Ctrl+V / Cmd+V) pastes from the OS clipboard
+		// regardless of how the terminal forwards the key. Terminals that don't
+		// forward it send a bracketed tea.PasteMsg instead (handled separately);
+		// those that do forward it otherwise either fall through to the composer
+		// as a literal control character or reach nothing at all. This matters
+		// most for an image screenshot: Ghostty emits no paste event for it, so
+		// the chord is the only way to request the image. Gated on noBlockingModal
+		// so a modal (picker, wizard, permission prompt) keeps owning its keys.
+		if pasteGestureKey(msg) && m.noBlockingModal() {
+			return m, pasteFromClipboardCmd()
+		}
 		// Emacs Ctrl+P / Ctrl+N move selection in open menus. Runs before the
 		// switch so menus win over global Ctrl+P (plan toggle). Idle Ctrl+P
 		// falls through to that binding; idle Ctrl+N is a reserved no-op so it
@@ -2705,6 +2716,8 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.applySetupOAuthDeviceCode(msg)
 	case modelPickerModelsDiscoveredMsg:
 		return m.applyModelPickerModelsDiscovered(msg), nil
+	case modelSourceRefreshMsg:
+		return m.modelSourceRefreshApplied(), nil
 	case ollamaContextWindowDiscoveredMsg:
 		if msg.err == nil && msg.contextWindow > 0 {
 			if m.ollamaContextWindowByModel == nil {
@@ -3024,7 +3037,6 @@ func (m model) composerIdleHint() string {
 	}
 	sidebarKey := labelOr(m.keyBindings.toggleSidebar, "Ctrl+B")
 	detailKey := labelOr(m.keyBindings.toggleDetailed, "Ctrl+O")
-	mouseKey := labelOr(m.keyBindings.toggleMouse, "Ctrl+E")
 
 	var hint string
 	switch widthTier(m.width) {
@@ -3033,9 +3045,9 @@ func (m model) composerIdleHint() string {
 	case tierNarrow:
 		hint = "? shortcuts"
 	case tierMedium:
-		hint = fmt.Sprintf("? shortcuts · Ctrl+X cmds · %s sidebar", sidebarKey)
+		hint = fmt.Sprintf("? shortcuts · Ctrl+X cmds · %s sidebar · %s paste", sidebarKey, pasteChordLabel())
 	default:
-		hint = fmt.Sprintf("? shortcuts · Ctrl+X cmds · %s sidebar · %s detail · %s copy · Shift+Tab mode", sidebarKey, detailKey, mouseKey)
+		hint = fmt.Sprintf("? shortcuts · Ctrl+X cmds · %s sidebar · %s detail · %s paste · %s copy · Shift+Tab mode", sidebarKey, detailKey, pasteChordLabel(), copyChordLabel())
 	}
 	return kajicodeTheme.faint.Render(hint)
 }

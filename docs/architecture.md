@@ -41,7 +41,7 @@ the next model turn.
 | Interactive UI | `internal/tui` | Bubble Tea model/update/view state, transcript rendering, composer, modals, slash commands, setup, and runtime callbacks. |
 | Agent loop | `internal/agent` | Prompt assembly, provider turns, tool execution, compaction, retries, completion policy, self-correction, and callback emission. |
 | Self-learning | `internal/config` (learning settings), `internal/agent/learning.go` (runtime gate), `internal/harness` (learn pipeline, recipes, apply/rollback), `internal/tools` (`_learning_apply`, `_learning_review`, `_learning_recipe`) | Perpetual-memory loop: turn/compaction-triggered reviews produce durable learned lessons, reviewed with diff + tests, applied on approval with rollback, and controlled by the `learning` CLI/`cmd_kajicode` settings. |
-| Provider contract | `internal/kajicoderuntime` | Provider-neutral messages, tool calls, stream events, usage, images, and turn sessions. |
+| Model facts | `internal/modelsource` | models.dev snapshot (fetch/cache/resolve) plus an embedded seed for offline first-run. The single source of truth for a model's capabilities, modalities, reasoning tiers, context/output limits, and pricing. The curated catalog supplies identity and aliases; there is no model-name heuristic for vision or effort tiers. |
 | Provider adapters | `internal/providers`, `internal/aimlapi`, provider catalog packages | API-specific translation for OpenAI, Azure OpenAI, Anthropic, Gemini, compatible gateways, OAuth/API key resolution, model discovery, provider health, and onboarding. |
 | Tools | `internal/tools` | Tool interface, registry, built-in tools, redaction, output budgets, display metadata, and mutation tracking. |
 | Sandbox/permissions | `internal/sandbox` | Path scope, network policy, command risk, grants, permission decisions, and platform isolation backends. |
@@ -60,7 +60,13 @@ the next model turn.
 4. Builds the tool registry.
 5. Loads specialists, MCP tools, plugins, skills, hooks, and user commands.
 6. Creates sandbox and session stores.
-7. Launches the requested surface: TUI, `exec`, ACP, setup, provider management,
+7. Binds the resolved model to `internal/modelsource` (the models.dev snapshot)
+   and refreshes that snapshot in the background when stale. `/model refresh`
+   (and the picker's "Refresh models" row) re-runs this refresh in-session via
+   `RefreshAndReload`, drops the once-guarded snapshot, rebuilds the synthesized
+   registry entries, and re-binds — so updated model facts apply without a
+   restart.
+8. Launches the requested surface: TUI, `exec`, ACP, setup, provider management,
    release helper, daemon command, or another CLI subcommand.
 
 Do not duplicate setup logic in a surface. Add composition behavior in

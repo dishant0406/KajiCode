@@ -24,7 +24,7 @@ import (
 	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
 	"github.com/dishant0406/KajiCode/internal/localcontrol"
 	"github.com/dishant0406/KajiCode/internal/mcp"
-	"github.com/dishant0406/KajiCode/internal/modelregistry"
+	"github.com/dishant0406/KajiCode/internal/modelsource"
 	"github.com/dishant0406/KajiCode/internal/observability"
 	"github.com/dishant0406/KajiCode/internal/plugins"
 	"github.com/dishant0406/KajiCode/internal/providerhealth"
@@ -267,11 +267,12 @@ func runWithDeps(args []string, stdout io.Writer, stderr io.Writer, deps appDeps
 	defer observability.Recover(observability.DefaultCrashDir(), "cli", stderr, &exitCode)
 	deps = fillAppDeps(deps)
 
-	// CLI runs opt into the models.dev overlay (cached live context limits and
-	// pricing on top of the curated catalog). Explicitly enabled here — and only
-	// here — so library consumers and hermetic tests are never perturbed by a
-	// cache file on the machine. The refresh itself is fired in exec/TUI startup.
-	modelregistry.EnableModelsDevOverlay()
+	// CLI runs opt into the models.dev snapshot (the source of truth for model
+	// capabilities, limits, reasoning tiers, and pricing). Explicitly enabled here
+	// — and only here — so library consumers and hermetic tests are never
+	// perturbed by a cache file on the machine. The refresh itself is fired in
+	// exec/TUI startup.
+	modelsource.Enable()
 
 	addDirs, args, err := splitLeadingAddDirFlags(args)
 	if err != nil {
@@ -654,7 +655,7 @@ func runInteractiveTUIWithSetup(stderr io.Writer, deps appDeps, permissionMode a
 	// Refresh the models.dev pricing/limits cache in the background when stale;
 	// the overlay is read at registry construction from the cache file, so this
 	// benefits the next run and never blocks or fails this one.
-	go func() { _ = modelregistry.RefreshModelsDevCache(context.Background()) }()
+	go func() { _ = modelsource.Refresh(context.Background()) }()
 
 	workspaceRoot, err := deps.getwd()
 	if err != nil {
@@ -873,6 +874,10 @@ func runInteractiveTUIWithSetup(stderr io.Writer, deps appDeps, permissionMode a
 	// per-session root is negotiated inside the TUI run; a nil engine leaves the
 	// agent loop byte-identical.
 	learning := learningEngine(resolved.Learning, provider, harness.GlobalDir(nil), "")
+	// Bind the resolved model to the models.dev snapshot, exactly as exec does, so
+	// TUI fact reads (vision gate, compaction window, /effort, cost, pickers) all
+	// resolve against one record. /model switches re-bind via tui.Options callbacks.
+	modelsource.Bind(resolved.Provider.CatalogID, resolved.Provider.Model)
 	return deps.runTUI(context.Background(), tui.Options{
 		Cwd:                  workspaceRoot,
 		Version:              version,

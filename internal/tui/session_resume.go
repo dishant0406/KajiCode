@@ -101,6 +101,7 @@ func (m model) applyResumePrepared(msg resumePreparedMsg) (model, tea.Cmd) {
 		m.providerName = msg.session.Provider
 	}
 	if m.modelName == "" {
+		m.modelSourceRebind(msg.session.ModelID)
 		m.modelName = msg.session.ModelID
 	}
 	if mode := resumedPermissionProfile(msg.session.PermissionProfile); mode != "" {

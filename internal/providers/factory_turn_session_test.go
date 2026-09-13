@@ -133,14 +133,14 @@ func TestNewTurnSessionProviderProjectsRegistryCapabilities(t *testing.T) {
 	}
 }
 
-// TestNewTurnSessionProviderUsesEffectiveReasoningEfforts asserts the
-// projection reads efforts through Registry.ReasoningEfforts, so a catalog
-// entry that enumerates no efforts of its own still reports the name-inferred
-// effective tiers the /effort picker and run-time resolver advertise.
-func TestNewTurnSessionProviderUsesEffectiveReasoningEfforts(t *testing.T) {
+// TestNewTurnSessionProviderHasNoNameInference asserts the projection reads only
+// the entry's own (models.dev-derived) tiers: a catalog entry that enumerates no
+// efforts reports none, even for a gpt-5-family id. The old name-inferred
+// fallback is gone, so the flat capabilities and the /effort picker agree.
+func TestNewTurnSessionProviderHasNoNameInference(t *testing.T) {
 	registry, err := modelregistry.NewRegistry([]modelregistry.ModelEntry{{
-		// A gpt-5-family id with NO ReasoningEfforts listed: the effective
-		// efforts come from name inference, differing from the raw entry.
+		// A gpt-5-family id with NO ReasoningEfforts listed: nothing is inferred
+		// from the name, so the projection reports no efforts.
 		ID:          "gpt-5-pr7-probe",
 		DisplayName: "PR7 Effective Efforts Probe",
 		APIModel:    "gpt-5-pr7-probe-api",
@@ -183,13 +183,7 @@ func TestNewTurnSessionProviderUsesEffectiveReasoningEfforts(t *testing.T) {
 	}
 
 	got := tsp.Capabilities().ReasoningEfforts
-	want := []string{"minimal", "low", "medium", "high"}
-	if len(got) != len(want) {
-		t.Fatalf("ReasoningEfforts = %v, want %v (name-inferred fallback)", got, want)
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("ReasoningEfforts[%d] = %q, want %q (full: %v)", i, got[i], want[i], got)
-		}
+	if len(got) != 0 {
+		t.Fatalf("ReasoningEfforts = %v, want none (no name inference)", got)
 	}
 }

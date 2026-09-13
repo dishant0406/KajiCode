@@ -48,8 +48,8 @@ func (registry Registry) ResolveWithFallback(input string) (ModelEntry, string, 
 // EffectiveReasoningEffort returns the effort to use for a model: the requested
 // value if the model supports it, otherwise the model's default (or first
 // supported, or none). It resolves the supported set through
-// effectiveReasoningEfforts so it sees the same name-based fallback the /effort
-// picker uses — the two must never disagree about which tiers a model supports.
+// effectiveReasoningEfforts, the same helper the /effort picker uses, so the two
+// never disagree about which tiers a model supports.
 func EffectiveReasoningEffort(model ModelEntry, requested ReasoningEffort) ReasoningEffort {
 	efforts := effectiveReasoningEfforts(model)
 	if requested != "" {
@@ -68,17 +68,13 @@ func EffectiveReasoningEffort(model ModelEntry, requested ReasoningEffort) Reaso
 	return ReasoningEffortNone
 }
 
-// effectiveReasoningEfforts returns a model's supported reasoning efforts, falling
-// back to name-based inference (reasoningEffortsForModelName) when the catalog
-// entry enumerates none. Both the /effort picker (Registry.ReasoningEfforts) and
-// the run-time resolver (EffectiveReasoningEffort) read efforts through this
-// single helper, so the picker can never advertise a tier the resolver drops.
+// effectiveReasoningEfforts returns a model's supported reasoning efforts. The
+// entry's own ReasoningEfforts already carry models.dev's tier list for models it
+// knows (the registry layers it in — see modelsource_bridge.go) or the curated
+// list otherwise. There is no name-based inference: a model with no known tiers
+// advertises none rather than guessing from its name. Both the /effort picker
+// (Registry.ReasoningEfforts) and the run-time resolver (EffectiveReasoningEffort)
+// read efforts through this single helper, so the two can never disagree.
 func effectiveReasoningEfforts(model ModelEntry) []ReasoningEffort {
-	if len(model.ReasoningEfforts) > 0 {
-		return model.ReasoningEfforts
-	}
-	if efforts := reasoningEffortsForModelName(model.ID); len(efforts) > 0 {
-		return efforts
-	}
-	return reasoningEffortsForModelName(model.APIModel)
+	return model.ReasoningEfforts
 }

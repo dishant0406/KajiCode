@@ -1,9 +1,6 @@
 package modelregistry
 
-import (
-	"fmt"
-	"strings"
-)
+import "fmt"
 
 const DefaultModelID = "gpt-4.1"
 
@@ -63,10 +60,11 @@ func DefaultModelEntries() []ModelEntry {
 		googleModel("gemini-2.5-flash-lite", "Gemini 2.5 Flash-Lite", "gemini-2.5-flash-lite", ModelStatusActive, []string{"google:gemini-2.5-flash-lite", "gemini-flash-lite"}, ContextLimits{ContextWindow: 1_048_576, MaxOutputTokens: 65_536}, ModelCost{InputPerMillion: 0.1, CachedInputPerMillion: 0.01, OutputPerMillion: 0.4}, []ModelCapability{ModelCapabilityVision, ModelCapabilityJSONMode, ModelCapabilityReasoning, ModelCapabilityLongContext}, standardReasoningEfforts(), "Google low-cost Flash model for background routing and summaries."),
 	}
 	decorateModelDepth(entries)
-	// Overlay volatile facts (context limits, base pricing) from a cached
-	// models.dev snapshot when one is present and fresh — see modelsdev.go.
-	// Identity fields (ids, aliases, patterns, deprecations) stay curated.
-	entries = applyModelsDevOverrides(entries, cachedModelsDevProviders())
+	// Layer models.dev's authoritative facts (modalities, reasoning tiers, context
+	// limits, pricing) over the curated identity fields, when a snapshot is
+	// present. Identity (ids, aliases, patterns, deprecations) stays curated; see
+	// modelsource_bridge.go.
+	entries = applyModelsDevFacts(entries)
 	return cloneModelEntries(entries)
 }
 
@@ -200,52 +198,7 @@ func (registry Registry) ReasoningEfforts(pattern string) []ReasoningEffort {
 	if model, ok := registry.Get(pattern); ok {
 		return append([]ReasoningEffort{}, effectiveReasoningEfforts(model)...)
 	}
-	// Unknown model not in the curated catalog — e.g. a GPT-5 / Codex / o-series
-	// variant served via the ChatGPT proxy or a custom OpenAI-compatible endpoint.
-	// Infer from the name so /effort still shows controls for it.
-	return reasoningEffortsForModelName(pattern)
-}
-
-// reasoningEffortsForModelName infers reasoning-effort controls from a model name
-// for known reasoning families not present in the catalog. It returns nil for
-// non-reasoning models (e.g. GPT-4.1 / GPT-4o), so /effort stays empty there.
-func reasoningEffortsForModelName(name string) []ReasoningEffort {
-	n := strings.ToLower(strings.TrimSpace(name))
-	if i := strings.IndexByte(n, ':'); i >= 0 { // drop a "provider:" qualifier
-		n = n[i+1:]
-	}
-	// Gateway ids also carry a slash-form "vendor/" qualifier (e.g. the
-	// OpenGateway's tencent/hy3, github's openai/o3-mini) — match on the bare name.
-	if i := strings.LastIndexByte(n, '/'); i >= 0 {
-		n = n[i+1:]
-	}
-	switch {
-	case strings.HasPrefix(n, "gpt-5") || strings.HasPrefix(n, "gpt5"):
-		// GPT-5 / Codex (gpt-5.x) add a "minimal" tier below low.
-		return []ReasoningEffort{ReasoningEffortMinimal, ReasoningEffortLow, ReasoningEffortMedium, ReasoningEffortHigh}
-	case strings.Contains(n, "codex") || isOSeriesModelName(n):
-		return []ReasoningEffort{ReasoningEffortLow, ReasoningEffortMedium, ReasoningEffortHigh}
-	case strings.HasPrefix(n, "hy3") || strings.Contains(n, "hunyuan"):
-		// Tencent Hunyuan reasoning models (served via OpenAI-compatible gateways).
-		// The client forwards reasoning_effort; whether the upstream honors it is
-		// the gateway's translation concern — unknown fields are ignored, so the
-		// worst case is a silent no-op rather than a 400.
-		return []ReasoningEffort{ReasoningEffortLow, ReasoningEffortMedium, ReasoningEffortHigh}
-	default:
-		return nil
-	}
-}
-
-// isOSeriesModelName reports whether name is an OpenAI o-series reasoning model
-// (o1/o3/o4, optionally with a -mini/-pro suffix), without matching unrelated
-// names that merely start with the same letters.
-func isOSeriesModelName(n string) bool {
-	for _, prefix := range []string{"o1", "o3", "o4"} {
-		if n == prefix || strings.HasPrefix(n, prefix+"-") || strings.HasPrefix(n, prefix+"mini") {
-			return true
-		}
-	}
-	return false
+	return nil
 }
 
 func (registry Registry) RequireProvider(pattern string, provider ProviderKind) (ModelEntry, error) {

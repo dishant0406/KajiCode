@@ -246,16 +246,21 @@ func (m model) submitAskUser() (tea.Model, tea.Cmd) {
 }
 
 // askUserTabTitle is the short tab label for a question: its Header if set, else a
-// trimmed-to-fit question, else a positional fallback.
+// trimmed-to-fit question, else a positional fallback. Headers are capped like
+// derived titles so one long header can't push Confirm off the tab row.
 func askUserTabTitle(question agent.AskUserQuestion, index int) string {
+	const maxLen = 18
 	if title := strings.TrimSpace(question.Header); title != "" {
+		runes := []rune(title)
+		if len(runes) > maxLen {
+			return strings.TrimSpace(string(runes[:maxLen])) + "…"
+		}
 		return title
 	}
 	question.Question = strings.TrimSpace(question.Question)
 	if question.Question == "" {
 		return "Question " + strconv.Itoa(index+1)
 	}
-	const maxLen = 18
 	runes := []rune(question.Question)
 	if len(runes) > maxLen {
 		return strings.TrimSpace(string(runes[:maxLen])) + "…"

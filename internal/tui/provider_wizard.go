@@ -1279,6 +1279,8 @@ func (m model) applyProviderWizard() (model, tea.Cmd) {
 	}
 	m.providerProfile = profile
 	m.providerName = profile.Name
+	m.providerProfile = profile
+	m.modelSourceRebind(profile.Model)
 	m.modelName = profile.Model
 	// Keep the in-memory saved list in sync so the provider manager and /model
 	// picker show the new profile without a restart.

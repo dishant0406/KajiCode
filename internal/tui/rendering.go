@@ -1272,6 +1272,88 @@ func permissionEventScopeLabel(event *agent.PermissionEvent) string {
 	return "scope"
 }
 
+// askUserWrapMeasure is the content width available inside the questionnaire
+// box: the full width minus the box borders and padding, with a small floor
+// so narrow terminals still wrap instead of collapsing.
+func askUserWrapMeasure(width int) int {
+	if measure := width - 4; measure >= 8 {
+		return measure
+	}
+	return 8
+}
+
+// appendAskUserWrapped wraps plain text to the measure and appends each segment
+// rendered with style, prefixed by indent on the first line and hanging on
+// continuations.
+func appendAskUserWrapped(lines []string, text string, measure int, style lipgloss.Style, indent, hanging string) []string {
+	available := measure - lipgloss.Width(indent)
+	if available < 8 {
+		available = 8
+	}
+	segments := wrapPlainText(text, available)
+	if len(segments) == 0 {
+		return append(lines, indent+style.Render(""))
+	}
+	for index, segment := range segments {
+		prefix := indent
+		if index > 0 {
+			prefix = hanging
+		}
+		lines = append(lines, prefix+style.Render(segment))
+	}
+	return lines
+}
+
+// appendAskUserTabs packs tab chips onto as many lines as needed so every tab
+// (including Confirm) stays visible instead of being truncated off the row.
+func appendAskUserTabs(lines []string, tabs []string, measure int) []string {
+	var current string
+	flush := func() {
+		if current != "" {
+			lines = append(lines, current)
+			current = ""
+		}
+	}
+	for _, tab := range tabs {
+		candidate := tab
+		if current != "" {
+			candidate = current + " " + tab
+		}
+		if lipgloss.Width(candidate) <= measure || current == "" {
+			current = candidate
+			continue
+		}
+		flush()
+		current = tab
+	}
+	flush()
+	return lines
+}
+
+// appendAskUserBadgeWrapped renders a highlighted (selected) option row that
+// wraps: the label text is word-wrapped to the measure, the first segment
+// keeps the ▸ marker, and every segment carries the badge background so the
+// selection reads as one block instead of being truncated with ….
+func appendAskUserBadgeWrapped(lines []string, label string, measure int, marker, badge lipgloss.Style) []string {
+	markerWidth := lipgloss.Width("▸ ")
+	available := measure - markerWidth - 2
+	if available < 8 {
+		available = 8
+	}
+	segments := wrapPlainText(label, available)
+	if len(segments) == 0 {
+		segments = []string{""}
+	}
+	for index, segment := range segments {
+		prefix := "▸ "
+		if index > 0 {
+			prefix = strings.Repeat(" ", markerWidth)
+		}
+		lines = append(lines, marker.Render(prefix)+badge.Render(" "+segment+" "))
+	}
+	return lines
+}
+
 // renderAskUserQuestionnaire draws the ask-user prompt that replaces the composer
 // box: a tab row (one per question + a trailing Confirm tab for multi-question
 // prompts), the active question's picker or free-text field, and a key-hint footer.
@@ -1296,8 +1378,9 @@ func renderAskUserQuestionnaire(prompt pendingAskUserPrompt, input string, width
 	multi := len(questions) > 1
 
 	var lines []string
+	measure := askUserWrapMeasure(width)
 	if header := strings.TrimSpace(prompt.request.Header); header != "" {
-		lines = append(lines, fill(kajicodeTheme.ink).Render(header))
+		lines = appendAskUserWrapped(lines, header, measure, fill(kajicodeTheme.ink), "", "")
 	}
 
 	// Tab row (only for multi-question prompts): each question's short title + a
@@ -1320,20 +1403,36 @@ func renderAskUserQuestionnaire(prompt pendingAskUserPrompt, input string, width
 		} else {
 			tabs = append(tabs, fill(kajicodeTheme.faint).Render(" Confirm "))
 		}
-		lines = append(lines, strings.Join(tabs, " "))
+		lines = appendAskUserTabs(lines, tabs, measure)
 	}
 
 	// Confirm tab: a review of the collected answers.
 	if active == confirm {
 		lines = append(lines, "")
-		lines = append(lines, fill(kajicodeTheme.ink).Render("Review and submit:"))
+		lines = appendAskUserWrapped(lines, "Review and submit:", measure, fill(kajicodeTheme.ink), "", "")
 		for index, question := range questions {
 			answer := strings.TrimSpace(prompt.states[index].answer)
-			rendered := fill(kajicodeTheme.ink).Render(answer)
 			if answer == "" {
-				rendered = fill(kajicodeTheme.faint).Render("(no answer)")
+				lines = append(lines, "  "+fill(kajicodeTheme.muted).Render(askUserTabTitle(question, index)+": ")+fill(kajicodeTheme.faint).Render("(no answer)"))
+				continue
 			}
-			lines = append(lines, "  "+fill(kajicodeTheme.muted).Render(askUserTabTitle(question, index)+": ")+rendered)
+			prefix := "  " + askUserTabTitle(question, index) + ": "
+			available := measure - lipgloss.Width(prefix)
+			if available < 8 {
+				available = 8
+			}
+			segments := wrapPlainText(answer, available)
+			hanging := strings.Repeat(" ", lipgloss.Width(prefix))
+			for segmentIndex, segment := range segments {
+				if segmentIndex == 0 {
+					lines = append(lines, "  "+fill(kajicodeTheme.muted).Render(askUserTabTitle(question, index)+": ")+fill(kajicodeTheme.ink).Render(segment))
+				} else {
+					lines = append(lines, hanging+fill(kajicodeTheme.ink).Render(segment))
+				}
+			}
+			if len(segments) == 0 {
+				lines = append(lines, "  "+fill(kajicodeTheme.muted).Render(askUserTabTitle(question, index)+": ")+fill(kajicodeTheme.faint).Render("(no answer)"))
+			}
 		}
 		lines = append(lines, "")
 		lines = append(lines, fill(kajicodeTheme.faint).Render("⇆ tab · enter submit · esc dismiss"))
@@ -1343,7 +1442,7 @@ func renderAskUserQuestionnaire(prompt pendingAskUserPrompt, input string, width
 	question := questions[active]
 	state := prompt.states[active]
 	lines = append(lines, "")
-	lines = append(lines, fill(kajicodeTheme.ink).Render(question.Question))
+	lines = appendAskUserWrapped(lines, question.Question, measure, fill(kajicodeTheme.ink), "", "")
 
 	if len(question.Options) > 0 && !state.typing {
 		// Picker: numbered options (with optional descriptions) + a trailing "type
@@ -1357,19 +1456,19 @@ func renderAskUserQuestionnaire(prompt pendingAskUserPrompt, input string, width
 				label += "  (recommended)"
 			}
 			if index == cursor {
-				lines = append(lines, fill(kajicodeTheme.accent).Render("▸ ")+kajicodeTheme.badge.Render(" "+label+" "))
+				lines = appendAskUserBadgeWrapped(lines, label, measure, fill(kajicodeTheme.accent), kajicodeTheme.badge)
 			} else {
-				lines = append(lines, "  "+fill(kajicodeTheme.ink).Render(label))
+				lines = appendAskUserWrapped(lines, label, measure, fill(kajicodeTheme.ink), "  ", "    ")
 			}
 			if index < len(question.OptionDescriptions) && strings.TrimSpace(question.OptionDescriptions[index]) != "" {
-				lines = append(lines, "     "+fill(kajicodeTheme.faint).Render(question.OptionDescriptions[index]))
+				lines = appendAskUserWrapped(lines, strings.TrimSpace(question.OptionDescriptions[index]), measure, fill(kajicodeTheme.faint), "     ", "     ")
 			}
 		}
 		typeOwn := fmt.Sprintf("%d. %s", len(question.Options)+1, askUserTypeMyOwnLabel)
 		if cursor >= len(question.Options) {
-			lines = append(lines, fill(kajicodeTheme.accent).Render("▸ ")+kajicodeTheme.badge.Render(" "+typeOwn+" "))
+			lines = appendAskUserBadgeWrapped(lines, typeOwn, measure, fill(kajicodeTheme.accent), kajicodeTheme.badge)
 		} else {
-			lines = append(lines, "  "+fill(kajicodeTheme.muted).Render(typeOwn))
+			lines = appendAskUserWrapped(lines, typeOwn, measure, fill(kajicodeTheme.muted), "  ", "    ")
 		}
 		lines = append(lines, "")
 		footer := "↑↓ select · enter confirm · esc dismiss"
@@ -1382,9 +1481,9 @@ func renderAskUserQuestionnaire(prompt pendingAskUserPrompt, input string, width
 
 	// Free-text mode: the typed answer is echoed here (this region IS the input now).
 	if question.MultiSelect && len(question.Options) > 0 {
-		lines = append(lines, fill(kajicodeTheme.muted).Render("suggested: "+strings.Join(question.Options, ", ")))
+		lines = appendAskUserWrapped(lines, "suggested: "+strings.Join(question.Options, ", "), measure, fill(kajicodeTheme.muted), "", "")
 	}
-	lines = append(lines, kajicodeTheme.userPrompt.Render("❯ ")+fill(kajicodeTheme.ink).Render(input)+fill(kajicodeTheme.accent).Render("▌"))
+	lines = appendAskUserWrapped(lines, input+"▌", maxInt(1, measure-2), fill(kajicodeTheme.ink), "❯ ", "  ")
 	footer := "enter submit · esc dismiss"
 	switch {
 	case !question.MultiSelect && len(question.Options) > 0:

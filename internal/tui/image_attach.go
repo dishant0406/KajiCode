@@ -105,41 +105,17 @@ func (m model) effectiveModelName() string {
 }
 
 // modelSupportsVisionTUI reports whether the model serving the current turn can
-// accept image input. It evaluates the effective model (role-routed model when
-// an explicit role is set, else the session default), checking three sources in
-// order:
-//  1. The curated model registry (catalog authority + name heuristic)
-//  2. The discovered model list from models.dev (if the live model picker
-//     fetched it) — this carries InputModalities from models.dev, which
-//     includes "image" for vision-capable models
-//  3. Falls back to the name heuristic for unknown models
+// accept image input. It defers to the single vision authority,
+// modelregistry.SupportsVision, which consults the curated registry first and
+// models.dev (live snapshot, then the embedded seed) for anything it does not
+// know. There is no separate name heuristic here — one authority, one answer,
+// shared by the headless and interactive surfaces.
 func (m model) modelSupportsVisionTUI() bool {
 	trimmed := m.effectiveModelName()
 	if trimmed == "" {
 		return false
 	}
-	// The curated catalog is authoritative only when it knows the model.
-	if entry, known := m.modelCatalog.Resolve(trimmed); known {
-		return entry.Supports(modelregistry.ModelCapabilityVision)
-	}
-	// Check the discovered model list (from models.dev) for InputModalities
-	// containing "image". This covers custom/ollama/cloud models not in the
-	// curated catalog — models.dev knows their capabilities.
-	for _, models := range m.modelPickerLiveByProvider {
-		for _, dm := range models {
-			if strings.EqualFold(strings.TrimSpace(dm.ID), trimmed) {
-				for _, modality := range dm.InputModalities {
-					if strings.EqualFold(strings.TrimSpace(modality), "image") {
-						return true
-					}
-				}
-				return false // found the model in discovered list, no image modality
-			}
-		}
-	}
-	// Fall back to the name heuristic for models not in the catalog or
-	// discovered list.
-	return modelregistry.VisionCapableByName(trimmed)
+	return modelregistry.SupportsVision(m.modelCatalog, trimmed)
 }
 
 // attachClipboardImage attaches an image read from the OS clipboard (a
