@@ -196,6 +196,8 @@ func (r fakeMCPRuntimeWithSkips) Close() error { return nil }
 
 func (r fakeMCPRuntimeWithSkips) Skipped() []mcp.SkippedServer { return r.skipped }
 
+func (r fakeMCPRuntimeWithSkips) Instructions() []mcp.Instruction { return nil }
+
 func TestTUIStartupSuppressesWarningForUnconfiguredDefaultServer(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer

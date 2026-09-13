@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/dishant0406/KajiCode/internal/config"
 )
@@ -31,6 +32,12 @@ type Server struct {
 	Auth     string
 	OAuth    *OAuthConfig
 	Identity string
+	// Timeout bounds a single request (connect, list, or tool call) to this
+	// server. Zero means "use the built-in default".
+	Timeout time.Duration
+	// Tools allow/deny-lists this server's tools by name glob. An empty filter
+	// exposes every advertised tool.
+	Tools ToolFilter
 	// ProjectConfigured is true when project config touched this server. Runtime
 	// credential lookup uses it to avoid reusing legacy user tokens by name.
 	ProjectConfigured bool
@@ -93,6 +100,8 @@ func normalizeServer(name string, raw config.MCPServerConfig) (Server, error) {
 		OAuth:               normalizeOAuthConfig(raw.OAuth),
 		ProjectConfigured:   raw.ProjectConfigured,
 		UnconfiguredDefault: config.IsUnconfiguredDefault(name, raw),
+		Timeout:             timeoutFromMillis(raw.TimeoutMS),
+		Tools:               ToolFilter{Allow: trimStringSlice(raw.Tools.Allow), Deny: trimStringSlice(raw.Tools.Deny)},
 	}
 
 	switch server.Type {
@@ -149,6 +158,9 @@ func normalizeOAuthConfig(raw *config.MCPOAuthConfig) *OAuthConfig {
 		TokenEndpoint:         strings.TrimSpace(raw.TokenEndpoint),
 		RegistrationEndpoint:  strings.TrimSpace(raw.RegistrationEndpoint),
 		IssuerURL:             strings.TrimSpace(raw.IssuerURL),
+		RedirectURI:           strings.TrimSpace(raw.RedirectURI),
+		CallbackPort:          raw.CallbackPort,
+		Resource:              strings.TrimSpace(raw.Resource),
 	}
 }
 
@@ -226,4 +238,13 @@ func copyStringMap(values map[string]string) map[string]string {
 		return nil
 	}
 	return copied
+}
+
+// timeoutFromMillis converts a config timeout in milliseconds to a Duration.
+// Zero or negative means "unset" so callers fall back to their defaults.
+func timeoutFromMillis(millis int) time.Duration {
+	if millis <= 0 {
+		return 0
+	}
+	return time.Duration(millis) * time.Millisecond
 }

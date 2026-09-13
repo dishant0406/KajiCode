@@ -231,7 +231,95 @@ kajicode mcp list
 kajicode mcp check docs
 kajicode mcp remove github
 kajicode mcp oauth login github
+kajicode mcp oauth status github
 ```
+
+### OAuth for remote MCP servers
+
+Set `"auth": "oauth"` on a remote (`http`/`sse`) server to use OAuth 2.0 with
+PKCE. KajiCode discovers the endpoints itself, following the MCP authorization
+spec:
+
+1. It POSTs an unauthenticated `initialize` to the server URL and reads the
+   `WWW-Authenticate: Bearer resource_metadata="..."` challenge from the `401`.
+2. It fetches that RFC 9728 **protected-resource** document, which names the
+   authorization server and advertises the server's supported scopes.
+3. It fetches the authorization server's RFC 8414 metadata (falling back to the
+   OIDC `openid-configuration` document) for the authorize and token endpoints.
+
+Any explicitly configured endpoint always overrides discovery, and if the config
+already supplies both the authorization and token endpoints, discovery is
+skipped entirely.
+
+If the server supports **dynamic client registration** (RFC 7591), KajiCode
+registers itself and no `clientID` is needed. Some servers, such as Slack, do
+not — you must create an app there and supply its credentials **and** register
+the exact loopback redirect URI KajiCode will use.
+
+To use your **personal Slack account**, create the app in your own workspace
+(an *internal* app; Slack allows internal or directory-published apps only), add
+yourself as the only allowed user, and request **user token scopes**. The
+resulting token is a Slack *user token* (`xoxp-`), so every action runs as you —
+your DMs, private channels, and history are visible, subject to the scopes you
+grant. Use Slack's user-token endpoints:
+
+| Field | Value |
+| --- | --- |
+| `authorizationEndpoint` | `https://slack.com/oauth/v2_user/authorize` |
+| `tokenEndpoint` | `https://slack.com/api/oauth.v2.user.access` |
+
+Slack's metadata advertises `token_endpoint_auth_methods_supported:
+["client_secret_post"]`, which KajiCode already uses — it sends `client_id` and
+`client_secret` as form fields, so no extra configuration is needed.
+
+```json
+{
+  "mcp": {
+    "servers": {
+      "slack": {
+        "type": "http",
+        "url": "https://mcp.slack.com/mcp",
+        "auth": "oauth",
+        "oauth": {
+          "clientID": "YOUR_SLACK_APP_CLIENT_ID",
+          "clientSecret": "YOUR_SLACK_APP_CLIENT_SECRET",
+          "redirectURI": "http://127.0.0.1:45999/callback",
+          "scopes": ["search:read.public", "channels:history", "chat:write", "users:read"]
+        }
+      }
+    }
+  }
+}
+```
+
+Scopes are per-tool: search needs `search:read.public` / `search:read.private` /
+`search:read.im` / `search:read.mpim` / `search:read.users` / `search:read.files`;
+reading a channel or thread needs `channels:history` (plus `groups:history`,
+`im:history`, `mpim:history`); sending needs `chat:write`; user profiles need
+`users:read` and `users:read.email`; files need `files:read` / `files:write`;
+canvases need `canvases:read` / `canvases:write`; lists need `lists:read` /
+`lists:write`. Ask only for what you need. When `scopes` is omitted, KajiCode
+requests everything Slack's protected-resource document advertises.
+
+Note that Slack does not issue refresh tokens for this flow — if the app is
+later uninstalled or the token is revoked, rerun `kajicode mcp oauth login slack`.
+
+`oauth` fields:
+
+| Field | Meaning |
+| --- | --- |
+| `clientID` / `clientSecret` | OAuth app credentials. Optional when the server supports dynamic client registration. |
+| `scopes` | Requested scopes. When omitted, the scopes the protected resource advertises are used. |
+| `authorizationEndpoint` / `tokenEndpoint` | Pin endpoints; override discovery. When both are set, discovery is skipped. |
+| `registrationEndpoint` | Pin the dynamic client registration endpoint. |
+| `issuerURL` | Override the base URL used for discovery (instead of the server URL). |
+| `redirectURI` | Pin the loopback redirect URI. Required by servers that reject an ephemeral port. Must be a loopback `http://` URL. |
+| `callbackPort` | Shorthand for a fixed callback port on `127.0.0.1`; ignored when `redirectURI` is set. |
+| `resource` | RFC 8707 resource indicator. Defaults to the server URL or the value the protected-resource document advertises. |
+
+All discovered URLs are validated before use: discovery and endpoint URLs must
+be `https` (loopback exempt) and may not resolve to private, link-local, or
+unspecified addresses.
 
 Servers are merged from user and project configs (project wins on conflicts). Token-bearing values in `config.json` are sent verbatim — there is no `${env:...}` expansion — so prefer one of:
 
@@ -245,6 +333,64 @@ inherit user credentials. Clear or replace `headers`, `env`, or `oauth` explicit
 or use a new server name. OAuth tokens are bound to the resolved server identity,
 so changing a server target can require `kajicode mcp oauth login <server>` again.
 OAuth server names ending in `.<32 hex chars>` are reserved for token storage.
+
+### Remote transport, timeouts, and tool filtering
+
+A remote server configured as `"type": "http"` uses Streamable HTTP; if that
+fails, KajiCode automatically retries over the legacy HTTP+SSE transport, so an
+older server still connects. An authentication failure is never retried over SSE
+(it would repeat the same rejected request) — instead KajiCode reports it as
+needing login.
+
+Each server may declare a per-call timeout (milliseconds) that overrides the
+built-in default for that server's tool calls. The deadline resets whenever the
+server sends a `notifications/progress` message, so a long but progressing tool
+call is not killed while a genuinely hung one still is.
+
+```json
+{
+  "mcp": {
+    "servers": {
+      "slow": {
+        "type": "http",
+        "url": "https://api.example.com/mcp",
+        "timeout": 600000,
+        "tools": { "allow": ["search_*", "fetch"], "deny": ["search_internal"] }
+      }
+    }
+  }
+}
+```
+
+`tools.allow` / `tools.deny` are case-insensitive glob lists; `allow` wins over
+`deny`, and an empty filter registers every tool the server advertises.
+
+### Server instructions, resources, and prompts
+
+When a server returns `instructions` during `initialize`, KajiCode includes them
+in the system prompt inside an `<mcp_instructions>` block, so the model sees the
+server's own guidance.
+
+Connected servers that advertise **resources** gain three tools:
+`list_mcp_resources`, `list_mcp_resource_templates`, and `read_mcp_resource`.
+Servers that advertise **prompts** gain two more: `list_mcp_prompts` and
+`get_mcp_prompt`. These tools only exist while a server advertising the matching
+capability is connected. Resource listings paginate to completion, and a large
+resource blob (over 10 MiB) is summarized rather than inlined.
+
+### Server-initiated changes
+
+If a server sends `notifications/tools/list_changed`, KajiCode re-lists that
+server's tools and updates the registry live — no restart needed.
+
+### When login cannot help
+
+If a server's authorization metadata advertises no `registration_endpoint` and no
+`clientID` is configured, startup reports a **needs client registration** warning
+distinct from the needs-login warning: logging in cannot fix it, you must create
+an app and set `oauth.clientID` (with `oauth.clientSecret` when required). When a
+desktop session is detected, `kajicode mcp oauth login` opens the authorization
+URL in your browser; in headless/SSH sessions it prints the URL to copy.
 
 ### As a server — expose KajiCode's tools to another agent
 

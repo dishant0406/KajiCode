@@ -131,7 +131,8 @@ reading the deeper flows below.
 | `internal/sandbox` | Permission policy, path/network checks, grant store, command-prefix approvals, and platform sandbox backends. |
 | `internal/sessions` | Local append-only session storage: `metadata.json` + `events.jsonl`. |
 | `internal/config` | User/project config resolution, active provider, preferences, sandbox/tool settings. |
-| `internal/mcp` | MCP server config, client runtime, permission store, and MCP tool registration. |
+| `internal/mcp` | MCP server config, client runtime, permission store, MCP tool registration, and the MCP OAuth login flow. |
+| `internal/oauth` | Reusable OAuth 2.0 engine: PKCE, RFC 8414 authorization-server discovery, RFC 9728 protected-resource discovery, WWW-Authenticate challenge parsing, device flow, and the token store. |
 | `internal/specialist` / `internal/swarm` | Sub-agent manifests and team/member orchestration exposed as tools. |
 | `internal/localcontrol` / `internal/browser` | Runtime helpers used by config-gated local-control tool wrappers. |
 | `internal/plugins` / `internal/skills` / `internal/hooks` | Extension surfaces loaded into the agent context, tool registry, or tool lifecycle. |
@@ -864,7 +865,14 @@ flowchart TD
   discoverable, and per-skill `permission:` (allow|prompt|deny) gating is enforced by the
   `skill` tool and surfaced as `[prompt]`/`[deny]` catalog markers.
 - **Specialists** are sub-agents callable through the `Task` tool.
-- **MCP servers** contribute external tools.
+- **MCP servers** contribute external tools. A server that returns `initialize`
+  instructions contributes them to the system prompt (`<mcp_instructions>`), one
+  that advertises resources or prompts contributes the capability-gated catalog
+  tools (`list_mcp_resources`/`list_mcp_resource_templates`/`read_mcp_resource`,
+  `list_mcp_prompts`/`get_mcp_prompt`), and a `notifications/tools/list_changed`
+  re-lists that server's tools live. Per-server `timeout` bounds each call and a
+  `notifications/progress` message resets the deadline; a remote `http` server
+  falls back to SSE only when the failure is not an auth failure.
 - **Plugins** can add tools, hooks, and skill roots. Bootstrap always registers a
   multi-root skill tool: primary KajiCode skills dir, optional `~/.agents/skills`,
   then plugin skill roots (earlier wins). `internal/skills` owns that merge via

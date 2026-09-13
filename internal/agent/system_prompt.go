@@ -148,6 +148,9 @@ func buildSystemPromptParts(options Options) systemPromptParts {
 	if delegation := specialistDelegationContext(options); delegation != "" {
 		builder.add(promptSectionSpecialists, delegation)
 	}
+	if mcp := mcpInstructionsContext(options); mcp != "" {
+		builder.add(promptSectionMCPInstructions, mcp)
+	}
 	skillsBlock := skillsContext(options)
 	if skillsBlock != "" {
 		builder.add(promptSectionSkills, skillsBlock)
@@ -291,6 +294,26 @@ func specialistDelegationContext(options Options) string {
 	}
 	b.WriteString("</specialists>")
 	return b.String()
+}
+
+// mcpInstructionsContext renders each connected MCP server's own initialize
+// instructions as an <mcp_instructions> block so the model follows the server's
+// usage guidance (which tools to prefer, ordering, caveats). It renders nothing
+// when no server supplied instructions, so the prompt stays byte-identical.
+func mcpInstructionsContext(options Options) string {
+	blocks := make([]string, 0, len(options.MCPInstructions))
+	for _, info := range options.MCPInstructions {
+		server := strings.TrimSpace(info.Server)
+		body := strings.TrimSpace(info.Instructions)
+		if server == "" || body == "" {
+			continue
+		}
+		blocks = append(blocks, "## "+server+"\n"+body)
+	}
+	if len(blocks) == 0 {
+		return ""
+	}
+	return "<mcp_instructions>\nInstructions provided by connected MCP servers. Follow them when using that server's tools.\n\n" + strings.Join(blocks, "\n\n") + "\n</mcp_instructions>"
 }
 
 // skillsContext lists the reusable skills the model can pull in on demand via the

@@ -77,6 +77,10 @@ type Config struct {
 	// IssuerURL is the base for metadata discovery when endpoints are not set.
 	IssuerURL string
 
+	// Resource is the RFC 8707 resource indicator identifying the protected
+	// resource (MCP server) the token is for. Empty means "do not send one".
+	Resource string
+
 	// ExtraAuthParams are appended to the authorization URL (e.g. login_hint).
 	ExtraAuthParams map[string]string
 }

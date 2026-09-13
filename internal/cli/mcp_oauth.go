@@ -6,6 +6,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/dishant0406/KajiCode/internal/browser"
 	"github.com/dishant0406/KajiCode/internal/mcp"
 	"github.com/dishant0406/KajiCode/internal/redaction"
 )
@@ -70,8 +71,19 @@ func runMCPOAuthLogin(args []string, stdout io.Writer, stderr io.Writer, deps ap
 	}
 
 	// The opener prints the authorization URL so headless environments can copy
-	// it into a browser. The URL carries no token material.
+	// it into a browser, AND tries to open it automatically when a desktop session
+	// is detected. The URL carries no token material.
 	opener := func(authURL string) error {
+		opened := false
+		if browser.CanOpen() {
+			if openErr := browser.OpenURL(authURL); openErr == nil {
+				opened = true
+			}
+		}
+		if opened {
+			_, err := fmt.Fprintf(stdout, "Opening your browser to authorize %s.\n\nIf it did not open, visit:\n\n  %s\n\nWaiting for the authorization callback...\n", serverName, authURL)
+			return err
+		}
 		_, err := fmt.Fprintf(stdout, "Open this URL in your browser to authorize %s:\n\n  %s\n\nWaiting for the authorization callback...\n", serverName, authURL)
 		return err
 	}

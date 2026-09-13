@@ -22,6 +22,13 @@ type networkClient struct {
 	mu        sync.Mutex
 	nextID    int
 	sessionID string
+	init      initializeResult
+
+	notifyMu       sync.Mutex
+	notifyHandlers []func(method string, params json.RawMessage)
+
+	// progress tracks in-flight tool-call timers for notifications/progress.
+	progress progressRegistry
 }
 
 type remoteSSEClient struct {
@@ -35,6 +42,12 @@ type remoteSSEClient struct {
 	pending      map[string]chan ssePendingResponse
 	streamErr    error
 	closed       bool
+	init         initializeResult
+
+	notifyMu       sync.Mutex
+	notifyHandlers []func(method string, params json.RawMessage)
+
+	progress progressRegistry
 }
 
 type ssePendingResponse struct {
@@ -86,11 +99,11 @@ func connectRemoteSSE(ctx context.Context, server Server) (ToolClient, error) {
 }
 
 func (client *networkClient) initialize(ctx context.Context) error {
-	var result struct {
-		ProtocolVersion string `json:"protocolVersion"`
-	}
+	ctx, cancel := context.WithTimeout(ctx, clientRequestTimeout(client.server, initializeTimeout))
+	defer cancel()
+	var result initializeResult
 	if err := client.request(ctx, "initialize", map[string]any{
-		"protocolVersion": "2024-11-05",
+		"protocolVersion": mcpProtocolVersion,
 		"capabilities":    map[string]any{},
 		"clientInfo": map[string]any{
 			"name":    "kajicode",
@@ -99,15 +112,16 @@ func (client *networkClient) initialize(ctx context.Context) error {
 	}, &result); err != nil {
 		return err
 	}
+	client.init = result
 	return client.notify(ctx, "notifications/initialized", map[string]any{})
 }
 
 func (client *remoteSSEClient) initialize(ctx context.Context) error {
-	var result struct {
-		ProtocolVersion string `json:"protocolVersion"`
-	}
+	ctx, cancel := context.WithTimeout(ctx, clientRequestTimeout(client.server, initializeTimeout))
+	defer cancel()
+	var result initializeResult
 	if err := client.request(ctx, "initialize", map[string]any{
-		"protocolVersion": "2024-11-05",
+		"protocolVersion": mcpProtocolVersion,
 		"capabilities":    map[string]any{},
 		"clientInfo": map[string]any{
 			"name":    "kajicode",
@@ -116,35 +130,64 @@ func (client *remoteSSEClient) initialize(ctx context.Context) error {
 	}, &result); err != nil {
 		return err
 	}
+	client.init = result
 	return client.notify(ctx, "notifications/initialized", map[string]any{})
 }
 
+// Instructions / NegotiatedProtocolVersion expose the handshake result for the
+// network transports (mirrors the stdio Client).
+
+func (client *networkClient) Instructions() string {
+	return strings.TrimSpace(client.init.Instructions)
+}
+
+func (client *networkClient) NegotiatedProtocolVersion() string {
+	return strings.TrimSpace(client.init.ProtocolVersion)
+}
+
+func (client *networkClient) SupportsResources() bool {
+	return client.init.Capabilities.Resources != nil
+}
+
+func (client *networkClient) SupportsPrompts() bool {
+	return client.init.Capabilities.Prompts != nil
+}
+
+func (client *remoteSSEClient) Instructions() string {
+	return strings.TrimSpace(client.init.Instructions)
+}
+
+func (client *remoteSSEClient) NegotiatedProtocolVersion() string {
+	return strings.TrimSpace(client.init.ProtocolVersion)
+}
+
+func (client *remoteSSEClient) SupportsResources() bool {
+	return client.init.Capabilities.Resources != nil
+}
+
+func (client *remoteSSEClient) SupportsPrompts() bool {
+	return client.init.Capabilities.Prompts != nil
+}
+
 func (client *networkClient) ListTools(ctx context.Context) ([]RemoteTool, error) {
-	var result struct {
-		Tools []RemoteTool `json:"tools"`
-	}
-	if err := client.request(ctx, "tools/list", map[string]any{}, &result); err != nil {
-		return nil, err
-	}
-	return result.Tools, nil
+	return clientListTools(ctx, client.request)
 }
 
 func (client *remoteSSEClient) ListTools(ctx context.Context) ([]RemoteTool, error) {
-	var result struct {
-		Tools []RemoteTool `json:"tools"`
-	}
-	if err := client.request(ctx, "tools/list", map[string]any{}, &result); err != nil {
-		return nil, err
-	}
-	return result.Tools, nil
+	return clientListTools(ctx, client.request)
 }
 
 func (client *networkClient) CallTool(ctx context.Context, name string, args map[string]any) (CallToolResult, error) {
 	var result CallToolResult
-	if err := client.request(ctx, "tools/call", map[string]any{
-		"name":      name,
-		"arguments": args,
-	}, &result); err != nil {
+	// Reset the deadline on each notifications/progress message so a long but
+	// progressing call is not killed by the fixed timeout.
+	callCtx, cancel, params, finish := client.progressCall(ctx, name, args)
+	defer finish()
+	defer cancel(nil)
+	if err := client.request(callCtx, "tools/call", params, &result); err != nil {
+		if cause := context.Cause(callCtx); cause != nil {
+			return CallToolResult{}, cause
+		}
 		return CallToolResult{}, err
 	}
 	return result, nil
@@ -152,13 +195,86 @@ func (client *networkClient) CallTool(ctx context.Context, name string, args map
 
 func (client *remoteSSEClient) CallTool(ctx context.Context, name string, args map[string]any) (CallToolResult, error) {
 	var result CallToolResult
-	if err := client.request(ctx, "tools/call", map[string]any{
-		"name":      name,
-		"arguments": args,
-	}, &result); err != nil {
+	callCtx, cancel, params, finish := client.progressCall(ctx, name, args)
+	defer finish()
+	defer cancel(nil)
+	if err := client.request(callCtx, "tools/call", params, &result); err != nil {
+		if cause := context.Cause(callCtx); cause != nil {
+			return CallToolResult{}, cause
+		}
 		return CallToolResult{}, err
 	}
 	return result, nil
+}
+
+// progressCall builds the tools/call context + params, attaching a progress token
+// and a resettable deadline when the caller's context has no deadline of its own.
+// The returned finish func stops the timer and forgets the token.
+func (client *networkClient) progressCall(ctx context.Context, name string, args map[string]any) (context.Context, context.CancelCauseFunc, map[string]any, func()) {
+	return buildProgressCall(ctx, clientRequestTimeout(client.server, defaultToolCallTimeout), &client.progress, name, args)
+}
+
+func (client *remoteSSEClient) progressCall(ctx context.Context, name string, args map[string]any) (context.Context, context.CancelCauseFunc, map[string]any, func()) {
+	return buildProgressCall(ctx, clientRequestTimeout(client.server, defaultToolCallTimeout), &client.progress, name, args)
+}
+
+func buildProgressCall(ctx context.Context, timeout time.Duration, registry *progressRegistry, name string, args map[string]any) (context.Context, context.CancelCauseFunc, map[string]any, func()) {
+	params := map[string]any{"name": name, "arguments": args}
+	if _, hasDeadline := ctx.Deadline(); hasDeadline || timeout <= 0 {
+		return ctx, func(error) {}, params, func() {}
+	}
+	callCtx, cancel := context.WithCancelCause(ctx)
+	token := nextProgressToken()
+	params["_meta"] = map[string]any{"progressToken": token}
+	progress := newProgressTimeout(timeout, cancel)
+	registry.addProgress(token, progress)
+	finish := func() {
+		progress.stop()
+		registry.removeProgress(token)
+	}
+	return callCtx, cancel, params, finish
+}
+
+func (client *networkClient) OnNotification(handler func(method string, params json.RawMessage)) {
+	if handler == nil {
+		return
+	}
+	client.notifyMu.Lock()
+	client.notifyHandlers = append(client.notifyHandlers, handler)
+	client.notifyMu.Unlock()
+}
+
+func (client *remoteSSEClient) OnNotification(handler func(method string, params json.RawMessage)) {
+	if handler == nil {
+		return
+	}
+	client.notifyMu.Lock()
+	client.notifyHandlers = append(client.notifyHandlers, handler)
+	client.notifyMu.Unlock()
+}
+
+func (client *networkClient) dispatchNotification(method string, params json.RawMessage) {
+	if method == progressMethod {
+		client.progress.touchProgress(progressTokenFromParams(params))
+	}
+	client.notifyMu.Lock()
+	handlers := append([]func(string, json.RawMessage){}, client.notifyHandlers...)
+	client.notifyMu.Unlock()
+	for _, handler := range handlers {
+		handler(method, params)
+	}
+}
+
+func (client *remoteSSEClient) dispatchNotification(method string, params json.RawMessage) {
+	if method == progressMethod {
+		client.progress.touchProgress(progressTokenFromParams(params))
+	}
+	client.notifyMu.Lock()
+	handlers := append([]func(string, json.RawMessage){}, client.notifyHandlers...)
+	client.notifyMu.Unlock()
+	for _, handler := range handlers {
+		handler(method, params)
+	}
 }
 
 func (client *networkClient) Close() error {
@@ -450,7 +566,7 @@ func closeResponseBody(errp *error, server Server, body io.Closer) {
 func (client *networkClient) decodeResponse(response *http.Response) (rpcMessage, error) {
 	contentType, _, _ := mime.ParseMediaType(response.Header.Get("Content-Type"))
 	if contentType == "text/event-stream" {
-		return decodeSSERPCMessage(response.Body)
+		return decodeSSERPCMessage(response.Body, client.dispatchNotification)
 	}
 
 	var message rpcMessage
@@ -458,6 +574,9 @@ func (client *networkClient) decodeResponse(response *http.Response) (rpcMessage
 	decoder.UseNumber()
 	if err := decoder.Decode(&message); err != nil {
 		return rpcMessage{}, fmt.Errorf("decode MCP %s response from %s: %w", client.server.Type, client.server.Name, err)
+	}
+	if message.ID == nil && message.Method != "" {
+		client.dispatchNotification(message.Method, message.Params)
 	}
 	return message, nil
 }
@@ -539,6 +658,14 @@ func (client *remoteSSEClient) deliverEventMessage(value string) error {
 	if err := decoder.Decode(&message); err != nil {
 		return fmt.Errorf("decode MCP SSE stream message: %w", err)
 	}
+	// A server-initiated notification or request has a method; hand it to the
+	// handlers rather than dropping it (it has no pending-response key).
+	if message.ID == nil {
+		if message.Method != "" {
+			client.dispatchNotification(message.Method, message.Params)
+		}
+		return nil
+	}
 	key := rpcResponseKey(message.ID)
 	if key == "" {
 		return nil
@@ -609,7 +736,7 @@ func httpStatusError(server Server, response *http.Response) error {
 	return fmt.Errorf("MCP %s server %s returned HTTP %d: %s", server.Type, server.Name, response.StatusCode, detail)
 }
 
-func decodeSSERPCMessage(reader io.Reader) (rpcMessage, error) {
+func decodeSSERPCMessage(reader io.Reader, onNotification func(method string, params json.RawMessage)) (rpcMessage, error) {
 	var decoded rpcMessage
 	var decodeErr error
 	found := false
@@ -629,11 +756,15 @@ func decodeSSERPCMessage(reader io.Reader) (rpcMessage, error) {
 			return false
 		}
 		// The POST's event stream may carry server-initiated notifications or
-		// requests (which have a method) before the response to our request. Skip
-		// those — the response has no method — and keep scanning. Previously the
-		// first message event was returned unconditionally, so a leading
-		// notification surfaced to the caller as an id mismatch and failed the call.
-		if candidate.Method != "" {
+		// requests (which have a method) before the response to our request. Dispatch
+		// those to the notification handlers — the response has no method — and keep
+		// scanning. Previously the first message event was returned unconditionally,
+		// so a leading notification surfaced to the caller as an id mismatch and
+		// failed the call.
+		if candidate.Method != "" && candidate.ID == nil {
+			if onNotification != nil {
+				onNotification(candidate.Method, candidate.Params)
+			}
 			return true
 		}
 		decoded = candidate
@@ -786,6 +917,7 @@ func (transport *oauthRoundTripper) RoundTrip(request *http.Request) (*http.Resp
 	if response.StatusCode != http.StatusUnauthorized {
 		return response, nil
 	}
+	challenge := parseAuthChallenge(response)
 
 	// Drain and close the 401 body before retrying to free the connection.
 	_, _ = io.Copy(io.Discard, response.Body)
@@ -793,7 +925,11 @@ func (transport *oauthRoundTripper) RoundTrip(request *http.Request) (*http.Resp
 
 	refreshed, refreshErr := transport.source.Refresh(request.Context())
 	if refreshErr != nil {
-		return nil, fmt.Errorf("MCP OAuth token refresh failed for %s: re-run `kajicode mcp oauth login %s`: %w", transport.serverName, transport.serverName, refreshErr)
+		// The stored token was rejected and could not be refreshed: the server
+		// needs a fresh interactive login. Classify it as needs-auth (with the
+		// challenge) so the caller can prompt the right command instead of
+		// reporting an opaque failure.
+		return nil, fmt.Errorf("%w (refresh failed: %v)", newNeedsAuthError(transport.serverName, challenge), refreshErr)
 	}
 
 	retry, _, err := cloneRequestWithBearer(request, refreshed)
@@ -840,10 +976,14 @@ type storeTokenSource struct {
 }
 
 func (source *storeTokenSource) config() OAuthConfig {
+	cfg := OAuthConfig{}
 	if source.server.OAuth != nil {
-		return *source.server.OAuth
+		cfg = *source.server.OAuth
 	}
-	return OAuthConfig{}
+	if strings.TrimSpace(cfg.Resource) == "" {
+		cfg.Resource = source.server.URL
+	}
+	return cfg
 }
 
 func (source *storeTokenSource) AccessToken(ctx context.Context) (string, error) {
@@ -852,7 +992,7 @@ func (source *storeTokenSource) AccessToken(ctx context.Context) (string, error)
 		return "", err
 	}
 	if !ok || strings.TrimSpace(token.AccessToken) == "" {
-		return "", fmt.Errorf("no stored OAuth token for MCP server %s: run `kajicode mcp oauth login %s`", source.server.Name, source.server.Name)
+		return "", newNeedsAuthError(source.server.Name, AuthChallenge{})
 	}
 	return token.AccessToken, nil
 }
@@ -863,7 +1003,7 @@ func (source *storeTokenSource) Refresh(ctx context.Context) (string, error) {
 		return "", err
 	}
 	if !ok {
-		return "", fmt.Errorf("no stored OAuth token for MCP server %s", source.server.Name)
+		return "", newNeedsAuthError(source.server.Name, AuthChallenge{})
 	}
 	refreshed, err := refreshAccessToken(ctx, source.httpClient, source.config(), token, source.now)
 	if err != nil {

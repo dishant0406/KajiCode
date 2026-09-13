@@ -340,6 +340,44 @@ func (t *fakePreexistingTool) Run(context.Context, map[string]any) tools.Result 
 type fakeToolClient struct {
 	listed []RemoteTool
 	closed int
+
+	// Optional resource surface: set resourcesCapable to make the fake implement
+	// CapabilityProvider + ResourceClient for the resource-tool tests.
+	resourcesCapable bool
+	resources        []RemoteResource
+	templates        []RemoteResourceTemplate
+	contents         []RemoteResourceContent
+	resourceErr      error
+
+	// Optional prompt surface, symmetric with the resource fields above.
+	promptsCapable bool
+	prompts        []RemotePrompt
+	promptMessages []RemotePromptMessage
+	promptErr      error
+}
+
+func (client *fakeToolClient) SupportsResources() bool { return client.resourcesCapable }
+
+func (client *fakeToolClient) SupportsPrompts() bool { return client.promptsCapable }
+
+func (client *fakeToolClient) ListPrompts(context.Context) ([]RemotePrompt, error) {
+	return client.prompts, client.promptErr
+}
+
+func (client *fakeToolClient) GetPrompt(context.Context, string, map[string]any) ([]RemotePromptMessage, error) {
+	return client.promptMessages, client.promptErr
+}
+
+func (client *fakeToolClient) ListResources(context.Context) ([]RemoteResource, error) {
+	return client.resources, client.resourceErr
+}
+
+func (client *fakeToolClient) ListResourceTemplates(context.Context) ([]RemoteResourceTemplate, error) {
+	return client.templates, client.resourceErr
+}
+
+func (client *fakeToolClient) ReadResource(context.Context, string) ([]RemoteResourceContent, error) {
+	return client.contents, client.resourceErr
 }
 
 func (client *fakeToolClient) ListTools(context.Context) ([]RemoteTool, error) {

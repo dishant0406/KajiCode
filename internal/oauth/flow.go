@@ -60,6 +60,11 @@ func BuildAuthorizationURL(cfg Config, pkce PKCE, state, redirectURI string, ext
 	if len(cfg.Scopes) > 0 {
 		query.Set("scope", strings.Join(cfg.Scopes, " "))
 	}
+	// RFC 8707: identify the protected resource so the issued token is audience
+	// restricted to this MCP server rather than usable at any resource.
+	if resource := trimmed(cfg.Resource); resource != "" {
+		query.Set("resource", resource)
+	}
 	// Extra params must never override the reserved OAuth/PKCE fields above
 	// (e.g. forcing code_challenge_method=plain or rewriting state/redirect_uri),
 	// which would break the flow's security guarantees.
@@ -137,6 +142,9 @@ func ExchangeCode(ctx context.Context, client *http.Client, cfg Config, code, ve
 	if secret := trimmed(cfg.ClientSecret); secret != "" {
 		form.Set("client_secret", secret)
 	}
+	if resource := trimmed(cfg.Resource); resource != "" {
+		form.Set("resource", resource)
+	}
 	return PostToken(ctx, client, cfg.TokenEndpoint, form, Token{Scopes: cfg.Scopes}, now)
 }
 
@@ -159,6 +167,9 @@ func Refresh(ctx context.Context, client *http.Client, cfg Config, current Token
 	}
 	if len(cfg.Scopes) > 0 {
 		form.Set("scope", strings.Join(cfg.Scopes, " "))
+	}
+	if resource := trimmed(cfg.Resource); resource != "" {
+		form.Set("resource", resource)
 	}
 	// Carry the existing token_type forward: a refresh response commonly omits it,
 	// and PostToken only overwrites TokenType when the response supplies one, so

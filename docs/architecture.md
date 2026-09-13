@@ -345,7 +345,28 @@ setting that applies to every reply across sessions and projects:
 
 Extension loading happens before `agent.Run`:
 
-- MCP servers add external tools through `internal/mcp`.
+- MCP servers add external tools through `internal/mcp`. Remote servers that
+  use OAuth are authenticated with an MCP-spec discovery chain: the server's
+  `401 WWW-Authenticate` challenge names its RFC 9728 protected-resource
+  metadata, that document names the authorization server, and the
+  authorization server's RFC 8414 metadata (with an OIDC
+  openid-configuration fallback) supplies the endpoints and scopes. The
+  protected-resource document's `scopes_supported` supplies scopes when the user
+  configured none, and its `resource` (or the server URL) is sent as the RFC 8707
+  resource indicator. Discovery lives in `internal/oauth`; MCP orchestration lives
+  in `internal/mcp`. All discovered URLs pass the https/loopback-or-public SSRF
+  rule before any request is made, and a server that needs login is reported as
+  needs-auth rather than a generic failure. A server whose metadata advertises no
+  dynamic registration and that has no configured `clientID` is reported as
+  needs-client-registration (a distinct, non-login-fixable state).
+- A remote server configured as `http` retries over SSE when the Streamable HTTP
+  attempt fails, but an auth failure is surfaced rather than retried. Per-server
+  timeouts bound each tool call, and a `notifications/progress` message resets the
+  deadline. A server's `initialize` instructions are injected into the system
+  prompt, `notifications/tools/list_changed` triggers a live re-list, and
+  capability-gated resource (`list_mcp_resources`/`list_mcp_resource_templates`/
+  `read_mcp_resource`) and prompt (`list_mcp_prompts`/`get_mcp_prompt`) tools are
+  registered only while a matching server is connected.
 - Plugins add tool, hook, and skill roots through `internal/plugins`.
 - Skills are prompt-loadable instructions discovered by `internal/skills`.
   Discovery is cwd/project-scoped: the agent walks from the git root to the

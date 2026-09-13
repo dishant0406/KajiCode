@@ -39,6 +39,13 @@ type SkippedServer struct {
 	// server is an out-of-the-box default the user never configured, so a
 	// caller can skip warning loudly about it.
 	UnconfiguredDefault bool
+	// NeedsAuth is true when the server was skipped because it requires OAuth
+	// login (`kajicode mcp oauth login <name>`) rather than being unreachable.
+	NeedsAuth bool
+	// NeedsClientRegistration is true when the server's OAuth provider does not
+	// support dynamic client registration, so the user must add oauth.clientID to
+	// the server config. Distinct from NeedsAuth (logging in cannot fix it).
+	NeedsClientRegistration bool
 }
 
 type Runtime struct {
@@ -51,6 +58,22 @@ type Runtime struct {
 	skipped []SkippedServer
 	once    sync.Once
 	err     error
+
+	// live connections kept for runtime tool-list refresh ("tools/list_changed").
+	refreshMu sync.Mutex
+	live      []liveServer
+	registry  *tools.Registry
+	options   RegisterOptions
+}
+
+// liveServer is one connected server retained so a tools/list_changed
+// notification can re-list its tools and reconcile the registry.
+type liveServer struct {
+	server Server
+	client ToolClient
+	// names currently registered from this server, so a refresh can remove the
+	// ones the server withdrew.
+	names map[string]struct{}
 }
 
 // Skipped returns the servers that were skipped during registration (unreachable
@@ -60,6 +83,28 @@ func (runtime *Runtime) Skipped() []SkippedServer {
 		return nil
 	}
 	return runtime.skipped
+}
+
+// Instructions returns each connected server's initialize instructions, in
+// server order, for injection into the system prompt. Servers that supplied no
+// instructions contribute nothing.
+func (runtime *Runtime) Instructions() []Instruction {
+	if runtime == nil {
+		return nil
+	}
+	instructions := make([]Instruction, 0, len(runtime.live))
+	for _, entry := range runtime.live {
+		if text := serverInstructions(entry.client); text != "" {
+			instructions = append(instructions, Instruction{Server: entry.server.Name, Text: text})
+		}
+	}
+	return instructions
+}
+
+// Instruction is one server's initialize instructions.
+type Instruction struct {
+	Server string
+	Text   string
 }
 
 var unsafeToolNameChars = regexp.MustCompile(`[^A-Za-z0-9_]+`)
@@ -152,7 +197,7 @@ func RegisterTools(ctx context.Context, registry *tools.Registry, cfg config.MCP
 	for index, server := range servers {
 		res := results[index]
 		if res.err != nil {
-			runtime.skipped = append(runtime.skipped, SkippedServer{Name: server.Name, Err: res.err, UnconfiguredDefault: server.UnconfiguredDefault})
+			runtime.skipped = append(runtime.skipped, SkippedServer{Name: server.Name, Err: res.err, UnconfiguredDefault: server.UnconfiguredDefault, NeedsAuth: needsAuth(res.err), NeedsClientRegistration: needsClientRegistration(res.err)})
 			continue
 		}
 		serverTools, validateErr := buildServerTools(registry, server, res.remote, res.client, options, stagedNames)
@@ -168,15 +213,100 @@ func RegisterTools(ctx context.Context, registry *tools.Registry, cfg config.MCP
 		if res.cancel != nil {
 			runtime.cancels = append(runtime.cancels, res.cancel)
 		}
+		live := liveServer{server: server, client: res.client, names: make(map[string]struct{})}
 		for _, tool := range serverTools {
 			stagedNames[tool.Name()] = struct{}{}
+			live.names[tool.Name()] = struct{}{}
 			staged = append(staged, tool)
 		}
+		runtime.live = append(runtime.live, live)
 	}
 	for _, tool := range staged {
 		registry.Register(tool)
 	}
+	runtime.registry = registry
+	runtime.options = options
+	runtime.watchToolLists(ctx)
+	// Resource tools are global (they dispatch to whichever connected server
+	// supports resources), so they register once, not per server. They appear
+	// only when at least one connected server advertised the resources capability.
+	for _, tool := range runtime.resourceTools() {
+		registry.Register(tool)
+	}
+	for _, tool := range runtime.promptTools() {
+		registry.Register(tool)
+	}
 	return runtime, nil
+}
+
+// watchToolLists subscribes each live server to its tools/list_changed
+// notification so a server that adds or removes a tool mid-session is
+// reconciled into the registry. Servers lacking notification support are
+// unaffected (the subscribe is a no-op).
+func (runtime *Runtime) watchToolLists(ctx context.Context) {
+	for index := range runtime.live {
+		entry := runtime.live[index]
+		subscribeToolListChanged(entry.client, func() {
+			runtime.refreshServerTools(ctx, entry.server.Name)
+		})
+	}
+}
+
+// refreshServerTools re-lists one server's tools and reconciles the registry:
+// new tools are registered, withdrawn tools are unregistered, and a changed
+// schema is replaced. It is deliberately conservative — a re-list failure or a
+// name conflict leaves the current tools in place rather than dropping them —
+// so a transient server hiccup cannot silently strip the model's toolbelt.
+func (runtime *Runtime) refreshServerTools(ctx context.Context, serverName string) {
+	runtime.refreshMu.Lock()
+	defer runtime.refreshMu.Unlock()
+
+	if runtime.registry == nil {
+		return
+	}
+	var entry *liveServer
+	for index := range runtime.live {
+		if runtime.live[index].server.Name == serverName {
+			entry = &runtime.live[index]
+			break
+		}
+	}
+	if entry == nil {
+		return
+	}
+
+	remoteTools, err := entry.client.ListTools(ctx)
+	if err != nil {
+		return
+	}
+
+	// Build the fresh set of registered tools this server should own.
+	desired := make(map[string]registryTool)
+	for _, remote := range remoteTools {
+		if strings.TrimSpace(remote.Name) == "" || !entry.server.Tools.Allows(remote.Name) {
+			continue
+		}
+		tool := newRegistryTool(entry.server, remote, entry.client, runtime.options)
+		if _, conflict := runtime.registry.Get(tool.Name()); conflict {
+			if _, ours := entry.names[tool.Name()]; !ours {
+				continue // owned by another server/built-in: never steal it
+			}
+		}
+		desired[tool.Name()] = tool
+	}
+
+	// Register new or updated tools.
+	for name, tool := range desired {
+		runtime.registry.Register(tool)
+		entry.names[name] = struct{}{}
+	}
+	// Remove tools the server no longer advertises.
+	for name := range entry.names {
+		if _, keep := desired[name]; !keep {
+			runtime.registry.Unregister(name)
+			delete(entry.names, name)
+		}
+	}
 }
 
 // connectAndList connects to one server and lists its tools. It does ONLY I/O
@@ -206,6 +336,11 @@ func buildServerTools(registry *tools.Registry, server Server, remoteTools []Rem
 	for _, remote := range remoteTools {
 		if strings.TrimSpace(remote.Name) == "" {
 			return nil, fmt.Errorf("MCP server %s returned a tool without a name", server.Name)
+		}
+		// Honor the per-server allow/deny filter before anything else, so a
+		// hidden tool never reaches the registry or the model.
+		if !server.Tools.Allows(remote.Name) {
+			continue
 		}
 		tool := newRegistryTool(server, remote, client, options)
 		if existing, ok := registry.Get(tool.Name()); ok {

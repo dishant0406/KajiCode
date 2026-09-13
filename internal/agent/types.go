@@ -237,6 +237,13 @@ type SpecialistInfo struct {
 	WhenToUse string
 }
 
+// MCPInstructions is one MCP server's initialize instructions, surfaced to the
+// model so it follows the server's own tool-usage guidance.
+type MCPInstructions struct {
+	Server       string
+	Instructions string
+}
+
 // TaskCompletionSource delivers finished background sub-agent results to the
 // running loop. The specialist runtime implements it; the loop drains once per
 // turn and injects each block as a user-role message (async-diagnostics style),
@@ -295,6 +302,12 @@ type Options struct {
 	// populated only where the Task tool is actually registered, so an empty slice
 	// (the default) reproduces the previous prompt byte-for-byte.
 	Specialists []SpecialistInfo
+	// MCPInstructions carries the human-readable instructions each connected MCP
+	// server returned from `initialize`, keyed by server name. When non-empty the
+	// system prompt gains an <mcp_instructions> block so the model follows the
+	// server's own usage guidance. Empty (the default) reproduces the previous
+	// prompt byte-for-byte.
+	MCPInstructions []MCPInstructions
 	// Skills lists the reusable skills installed for this run (the default skills
 	// dir merged with any plugin skill roots). When non-empty the system prompt
 	// gains an <available_skills> block naming them so the model loads the right one

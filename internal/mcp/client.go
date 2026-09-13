@@ -19,7 +19,31 @@ type RemoteTool struct {
 	Name        string         `json:"name"`
 	Description string         `json:"description,omitempty"`
 	InputSchema map[string]any `json:"inputSchema,omitempty"`
+	// OutputSchema is captured as raw JSON so a server that sends a non-object
+	// value (or omits it) cannot fail the whole tools/list decode. KajiCode does
+	// not use it, but tolerating it mirrors opencode's schema tolerance.
+	OutputSchema json.RawMessage `json:"outputSchema,omitempty"`
 }
+
+// initializeResult is the parsed MCP `initialize` response. KajiCode keeps the
+// negotiated protocol version (instead of discarding it) and the server's
+// optional human-readable instructions, which are surfaced to the model.
+type initializeResult struct {
+	ProtocolVersion string `json:"protocolVersion"`
+	Instructions    string `json:"instructions"`
+	Capabilities    struct {
+		Tools *struct {
+			ListChanged bool `json:"listChanged"`
+		} `json:"tools"`
+		Resources *struct{} `json:"resources"`
+		Prompts   *struct{} `json:"prompts"`
+	} `json:"capabilities"`
+}
+
+const (
+	// mcpProtocolVersion is the version KajiCode advertises in `initialize`.
+	mcpProtocolVersion = "2024-11-05"
+)
 
 type Content struct {
 	Type string `json:"type"`
@@ -47,6 +71,11 @@ type Client struct {
 	closeMu sync.Mutex
 	nextID  int
 
+	// init holds the negotiated handshake result (protocol version, server
+	// instructions, capabilities). It is written once during initialize before
+	// any other call and only read afterwards.
+	init initializeResult
+
 	// dispatchMu guards the response-dispatch state shared with the single
 	// reader goroutine. It is never held across a blocking read.
 	dispatchMu sync.Mutex
@@ -54,6 +83,41 @@ type Client struct {
 	pending    map[int]chan dispatchResult
 	readErr    error
 	readDone   bool
+
+	// notifyHandlers receive server-initiated notifications (messages with a
+	// method and no id). notifyMu guards the slice; handlers are invoked from the
+	// reader goroutine and must not block.
+	notifyMu       sync.Mutex
+	notifyHandlers []func(method string, params json.RawMessage)
+
+	// progress tracks in-flight tool-call timers so a notifications/progress
+	// message resets the matching deadline.
+	progress progressRegistry
+}
+
+// OnNotification registers a callback invoked for each server-initiated
+// notification. Callbacks run on the reader goroutine, so they must return
+// quickly (dispatch heavy work to a goroutine). Safe to call before or after
+// I/O begins.
+func (client *Client) OnNotification(handler func(method string, params json.RawMessage)) {
+	if handler == nil {
+		return
+	}
+	client.notifyMu.Lock()
+	client.notifyHandlers = append(client.notifyHandlers, handler)
+	client.notifyMu.Unlock()
+}
+
+func (client *Client) dispatchNotification(method string, params json.RawMessage) {
+	if method == progressMethod {
+		client.progress.touchProgress(progressTokenFromParams(params))
+	}
+	client.notifyMu.Lock()
+	handlers := append([]func(string, json.RawMessage){}, client.notifyHandlers...)
+	client.notifyMu.Unlock()
+	for _, handler := range handlers {
+		handler(method, params)
+	}
 }
 
 // dispatchResult carries one matched JSON-RPC response (or a terminal reader
@@ -80,17 +144,58 @@ const (
 	initializeTimeout = 30 * time.Second
 )
 
+// clientRequestTimeout returns the configured per-server timeout when set,
+// otherwise the supplied default. Servers may override connect/list/call timeouts
+// via `timeout` (milliseconds) in config.
+func clientRequestTimeout(server Server, fallback time.Duration) time.Duration {
+	if server.Timeout > 0 {
+		return server.Timeout
+	}
+	return fallback
+}
+
 func Connect(ctx context.Context, server Server) (ToolClient, error) {
 	switch server.Type {
 	case ServerTypeStdio:
 		return connectStdio(ctx, server)
 	case ServerTypeHTTP:
-		return connectNetwork(ctx, server)
+		// A remote "http" server is really "modern Streamable HTTP with graceful
+		// SSE fallback" (opencode does the same). Try Streamable HTTP first; if the
+		// server only speaks the older HTTP+SSE transport, initialize fails and we
+		// retry over SSE so the user does not have to know which one it is. A
+		// transport-agnostic auth failure (401/needs-auth) must NOT be masked by the
+		// retry: it is returned as-is so the needs-auth classification still works.
+		client, err := connectNetwork(ctx, server)
+		if err == nil {
+			return client, nil
+		}
+		if needsAuth(err) || isTransportAuthError(err) {
+			return nil, err
+		}
+		fallback, sseErr := connectRemoteSSE(ctx, server)
+		if sseErr == nil {
+			return fallback, nil
+		}
+		// Report the streamable-HTTP error (the transport we tried first) so the
+		// message matches what the user configured, but note the SSE attempt.
+		return nil, fmt.Errorf("%w (SSE fallback also failed: %v)", err, sseErr)
 	case ServerTypeSSE:
 		return connectRemoteSSE(ctx, server)
 	default:
 		return nil, fmt.Errorf("unsupported MCP transport %q for server %s", server.Type, server.Name)
 	}
+}
+
+// isTransportAuthError reports whether an initialize error looks like an auth
+// challenge (401/403) rather than a transport mismatch. Falling back from
+// Streamable HTTP to SSE on an auth failure would only repeat the same rejected
+// request, and would obscure the needs-auth signal, so we keep the error.
+func isTransportAuthError(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := err.Error()
+	return strings.Contains(message, "401") || strings.Contains(message, "403") || strings.Contains(message, "unauthorized")
 }
 
 // maxStderrCapture bounds how much of an MCP server's stderr is retained. The
@@ -166,16 +271,15 @@ func connectStdio(ctx context.Context, server Server) (*Client, error) {
 }
 
 // initialize performs the MCP handshake under a bounded timeout so a
-// non-responsive peer fails fast instead of hanging startup.
+// non-responsive peer fails fast instead of hanging startup. It records the
+// negotiated protocol version, server instructions, and capabilities.
 func (client *Client) initialize(ctx context.Context) error {
-	initCtx, cancel := context.WithTimeout(ctx, initializeTimeout)
+	initCtx, cancel := context.WithTimeout(ctx, clientRequestTimeout(client.server, initializeTimeout))
 	defer cancel()
 
-	var result struct {
-		ProtocolVersion string `json:"protocolVersion"`
-	}
+	var result initializeResult
 	if err := client.request(initCtx, "initialize", map[string]any{
-		"protocolVersion": "2024-11-05",
+		"protocolVersion": mcpProtocolVersion,
 		"capabilities":    map[string]any{},
 		"clientInfo": map[string]any{
 			"name":    "kajicode",
@@ -184,17 +288,32 @@ func (client *Client) initialize(ctx context.Context) error {
 	}, &result); err != nil {
 		return err
 	}
+	client.init = result
 	return client.notify("notifications/initialized", map[string]any{})
 }
 
+// Instructions returns the server-provided instructions (empty when none).
+func (client *Client) Instructions() string {
+	return strings.TrimSpace(client.init.Instructions)
+}
+
+// NegotiatedProtocolVersion returns the protocol version the server selected.
+func (client *Client) NegotiatedProtocolVersion() string {
+	return strings.TrimSpace(client.init.ProtocolVersion)
+}
+
+// SupportsResources reports whether the server advertised the resources capability.
+func (client *Client) SupportsResources() bool {
+	return client.init.Capabilities.Resources != nil
+}
+
+// SupportsPrompts reports whether the server advertised the prompts capability.
+func (client *Client) SupportsPrompts() bool {
+	return client.init.Capabilities.Prompts != nil
+}
+
 func (client *Client) ListTools(ctx context.Context) ([]RemoteTool, error) {
-	var result struct {
-		Tools []RemoteTool `json:"tools"`
-	}
-	if err := client.request(ctx, "tools/list", map[string]any{}, &result); err != nil {
-		return nil, err
-	}
-	return result.Tools, nil
+	return clientListTools(ctx, client.request)
 }
 
 func (client *Client) CallTool(ctx context.Context, name string, args map[string]any) (CallToolResult, error) {
@@ -202,17 +321,33 @@ func (client *Client) CallTool(ctx context.Context, name string, args map[string
 	// Default deadline: a hung MCP server previously waited on ctx forever (the
 	// agent loop's ctx has no deadline), silently freezing the turn. The timeout
 	// returns a readable error the MODEL sees and can react to — the turn is not
-	// killed, only this tool call fails like any other tool error.
+	// killed, only this tool call fails like any other tool error. A per-server
+	// `timeout` overrides the built-in default. The deadline resets on each
+	// notifications/progress message so a legitimately long call is not killed.
+	timeout := clientRequestTimeout(client.server, defaultToolCallTimeout)
 	callCtx := ctx
-	if _, hasDeadline := ctx.Deadline(); !hasDeadline && defaultToolCallTimeout > 0 {
-		var cancel context.CancelFunc
-		callCtx, cancel = context.WithTimeout(ctx, defaultToolCallTimeout)
-		defer cancel()
-	}
-	if err := client.request(callCtx, "tools/call", map[string]any{
+	params := map[string]any{
 		"name":      name,
 		"arguments": args,
-	}, &result); err != nil {
+	}
+	var progress *progressTimeout
+	var cancel context.CancelCauseFunc
+	if _, hasDeadline := ctx.Deadline(); !hasDeadline && timeout > 0 {
+		callCtx, cancel = context.WithCancelCause(ctx)
+		defer cancel(nil)
+		token := nextProgressToken()
+		params["_meta"] = map[string]any{"progressToken": token}
+		progress = newProgressTimeout(timeout, cancel)
+		client.progress.addProgress(token, progress)
+		defer func() {
+			progress.stop()
+			client.progress.removeProgress(token)
+		}()
+	}
+	if err := client.request(callCtx, "tools/call", params, &result); err != nil {
+		if cause := context.Cause(callCtx); cause != nil {
+			return CallToolResult{}, cause
+		}
 		return CallToolResult{}, err
 	}
 	return result, nil
@@ -361,6 +496,12 @@ func (client *Client) readLoop() {
 			return
 		}
 		if message.ID == nil {
+			// Server-initiated notification: no id, but it carries a method. Hand
+			// it to the registered handlers (e.g. tools/list_changed) instead of
+			// silently dropping it.
+			if message.Method != "" {
+				client.dispatchNotification(message.Method, message.Params)
+			}
 			continue
 		}
 		id, ok := rpcMessageID(message.ID)

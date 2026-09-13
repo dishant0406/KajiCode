@@ -101,6 +101,7 @@ type appDeps struct {
 type mcpToolRuntime interface {
 	Close() error
 	Skipped() []mcp.SkippedServer
+	Instructions() []mcp.Instruction
 }
 
 type noopMCPRuntime struct{}
@@ -110,6 +111,10 @@ func (noopMCPRuntime) Close() error {
 }
 
 func (noopMCPRuntime) Skipped() []mcp.SkippedServer {
+	return nil
+}
+
+func (noopMCPRuntime) Instructions() []mcp.Instruction {
 	return nil
 }
 
@@ -793,6 +798,14 @@ func runInteractiveTUIWithSetup(stderr io.Writer, deps appDeps, permissionMode a
 		if skipped.UnconfiguredDefault {
 			continue
 		}
+		if skipped.NeedsClientRegistration {
+			fmt.Fprintf(stderr, "warning: MCP server %s requires a pre-registered OAuth client ID (the provider does not support dynamic registration): set oauth.clientID (and oauth.clientSecret) for %s\n", skipped.Name, skipped.Name)
+			continue
+		}
+		if skipped.NeedsAuth {
+			fmt.Fprintf(stderr, "warning: MCP server %s requires OAuth login: run `kajicode mcp oauth login %s`\n", skipped.Name, skipped.Name)
+			continue
+		}
 		fmt.Fprintf(stderr, "warning: MCP server %s unavailable, skipped: %s\n", skipped.Name, redaction.ErrorMessage(skipped.Err, redaction.Options{}))
 	}
 	// Make local plugins live: register their declared tools into the registry and
@@ -915,18 +928,19 @@ func runInteractiveTUIWithSetup(stderr io.Writer, deps appDeps, permissionMode a
 		},
 		SandboxSetupCommand: tuiSandboxSetupCommand(sandboxBackend, deps),
 		AgentOptions: agent.Options{
-			MaxTurns:       resolved.MaxTurns,
-			Registry:       registry,
-			PermissionMode: permissionMode,
-			Autonomy:       "low",
-			Harness:        resolved.Harness,
-			Learning:       learning,
-			Sandbox:        sandboxEngine,
-			FileTracker:    fileTracker,
-			Hooks:          hookDispatcher,
-			DeferThreshold: resolved.Tools.DeferThreshold,
-			Specialists:    specialistRuntime.specialists,
-			Skills:         pluginActivation.skillInfos(deps.skillsDir(), workspaceRoot),
+			MaxTurns:        resolved.MaxTurns,
+			Registry:        registry,
+			PermissionMode:  permissionMode,
+			Autonomy:        "low",
+			Harness:         resolved.Harness,
+			Learning:        learning,
+			Sandbox:         sandboxEngine,
+			FileTracker:     fileTracker,
+			Hooks:           hookDispatcher,
+			DeferThreshold:  resolved.Tools.DeferThreshold,
+			Specialists:     specialistRuntime.specialists,
+			MCPInstructions: mcpInstructionInfos(mcpRuntime),
+			Skills:          pluginActivation.skillInfos(deps.skillsDir(), workspaceRoot),
 			// Background sub-agent completion push: the interactive run learns a
 			// finished task's result on its next turn instead of polling TaskOutput.
 			TaskCompletions: specialistRuntime.specialist,
@@ -1206,6 +1220,24 @@ func closeMCPRuntime(stderr io.Writer, runtime mcpToolRuntime) {
 	if err := runtime.Close(); err != nil {
 		_, _ = fmt.Fprintf(stderr, "[kajicode] mcp_close_error: %s\n", err)
 	}
+}
+
+// mcpInstructionInfos converts the runtime's captured MCP server instructions
+// into the agent Options shape (name + text) for the <mcp_instructions> prompt
+// section.
+func mcpInstructionInfos(runtime mcpToolRuntime) []agent.MCPInstructions {
+	if runtime == nil {
+		return nil
+	}
+	instructions := runtime.Instructions()
+	if len(instructions) == 0 {
+		return nil
+	}
+	infos := make([]agent.MCPInstructions, 0, len(instructions))
+	for _, instruction := range instructions {
+		infos = append(infos, agent.MCPInstructions{Server: instruction.Server, Instructions: instruction.Text})
+	}
+	return infos
 }
 
 func closeSpecialistRuntime(stderr io.Writer, runtime *agentToolRuntime) {

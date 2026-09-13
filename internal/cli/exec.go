@@ -747,6 +747,7 @@ func runExec(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) in
 		ContextWindow:        resolveAgentContextWindow(runCtx, modelRegistry, resolved.Provider),
 		DeferThreshold:       effectiveDeferThreshold,
 		Specialists:          specialistRuntime.specialistInfos(),
+		MCPInstructions:      mcpInstructionInfos(mcpRuntime),
 		Skills:               pluginActivation.skillInfos(deps.skillsDir(), workspaceRoot),
 		SessionID:            preparedSession.Session.SessionID,
 		CallingSessionID:     options.callingSessionID,

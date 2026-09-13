@@ -325,7 +325,7 @@ func TestDecodeSSERPCMessageSkipsNotifications(t *testing.T) {
 		"event: message\n" +
 		`data: {"jsonrpc":"2.0","id":7,"result":{"ok":true}}` + "\n\n"
 
-	msg, err := decodeSSERPCMessage(strings.NewReader(stream))
+	msg, err := decodeSSERPCMessage(strings.NewReader(stream), nil)
 	if err != nil {
 		t.Fatalf("decodeSSERPCMessage: %v", err)
 	}

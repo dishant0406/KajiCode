@@ -5,8 +5,10 @@ package browser
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"runtime"
+	"strings"
 )
 
 // OpenURL launches url in the default browser. It returns once the launcher
@@ -34,5 +36,23 @@ func openCommand(goos, url string) (string, []string) {
 		return "rundll32", []string{"url.dll,FileProtocolHandler", url}
 	default: // linux and other unixes
 		return "xdg-open", []string{url}
+	}
+}
+
+// CanOpen reports whether auto-opening is likely to succeed in this session.
+// Headless and remote (SSH) sessions have no browser to reach, so callers should
+// print the URL for manual use instead of spawning a launcher that will fail or
+// hang.
+func CanOpen() bool {
+	if os.Getenv("SSH_CONNECTION") != "" || os.Getenv("SSH_TTY") != "" {
+		return false
+	}
+	switch runtime.GOOS {
+	case "darwin", "windows":
+		return true
+	default:
+		// A Linux/BSD desktop session sets DISPLAY or WAYLAND_DISPLAY; without one
+		// there is no browser to reach.
+		return strings.TrimSpace(os.Getenv("DISPLAY")) != "" || strings.TrimSpace(os.Getenv("WAYLAND_DISPLAY")) != ""
 	}
 }

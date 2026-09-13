@@ -826,6 +826,10 @@ func (fn closeFunc) Skipped() []mcp.SkippedServer {
 	return nil
 }
 
+func (fn closeFunc) Instructions() []mcp.Instruction {
+	return nil
+}
+
 type toolCallingExecProvider struct {
 	toolCallID string
 	toolName   string

@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"sort"
+	"sync"
 
 	"github.com/dishant0406/KajiCode/internal/redaction"
 	"github.com/dishant0406/KajiCode/internal/sandbox"
@@ -10,6 +11,7 @@ import (
 )
 
 type Registry struct {
+	mu    sync.RWMutex
 	tools map[string]Tool
 }
 
@@ -140,19 +142,33 @@ func IsDeferralEligible(t Tool) bool {
 }
 
 func (registry *Registry) Register(tool Tool) {
+	registry.mu.Lock()
 	registry.tools[tool.Name()] = tool
+	registry.mu.Unlock()
 }
 
 func (registry *Registry) Get(name string) (Tool, bool) {
+	registry.mu.RLock()
 	tool, ok := registry.tools[name]
+	registry.mu.RUnlock()
 	return tool, ok
 }
 
+// Unregister removes a tool by name. It is used when an MCP server's tool list
+// changes at runtime and a previously exposed tool is withdrawn.
+func (registry *Registry) Unregister(name string) {
+	registry.mu.Lock()
+	delete(registry.tools, name)
+	registry.mu.Unlock()
+}
+
 func (registry *Registry) All() []Tool {
+	registry.mu.RLock()
 	tools := make([]Tool, 0, len(registry.tools))
 	for _, tool := range registry.tools {
 		tools = append(tools, tool)
 	}
+	registry.mu.RUnlock()
 	sort.Slice(tools, func(left, right int) bool {
 		return tools[left].Name() < tools[right].Name()
 	})

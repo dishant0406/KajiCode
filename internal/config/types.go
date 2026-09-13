@@ -613,6 +613,13 @@ type MCPServerConfig struct {
 	Auth     string            `json:"auth,omitempty"`
 	OAuth    *MCPOAuthConfig   `json:"oauth,omitempty"`
 	Disabled bool              `json:"disabled,omitempty"`
+	// TimeoutMS bounds a single request (connect, list, or tool call) to this
+	// server, in milliseconds. Zero uses KajiCode's built-in defaults.
+	TimeoutMS int `json:"timeout,omitempty"`
+	// Tools optionally allow/deny-lists this server's tools by name glob
+	// (e.g. "search_*"). When empty, every tool the server advertises is
+	// exposed. Allow wins over Deny when a name matches both.
+	Tools MCPToolFilter `json:"tools,omitempty"`
 	// ProjectConfigured marks servers touched by project config. It is runtime
 	// metadata, not persisted config.
 	ProjectConfigured bool `json:"-"`
@@ -629,6 +636,14 @@ type MCPServerConfig struct {
 	configured bool
 }
 
+// MCPToolFilter allow/deny-lists a server's tools by name glob. A name matching
+// an Allow pattern is exposed even if it also matches Deny; an empty Allow list
+// exposes everything not explicitly denied.
+type MCPToolFilter struct {
+	Allow []string `json:"allow,omitempty"`
+	Deny  []string `json:"deny,omitempty"`
+}
+
 // MCPOAuthConfig describes how to authenticate to a remote MCP server using an
 // OAuth 2.0 + PKCE authorization-code flow. Endpoints may be discovered from the
 // authorization server's metadata document; explicit values here override or
@@ -642,6 +657,18 @@ type MCPOAuthConfig struct {
 	TokenEndpoint         string   `json:"tokenEndpoint,omitempty"`
 	RegistrationEndpoint  string   `json:"registrationEndpoint,omitempty"`
 	IssuerURL             string   `json:"issuerURL,omitempty"`
+	// RedirectURI pins the loopback redirect URI the OAuth flow registers. Some
+	// servers (Slack, for example) do not support dynamic client registration and
+	// require the exact redirect URI to be pre-registered on the OAuth app. When
+	// empty, an ephemeral 127.0.0.1 port is used.
+	RedirectURI string `json:"redirectURI,omitempty"`
+	// CallbackPort is shorthand for RedirectURI: it binds the loopback listener to
+	// this port on 127.0.0.1. It is ignored when RedirectURI is set.
+	CallbackPort int `json:"callbackPort,omitempty"`
+	// Resource is the RFC 8707 resource indicator sent with the authorization and
+	// token requests. Most MCP servers use their own URL; set this only when the
+	// protected-resource metadata advertises a different resource identifier.
+	Resource string `json:"resource,omitempty"`
 }
 
 func (cfg *FileConfig) UnmarshalJSON(data []byte) error {
@@ -805,15 +832,17 @@ func (cfg LocalControlDriverConfig) MarshalJSON() ([]byte, error) {
 
 func (server *MCPServerConfig) UnmarshalJSON(data []byte) error {
 	type rawServer struct {
-		Type     string            `json:"type"`
-		Command  string            `json:"command"`
-		Args     []string          `json:"args"`
-		Env      map[string]string `json:"env"`
-		URL      string            `json:"url"`
-		Headers  map[string]string `json:"headers"`
-		Auth     string            `json:"auth"`
-		OAuth    *MCPOAuthConfig   `json:"oauth"`
-		Disabled *bool             `json:"disabled"`
+		Type      string            `json:"type"`
+		Command   string            `json:"command"`
+		Args      []string          `json:"args"`
+		Env       map[string]string `json:"env"`
+		URL       string            `json:"url"`
+		Headers   map[string]string `json:"headers"`
+		Auth      string            `json:"auth"`
+		OAuth     *MCPOAuthConfig   `json:"oauth"`
+		Disabled  *bool             `json:"disabled"`
+		TimeoutMS int               `json:"timeout"`
+		Tools     MCPToolFilter     `json:"tools"`
 	}
 
 	var raw rawServer
@@ -828,6 +857,8 @@ func (server *MCPServerConfig) UnmarshalJSON(data []byte) error {
 	server.Headers = raw.Headers
 	server.Auth = raw.Auth
 	server.OAuth = raw.OAuth
+	server.TimeoutMS = raw.TimeoutMS
+	server.Tools = raw.Tools
 	server.Disabled = false
 	server.disabledSet = false
 	if raw.Disabled != nil {

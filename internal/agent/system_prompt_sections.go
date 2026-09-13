@@ -16,6 +16,7 @@ const (
 	promptSectionHarnessConfig   promptSectionRole = "harness-config"
 	promptSectionModeContract    promptSectionRole = "mode-contract"
 	promptSectionSpecialists     promptSectionRole = "specialists"
+	promptSectionMCPInstructions promptSectionRole = "mcp-instructions"
 	promptSectionSkills          promptSectionRole = "skills"
 	promptSectionLearning        promptSectionRole = "learning"
 	promptSectionResponseStyle   promptSectionRole = "response-style"
