@@ -8,8 +8,7 @@ type transcriptWheelTargetKey struct {
 	queuedBytes        int
 	planLen            int
 	pastePreviewCount  int
-	pendingImageCount  int
-	pendingDocCount    int
+	pendingCount       int
 	mouseCapture       bool
 	mouseReleased      bool
 	transcriptDetailed bool
@@ -37,8 +36,7 @@ func transcriptWheelTargetKeyForModel(m model) transcriptWheelTargetKey {
 		queuedBytes:        len(m.queuedMessage),
 		planLen:            len(m.plan.steps),
 		pastePreviewCount:  len(m.composerPastePreviews),
-		pendingImageCount:  len(m.pendingImageLabels),
-		pendingDocCount:    len(m.pendingDocuments),
+		pendingCount:       len(m.pendingAttachments),
 		mouseCapture:       m.mouseCapture,
 		mouseReleased:      m.mouseReleased,
 		transcriptDetailed: m.transcriptDetailed,

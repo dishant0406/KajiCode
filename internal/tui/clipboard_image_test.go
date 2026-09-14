@@ -11,14 +11,14 @@ func TestClipboardImageMsgAttachesImage(t *testing.T) {
 	// gpt-4o is vision-capable in the catalog, so the gate passes.
 	updated := m.attachClipboardImage(pngData, "image/png")
 	m2 := updated
-	if len(m2.pendingImages) != 1 {
-		t.Fatalf("expected 1 pending image, got %d", len(m2.pendingImages))
+	if len(m2.turnImages()) != 1 {
+		t.Fatalf("expected 1 pending image, got %d", len(m2.turnImages()))
 	}
-	if m2.pendingImages[0].MediaType != "image/png" {
-		t.Errorf("mediaType = %q, want image/png", m2.pendingImages[0].MediaType)
+	if m2.pendingAttachments[0].Image.MediaType != "image/png" {
+		t.Errorf("mediaType = %q, want image/png", m2.pendingAttachments[0].Image.MediaType)
 	}
-	if len(m2.pendingImageLabels) != 1 || m2.pendingImageLabels[0] != "clipboard" {
-		t.Errorf("expected label 'clipboard', got %v", m2.pendingImageLabels)
+	if len(m2.pendingAttachments) != 1 || m2.pendingAttachments[0].Label != "clipboard" {
+		t.Errorf("expected label 'clipboard', got %#v", m2.pendingAttachments)
 	}
 }
 
@@ -28,8 +28,8 @@ func TestClipboardImageVisionGateRefuses(t *testing.T) {
 	pngData := []byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a}
 	updated := m.attachClipboardImage(pngData, "image/png")
 	m2 := updated
-	if len(m2.pendingImages) != 0 {
-		t.Fatalf("expected 0 pending images on non-vision model, got %d", len(m2.pendingImages))
+	if len(m2.turnImages()) != 0 {
+		t.Fatalf("expected 0 pending images on non-vision model, got %d", len(m2.turnImages()))
 	}
 }
 
@@ -38,7 +38,7 @@ func TestClipboardImageTooLargeRefuses(t *testing.T) {
 	largeData := make([]byte, 11*1024*1024) // 11 MiB > 10 MiB cap
 	updated := m.attachClipboardImage(largeData, "image/png")
 	m2 := updated
-	if len(m2.pendingImages) != 0 {
-		t.Fatalf("expected 0 pending images for oversize clipboard image, got %d", len(m2.pendingImages))
+	if len(m2.turnImages()) != 0 {
+		t.Fatalf("expected 0 pending images for oversize clipboard image, got %d", len(m2.turnImages()))
 	}
 }

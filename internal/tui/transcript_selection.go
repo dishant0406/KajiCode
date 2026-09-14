@@ -948,9 +948,13 @@ func (m model) renderSelectableUserRow(rowIndex int, row transcriptRow, width in
 	contentWidth := userPromptContentWidth(width)
 	wrapped := wrapPlainText(row.text, maxInt(1, contentWidth))
 	selectable := make([]transcriptSelectableLine, 0, len(wrapped))
+	// Image previews occupy the lines between the blank delimiter (bodyY offset 0)
+	// and the prompt text, so the first text line's bodyY must skip past them for
+	// mouse selection to map to the right row.
+	thumbLines := userThumbLines(row.thumbs, contentWidth)
 	for index, line := range wrapped {
 		meta := transcriptSelectableLine{
-			bodyY:     startBodyY + index + 1,
+			bodyY:     startBodyY + len(thumbLines) + index + 1,
 			rowIndex:  rowIndex,
 			textStart: lipgloss.Width(userPromptPrefix),
 			text:      line,

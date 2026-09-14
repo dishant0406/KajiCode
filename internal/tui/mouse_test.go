@@ -995,10 +995,7 @@ func composerMousePoint(t *testing.T, m model, column int) (int, int) {
 	if rect.height <= 0 {
 		t.Fatalf("expected visible composer rect, rect=%#v", rect)
 	}
-	contentY := 1
-	if renderAttachmentChips(m.pendingImageLabels, m.pendingDocuments) != "" {
-		contentY++
-	}
+	contentY := 1 + m.attachmentBlockLines(maxInt(1, width-4))
 	x := rect.x + 2 + lipgloss.Width(composerVisualLinePrefix(m.input, true)) + column
 	y := rect.y + contentY
 	return x, y

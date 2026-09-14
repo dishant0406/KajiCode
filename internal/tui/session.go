@@ -81,16 +81,12 @@ func (m model) startNewSession() model {
 	// message are only consumed at prompt-submit, so without clearing them here the
 	// fresh session's first prompt would silently inherit the old session's images,
 	// documents, or queued text.
-	m.pendingImages = nil
-	m.pendingImageLabels = nil
-	m.pendingDocuments = nil
+	m.pendingAttachments = nil
 	m.queuedMessage = ""
 	// The remembered /retry attachment snapshot belongs to the previous session
 	// too — dropping it keeps a post-/new /retry from re-staging old images or
 	// documents. lastPrompt is composer history (like inputHistory) and stays.
-	m.lastImages = nil
-	m.lastImageLabels = nil
-	m.lastDocuments = nil
+	m.lastAttachments = nil
 
 	m.homeNotice = "Started a new session."
 	if previousID != "" {
@@ -513,7 +509,7 @@ func transcriptRowsFromSessionEvents(events []sessions.Event) []transcriptRow {
 			}
 			switch role {
 			case "user":
-				rows = append(rows, transcriptRow{kind: rowUser, text: content})
+				rows = append(rows, transcriptRow{kind: rowUser, text: content, thumbs: thumbsFromPayload(payload)})
 			case "assistant":
 				// A persisted assistant message was a turn's final answer. Tool/timing
 				// counters were not recorded; the completion line omits those segments.

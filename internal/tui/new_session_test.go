@@ -7,7 +7,6 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
 	"github.com/dishant0406/KajiCode/internal/sessions"
 )
 
@@ -17,14 +16,13 @@ func TestStartNewSessionResetsState(t *testing.T) {
 	m.sessionEvents = []sessions.Event{{Type: sessions.EventMessage}}
 	m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendUser, text: "hello"})
 	// Stage attachments + a queued message that /new must not leak into the new session.
-	m.pendingImages = make([]kajicoderuntime.ImageBlock, 1)
-	m.pendingImageLabels = []string{"pic.png"}
-	m.pendingDocuments = []pendingDocument{{label: "doc.pdf"}}
+	m.pendingAttachments = []stagedAttachment{
+		newImageAttachment("pic.png", "image/png", nil),
+		{Label: "doc.pdf", DocText: "body"},
+	}
 	m.queuedMessage = "queued"
 	// The /retry attachment snapshot is prior-session state too and must not survive.
-	m.lastImages = make([]kajicoderuntime.ImageBlock, 1)
-	m.lastImageLabels = []string{"pic.png"}
-	m.lastDocuments = []pendingDocument{{label: "doc.pdf"}}
+	m.lastAttachments = []stagedAttachment{newImageAttachment("pic.png", "image/png", nil)}
 
 	next := m.startNewSession()
 
@@ -43,14 +41,13 @@ func TestStartNewSessionResetsState(t *testing.T) {
 		t.Fatalf("expected home notice to reference the previous session, got %q", next.homeNotice)
 	}
 	// Staged attachments and the queued message must not leak into the new session.
-	if len(next.pendingImages) != 0 || len(next.pendingImageLabels) != 0 || len(next.pendingDocuments) != 0 || next.queuedMessage != "" {
-		t.Fatalf("startNewSession must clear staged input, got images=%d labels=%d docs=%d queued=%q",
-			len(next.pendingImages), len(next.pendingImageLabels), len(next.pendingDocuments), next.queuedMessage)
+	if len(next.pendingAttachments) != 0 || next.queuedMessage != "" {
+		t.Fatalf("startNewSession must clear staged input, got attachments=%#v queued=%q",
+			next.pendingAttachments, next.queuedMessage)
 	}
 	// The /retry snapshot must not leak the previous session's attachments.
-	if len(next.lastImages) != 0 || len(next.lastImageLabels) != 0 || len(next.lastDocuments) != 0 {
-		t.Fatalf("startNewSession must clear the retry snapshot, got images=%d labels=%d docs=%d",
-			len(next.lastImages), len(next.lastImageLabels), len(next.lastDocuments))
+	if len(next.lastAttachments) != 0 {
+		t.Fatalf("startNewSession must clear the retry snapshot, got %#v", next.lastAttachments)
 	}
 }
 

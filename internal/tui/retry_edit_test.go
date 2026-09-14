@@ -5,8 +5,6 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
-
-	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
 )
 
 func TestCommandsRegistered(t *testing.T) {
@@ -39,9 +37,10 @@ func TestEditRecallsLastPrompt(t *testing.T) {
 func TestEditRestagesAttachments(t *testing.T) {
 	m := newModel(context.Background(), Options{ModelName: "gpt-4.1"})
 	m.lastPrompt = "describe the diagram"
-	m.lastImages = []kajicoderuntime.ImageBlock{{MediaType: "image/png"}}
-	m.lastImageLabels = []string{"diagram.png"}
-	m.lastDocuments = []pendingDocument{{label: "spec.pdf", text: "notes"}}
+	m.lastAttachments = []stagedAttachment{
+		newImageAttachment("diagram.png", "image/png", nil),
+		{Label: "spec.pdf", DocText: "notes"},
+	}
 	m.input.SetValue("/edit")
 
 	updated, _ := m.Update(testKey(tea.KeyEnter))
@@ -50,12 +49,11 @@ func TestEditRestagesAttachments(t *testing.T) {
 	if got := next.composerValue(); got != "describe the diagram" {
 		t.Fatalf("/edit should recall the prompt text, got %q", got)
 	}
-	if len(next.pendingImages) != 1 || len(next.pendingImageLabels) != 1 || next.pendingImageLabels[0] != "diagram.png" {
-		t.Fatalf("/edit should re-stage the remembered image, got imgs=%d labels=%v",
-			len(next.pendingImages), next.pendingImageLabels)
+	if len(next.turnImages()) != 1 || next.pendingAttachments[0].Label != "diagram.png" {
+		t.Fatalf("/edit should re-stage the remembered image, got %#v", next.pendingAttachments)
 	}
-	if len(next.pendingDocuments) != 1 || next.pendingDocuments[0].label != "spec.pdf" {
-		t.Fatalf("/edit should re-stage the remembered document, got %#v", next.pendingDocuments)
+	if len(next.pendingAttachments) != 2 || next.pendingAttachments[1].Label != "spec.pdf" {
+		t.Fatalf("/edit should re-stage the remembered document, got %#v", next.pendingAttachments)
 	}
 }
 

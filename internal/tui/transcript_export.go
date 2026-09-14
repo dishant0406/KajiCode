@@ -52,6 +52,11 @@ func (m model) plainTranscriptText() string {
 		}
 		b.WriteString(prefix)
 		b.WriteString(text)
+		// Exported text carries no terminal colors, so a user row with images
+		// records how many, keeping the export readable instead of dropping them.
+		for i := range row.thumbs {
+			b.WriteString(fmt.Sprintf("\n[image #%d]", i+1))
+		}
 		b.WriteString("\n\n")
 	}
 	return b.String()

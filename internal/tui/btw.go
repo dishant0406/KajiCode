@@ -126,16 +126,12 @@ func (m model) handleBTWCommand(question string) (model, tea.Cmd) {
 	side.pendingSpecReview = nil
 	side.queuedMessage = ""
 	side.lastPrompt = ""
-	side.lastImages = nil
-	side.lastImageLabels = nil
-	side.lastDocuments = nil
+	side.lastAttachments = nil
 	side.inputHistory = nil
 	side.historyIdx = 0
 	side.historyDraft = composerState{}
 	if question == "" {
-		side.pendingImages = nil
-		side.pendingImageLabels = nil
-		side.pendingDocuments = nil
+		side.pendingAttachments = nil
 	}
 	side.loops = nil
 	side.activeLoopID = ""

@@ -60,6 +60,12 @@ type transcriptRow struct {
 	turnTools   int
 	turnElapsed time.Duration
 
+	// thumbs holds the image previews for a user row, so a pasted image stays
+	// visible in the transcript after it is sent. Live sends carry decoded thumbs
+	// directly; a resumed session restores them from the persisted encodings.
+	// Nil for every non-image row.
+	thumbs []*attachmentThumb
+
 	// renderFingerprint is a compact, immutable identity for render-affecting row
 	// content. Long transcripts rebuild cache keys on every keypress; storing this
 	// once keeps that path proportional to row count instead of transcript bytes.
@@ -77,8 +83,9 @@ const (
 )
 
 type transcriptAction struct {
-	kind transcriptActionKind
-	text string
+	kind   transcriptActionKind
+	text   string
+	thumbs []*attachmentThumb // user rows: the image previews to render under the prompt
 }
 
 func initialTranscript() []transcriptRow {
@@ -93,7 +100,7 @@ func reduceTranscript(rows []transcriptRow, action transcriptAction) []transcrip
 	case actionClear:
 		return initialTranscript()
 	case actionAppendUser:
-		return appendRow(rows, rowUser, action.text)
+		return appendTranscriptRow(rows, transcriptRow{kind: rowUser, text: action.text, thumbs: action.thumbs})
 	case actionAppendAssistant:
 		return appendRow(rows, rowAssistant, action.text)
 	case actionAppendSystem:

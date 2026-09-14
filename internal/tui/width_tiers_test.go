@@ -179,7 +179,10 @@ func TestViewNeverExceedsTerminalWidth(t *testing.T) {
 			}
 		}
 
-		m.pendingImageLabels = []string{"Screenshot 2026-06-10 at 09.41.13.png", "Screenshot 2026-06-10 at 09.44.02.png"}
+		m.pendingAttachments = []stagedAttachment{
+			newImageAttachment("Screenshot 2026-06-10 at 09.41.13.png", "image/png", nil),
+			newImageAttachment("Screenshot 2026-06-10 at 09.44.02.png", "image/png", nil),
+		}
 		m.transcript = append(m.transcript,
 			transcriptRow{kind: rowUser, text: "please change the longest line in the file to something even longer than before"},
 			transcriptRow{kind: rowToolCall, id: "c1", tool: "grep", detail: "internal/cli", arg: "RegisterFlag|flag\\."},

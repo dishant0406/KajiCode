@@ -50,7 +50,7 @@ func (m model) handleSpecCommand(task string) (tea.Model, tea.Cmd) {
 		m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendError, text: "session record error: " + err.Error()})
 	}
 
-	turnImages := m.pendingImages
+	turnImages := m.turnImages()
 	if len(turnImages) > 0 && !m.modelSupportsVisionTUI() && !m.canRouteVisionImages(m.roleRouter()) {
 		name := m.effectiveModelName()
 		if name == "" {
@@ -62,8 +62,7 @@ func (m model) handleSpecCommand(task string) (tea.Model, tea.Cmd) {
 		})
 		turnImages = nil
 	}
-	m.pendingImages = nil
-	m.pendingImageLabels = nil
+	m.pendingAttachments = nil
 
 	specRegistry := cloneToolRegistry(m.registry)
 	specmode.RegisterDraftTools(specRegistry, m.cwd, m.now)

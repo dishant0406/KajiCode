@@ -96,9 +96,7 @@ func (m model) composerBoxLineCount(width int) int {
 		return 1
 	}
 	lines := 2 // top border + divider
-	if renderAttachmentChips(m.pendingImageLabels, m.pendingDocuments) != "" {
-		lines++
-	}
+	lines += m.attachmentBlockLines(maxInt(1, width-4))
 	return lines + m.composerContentLineCount(maxInt(1, width-4))
 }
 

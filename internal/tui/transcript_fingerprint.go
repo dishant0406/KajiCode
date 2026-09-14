@@ -61,6 +61,9 @@ func transcriptRowFingerprint(row transcriptRow) string {
 	for _, file := range row.changedFiles {
 		writeFingerprintField(&hash, file)
 	}
+	for _, thumb := range row.thumbs {
+		writeFingerprintField(&hash, thumbFingerprint(thumb))
+	}
 	writeFingerprintField(&hash, permissionCacheFingerprint(row.permission))
 	writeFingerprintField(&hash, askUserCacheFingerprint(row.askUser))
 	writeSpecialistFingerprintFields(&hash, row.specialistInfo)
@@ -84,6 +87,22 @@ func writeSpecialistFingerprintFields(hash *transcriptFingerprintHash, info *spe
 	writeFingerprintField(hash, strconv.Itoa(info.tokenCount))
 	writeFingerprintField(hash, info.currentTool)
 	writeFingerprintField(hash, info.currentDetail)
+}
+
+// thumbFingerprint is a content identity for a preview grid, so a render-cache
+// key changes when a row's images change (or are restored on resume). It hashes
+// the grid pixels, not just its size, so two same-sized images can never collide.
+// Empty for a nil grid.
+func thumbFingerprint(thumb *attachmentThumb) string {
+	if thumb == nil {
+		return ""
+	}
+	hash := newTranscriptFingerprintHash()
+	writeFingerprintField(&hash, fmt.Sprintf("%dx%d", thumb.w, thumb.h))
+	for _, p := range thumb.px {
+		hash.writeString(string([]byte{p.r, p.g, p.b}))
+	}
+	return hash.sumString()
 }
 
 func writeFingerprintTime(hash *transcriptFingerprintHash, value time.Time) {

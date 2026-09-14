@@ -88,19 +88,19 @@ func TestImageCommandAttachRendersChip(t *testing.T) {
 	updated, _ := m.handleSubmit()
 	next := updated.(model)
 
-	if len(next.pendingImages) != 1 {
-		t.Fatalf("expected 1 pending image, got %d", len(next.pendingImages))
+	if len(next.turnImages()) != 1 {
+		t.Fatalf("expected 1 pending image, got %d", len(next.turnImages()))
 	}
-	if next.pendingImages[0].MediaType != "image/png" {
-		t.Fatalf("MediaType = %q, want image/png", next.pendingImages[0].MediaType)
+	if next.pendingAttachments[0].Image.MediaType != "image/png" {
+		t.Fatalf("MediaType = %q, want image/png", next.pendingAttachments[0].Image.MediaType)
 	}
-	if len(next.pendingImageLabels) != 1 || next.pendingImageLabels[0] != "photo.png" {
-		t.Fatalf("labels = %v, want [photo.png]", next.pendingImageLabels)
+	if len(next.pendingAttachments) != 1 || next.pendingAttachments[0].Label != "photo.png" {
+		t.Fatalf("labels = %#v, want [photo.png]", next.pendingAttachments)
 	}
-	if chips := renderImageChips(next.pendingImageLabels); chips == "" {
+	if chips := renderAttachmentChips(next.pendingAttachments); chips == "" {
 		t.Fatal("expected a chip row for pending images")
-	} else if !strings.Contains(chips, "[Image #1]") || strings.Contains(chips, "photo.png") {
-		t.Fatalf("chip row %q should be the compact numbered chip, not the file name", chips)
+	} else if !strings.Contains(chips, "[Image #1]") {
+		t.Fatalf("chip row %q should be the numbered chip", chips)
 	}
 }
 
@@ -117,8 +117,8 @@ func TestImageCommandClear(t *testing.T) {
 	updated, _ = m.handleSubmit()
 	next := updated.(model)
 
-	if len(next.pendingImages) != 0 || len(next.pendingImageLabels) != 0 {
-		t.Fatalf("expected cleared pending images, got %d/%d", len(next.pendingImages), len(next.pendingImageLabels))
+	if len(next.pendingAttachments) != 0 {
+		t.Fatalf("expected cleared pending images, got %#v", next.pendingAttachments)
 	}
 }
 
@@ -132,8 +132,8 @@ func TestImageCommandNonVisionRefuses(t *testing.T) {
 	updated, _ := m.handleSubmit()
 	next := updated.(model)
 
-	if len(next.pendingImages) != 0 {
-		t.Fatalf("non-vision model must refuse: got %d pending images", len(next.pendingImages))
+	if len(next.turnImages()) != 0 {
+		t.Fatalf("non-vision model must refuse: got %d pending images", len(next.turnImages()))
 	}
 	notice := lastTranscriptText(next)
 	if !strings.Contains(notice, "does not support image input") {
@@ -148,7 +148,7 @@ func TestImageCommandMissingFileNotice(t *testing.T) {
 	updated, _ := m.handleSubmit()
 	next := updated.(model)
 
-	if len(next.pendingImages) != 0 {
+	if len(next.turnImages()) != 0 {
 		t.Fatal("a missing file must not attach")
 	}
 	if notice := lastTranscriptText(next); !strings.Contains(notice, "nope.png") {
@@ -160,7 +160,10 @@ func TestTranscriptViewShowsImageChips(t *testing.T) {
 	m := newModel(context.Background(), Options{ModelName: "gpt-4.1"})
 	m.width = 100
 	m.height = 30
-	m.pendingImageLabels = []string{"photo.png", "diagram.gif"}
+	m.pendingAttachments = []stagedAttachment{
+		newImageAttachment("photo.png", "image/png", nil),
+		newImageAttachment("diagram.gif", "image/gif", nil),
+	}
 
 	view := m.transcriptView()
 	if !strings.Contains(view, "[Image #1]") || !strings.Contains(view, "[Image #2]") {
@@ -193,8 +196,8 @@ func TestSubmitThreadsImagesThenClears(t *testing.T) {
 	m.input.SetValue("/image photo.png")
 	updated, _ := m.handleSubmit()
 	m = updated.(model)
-	if len(m.pendingImages) != 1 {
-		t.Fatalf("setup: expected 1 staged image, got %d", len(m.pendingImages))
+	if len(m.turnImages()) != 1 {
+		t.Fatalf("setup: expected 1 staged image, got %d", len(m.turnImages()))
 	}
 
 	m.input.SetValue("describe this")
@@ -203,8 +206,8 @@ func TestSubmitThreadsImagesThenClears(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("expected a prompt submit to start a run")
 	}
-	if len(next.pendingImages) != 0 || len(next.pendingImageLabels) != 0 {
-		t.Fatalf("submit must clear pending images, got %d/%d", len(next.pendingImages), len(next.pendingImageLabels))
+	if len(next.pendingAttachments) != 0 {
+		t.Fatalf("submit must clear pending images, got %#v", next.pendingAttachments)
 	}
 
 	execCmd(cmd) // run the agent goroutine; it invokes captureRunImages
@@ -249,8 +252,8 @@ func TestSubmitDropsImagesWhenModelSwitchedToNonVision(t *testing.T) {
 	m.input.SetValue("/image photo.png")
 	updated, _ := m.handleSubmit()
 	m = updated.(model)
-	if len(m.pendingImages) != 1 {
-		t.Fatalf("setup: expected 1 staged image, got %d", len(m.pendingImages))
+	if len(m.turnImages()) != 1 {
+		t.Fatalf("setup: expected 1 staged image, got %d", len(m.turnImages()))
 	}
 
 	// Simulate a /model switch to a non-vision (catalog-unknown) model.
@@ -262,8 +265,8 @@ func TestSubmitDropsImagesWhenModelSwitchedToNonVision(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("expected a prompt submit to start a run")
 	}
-	if len(next.pendingImages) != 0 || len(next.pendingImageLabels) != 0 {
-		t.Fatalf("submit must clear pending images, got %d/%d", len(next.pendingImages), len(next.pendingImageLabels))
+	if len(next.pendingAttachments) != 0 {
+		t.Fatalf("submit must clear pending images, got %#v", next.pendingAttachments)
 	}
 	if notice := lastTranscriptText(next); !strings.Contains(notice, "does not support image input") {
 		t.Fatalf("expected an inline drop notice, got %q", notice)
@@ -331,17 +334,17 @@ func TestImageCommandAttachesPDFTextOnNonVisionModel(t *testing.T) {
 	updated, _ := m.handleSubmit()
 	next := updated.(model)
 
-	if len(next.pendingDocuments) != 1 {
-		t.Fatalf("expected 1 pending document, got %d", len(next.pendingDocuments))
+	if len(next.pendingAttachments) != 1 {
+		t.Fatalf("expected 1 pending document, got %d", len(next.pendingAttachments))
 	}
-	if next.pendingDocuments[0].label != "spec.pdf" {
-		t.Fatalf("document label = %q, want spec.pdf", next.pendingDocuments[0].label)
+	if next.pendingAttachments[0].Label != "spec.pdf" {
+		t.Fatalf("document label = %q, want spec.pdf", next.pendingAttachments[0].Label)
 	}
-	if !strings.Contains(next.pendingDocuments[0].text, "Design spec body text") {
-		t.Fatalf("document text %q should contain the body", next.pendingDocuments[0].text)
+	if !strings.Contains(next.pendingAttachments[0].DocText, "Design spec body text") {
+		t.Fatalf("document text %q should contain the body", next.pendingAttachments[0].DocText)
 	}
-	if len(next.pendingImages) != 0 {
-		t.Fatalf("no rasterizer: expected 0 page images, got %d", len(next.pendingImages))
+	if len(next.turnImages()) != 0 {
+		t.Fatalf("no rasterizer: expected 0 page images, got %d", len(next.turnImages()))
 	}
 	// A successful attach is silent now (the [Doc #N] composer chip is the
 	// confirmation); the pending-document assertions above verify it.
@@ -359,11 +362,11 @@ func TestImageCommandAttachesExtensionlessPDFByContent(t *testing.T) {
 	updated, _ := m.handleSubmit()
 	next := updated.(model)
 
-	if len(next.pendingDocuments) != 1 {
-		t.Fatalf("expected 1 pending document from a content-sniffed PDF, got %d", len(next.pendingDocuments))
+	if len(next.pendingAttachments) != 1 {
+		t.Fatalf("expected 1 pending document from a content-sniffed PDF, got %d", len(next.pendingAttachments))
 	}
-	if !strings.Contains(next.pendingDocuments[0].text, "Extensionless PDF body text") {
-		t.Fatalf("document text %q should contain the body", next.pendingDocuments[0].text)
+	if !strings.Contains(next.pendingAttachments[0].DocText, "Extensionless PDF body text") {
+		t.Fatalf("document text %q should contain the body", next.pendingAttachments[0].DocText)
 	}
 	if notice := lastTranscriptText(next); strings.Contains(notice, "does not support image input") {
 		t.Fatalf("a real PDF must not be refused at the vision gate, got %q", notice)
@@ -382,7 +385,7 @@ func TestImageCommandRejectsFakePDF(t *testing.T) {
 	updated, _ := m.handleSubmit()
 	next := updated.(model)
 
-	if len(next.pendingDocuments) != 0 || len(next.pendingImages) != 0 {
+	if len(next.pendingAttachments) != 0 {
 		t.Fatal("a fake PDF must stage nothing")
 	}
 	if notice := lastTranscriptText(next); !strings.Contains(notice, "not a PDF") {
@@ -399,15 +402,15 @@ func TestImageCommandClearAlsoClearsDocuments(t *testing.T) {
 	m.input.SetValue("/image spec.pdf")
 	updated, _ := m.handleSubmit()
 	m = updated.(model)
-	if len(m.pendingDocuments) != 1 {
-		t.Fatalf("setup: expected 1 staged document, got %d", len(m.pendingDocuments))
+	if len(m.pendingAttachments) != 1 {
+		t.Fatalf("setup: expected 1 staged document, got %d", len(m.pendingAttachments))
 	}
 
 	m.input.SetValue("/image clear")
 	updated, _ = m.handleSubmit()
 	next := updated.(model)
-	if len(next.pendingDocuments) != 0 {
-		t.Fatalf("clear must drop staged documents, got %d", len(next.pendingDocuments))
+	if len(next.pendingAttachments) != 0 {
+		t.Fatalf("clear must drop staged documents, got %#v", next.pendingAttachments)
 	}
 }
 
@@ -416,7 +419,7 @@ func TestTranscriptViewShowsDocumentChips(t *testing.T) {
 	m := newModel(context.Background(), Options{ModelName: "gpt-4.1"})
 	m.width = 100
 	m.height = 30
-	m.pendingDocuments = []pendingDocument{{label: "spec.pdf", text: "body"}}
+	m.pendingAttachments = []stagedAttachment{{Label: "spec.pdf", DocText: "body"}}
 
 	view := m.transcriptView()
 	if !strings.Contains(view, "[Doc #1]") {
@@ -447,8 +450,8 @@ func TestSubmitPrependsDocumentTextThenClears(t *testing.T) {
 	m.input.SetValue("/image spec.pdf")
 	updated, _ := m.handleSubmit()
 	m = updated.(model)
-	if len(m.pendingDocuments) != 1 {
-		t.Fatalf("setup: expected 1 staged document, got %d", len(m.pendingDocuments))
+	if len(m.pendingAttachments) != 1 {
+		t.Fatalf("setup: expected 1 staged document, got %d", len(m.pendingAttachments))
 	}
 
 	m.input.SetValue("summarize the attached doc")
@@ -457,8 +460,8 @@ func TestSubmitPrependsDocumentTextThenClears(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("expected a prompt submit to start a run")
 	}
-	if len(next.pendingDocuments) != 0 {
-		t.Fatalf("submit must clear staged documents, got %d", len(next.pendingDocuments))
+	if len(next.pendingAttachments) != 0 {
+		t.Fatalf("submit must clear staged documents, got %#v", next.pendingAttachments)
 	}
 
 	updated, _ = next.Update(execCmd(cmd))
@@ -486,19 +489,23 @@ func TestSubmitPrependsDocumentTextThenClears(t *testing.T) {
 }
 
 func TestRenderAttachmentChips(t *testing.T) {
-	if got := renderAttachmentChips(nil, nil); got != "" {
+	if got := renderAttachmentChips(nil); got != "" {
 		t.Fatalf("empty attachments should render no chips, got %q", got)
 	}
-	got := renderAttachmentChips([]string{"a.png", "b.png"}, []pendingDocument{{label: "spec.pdf"}})
+	got := renderAttachmentChips([]stagedAttachment{
+		newImageAttachment("a.png", "image/png", nil),
+		newImageAttachment("b.png", "image/gif", nil),
+		{Label: "spec.pdf", DocText: "body"},
+	})
 	if !strings.Contains(got, "[Image #1]") || !strings.Contains(got, "[Image #2]") {
 		t.Fatalf("chip row %q should include numbered images", got)
 	}
 	if !strings.Contains(got, "[Doc #1]") {
 		t.Fatalf("chip row %q should include the document", got)
 	}
-	// The long file name must NOT appear — compact numbered chips only.
-	if strings.Contains(got, "a.png") || strings.Contains(got, "spec.pdf") {
-		t.Fatalf("chip row %q should not show file names", got)
+	// Each chip carries its filename so several attachments stay distinguishable.
+	if !strings.Contains(got, "a.png") {
+		t.Fatalf("chip row %q should name the attachment", got)
 	}
 }
 
@@ -529,9 +536,10 @@ func TestRetryResendsAttachments(t *testing.T) {
 	// State left after a prior vision+PDF prompt was submitted: the pending queues
 	// are cleared, but the remembered snapshot survives so /retry can reproduce it.
 	m.lastPrompt = "describe both"
-	m.lastImages = []kajicoderuntime.ImageBlock{{MediaType: "image/png", Data: []byte{0x89, 'P', 'N', 'G'}}}
-	m.lastImageLabels = []string{"photo.png"}
-	m.lastDocuments = []pendingDocument{{label: "spec.pdf", text: "Top secret design notes"}}
+	m.lastAttachments = []stagedAttachment{
+		newImageAttachment("photo.png", "image/png", []byte{0x89, 'P', 'N', 'G'}),
+		{Label: "spec.pdf", DocText: "Top secret design notes"},
+	}
 
 	m.input.SetValue("/retry")
 	updated, cmd := m.handleSubmit()
@@ -541,13 +549,11 @@ func TestRetryResendsAttachments(t *testing.T) {
 	}
 	// The retried turn re-consumes and then clears the queues, exactly like a fresh
 	// submit; the snapshot must survive so a second /retry stays reproducible.
-	if len(next.pendingImages) != 0 || len(next.pendingImageLabels) != 0 || len(next.pendingDocuments) != 0 {
-		t.Fatalf("retry must clear pending queues after resend, got imgs=%d labels=%d docs=%d",
-			len(next.pendingImages), len(next.pendingImageLabels), len(next.pendingDocuments))
+	if len(next.pendingAttachments) != 0 {
+		t.Fatalf("retry must clear pending queues after resend, got %#v", next.pendingAttachments)
 	}
-	if len(next.lastImages) != 1 || len(next.lastDocuments) != 1 {
-		t.Fatalf("retry must keep the snapshot for a subsequent retry, got imgs=%d docs=%d",
-			len(next.lastImages), len(next.lastDocuments))
+	if len(next.lastAttachments) != 2 {
+		t.Fatalf("retry must keep the snapshot for a subsequent retry, got %#v", next.lastAttachments)
 	}
 
 	updated, _ = next.Update(execCmd(cmd))
@@ -609,8 +615,8 @@ func TestImageCommandAzureDiscoveryIdVisionRoleAttaches(t *testing.T) {
 	m.input.SetValue("/image photo.png")
 	nextAny, _ := m.handleSubmit()
 	next := nextAny.(model)
-	if len(next.pendingImages) != 1 {
-		t.Fatalf("expected 1 pending image under the azure vision role, got %d", len(next.pendingImages))
+	if len(next.turnImages()) != 1 {
+		t.Fatalf("expected 1 pending image under the azure vision role, got %d", len(next.turnImages()))
 	}
 	if notice := lastTranscriptText(next); strings.Contains(notice, "does not support image input") {
 		t.Fatalf("azure vision role should not refuse the image, got %q", notice)
@@ -659,8 +665,8 @@ func TestImageCommandVisionRoleRoutedModelAttaches(t *testing.T) {
 	if !next.modelSupportsVisionTUI() {
 		t.Fatal("vision role routes to a vision model; gate should pass")
 	}
-	if len(next.pendingImages) != 1 {
-		t.Fatalf("expected 1 pending image under vision role, got %d", len(next.pendingImages))
+	if len(next.turnImages()) != 1 {
+		t.Fatalf("expected 1 pending image under vision role, got %d", len(next.turnImages()))
 	}
 	if notice := lastTranscriptText(next); strings.Contains(notice, "does not support image input") {
 		t.Fatalf("vision role should not emit a refusal notice, got %q", notice)
@@ -695,8 +701,8 @@ func TestImageCommandNonVisionRoleRoutedModelRefuses(t *testing.T) {
 	if !strings.Contains(lastTranscriptText(next), "does not support image input") {
 		t.Fatal("routed text-only model must refuse the image")
 	}
-	if len(next.pendingImages) != 0 {
-		t.Fatalf("routed text-only model must not attach, got %d", len(next.pendingImages))
+	if len(next.turnImages()) != 0 {
+		t.Fatalf("routed text-only model must not attach, got %d", len(next.turnImages()))
 	}
 }
 

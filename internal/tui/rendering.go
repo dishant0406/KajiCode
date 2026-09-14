@@ -525,6 +525,11 @@ func renderUserRow(row transcriptRow, width int) string {
 	// The ▌ accent gutter alone marks it as the user's, matching the clean
 	// reference agents instead of a heavy chat bubble.
 	lines = append(lines, "")
+	// The image previews sit between the gutter delimiter and the prompt text, so
+	// a pasted image stays visible in history exactly as it looked in the composer.
+	for _, preview := range userThumbLines(row.thumbs, contentWidth) {
+		lines = append(lines, userPromptPrefix+preview)
+	}
 	for i, line := range wrapped {
 		styled := kajicodeTheme.ink.Bold(true).Render(line)
 		// Skill/user-command invocations: the leading "/slug" token is painted

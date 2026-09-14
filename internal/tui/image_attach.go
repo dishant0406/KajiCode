@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/dishant0406/KajiCode/internal/imageinput"
-	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
 	"github.com/dishant0406/KajiCode/internal/modelregistry"
 )
 
@@ -132,11 +131,7 @@ func (m model) attachClipboardImage(data []byte, mediaType string) model {
 	if len(data) > imageinput.MaxImageBytes {
 		return m.appendImageNotice("Clipboard image is larger than the 10 MiB limit.")
 	}
-	m.pendingImages = append(m.pendingImages, kajicoderuntime.ImageBlock{
-		MediaType: mediaType,
-		Data:      data,
-	})
-	m.pendingImageLabels = append(m.pendingImageLabels, "clipboard")
+	m.pendingAttachments = append(m.pendingAttachments, newImageAttachment("clipboard", mediaType, data))
 	return m
 }
 
@@ -151,9 +146,7 @@ func (m model) handleImageCommand(arg string) model {
 	case trimmed == "":
 		return m.appendImageNotice("Usage: /image <path>  (image or PDF; or /image clear)")
 	case strings.EqualFold(trimmed, "clear"):
-		m.pendingImages = nil
-		m.pendingImageLabels = nil
-		m.pendingDocuments = nil
+		m.pendingAttachments = nil
 		return m.appendImageNotice("Cleared pending attachments.")
 	}
 
@@ -179,18 +172,10 @@ func (m model) handleImageCommand(arg string) model {
 		return m.appendImageNotice(err.Error())
 	}
 
-	m.pendingImages = append(m.pendingImages, block)
-	m.pendingImageLabels = append(m.pendingImageLabels, filepath.Base(trimmed))
+	m.pendingAttachments = append(m.pendingAttachments, newImageAttachment(filepath.Base(trimmed), block.MediaType, block.Data))
 	// No "attached" system message: the composer attachment chip ([Image #N]) is
 	// the confirmation, matching the compact attach UX.
 	return m
-}
-
-// pendingDocument is a PDF staged by /image for the next user turn: its extracted
-// text layer (prepended to the prompt at submit time) and a display label.
-type pendingDocument struct {
-	label string
-	text  string
 }
 
 // handleDocumentAttach loads a PDF through imageinput.LoadDocument. The text
@@ -209,11 +194,10 @@ func (m model) handleDocumentAttach(path string) model {
 
 	label := filepath.Base(path)
 	if strings.TrimSpace(doc.Text) != "" {
-		m.pendingDocuments = append(m.pendingDocuments, pendingDocument{label: label, text: doc.Text})
+		m.pendingAttachments = append(m.pendingAttachments, stagedAttachment{Label: label, DocText: doc.Text})
 	}
 	for _, block := range doc.Images {
-		m.pendingImages = append(m.pendingImages, block)
-		m.pendingImageLabels = append(m.pendingImageLabels, label)
+		m.pendingAttachments = append(m.pendingAttachments, newImageAttachment(label, block.MediaType, block.Data))
 	}
 	// The composer attachment chip ([Doc #N] / [Image #N]) is the confirmation; no
 	// "attached" system message.
@@ -224,18 +208,20 @@ func (m model) handleDocumentAttach(path string) model {
 // preamble and clears the pending documents. The preamble names each document so
 // the model can attribute the text; an empty result means nothing was staged.
 func (m *model) consumePendingDocuments() string {
-	if len(m.pendingDocuments) == 0 {
-		return ""
-	}
 	var b strings.Builder
-	for _, doc := range m.pendingDocuments {
-		b.WriteString("Attached document: ")
-		b.WriteString(doc.label)
-		b.WriteString("\n")
-		b.WriteString(doc.text)
-		b.WriteString("\n\n")
+	var docs []stagedAttachment
+	for _, a := range m.pendingAttachments {
+		if a.isDoc() {
+			b.WriteString("Attached document: ")
+			b.WriteString(a.Label)
+			b.WriteString("\n")
+			b.WriteString(a.DocText)
+			b.WriteString("\n\n")
+			continue
+		}
+		docs = append(docs, a)
 	}
-	m.pendingDocuments = nil
+	m.pendingAttachments = docs
 	return b.String()
 }
 
@@ -252,61 +238,23 @@ func (m model) appendImageNotice(text string) model {
 }
 
 // removeLastAttachment drops the rightmost pending attachment chip and reports
-// whether anything was removed. Documents render after images, so a staged
-// document is removed before images; image pops keep pendingImages and
-// pendingImageLabels in lockstep.
+// whether anything was removed.
 func (m model) removeLastAttachment() (model, bool) {
-	if n := len(m.pendingDocuments); n > 0 {
-		m.pendingDocuments = m.pendingDocuments[:n-1]
-		return m, true
-	}
-	if n := len(m.pendingImageLabels); n > 0 {
-		m.pendingImageLabels = m.pendingImageLabels[:n-1]
-		if len(m.pendingImages) > 0 {
-			m.pendingImages = m.pendingImages[:len(m.pendingImages)-1]
-		}
+	if n := len(m.pendingAttachments); n > 0 {
+		m.pendingAttachments = m.pendingAttachments[:n-1]
 		return m, true
 	}
 	return m, false
 }
 
-// renderImageChips builds a compact "[Image #1] [Image #2]" row for the pending
-// image attachments, or "" when there are none, so the long file name never
-// clutters the input. Kept plain so the renderer can wrap/style it consistently.
-func renderImageChips(labels []string) string {
-	if len(labels) == 0 {
-		return ""
-	}
-	chips := make([]string, 0, len(labels))
-	for i := range labels {
-		chips = append(chips, fmt.Sprintf("[Image #%d]", i+1))
-	}
-	return strings.Join(chips, " ")
-}
-
-// renderAttachmentChips builds the pending-attachment row from both staged images
-// and staged documents, e.g. "[Image #1] [Image #2] [Doc #1]". Returns "" when
-// nothing is staged. Numbered (not named) so a long screenshot path never shows
-// in the composer.
 // visionDropWarning returns a one-line notice when images are staged but the
 // (now active) model can't accept them, so switching to a non-vision model warns
 // the user immediately at switch time instead of silently dropping the images at
 // submit. Empty when there is nothing staged or the model supports vision.
 func (m model) visionDropWarning() string {
-	if len(m.pendingImages) == 0 || m.modelSupportsVisionTUI() {
+	if len(m.turnImages()) == 0 || m.modelSupportsVisionTUI() {
 		return ""
 	}
 	return fmt.Sprintf("⚠ %d staged image(s) will be dropped — %s has no vision support.",
-		len(m.pendingImages), displayValue(m.modelName, "the active model"))
-}
-
-func renderAttachmentChips(imageLabels []string, docs []pendingDocument) string {
-	chips := make([]string, 0, len(imageLabels)+len(docs))
-	for i := range imageLabels {
-		chips = append(chips, fmt.Sprintf("[Image #%d]", i+1))
-	}
-	for i := range docs {
-		chips = append(chips, fmt.Sprintf("[Doc #%d]", i+1))
-	}
-	return strings.Join(chips, " ")
+		len(m.turnImages()), displayValue(m.modelName, "the active model"))
 }

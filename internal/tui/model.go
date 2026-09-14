@@ -365,15 +365,13 @@ type model struct {
 	// typed, so the UI shows the compact "/slug args" form instead (the full
 	// body still reaches the agent and the session record).
 	promptEchoOverride string
-	// lastImages/lastImageLabels/lastDocuments remember the attachments consumed
-	// by the most recent submitted prompt. launchPrompt clears the pending queues
-	// once a turn is sent, so /retry re-stages these to reproduce the exact same
-	// request — otherwise a vision/PDF-backed prompt would silently retry as
-	// text-only and answer a different task. They share the underlying image bytes
-	// with the sent turn (never mutated in place), so no deep copy is needed.
-	lastImages      []kajicoderuntime.ImageBlock
-	lastImageLabels []string
-	lastDocuments   []pendingDocument
+	// lastAttachments remembers the attachments consumed by the most recent
+	// submitted prompt. launchPrompt clears the pending list once a turn is sent,
+	// so /retry re-stages these to reproduce the exact same request — otherwise a
+	// vision/PDF-backed prompt would silently retry as text-only and answer a
+	// different task. The slice shares the underlying image bytes with the sent
+	// turn (never mutated in place), so no deep copy is needed.
+	lastAttachments []stagedAttachment
 	// historyIdx == len(inputHistory) means "not navigating"; historyDraft
 	// preserves the exact multiline composer state from before recall started.
 	inputHistory []composerHistoryEntry
@@ -527,18 +525,11 @@ type model struct {
 	// see modelContextWindow.
 	ollamaContextWindowByModel map[string]int
 
-	// pendingImages holds image attachments staged by /image for the next user
-	// turn; pendingImageLabels are their display names (base(path)) for the chip
-	// row. Both are cleared after a prompt is submitted (or /image clear). nil =
-	// no attachments = today's text-only behavior exactly.
-	pendingImages      []kajicoderuntime.ImageBlock
-	pendingImageLabels []string
-
-	// pendingDocuments holds PDF text layers staged by /image for the next user
-	// turn; the text is prepended to the prompt as a preamble at submit time and
-	// the slice is cleared (or by /image clear). nil = no documents staged.
-	pendingDocuments []pendingDocument
-
+	// pendingAttachments holds everything staged by /image (or a clipboard paste)
+	// for the next user turn: images (with pre-decoded previews), PDF text layers,
+	// and opaque files. Cleared after a prompt is submitted, on /image clear, or on
+	// /new. nil = no attachments = today's text-only behavior exactly.
+	pendingAttachments []stagedAttachment
 	// captureRunImages, when set, is invoked with the images a run is launched
 	// with. Nil in production; used by tests to assert image threading without a
 	// real provider round-trip.
@@ -4250,10 +4241,10 @@ func (m model) composerBox(width int) string {
 
 	rendered := make([]string, 0, len(lines)+3)
 	rendered = append(rendered, kajicodeTheme.lineStrong.Render("╭"+strings.Repeat("─", width-2)+"╮"))
-	// Attachment chips ([Image #1] …) render INSIDE the box, above the input line,
-	// instead of as a separate row above the box.
-	if chips := renderAttachmentChips(m.pendingImageLabels, m.pendingDocuments); chips != "" {
-		fitted := fitStyledLine(kajicodeTheme.muted.Render(chips), innerWidth)
+	// Attachment chips ([Image #1] …) and the first image's live preview render
+	// INSIDE the box, above the input line, instead of as a separate row above it.
+	for _, blockLine := range m.attachmentBlock(innerWidth) {
+		fitted := fitStyledLine(blockLine, innerWidth)
 		pad := strings.Repeat(" ", maxInt(0, innerWidth-lipgloss.Width(fitted)))
 		rendered = append(rendered, kajicodeTheme.lineStrong.Render("│ ")+fitted+pad+kajicodeTheme.lineStrong.Render(" │"))
 	}
@@ -5006,9 +4997,7 @@ func (m model) dispatchCommand(command parsedCommand) (tea.Model, tea.Cmd) {
 		// an identical request (document preamble + images + vision re-check). Without
 		// this the queues are empty and /retry would resend a text-only prompt,
 		// silently dropping the image/PDF context and answering a different task.
-		m.pendingImages = m.lastImages
-		m.pendingImageLabels = m.lastImageLabels
-		m.pendingDocuments = m.lastDocuments
+		m.pendingAttachments = m.lastAttachments
 		return m.launchPrompt(m.lastPrompt)
 	case commandEdit:
 		if strings.TrimSpace(m.lastPrompt) == "" {
@@ -5020,9 +5009,7 @@ func (m model) dispatchCommand(command parsedCommand) (tea.Model, tea.Cmd) {
 		// row is the visible confirmation. Without this, editing a vision- or
 		// document-backed prompt would silently submit a text-only version and
 		// answer a different task (the same gap /retry guards against).
-		m.pendingImages = m.lastImages
-		m.pendingImageLabels = m.lastImageLabels
-		m.pendingDocuments = m.lastDocuments
+		m.pendingAttachments = m.lastAttachments
 		m.input.SetValue(m.lastPrompt)
 		return m, nil
 	case commandCopy:
@@ -5081,11 +5068,15 @@ func (m model) launchPrompt(prompt string) (model, tea.Cmd) {
 		echo = m.promptEchoOverride
 		m.promptEchoOverride = ""
 	}
-	m.lastImages = m.pendingImages
-	m.lastImageLabels = m.pendingImageLabels
-	m.lastDocuments = m.pendingDocuments
+	m.lastAttachments = m.pendingAttachments
 	m.homeNotice = ""
-	m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendUser, text: echo})
+	m.transcript = reduceTranscript(m.transcript, transcriptAction{
+		kind: actionAppendUser,
+		text: echo,
+		// Carry the live previews into the transcript row so the user's image
+		// thumbs stay visible in history after the turn is sent.
+		thumbs: m.historyThumbs(),
+	})
 	if m.provider == nil {
 		m.transcript = reduceTranscript(m.transcript, transcriptAction{
 			kind: actionAppendAssistant,
@@ -5133,10 +5124,7 @@ func (m model) launchPrompt(prompt string) (model, tea.Cmd) {
 		var sessionRows []transcriptRow
 		m, sessionRows = m.appendSessionEvents([]pendingSessionEvent{
 			{Type: sessions.EventComposerInput, Payload: map[string]any{"text": composerInput}},
-			{Type: sessions.EventMessage, Payload: map[string]any{
-				"role":    "user",
-				"content": prompt,
-			}},
+			{Type: sessions.EventMessage, Payload: userMessageSessionPayload(prompt, m.previewThumbEncodings())},
 		})
 		m.transcript = appendTranscriptRowsDedup(m.transcript, sessionRows)
 	}
@@ -5146,7 +5134,7 @@ func (m model) launchPrompt(prompt string) (model, tea.Cmd) {
 	// model can't accept images, drop them (with an inline notice mirroring
 	// exec's drop+warn wording) rather than sending them to a model that
 	// rejects them. Pending state is cleared either way below.
-	turnImages := m.pendingImages
+	turnImages := m.turnImages()
 	if len(turnImages) > 0 && !m.modelSupportsVisionTUI() && !m.canRouteVisionImages(m.roleRouter()) {
 		name := m.effectiveModelName()
 		if name == "" {
@@ -5158,8 +5146,7 @@ func (m model) launchPrompt(prompt string) (model, tea.Cmd) {
 		})
 		turnImages = nil
 	}
-	m.pendingImages = nil
-	m.pendingImageLabels = nil
+	m.pendingAttachments = nil
 	runCtx, cancel := context.WithCancel(m.ctx)
 	m = m.beginRun(cancel)
 	return m, tea.Batch(m.runAgentWithOptions(m.activeRunID, runCtx, prompt, turnImages, tuiAgentRunOptions{
