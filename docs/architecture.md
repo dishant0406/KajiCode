@@ -100,7 +100,11 @@ stream-JSON events instead of rendering Bubble Tea frames.
 Exec owns:
 
 - non-interactive argument parsing and exit codes;
-- prompt, file, image, and stream-JSON input handling;
+- prompt, file, image, and stream-JSON input handling (every image surface —
+  `/image`, clipboard, PDF pages, stream-json, and ACP client images — normalizes
+  through `internal/imageinput` into the `images.*` provider-safe envelope;
+  `internal/imageinput` is also the single loader for attached documents, routing
+  a PDF by path/content and an SVG by its XML prologue);
 - session resume/fork/worktree setup;
 - completion-gate semantics for automation;
 - trace, spec, self-correct, and verification wiring;
@@ -127,7 +131,12 @@ Interactive-only assumptions must not leak into exec.
 4. Streams provider output through `kajicoderuntime.Provider`.
 5. Decodes tool calls and applies filters, harness permission rules, permission
    mode, sandbox evaluation, and hooks.
-6. Executes tools and appends tool results to the conversation.
+6. Executes tools and appends tool results to the conversation. A tool may return
+   image bytes for the model to see (`read_file` on a raster image); the loop
+   collects them across the batch and injects them as one synthetic user turn
+   after it, because providers accept image parts only on a user role. A
+   text-only model instead gets a notice from the tool, gated by
+   `modelregistry.SupportsVision`.
 7. Runs diagnostics, self-correction, retry, completion-gate, and guardrail logic.
 8. Returns a final result or explicit stop/error reason.
 

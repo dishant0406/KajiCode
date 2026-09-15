@@ -1,6 +1,9 @@
 package imageinput
 
 import (
+	"bytes"
+	"image"
+	"image/png"
 	"os"
 	"path/filepath"
 	"strings"
@@ -26,7 +29,7 @@ func TestLoadFileReadsAndNormalizes(t *testing.T) {
 	}
 
 	// Relative path resolves against workspaceRoot.
-	block, err := LoadFile("pic.png", root)
+	block, err := LoadFile("pic.png", root, DefaultLimits())
 	if err != nil {
 		t.Fatalf("LoadFile relative: %v", err)
 	}
@@ -38,14 +41,14 @@ func TestLoadFileReadsAndNormalizes(t *testing.T) {
 	}
 
 	// Absolute path is used as-is.
-	if _, err := LoadFile(filepath.Join(root, "pic.png"), root); err != nil {
+	if _, err := LoadFile(filepath.Join(root, "pic.png"), root, DefaultLimits()); err != nil {
 		t.Fatalf("LoadFile absolute: %v", err)
 	}
 }
 
 func TestLoadFileMissing(t *testing.T) {
 	root := t.TempDir()
-	_, err := LoadFile("nope.png", root)
+	_, err := LoadFile("nope.png", root, DefaultLimits())
 	if err == nil {
 		t.Fatal("expected error for missing file")
 	}
@@ -59,7 +62,7 @@ func TestLoadFileUnsupportedType(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "notes.txt"), []byte("just some plain text, not an image at all"), 0o644); err != nil {
 		t.Fatalf("write txt: %v", err)
 	}
-	_, err := LoadFile("notes.txt", root)
+	_, err := LoadFile("notes.txt", root, DefaultLimits())
 	if err == nil {
 		t.Fatal("expected error for non-image content")
 	}
@@ -75,7 +78,7 @@ func TestLoadFileRejectsNonRegular(t *testing.T) {
 	}
 	// A directory is non-regular like a FIFO/device; the guard must reject it
 	// before os.Open (a writerless FIFO would otherwise block the read forever).
-	_, err := LoadFile("adir", root)
+	_, err := LoadFile("adir", root, DefaultLimits())
 	if err == nil {
 		t.Fatal("expected error for a non-regular file")
 	}
@@ -84,19 +87,45 @@ func TestLoadFileRejectsNonRegular(t *testing.T) {
 	}
 }
 
-func TestLoadFileOversizeRejected(t *testing.T) {
+func TestLoadFileOversizeSourceRejected(t *testing.T) {
 	root := t.TempDir()
-	big := make([]byte, (10<<20)+1)
-	// Make it sniff as a GIF so size is the only failing condition.
+	// A source file above the read bound is refused before it is buffered.
+	big := make([]byte, (40<<20)+1)
 	copy(big, []byte("GIF89a"))
 	if err := os.WriteFile(filepath.Join(root, "big.gif"), big, 0o644); err != nil {
 		t.Fatalf("write big: %v", err)
 	}
-	_, err := LoadFile("big.gif", root)
+	_, err := LoadFile("big.gif", root, DefaultLimits())
 	if err == nil {
-		t.Fatal("expected error for oversize image")
+		t.Fatal("expected error for oversize source")
 	}
-	if !strings.Contains(err.Error(), "10") {
-		t.Fatalf("error %q should mention the size limit", err.Error())
+	if !strings.Contains(err.Error(), "40 MiB") {
+		t.Fatalf("error %q should mention the source limit", err.Error())
+	}
+}
+
+func TestLoadFileNormalizesOverLimitDimensions(t *testing.T) {
+	root := t.TempDir()
+	img := image.NewRGBA(image.Rect(0, 0, 128, 64))
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		t.Fatalf("encode png: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "wide.png"), buf.Bytes(), 0o644); err != nil {
+		t.Fatalf("write png: %v", err)
+	}
+
+	limits := DefaultLimits()
+	limits.MaxWidth, limits.MaxHeight = 32, 32
+	block, err := LoadFile("wide.png", root, limits)
+	if err != nil {
+		t.Fatalf("LoadFile: %v", err)
+	}
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(block.Data))
+	if err != nil {
+		t.Fatalf("decode result: %v", err)
+	}
+	if cfg.Width > limits.MaxWidth || cfg.Height > limits.MaxHeight {
+		t.Fatalf("normalized %dx%d exceeds %dx%d", cfg.Width, cfg.Height, limits.MaxWidth, limits.MaxHeight)
 	}
 }

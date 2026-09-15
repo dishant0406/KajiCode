@@ -38,6 +38,7 @@ func (m model) popQueuedMessageForEdit() model {
 	// Multiline text must go through the composer state: m.input only holds a
 	// flattened display copy (see syncInputFromComposer).
 	m.setComposerState(composerState{text: text, cursor: len([]rune(text))})
+	m.rebuildAttachmentTokensFromText()
 	m.recomputeSuggestions()
 	return m
 }

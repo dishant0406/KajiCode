@@ -5,6 +5,7 @@ import (
 	"sort"
 	"sync"
 
+	"github.com/dishant0406/KajiCode/internal/imageinput"
 	"github.com/dishant0406/KajiCode/internal/redaction"
 	"github.com/dishant0406/KajiCode/internal/sandbox"
 	"github.com/dishant0406/KajiCode/internal/streamjson"
@@ -71,6 +72,18 @@ type RunOptions struct {
 	// rather than an observer: skill resolution is pull-based per invocation and
 	// does not need mid-invocation mutation.
 	ProjectSkillRoots []string
+	// ImageLimits is the provider-safe envelope a media-returning tool
+	// (read_file on a raster image) normalizes its result into. The zero value
+	// means imageinput.DefaultLimits. The loop forwards the run's configured
+	// images.* envelope so a tool-returned screenshot is resized exactly like an
+	// attached one.
+	ImageLimits imageinput.Limits
+	// ModelSupportsVision reports whether the model identified by id accepts image
+	// input. read_file consults it so a text-only model gets a clear notice
+	// instead of an image part the provider rejects with a run-killing 400. nil
+	// means "unknown": the image is returned and the provider's own rejection
+	// surfaces, exactly as it does for an attached image.
+	ModelSupportsVision func(modelID string) bool
 }
 
 // ProjectGuidelineObserver is the seam tools use to report directories they

@@ -46,10 +46,7 @@ func TestRunExecStreamJSONImageReachesAgent(t *testing.T) {
 	cwd := t.TempDir()
 
 	// A minimal PNG, base64-encoded for the stream-json image payload.
-	png := []byte{
-		0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
-		0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
-	}
+	png := testPNG(t)
 	encoded := base64.StdEncoding.EncodeToString(png)
 	input := `{"schemaVersion":2,"type":"message","role":"user","content":"describe this","images":[{"mediaType":"image/png","data":"` + encoded + `"}]}` + "\n"
 
@@ -114,10 +111,7 @@ func TestRunExecStreamJSONImageReachesAgent(t *testing.T) {
 func TestRunExecStreamJSONImageOnlyMessageProceeds(t *testing.T) {
 	cwd := t.TempDir()
 
-	png := []byte{
-		0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
-		0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
-	}
+	png := testPNG(t)
 	encoded := base64.StdEncoding.EncodeToString(png)
 	// Empty content, one image: the image-only turn.
 	input := `{"schemaVersion":2,"type":"message","role":"user","content":"","images":[{"mediaType":"image/png","data":"` + encoded + `"}]}` + "\n"

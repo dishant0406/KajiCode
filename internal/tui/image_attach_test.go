@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/dishant0406/KajiCode/internal/config"
 	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
 	"github.com/dishant0406/KajiCode/internal/modelregistry"
@@ -97,10 +98,10 @@ func TestImageCommandAttachRendersChip(t *testing.T) {
 	if len(next.pendingAttachments) != 1 || next.pendingAttachments[0].Label != "photo.png" {
 		t.Fatalf("labels = %#v, want [photo.png]", next.pendingAttachments)
 	}
-	if chips := renderAttachmentChips(next.pendingAttachments); chips == "" {
-		t.Fatal("expected a chip row for pending images")
-	} else if !strings.Contains(chips, "[Image #1]") {
-		t.Fatalf("chip row %q should be the numbered chip", chips)
+	// The attach inserts an atomic [Image #1] token into the composer (the visible
+	// confirmation), so it can be moved and deleted like any other prompt text.
+	if !strings.Contains(next.composerValue(), "[Image #1]") {
+		t.Fatalf("composer %q should carry the [Image #1] token", next.composerValue())
 	}
 }
 
@@ -113,7 +114,7 @@ func TestImageCommandClear(t *testing.T) {
 	updated, _ := m.handleSubmit()
 	m = updated.(model)
 
-	m.input.SetValue("/image clear")
+	m.setComposerState(composerState{text: "/image clear", cursor: len([]rune("/image clear"))})
 	updated, _ = m.handleSubmit()
 	next := updated.(model)
 
@@ -156,7 +157,7 @@ func TestImageCommandMissingFileNotice(t *testing.T) {
 	}
 }
 
-func TestTranscriptViewShowsImageChips(t *testing.T) {
+func TestComposerShowsImageTokens(t *testing.T) {
 	m := newModel(context.Background(), Options{ModelName: "gpt-4.1"})
 	m.width = 100
 	m.height = 30
@@ -164,10 +165,11 @@ func TestTranscriptViewShowsImageChips(t *testing.T) {
 		newImageAttachment("photo.png", "image/png", nil),
 		newImageAttachment("diagram.gif", "image/gif", nil),
 	}
+	m.setComposerState(composerState{text: "see [Image #1] and [Image #2]", cursor: 0})
 
-	view := m.transcriptView()
+	view := ansi.Strip(m.composerLine(100))
 	if !strings.Contains(view, "[Image #1]") || !strings.Contains(view, "[Image #2]") {
-		t.Fatalf("transcript view should show numbered image chips, got:\n%s", view)
+		t.Fatalf("composer should show the inline image tokens, got:\n%s", view)
 	}
 }
 
@@ -200,7 +202,8 @@ func TestSubmitThreadsImagesThenClears(t *testing.T) {
 		t.Fatalf("setup: expected 1 staged image, got %d", len(m.turnImages()))
 	}
 
-	m.input.SetValue("describe this")
+	// The attach inserted "[Image #1] " at the cursor; the user types after it.
+	m.setComposerState(composerState{text: "[Image #1] describe this", cursor: len([]rune("[Image #1] describe this"))})
 	updated, cmd := m.handleSubmit()
 	next := updated.(model)
 	if cmd == nil {
@@ -259,7 +262,7 @@ func TestSubmitDropsImagesWhenModelSwitchedToNonVision(t *testing.T) {
 	// Simulate a /model switch to a non-vision (catalog-unknown) model.
 	m.modelName = "totally-unknown-custom"
 
-	m.input.SetValue("describe this")
+	m.setComposerState(composerState{text: "[Image #1] describe this", cursor: len([]rune("[Image #1] describe this"))})
 	updated, cmd := m.handleSubmit()
 	next := updated.(model)
 	if cmd == nil {
@@ -346,7 +349,7 @@ func TestImageCommandAttachesPDFTextOnNonVisionModel(t *testing.T) {
 	if len(next.turnImages()) != 0 {
 		t.Fatalf("no rasterizer: expected 0 page images, got %d", len(next.turnImages()))
 	}
-	// A successful attach is silent now (the [Doc #N] composer chip is the
+	// A successful attach is silent now (the inline [Doc #N] composer token is the
 	// confirmation); the pending-document assertions above verify it.
 }
 
@@ -393,6 +396,74 @@ func TestImageCommandRejectsFakePDF(t *testing.T) {
 	}
 }
 
+// An SVG attaches as document text on ANY model (it is source a model reads, not
+// a raster image), so it is not gated on vision like a raw image is.
+func TestImageCommandAttachesSVGTextOnNonVisionModel(t *testing.T) {
+	root := t.TempDir()
+	markup := `<svg xmlns="http://www.w3.org/2000/svg"><rect width="4" height="4"/></svg>`
+	if err := os.WriteFile(filepath.Join(root, "icon.svg"), []byte(markup), 0o644); err != nil {
+		t.Fatalf("write svg: %v", err)
+	}
+
+	m := newModel(context.Background(), Options{Cwd: root, ModelName: "totally-unknown-custom"})
+	m.input.SetValue("/image icon.svg")
+	updated, _ := m.handleSubmit()
+	next := updated.(model)
+
+	if len(next.pendingAttachments) != 1 {
+		t.Fatalf("expected 1 pending document, got %d", len(next.pendingAttachments))
+	}
+	if next.pendingAttachments[0].Label != "icon.svg" {
+		t.Fatalf("document label = %q, want icon.svg", next.pendingAttachments[0].Label)
+	}
+	if !strings.Contains(next.pendingAttachments[0].DocText, "<rect") {
+		t.Fatalf("document text %q should contain the markup", next.pendingAttachments[0].DocText)
+	}
+	if len(next.turnImages()) != 0 {
+		t.Fatalf("an SVG carries no raster image, got %d", len(next.turnImages()))
+	}
+	if notice := lastTranscriptText(next); strings.Contains(notice, "does not support image input") {
+		t.Fatalf("an SVG must not be refused at the vision gate, got %q", notice)
+	}
+}
+
+// A .svg-named file that is not SVG content is rejected with the explicit notice
+// and stages nothing.
+func TestImageCommandRejectsFakeSVG(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "fake.svg"), []byte("definitely not an svg"), 0o644); err != nil {
+		t.Fatalf("write fake: %v", err)
+	}
+	m := newModel(context.Background(), Options{Cwd: root, ModelName: "gpt-4.1"})
+	m.input.SetValue("/image fake.svg")
+	updated, _ := m.handleSubmit()
+	next := updated.(model)
+
+	if len(next.pendingAttachments) != 0 {
+		t.Fatal("a fake SVG must stage nothing")
+	}
+	if notice := lastTranscriptText(next); !strings.Contains(notice, "not an SVG") {
+		t.Fatalf("expected a not-an-SVG notice, got %q", notice)
+	}
+}
+
+// A dragged-and-dropped .svg path is routed to the SVG attach path rather than
+// submitted as an unknown slash-command.
+func TestDroppedSVGPathRoutesToAttach(t *testing.T) {
+	root := t.TempDir()
+	markup := `<svg xmlns="http://www.w3.org/2000/svg"></svg>`
+	if err := os.WriteFile(filepath.Join(root, "icon.svg"), []byte(markup), 0o644); err != nil {
+		t.Fatalf("write svg: %v", err)
+	}
+	m := newModel(context.Background(), Options{Cwd: root, ModelName: "gpt-4.1"})
+
+	updated, _ := m.routePaste("icon.svg")
+	next := updated.(model)
+	if len(next.pendingAttachments) != 1 || next.pendingAttachments[0].Label != "icon.svg" {
+		t.Fatalf("expected icon.svg staged from a dropped path, got %+v", next.pendingAttachments)
+	}
+}
+
 // /image clear removes staged documents as well as images.
 func TestImageCommandClearAlsoClearsDocuments(t *testing.T) {
 	root := t.TempDir()
@@ -406,7 +477,7 @@ func TestImageCommandClearAlsoClearsDocuments(t *testing.T) {
 		t.Fatalf("setup: expected 1 staged document, got %d", len(m.pendingAttachments))
 	}
 
-	m.input.SetValue("/image clear")
+	m.setComposerState(composerState{text: "/image clear", cursor: len([]rune("/image clear"))})
 	updated, _ = m.handleSubmit()
 	next := updated.(model)
 	if len(next.pendingAttachments) != 0 {
@@ -414,16 +485,17 @@ func TestImageCommandClearAlsoClearsDocuments(t *testing.T) {
 	}
 }
 
-// The chip row shows a "[doc: …]" entry for staged documents.
-func TestTranscriptViewShowsDocumentChips(t *testing.T) {
+// The composer shows the inline [Doc #N] token for a staged document.
+func TestComposerShowsDocumentToken(t *testing.T) {
 	m := newModel(context.Background(), Options{ModelName: "gpt-4.1"})
 	m.width = 100
 	m.height = 30
 	m.pendingAttachments = []stagedAttachment{{Label: "spec.pdf", DocText: "body"}}
+	m.setComposerState(composerState{text: "summarize [Doc #1]", cursor: 0})
 
-	view := m.transcriptView()
+	view := ansi.Strip(m.composerLine(100))
 	if !strings.Contains(view, "[Doc #1]") {
-		t.Fatalf("transcript view should show the document chip, got:\n%s", view)
+		t.Fatalf("composer should show the document token, got:\n%s", view)
 	}
 }
 
@@ -454,7 +526,7 @@ func TestSubmitPrependsDocumentTextThenClears(t *testing.T) {
 		t.Fatalf("setup: expected 1 staged document, got %d", len(m.pendingAttachments))
 	}
 
-	m.input.SetValue("summarize the attached doc")
+	m.setComposerState(composerState{text: "[Doc #1] summarize the attached doc", cursor: len([]rune("[Doc #1] summarize the attached doc"))})
 	updated, cmd := m.handleSubmit()
 	next := updated.(model)
 	if cmd == nil {
@@ -488,24 +560,20 @@ func TestSubmitPrependsDocumentTextThenClears(t *testing.T) {
 	}
 }
 
-func TestRenderAttachmentChips(t *testing.T) {
-	if got := renderAttachmentChips(nil); got != "" {
-		t.Fatalf("empty attachments should render no chips, got %q", got)
-	}
-	got := renderAttachmentChips([]stagedAttachment{
+func TestRenderAttachmentTokenLabels(t *testing.T) {
+	items := []stagedAttachment{
 		newImageAttachment("a.png", "image/png", nil),
 		newImageAttachment("b.png", "image/gif", nil),
 		{Label: "spec.pdf", DocText: "body"},
-	})
-	if !strings.Contains(got, "[Image #1]") || !strings.Contains(got, "[Image #2]") {
-		t.Fatalf("chip row %q should include numbered images", got)
 	}
-	if !strings.Contains(got, "[Doc #1]") {
-		t.Fatalf("chip row %q should include the document", got)
+	if got := attachmentLabelAt(items, 0); got != "[Image #1]" {
+		t.Fatalf("first image token = %q", got)
 	}
-	// Each chip carries its filename so several attachments stay distinguishable.
-	if !strings.Contains(got, "a.png") {
-		t.Fatalf("chip row %q should name the attachment", got)
+	if got := attachmentLabelAt(items, 1); got != "[Image #2]" {
+		t.Fatalf("second image token = %q", got)
+	}
+	if got := attachmentLabelAt(items, 2); got != "[Doc #1]" {
+		t.Fatalf("document token = %q", got)
 	}
 }
 
@@ -534,8 +602,9 @@ func TestRetryResendsAttachments(t *testing.T) {
 	m.captureRunImages = func(imgs []kajicoderuntime.ImageBlock) { captured <- imgs }
 
 	// State left after a prior vision+PDF prompt was submitted: the pending queues
-	// are cleared, but the remembered snapshot survives so /retry can reproduce it.
-	m.lastPrompt = "describe both"
+	// are cleared, but the remembered snapshot and its token-bearing prompt survive
+	// so /retry can reproduce it. The inline tokens are part of the verbatim prompt.
+	m.lastPrompt = "[Image #1] [Doc #1] describe both"
 	m.lastAttachments = []stagedAttachment{
 		newImageAttachment("photo.png", "image/png", []byte{0x89, 'P', 'N', 'G'}),
 		{Label: "spec.pdf", DocText: "Top secret design notes"},

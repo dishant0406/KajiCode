@@ -929,6 +929,18 @@ func mergeRoleOverrides(cfg *FileConfig, overrides Overrides) {
 	if strings.TrimSpace(overrides.Images.VisionRouting) != "" {
 		cfg.Images.VisionRouting = strings.TrimSpace(overrides.Images.VisionRouting)
 	}
+	if overrides.Images.MaxWidth > 0 {
+		cfg.Images.MaxWidth = overrides.Images.MaxWidth
+	}
+	if overrides.Images.MaxHeight > 0 {
+		cfg.Images.MaxHeight = overrides.Images.MaxHeight
+	}
+	if overrides.Images.MaxBytes > 0 {
+		cfg.Images.MaxBytes = overrides.Images.MaxBytes
+	}
+	if overrides.Images.AutoResize != nil {
+		cfg.Images.AutoResize = overrides.Images.AutoResize
+	}
 }
 
 // cloneStringMap returns a defensive copy of a string→string map, or nil for a nil

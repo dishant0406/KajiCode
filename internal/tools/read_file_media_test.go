@@ -1,7 +1,10 @@
 package tools
 
 import (
+	"bytes"
 	"context"
+	"image"
+	"image/png"
 	"os"
 	"path/filepath"
 	"strings"
@@ -59,22 +62,47 @@ func TestReadFileBinaryRejected(t *testing.T) {
 	}
 }
 
-func TestReadFileImageMedia(t *testing.T) {
+func TestReadFileImageReturnsImageBlock(t *testing.T) {
 	root := t.TempDir()
-	// Minimal valid PNG signature + trailing bytes.
-	png := []byte{0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 'I', 'H', 'D', 'R'}
-	if err := os.WriteFile(filepath.Join(root, "a.png"), png, 0o644); err != nil {
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, image.NewRGBA(image.Rect(0, 0, 8, 8))); err != nil {
 		t.Fatal(err)
 	}
-	res := NewReadFileTool(root).Run(context.Background(), map[string]any{"path": "a.png"})
+	if err := os.WriteFile(filepath.Join(root, "a.png"), buf.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	tool := NewScopedReadFileTool(root, nil)
+	res := tool.Run(context.Background(), map[string]any{"path": "a.png"})
 	if res.Status != StatusOK {
-		t.Fatalf("expected ok for png, got %s", res.Status)
+		t.Fatalf("expected ok for png, got %s: %s", res.Status, res.Output)
 	}
-	if !strings.Contains(res.Output, "data:image/png;base64,") {
-		t.Fatalf("expected base64 data URI, got: %.80s", res.Output)
+	if len(res.Images) != 1 || res.Images[0].MediaType != "image/png" {
+		t.Fatalf("expected one image/png block, got %+v", res.Images)
 	}
-	if res.Meta["mime"] != "image/png" {
-		t.Fatalf("meta mime = %q, want image/png", res.Meta["mime"])
+	if strings.Contains(res.Output, "base64") {
+		t.Fatalf("output must not embed base64, got: %.80s", res.Output)
+	}
+}
+
+func TestReadFileImageForTextOnlyModelGivesNotice(t *testing.T) {
+	root := t.TempDir()
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, image.NewRGBA(image.Rect(0, 0, 8, 8))); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "a.png"), buf.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res := NewScopedReadFileTool(root, nil).(readFileTool).RunWithOptions(context.Background(),
+		map[string]any{"path": "a.png"}, RunOptions{ModelSupportsVision: func(string) bool { return false }})
+	if res.Status != StatusOK {
+		t.Fatalf("expected ok, got %s", res.Status)
+	}
+	if len(res.Images) != 0 {
+		t.Fatalf("text-only model must get no image block, got %+v", res.Images)
+	}
+	if !strings.Contains(res.Output, "does not support image input") {
+		t.Fatalf("expected a vision notice, got: %s", res.Output)
 	}
 }
 
@@ -92,7 +120,7 @@ func TestReadFileDirectoryRejected(t *testing.T) {
 	}
 }
 
-func TestRenderReadMediaPDF(t *testing.T) {
+func TestRenderReadMediaMissingPDF(t *testing.T) {
 	res := renderReadMedia("/nonexistent.pdf", "x.pdf", "application/pdf")
 	// Reading a nonexistent file should still yield an error result rather than panic.
 	if res.Status != StatusError {

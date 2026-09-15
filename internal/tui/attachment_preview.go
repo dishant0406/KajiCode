@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
+	_ "golang.org/x/image/webp" // register WebP decoder for image.Decode
 )
 
 // Preview geometry. The image is downscaled ONCE at attach time to at most
@@ -44,9 +45,9 @@ type attachmentThumb struct {
 }
 
 // buildAttachmentThumb decodes an image and downscales it for preview. It
-// returns ok=false for anything the stdlib cannot decode (e.g. webp, which has
-// no standard-library decoder) or that exceeds the decode bounds; callers then
-// fall back to a plain icon chip rather than failing the attachment.
+// returns ok=false for anything the registered decoders cannot read or that
+// exceeds the decode bounds; callers then fall back to a token with no preview
+// rather than failing the attachment.
 func buildAttachmentThumb(block kajicoderuntime.ImageBlock) (*attachmentThumb, bool) {
 	if len(block.Data) == 0 {
 		return nil, false
@@ -298,7 +299,7 @@ func renderPreviewRow(previews []attachmentPreview) []string {
 // attachmentPreviewEnabled reports whether a live image preview may be painted.
 // Previews are 24-bit SGR quadrant blocks, so under NO_COLOR (which forces the
 // TUI to strip color) they would spew raw escape codes instead of an image; the
-// plain icon chip is shown in that case.
+// inline token is still shown in that case.
 func attachmentPreviewEnabled() bool {
 	return !noColorRequested(os.Getenv)
 }

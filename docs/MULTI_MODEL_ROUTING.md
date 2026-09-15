@@ -30,6 +30,14 @@ defaultModel = "gpt-4.1"
 #   "model" -> use modelRoles["vision"]
 #   "off"   -> legacy behavior: drop the images and warn (the default)
 visionRouting = "model"
+
+# Provider-safe envelope for attached images (optional; all default as noted).
+# An image already within the envelope is sent byte-identical; a larger one is
+# downscaled (aspect preserved) and re-encoded PNG/JPEG until it fits.
+maxWidth = 2000    # pixels; default 2000
+maxHeight = 2000   # pixels; default 2000
+maxBytes = 5242880 # base64-encoded bytes; default 5 MiB (~3.75 MiB raw)
+autoResize = true  # false rejects an over-limit image instead of resizing (default true)
 ```
 
 - `EffectiveVisionRouting()` collapses anything other than `auto`/`model` to `off`,

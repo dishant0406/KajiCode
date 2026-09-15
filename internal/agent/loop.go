@@ -39,6 +39,10 @@ const maxStreamStallRetries = 1
 const (
 	toolResultMetaControl       = "control"
 	toolResultControlSpecReview = "spec_review_required"
+	// toolImageTurnNotice is the text prefacing a synthetic user turn that carries
+	// images a tool returned (read_file on an image). Providers accept image parts
+	// only on a user role, so the loop injects them after the tool batch.
+	toolImageTurnNotice = "Image(s) read from tool results below:"
 )
 
 var errPermissionApprovalCanceled = errors.New("permission approval cancelled")
@@ -938,6 +942,11 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 		// between tool_results breaks strict provider replay) — same after-batch
 		// rationale as turnRequestedModel above.
 		var changedFilesThisBatch []string
+		// Images returned by tools this batch (read_file on an image). Providers
+		// only accept image parts on a user role, so they are collected here and
+		// injected as ONE synthetic user turn after the batch — not between
+		// tool_results, which would break strict provider replay.
+		var batchImages []kajicoderuntime.ImageBlock
 		// Parallel read-ahead state: results for calls[precomputedStart:precomputedEnd]
 		// executed concurrently, consumed strictly in order below.
 		var precomputed []precomputedToolResult
@@ -1048,6 +1057,23 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 				changedFilesThisBatch = append(changedFilesThisBatch, toolResult.ChangedFiles...)
 				postEditDiagnostics.enqueue(ctx, toolResult.ChangedFiles)
 			}
+			// Collect image parts a tool returned for the model to see. They are
+			// injected after the batch so the assistant's tool_results stay
+			// contiguous.
+			batchImages = append(batchImages, toolResult.Images...)
+		}
+
+		// Inject tool-returned images as one synthetic user turn after every
+		// tool_result is recorded. Providers accept image parts only on a user
+		// role, and a user message between tool_results breaks strict provider
+		// replay — so this must come after the batch, like the SelfCorrect
+		// feedback below.
+		if len(batchImages) > 0 {
+			messages = append(messages, kajicoderuntime.Message{
+				Role:    kajicoderuntime.MessageRoleUser,
+				Content: toolImageTurnNotice,
+				Images:  batchImages,
+			})
 		}
 
 		// Run post-edit self-correction once over the union of files this turn
@@ -1700,6 +1726,11 @@ func executeToolCall(ctx context.Context, registry *tools.Registry, call ToolCal
 		EnabledTools:  options.EnabledTools,
 		DisabledTools: options.DisabledTools,
 		Progress:      progressCallback,
+		// Media a tool returns (read_file on an image) is normalized into the run's
+		// images.* envelope, and gated on the model's vision capability so a
+		// text-only model gets a notice instead of a run-killing 400.
+		ImageLimits:         options.ImageLimits,
+		ModelSupportsVision: modelSupportsVisionDefault,
 		// Forward the mid-run guideline tracker so every tool reports the
 		// directories it resolves and the loop can inject newly-discovered
 		// AGENTS.md/KAJICODE.md rules before the next request.
@@ -1775,6 +1806,7 @@ func executeToolCall(ctx context.Context, registry *tools.Registry, call ToolCal
 		Redacted:     result.Redacted,
 		ChangedFiles: result.ChangedFiles,
 		Display:      result.Display,
+		Images:       result.Images,
 		LoadedTools:  loadedToolsFromResult(result.Meta),
 		// A tool may signal a mid-run model escalation by carrying the target id
 		// in Meta["escalate_to_model"]. Lift it into the typed loop-level field;

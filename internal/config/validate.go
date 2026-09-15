@@ -122,6 +122,23 @@ func validateRoleConfig(cfg FileConfig) []Issue {
 			Message:   fmt.Sprintf("images.visionRouting %q is invalid; expected auto, model, or off", cfg.Images.VisionRouting),
 		})
 	}
+	for _, field := range []struct {
+		name  string
+		value int
+	}{{"maxWidth", cfg.Images.MaxWidth}, {"maxHeight", cfg.Images.MaxHeight}, {"maxBytes", cfg.Images.MaxBytes}} {
+		if field.value < 0 {
+			issues = append(issues, Issue{
+				FieldPath: "images." + field.name,
+				Message:   fmt.Sprintf("images.%s must not be negative", field.name),
+			})
+		}
+	}
+	if cfg.Images.MaxBytes > 0 && cfg.Images.MaxBytes < 1024 {
+		issues = append(issues, Issue{
+			FieldPath: "images.maxBytes",
+			Message:   "images.maxBytes is below 1 KiB; images would not fit",
+		})
+	}
 	return issues
 }
 

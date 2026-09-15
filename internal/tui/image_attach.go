@@ -12,7 +12,7 @@ import (
 )
 
 // droppableImageExts are the image extensions a dragged-and-dropped file may
-// carry (matched case-insensitively); PDFs are recognized separately.
+// carry (matched case-insensitively); PDFs and SVGs are recognized separately.
 var droppableImageExts = map[string]bool{
 	".png": true, ".jpg": true, ".jpeg": true, ".gif": true, ".webp": true,
 }
@@ -45,7 +45,7 @@ func droppedAttachmentPath(content, cwd string) (string, bool) {
 		return "", false
 	}
 	ext := strings.ToLower(filepath.Ext(s))
-	if droppableImageExts[ext] || ext == ".pdf" || imageinput.LooksLikeDocumentFile(s, cwd) {
+	if droppableImageExts[ext] || ext == ".pdf" || ext == ".svg" || imageinput.LooksLikeDocumentFile(s, cwd) {
 		return s, true
 	}
 	return "", false
@@ -118,8 +118,8 @@ func (m model) modelSupportsVisionTUI() bool {
 }
 
 // attachClipboardImage attaches an image read from the OS clipboard (a
-// screenshot paste). Runs through the same vision gate + size cap as
-// /image <path>, but the bytes come from the clipboard instead of a file.
+// screenshot paste). The bytes were already normalized into the size envelope by
+// ReadClipboardImage, so this only applies the vision gate.
 func (m model) attachClipboardImage(data []byte, mediaType string) model {
 	if !m.modelSupportsVisionTUI() {
 		name := m.effectiveModelName()
@@ -128,10 +128,7 @@ func (m model) attachClipboardImage(data []byte, mediaType string) model {
 		}
 		return m.appendImageNotice("Model " + name + " does not support image input; clipboard image refused.")
 	}
-	if len(data) > imageinput.MaxImageBytes {
-		return m.appendImageNotice("Clipboard image is larger than the 10 MiB limit.")
-	}
-	m.pendingAttachments = append(m.pendingAttachments, newImageAttachment("clipboard", mediaType, data))
+	m = m.attachStaged(newImageAttachment("clipboard", mediaType, data))
 	return m
 }
 
@@ -144,9 +141,10 @@ func (m model) handleImageCommand(arg string) model {
 	trimmed := strings.TrimSpace(arg)
 	switch {
 	case trimmed == "":
-		return m.appendImageNotice("Usage: /image <path>  (image or PDF; or /image clear)")
+		return m.appendImageNotice("Usage: /image <path>  (image, PDF, or SVG; or /image clear)")
 	case strings.EqualFold(trimmed, "clear"):
 		m.pendingAttachments = nil
+		m.composerPastePreviews = composerPastePreviewsWithoutAttachments(m.composerPastePreviews)
 		return m.appendImageNotice("Cleared pending attachments.")
 	}
 
@@ -159,6 +157,13 @@ func (m model) handleImageCommand(arg string) model {
 		return m.handleDocumentAttach(trimmed)
 	}
 
+	// An SVG is text a model reads directly, so like a PDF it is not gated on
+	// vision; attach its markup rather than sending image/svg+xml, which no
+	// vision provider accepts.
+	if imageinput.IsSVGPath(trimmed) {
+		return m.handleSVGAttach(trimmed)
+	}
+
 	if !m.modelSupportsVisionTUI() {
 		name := m.effectiveModelName()
 		if name == "" {
@@ -167,13 +172,13 @@ func (m model) handleImageCommand(arg string) model {
 		return m.appendImageNotice("Model " + name + " does not support image input; attachment refused.")
 	}
 
-	block, err := imageinput.LoadFile(trimmed, m.cwd)
+	block, err := imageinput.LoadFile(trimmed, m.cwd, m.imageLimits)
 	if err != nil {
 		return m.appendImageNotice(err.Error())
 	}
 
-	m.pendingAttachments = append(m.pendingAttachments, newImageAttachment(filepath.Base(trimmed), block.MediaType, block.Data))
-	// No "attached" system message: the composer attachment chip ([Image #N]) is
+	m = m.attachStaged(newImageAttachment(filepath.Base(trimmed), block.MediaType, block.Data))
+	// No "attached" system message: the inline [Image #N] token in the composer is
 	// the confirmation, matching the compact attach UX.
 	return m
 }
@@ -187,6 +192,7 @@ func (m model) handleImageCommand(arg string) model {
 func (m model) handleDocumentAttach(path string) model {
 	doc, err := imageinput.LoadDocument(path, m.cwd, imageinput.DocumentOptions{
 		Vision: m.modelSupportsVisionTUI(),
+		Limits: m.imageLimits,
 	})
 	if err != nil {
 		return m.appendImageNotice(err.Error())
@@ -194,35 +200,25 @@ func (m model) handleDocumentAttach(path string) model {
 
 	label := filepath.Base(path)
 	if strings.TrimSpace(doc.Text) != "" {
-		m.pendingAttachments = append(m.pendingAttachments, stagedAttachment{Label: label, DocText: doc.Text})
+		m = m.attachStaged(stagedAttachment{Label: label, DocText: doc.Text})
 	}
 	for _, block := range doc.Images {
-		m.pendingAttachments = append(m.pendingAttachments, newImageAttachment(label, block.MediaType, block.Data))
+		m = m.attachStaged(newImageAttachment(label, block.MediaType, block.Data))
 	}
-	// The composer attachment chip ([Doc #N] / [Image #N]) is the confirmation; no
-	// "attached" system message.
+	// The inline [Doc #N] / [Image #N] token in the composer is the confirmation;
+	// no "attached" system message.
 	return m
 }
 
-// consumePendingDocuments returns the staged document text formatted as a prompt
-// preamble and clears the pending documents. The preamble names each document so
-// the model can attribute the text; an empty result means nothing was staged.
-func (m *model) consumePendingDocuments() string {
-	var b strings.Builder
-	var docs []stagedAttachment
-	for _, a := range m.pendingAttachments {
-		if a.isDoc() {
-			b.WriteString("Attached document: ")
-			b.WriteString(a.Label)
-			b.WriteString("\n")
-			b.WriteString(a.DocText)
-			b.WriteString("\n\n")
-			continue
-		}
-		docs = append(docs, a)
+// handleSVGAttach loads an SVG's markup through imageinput.LoadSVG and stages it
+// as document text, so it flows through the same [Doc #N] token and preamble path
+// a PDF text layer uses. SVG is not vision-gated: it is source text.
+func (m model) handleSVGAttach(path string) model {
+	text, err := imageinput.LoadSVG(path, m.cwd)
+	if err != nil {
+		return m.appendImageNotice(err.Error())
 	}
-	m.pendingAttachments = docs
-	return b.String()
+	return m.attachStaged(stagedAttachment{Label: filepath.Base(path), DocText: text})
 }
 
 // appendImageNotice appends an image-related notice to the transcript. Image
@@ -235,16 +231,6 @@ func (m model) appendImageNotice(text string) model {
 	}
 	m.transcript = appendTranscriptRow(m.transcript, row)
 	return m
-}
-
-// removeLastAttachment drops the rightmost pending attachment chip and reports
-// whether anything was removed.
-func (m model) removeLastAttachment() (model, bool) {
-	if n := len(m.pendingAttachments); n > 0 {
-		m.pendingAttachments = m.pendingAttachments[:n-1]
-		return m, true
-	}
-	return m, false
 }
 
 // visionDropWarning returns a one-line notice when images are staged but the

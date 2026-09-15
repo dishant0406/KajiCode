@@ -1,8 +1,16 @@
 # Attachment thumbnails (type-aware)
 
-How the composer attachment area renders staged images, PDFs, and files. The
-plain `[Image #1]` / `[Doc #1]` chip became a type-aware row: images get a real
-quadrant-block thumbnail, PDFs a document icon, other files a generic icon.
+How the composer attachment area renders staged images, PDFs, and files. An
+attachment is referenced by an **inline token** the user can see and edit, and
+the composer previews each staged image as a real quadrant-block thumbnail.
+
+The chip row and the separate attachment block were removed: the token is now
+the reference, so attaching inserts a literal `[Image #1]` / `[Doc #1]` into the
+prompt at the cursor. The token is a `composerPastePreview` linked to a staged
+attachment (see `attachment_token.go`), so it is atomic — arrow keys step over
+it and Backspace deletes it whole, dropping the attachment with it. Deleting the
+token is the single way to un-attach, and the surviving tokens renumber so the
+user always sees `#1`, `#2`, … in text order.
 
 ## 1. What the terminal can do (this decides the design)
 
@@ -75,9 +83,9 @@ type stagedAttachment struct {
 }
 ```
 
-One value carries the label, the image bytes, and the PDF text layer, so the chip
-row, the preview, the submit expansion, and the `/retry` snapshot cannot disagree
-about what is staged. A PDF with rasterized pages contributes one image
+One value carries the label, the image bytes, and the PDF text layer, so the
+inline token, the preview, the submit expansion, and the `/retry` snapshot cannot
+disagree about what is staged. A PDF with rasterized pages contributes one image
 attachment per page plus one document attachment, all in one ordered slice.
 
 `m.pendingAttachments` is the staging queue; `m.lastAttachments` is the
@@ -99,9 +107,9 @@ attachment per page plus one document attachment, all in one ordered slice.
   gamma-encoded bytes, so a large downscale does not darken or muddy fine detail.
   `renderPreview` area-averages in the same style when the grid is finer than
   the preview.
-- **Undecodable images degrade gracefully.** webp has no stdlib decoder, so its
-  `Thumb` is nil; the chip still shows without a preview rather than refusing
-  the attachment.
+- **Undecodable images degrade gracefully.** An image the registered decoders
+  cannot read (or one past the decode bounds) has a nil `Thumb`; the inline token
+  still shows without a preview rather than refusing the attachment.
 - **Quadrant blocks.** `renderPreview` (`internal/tui/attachment_quadrant.go`)
   paints each terminal cell from a 2x2 grid of samples as a single block glyph:
   the cell's two most distinct samples become the SGR foreground and background,
@@ -111,12 +119,13 @@ attachment per page plus one document attachment, all in one ordered slice.
   width from the source aspect. See §5 for the aspect math.
 - **NO_COLOR.** A preview is 24-bit SGR, which the TUI strips under
   `NO_COLOR`; `attachmentPreviewEnabled` suppresses the preview there so raw
-  escape codes never reach the screen (the icon chip is still shown).
+  escape codes never reach the screen (the token text is still shown).
 
-Chip row (`renderAttachmentChips`): `▣ [Image #1] photo.png  ▤ [Doc #1] spec.pdf`.
-Images and documents are numbered independently (`[Image #n]` / `[Doc #n]`), and
-opaque files use `[File #n]`. Icons are plain geometric glyphs (`▣ ▤ ▢`), not
-Nerd Font private-use codepoints, whose cell width is not guaranteed.
+Inline tokens (`attachment_token.go`): `[Image #1]` / `[Doc #1]`. Images and
+documents are numbered independently, and the number is the attachment's position
+among staged attachments of its kind, in text order. The token is literal text in
+the prompt, so it survives submit into the model-facing prompt and is restored as
+editable text by `/edit` and a popped queued message (`rebuildAttachmentTokensFromText`).
 
 ## 5. Geometry: one source of truth
 
@@ -146,8 +155,9 @@ how many images are staged, and `layoutPreviews` splits the available width
 evenly between them. When even minimum-width previews cannot all fit across the
 composer, the first images that fit are drawn.
 
-The composer previously hardcoded "chips = 1 line" in four places. All four now
-call `m.attachmentBlockLines(innerWidth)` (chip row + preview rows):
+The composer's attachment area adds only the preview rows now (the token is
+ordinary composer text). The sites that must agree on that height call
+`m.attachmentBlockLines(innerWidth)` (= preview rows):
 
 | Site | File |
 | --- | --- |
@@ -171,15 +181,18 @@ staged images, and the many-image budget cap.
   icons/labels, the geometry-matches-render pins (`NO_COLOR`, undecodable image,
   doc-only, multiple images, budget cap), the thumb encode/decode round-trip, and
   the user-row image rendering + rehydration + export.
-- `internal/tui/image_attach_test.go` and friends — chip emission, attachment
+- `internal/tui/attachment_remove_test.go` — token insertion at the cursor,
+  renumbering on delete, text-order recovery (`rebuildAttachmentTokensFromText`),
+  and pruning from the text when the previews are gone.
+- `internal/tui/image_attach_test.go` and friends — token emission, attachment
   expansion at submit, `/image clear`, backspace-remove, `/retry`, `/edit`,
   vision gate and routing, and the new-session reset, all against the unified
   model.
 
 ## 7. Transcript history
 
-A sent image stays visible: `launchPrompt` copies the staged previews onto the
-new `rowUser` (`transcriptRow.thumbs`), and `renderUserRow`
+A sent image stays visible: `launchPrompt` copies the referenced attachments'
+previews onto the new `rowUser` (`transcriptRow.thumbs`), and `renderUserRow`
 (`internal/tui/rendering.go`) paints them under the prompt gutter. For resume, the
 previews are stored on the same `EventMessage` payload (`userMessageSessionPayload`
 → `thumbnails`), compactly — the grid bytes deflated and base64-encoded
@@ -189,7 +202,48 @@ at `thumbHistoryLimit`). `transcriptRowsFromSessionEvents`
 folds the grid into the render fingerprint so the render cache invalidates, and
 `plainTranscriptText` notes `[image #n]` in `/export` (which is plain text).
 
-## 8. Deliberately out of scope
+## 8. Size normalization (provider-safe envelope)
+
+An attached image is **not** sent to a provider verbatim. Every input surface —
+`/image <path>`, clipboard paste, PDF page rasterization, and stream-json
+`ResolveImages` — funnels through `internal/imageinput`, which normalizes the
+bytes into a provider-safe envelope before they are ever encoded as base64 into a
+request. The allow-list is png, jpeg, gif, and webp (`x/image/webp`); an SVG is
+attached as text instead (see §9).
+
+- **Envelope.** Default 2000x2000 pixels and 5 MiB of **base64-encoded** bytes,
+  auto-resize on. The cap is measured on the encoded payload because that is what
+  the provider limits: a 5 MiB encoded image is ~3.75 MiB raw, and it sits exactly
+  at the per-image ceiling Anthropic and most providers enforce. `images.maxWidth`
+  / `maxHeight` / `maxBytes` / `autoResize` in config override each field (see
+  `ImagesConfig`).
+- **Pass-through.** An image already within the envelope is returned
+  byte-identical — no re-encode, no quality loss. Most screenshots take this path.
+- **Downscale + re-encode.** An over-limit image is area-averaged (box filter,
+  aspect ratio preserved) and re-encoded PNG first, then JPEG at descending
+  quality, shrinking ×0.75 per round until it fits. `autoResize = false` rejects
+  an over-limit image instead of resizing it.
+- **Guards.** A decompression-bomb header (`maxDecodePixels`) and an oversized
+  source file (`maxSourceBytes`, read bound) are refused before any large
+  allocation. A payload that is not a supported image (sniffed from its content,
+  not its name) is rejected before it reaches a provider.
+- **Single source of truth.** `internal/imageinput.DefaultLimits()` plus the
+  `config.ImagesConfig` → `imageinput.Limits` conversion in `internal/cli`
+  (`imageLimits`) are the only places the envelope is defined, so CLI exec, the
+  TUI, and stream-json stay consistent.
+
+## 9. SVG and PDF documents
+
+A document attached through `/image <path>` is routed by content, not just by
+name: a PDF by its `%PDF-` magic and an SVG by its XML/`<svg>` prologue. Both
+attach their text (the PDF text layer / the SVG markup) as a `[Doc #N]` token and
+a model-facing preamble, so any model can read them — no vision support required.
+A PDF additionally rasterizes its first pages to `.png` for a vision model when
+`pdftoppm` is installed. Detection lives in `imageinput.LoadSVG` /
+`LooksLikeDocumentFile`; the SVG loader accepts only valid UTF-8 XML text within
+the shared document cap.
+
+## 10. Deliberately out of scope
 
 A graphics-protocol tier (Kitty/iTerm2/Sixel pixel-perfect previews) is not
 implemented: termy cannot use it, it would need a new dependency plus runtime

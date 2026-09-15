@@ -50,7 +50,8 @@ func (m model) handleSpecCommand(task string) (tea.Model, tea.Cmd) {
 		m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendError, text: "session record error: " + err.Error()})
 	}
 
-	turnImages := m.turnImages()
+	ctx := attachmentContextFor(attachmentsForPrompt(task, m.pendingAttachments))
+	turnImages := ctx.images
 	if len(turnImages) > 0 && !m.modelSupportsVisionTUI() && !m.canRouteVisionImages(m.roleRouter()) {
 		name := m.effectiveModelName()
 		if name == "" {
@@ -63,12 +64,19 @@ func (m model) handleSpecCommand(task string) (tea.Model, tea.Cmd) {
 		turnImages = nil
 	}
 	m.pendingAttachments = nil
+	// Prepend any attached PDF text as the model-facing preamble, mirroring the
+	// normal prompt path, so a /spec task that references a document actually
+	// carries it. The transcript and session record keep the clean task.
+	prompt := task
+	if preamble := documentPreamble(ctx.docs); preamble != "" {
+		prompt = preamble + prompt
+	}
 
 	specRegistry := cloneToolRegistry(m.registry)
 	specmode.RegisterDraftTools(specRegistry, m.cwd, m.now)
 	runCtx, cancel := context.WithCancel(m.ctx)
 	m = m.beginRun(cancel)
-	return m, tea.Batch(m.runAgentWithOptions(m.activeRunID, runCtx, task, turnImages, tuiAgentRunOptions{
+	return m, tea.Batch(m.runAgentWithOptions(m.activeRunID, runCtx, prompt, turnImages, tuiAgentRunOptions{
 		registry:       specRegistry,
 		permissionMode: agent.PermissionModeSpecDraft,
 		systemPrompt:   specmode.DraftSystemPrompt,

@@ -263,28 +263,23 @@ func isColor(c rgb, r, g, b uint8) bool {
 	return c.r == r && c.g == g && c.b == b
 }
 
-func TestAttachmentIconAndLabel(t *testing.T) {
-	if got := attachmentIcon(newImageAttachment("x.png", "image/png", nil)); got != "▣" {
-		t.Fatalf("image icon = %q, want ▣", got)
+func TestAttachmentTokenLabel(t *testing.T) {
+	if got := attachmentLabelAt([]stagedAttachment{newImageAttachment("x.png", "image/png", nil)}, 0); got != "[Image #1]" {
+		t.Fatalf("image token = %q, want [Image #1]", got)
 	}
-	if got := attachmentIcon(stagedAttachment{Label: "spec.pdf"}); got != "▤" {
-		t.Fatalf("pdf icon = %q, want ▤", got)
+	doc := stagedAttachment{Label: "spec.pdf", DocText: "body"}
+	if got := attachmentLabelAt([]stagedAttachment{doc, doc}, 1); got != "[Doc #2]" {
+		t.Fatalf("second doc token = %q, want [Doc #2]", got)
 	}
-	if got := attachmentIcon(stagedAttachment{Label: "notes.txt"}); got != "▢" {
-		t.Fatalf("generic icon = %q, want ▢", got)
-	}
-	long := strings.Repeat("a", 40)
-	if got := shortAttachmentLabel(long); len([]rune(got)) > 24 || !strings.HasSuffix(got, "…") {
-		t.Fatalf("long label should be truncated with an ellipsis, got %q", got)
-	}
-	if got := shortAttachmentLabel("   "); got != "attachment" {
-		t.Fatalf("blank label = %q, want attachment", got)
+	if got := attachmentLabelAt([]stagedAttachment{{Label: "a.txt"}}, 0); got != "" {
+		t.Fatalf("opaque file has no token, got %q", got)
 	}
 }
 
-// attachmentBlockLines must count the chip row plus one preview per staged image,
-// and the rendered block must have exactly that many lines — the composer box
-// height, the hit-test, and the render all rely on this single source of truth.
+// attachmentBlockLines must count the preview rows and the rendered block must
+// have exactly that many lines — the composer box height, the hit-test, and the
+// render all rely on this single source of truth. The attachment names are no
+// longer drawn here; each rides inline in the prompt as an [Image #N] token.
 func TestAttachmentBlockGeometryMatchesRender(t *testing.T) {
 	m := newModel(t.Context(), Options{ModelName: "gpt-4.1"})
 	m.pendingAttachments = []stagedAttachment{
@@ -299,11 +294,8 @@ func TestAttachmentBlockGeometryMatchesRender(t *testing.T) {
 	if want := m.attachmentBlockLines(innerWidth); want != len(lines) {
 		t.Fatalf("attachmentBlockLines=%d but block rendered %d lines", want, len(lines))
 	}
-	if !strings.Contains(lines[0], "[Image #1]") {
-		t.Fatalf("first line should be the chip row, got %q", lines[0])
-	}
-	if !strings.ContainsAny(lines[1], quadrantGlyphs) {
-		t.Fatalf("second line should be the image preview, got %q", lines[1])
+	if !strings.ContainsAny(lines[0], quadrantGlyphs) {
+		t.Fatalf("first line should be the image preview, got %q", lines[0])
 	}
 
 	// No attachments: zero lines, and the empty block renders nothing.
@@ -335,11 +327,11 @@ func TestAttachmentBlockPreviewsEveryStagedImage(t *testing.T) {
 		t.Fatalf("attachmentBlockLines=%d but block rendered %d lines", got, len(lines))
 	}
 	// Side by side: one constant-height band, not a stack of previews.
-	if len(lines) != 1+previewTargetRows {
-		t.Fatalf("two images should render one %d-row band, got %d lines", previewTargetRows, len(lines)-1)
+	if len(lines) != previewTargetRows {
+		t.Fatalf("two images should render one %d-row band, got %d lines", previewTargetRows, len(lines))
 	}
-	if !strings.ContainsAny(lines[1], quadrantGlyphs) {
-		t.Fatalf("line after the chip should hold the preview band, got %q", lines[1])
+	if !strings.ContainsAny(lines[0], quadrantGlyphs) {
+		t.Fatalf("first line should hold the preview band, got %q", lines[0])
 	}
 }
 
@@ -374,9 +366,9 @@ func TestAttachmentBlockBoundsManyPreviews(t *testing.T) {
 }
 
 // Under NO_COLOR the preview is suppressed, so the height calculation and the
-// render must BOTH drop to the single chip row. This guards the regression where
+// render must BOTH report no attachment lines. This guards the regression where
 // attachmentBlockLines still counted preview rows while attachmentBlock painted
-// only the chip — a geometry divergence that mis-sized the composer box.
+// nothing — a geometry divergence that mis-sized the composer box.
 func TestAttachmentBlockGeometryUnderNoColor(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	m := newModel(t.Context(), Options{ModelName: "gpt-4.1"})
@@ -386,20 +378,17 @@ func TestAttachmentBlockGeometryUnderNoColor(t *testing.T) {
 
 	const innerWidth = 60
 	lines := m.attachmentBlock(innerWidth)
-	if len(lines) != 1 {
-		t.Fatalf("NO_COLOR block should be the single chip row, got %d lines", len(lines))
+	if len(lines) != 0 {
+		t.Fatalf("NO_COLOR block should render no preview, got %d lines", len(lines))
 	}
 	if got := m.attachmentBlockLines(innerWidth); got != len(lines) {
 		t.Fatalf("NO_COLOR attachmentBlockLines=%d but block rendered %d lines", got, len(lines))
 	}
-	if strings.ContainsAny(lines[0], "▘▝▀▖▌▞▛▗▚▐▜▄▙▟█") {
-		t.Fatalf("NO_COLOR must not paint the preview, got %q", lines[0])
-	}
 }
 
 // A staged image whose bytes cannot be decoded (e.g. webp) has no thumb, so it
-// must contribute no preview row: the block is exactly the chip row and the
-// height calc agrees. This is the same divergence class as the NO_COLOR bug.
+// must contribute no preview row: the block is empty and the height calc agrees.
+// This is the same divergence class as the NO_COLOR bug.
 func TestAttachmentBlockGeometryUndecodableImage(t *testing.T) {
 	m := newModel(t.Context(), Options{ModelName: "gpt-4.1"})
 	m.pendingAttachments = []stagedAttachment{
@@ -408,24 +397,24 @@ func TestAttachmentBlockGeometryUndecodableImage(t *testing.T) {
 
 	const innerWidth = 60
 	lines := m.attachmentBlock(innerWidth)
-	if len(lines) != 1 {
-		t.Fatalf("undecodable image should be the single chip row, got %d lines", len(lines))
+	if len(lines) != 0 {
+		t.Fatalf("undecodable image should render no preview, got %d lines", len(lines))
 	}
 	if got := m.attachmentBlockLines(innerWidth); got != len(lines) {
 		t.Fatalf("attachmentBlockLines=%d but block rendered %d lines", got, len(lines))
 	}
 }
 
-// A document-only attachment (no image) carries no preview, so the block is one
-// line — the [Doc #n] chip.
+// A document-only attachment (no image) carries no preview, so the block is
+// empty — the [Doc #n] reference is inline in the prompt, not a composer row.
 func TestAttachmentBlockGeometryDocOnly(t *testing.T) {
 	m := newModel(t.Context(), Options{ModelName: "gpt-4.1"})
 	m.pendingAttachments = []stagedAttachment{{Label: "spec.pdf", DocText: "body"}}
 
 	const innerWidth = 60
 	lines := m.attachmentBlock(innerWidth)
-	if len(lines) != 1 || !strings.Contains(lines[0], "[Doc #1]") {
-		t.Fatalf("doc-only block should be the single [Doc #1] chip row, got %#v", lines)
+	if len(lines) != 0 {
+		t.Fatalf("doc-only block should render no preview, got %#v", lines)
 	}
 	if got := m.attachmentBlockLines(innerWidth); got != len(lines) {
 		t.Fatalf("attachmentBlockLines=%d but block rendered %d lines", got, len(lines))
@@ -443,11 +432,11 @@ func TestAttachmentBlockPreviewsDecodableImageAfterUndecodable(t *testing.T) {
 
 	const innerWidth = 60
 	lines := m.attachmentBlock(innerWidth)
-	if len(lines) != 1+previewTargetRows {
+	if len(lines) != previewTargetRows {
 		t.Fatalf("the decodable image should still preview, got %d lines", len(lines))
 	}
-	if !strings.ContainsAny(lines[1], quadrantGlyphs) {
-		t.Fatalf("second line should be the preview, got %q", lines[1])
+	if !strings.ContainsAny(lines[0], quadrantGlyphs) {
+		t.Fatalf("first line should be the preview, got %q", lines[0])
 	}
 	if got := m.attachmentBlockLines(innerWidth); got != len(lines) {
 		t.Fatalf("attachmentBlockLines=%d but block rendered %d lines", got, len(lines))

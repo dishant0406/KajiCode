@@ -13,7 +13,7 @@ import (
 // stderr and proceed text-only (exit 0), never erroring the run.
 func TestRunExecDropsImagesOnNonVisionModelWithWarning(t *testing.T) {
 	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "shot.png"), pngBytes, 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "shot.png"), testPNG(t), 0o600); err != nil {
 		t.Fatal(err)
 	}
 

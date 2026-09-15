@@ -661,13 +661,27 @@ func (state *compactionState) recover(
 		state.reactiveAttempted = true
 		return messages, true, compactErr
 	}
-	if estimateTokens(result.Messages) >= estimateTokens(messages) {
+	// Reactive compaction can be a no-op for size even though it summarized text:
+	// a large image in the preserved tail (or an image-only newest turn) is charged
+	// imageTokenEstimate and keeps the estimate at or above the pre-compaction
+	// level, so the retried turn would still blow the window. Summarized text alone
+	// cannot fix that, so drop media from the candidate as a second, media-specific
+	// recovery step. This is deliberately last-resort: the retried turn loses its
+	// vision payload but runs instead of failing outright.
+	candidate := result.Messages
+	if estimateTokens(candidate) >= estimateTokens(messages) {
+		if stripped := stripMessageImages(candidate); estimateTokens(stripped) < estimateTokens(messages) {
+			candidate = stripped
+		}
+	}
+	if estimateTokens(candidate) >= estimateTokens(messages) {
 		// Nothing to compact; the retry would just fail again. Signal "not
 		// retried" so the caller surfaces the original context-limit error. Do NOT
 		// consume the one-shot budget here: a no-op recover (history too small to
 		// shrink) must not disable a later recovery once the history has grown.
 		return messages, false, nil
 	}
+	result.Messages = candidate
 	// Success: a real compaction shrank the history and we will retry. Consume the
 	// one-shot budget now so a provider that keeps returning context-limit errors
 	// after a successful compaction can't loop forever. Store the low-water mark in
@@ -706,6 +720,23 @@ func (state *compactionState) emitCompaction(trigger string, result CompactionRe
 		Messages:       persistedCompactionMessages(result.Messages),
 	})
 }
+
+// stripMessageImages returns a copy of messages with every image attachment
+// removed. It is the media-specific last resort in reactive recovery: when
+// summarizing text cannot bring the estimate below its pre-compaction level, the
+// only remaining oversized payload is image data. The messages themselves are
+// copied so the caller's slice (and its Images) is never mutated.
+func stripMessageImages(messages []kajicoderuntime.Message) []kajicoderuntime.Message {
+	out := make([]kajicoderuntime.Message, len(messages))
+	copy(out, messages)
+	for i := range out {
+		if len(out[i].Images) > 0 {
+			out[i].Images = nil
+		}
+	}
+	return out
+}
+
 func persistedCompactionMessages(messages []kajicoderuntime.Message) []kajicoderuntime.Message {
 	out := make([]kajicoderuntime.Message, 0, len(messages))
 	for _, message := range messages {
@@ -821,6 +852,9 @@ func summarizeMessagesOnce(ctx context.Context, provider Provider, messages []ka
 func renderTranscript(messages []kajicoderuntime.Message) string {
 	lines := make([]string, 0, len(messages))
 	for _, message := range messages {
+		if len(message.Images) > 0 {
+			lines = append(lines, fmt.Sprintf("[%s message included %d image attachment(s) not shown]", message.Role, len(message.Images)))
+		}
 		switch message.Role {
 		case kajicoderuntime.MessageRoleAssistant:
 			line := "assistant: " + message.Content

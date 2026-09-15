@@ -29,7 +29,7 @@ func TestReadClipboardImage(t *testing.T) {
 	// On CI there's no image → nil. On a dev machine with a screenshot copied,
 	// it returns real bytes. Both paths are valid — the test verifies whichever
 	// one the clipboard produces.
-	data, mediaType, err := ReadClipboardImage()
+	data, mediaType, err := ReadClipboardImage(DefaultLimits())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

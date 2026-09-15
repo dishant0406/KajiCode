@@ -297,6 +297,23 @@ func TestRenderTranscriptMarksPrunedPlaceholder(t *testing.T) {
 	}
 }
 
+func TestRenderTranscriptReferencesImages(t *testing.T) {
+	msgs := []kajicoderuntime.Message{{
+		Role:    kajicoderuntime.MessageRoleUser,
+		Content: "look",
+		Images:  []kajicoderuntime.ImageBlock{{MediaType: "image/png", Data: []byte{0x89}}},
+	}}
+	got := renderTranscript(msgs)
+	if !strings.Contains(got, "1 image attachment(s) not shown") {
+		t.Fatalf("image attachment should be referenced, got %q", got)
+	}
+	// A text-only message must not gain a spurious image reference.
+	plain := renderTranscript([]kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleUser, Content: "hi"}})
+	if strings.Contains(plain, "image attachment") {
+		t.Fatalf("text-only transcript must not mention images, got %q", plain)
+	}
+}
+
 func TestMaybeCompactBudgetedTailActivatesForRealisticWindow(t *testing.T) {
 	// A realistic-ish model window (>= 32k turns on the budgeted tail, and the
 	// large head trips the threshold) so maybeCompact keeps a recent turn window

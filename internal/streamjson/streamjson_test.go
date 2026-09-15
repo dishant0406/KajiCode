@@ -1,10 +1,17 @@
 package streamjson
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"image"
+	"image/color"
+	"image/jpeg"
+	"image/png"
 	"strings"
 	"testing"
+
+	"github.com/dishant0406/KajiCode/internal/imageinput"
 	"time"
 )
 
@@ -189,10 +196,42 @@ func boolPtr(value bool) *bool {
 	return &value
 }
 
+// realPNG/realJPEG build small valid encodings so image-input tests exercise the
+// real decode/sniff path rather than fake magic bytes.
+func realPNG(t *testing.T) []byte {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, 4, 4))
+	for y := 0; y < 4; y++ {
+		for x := 0; x < 4; x++ {
+			img.Set(x, y, color.RGBA{uint8(x), uint8(y), 0, 255})
+		}
+	}
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		t.Fatalf("encode png: %v", err)
+	}
+	return buf.Bytes()
+}
+
+func realJPEG(t *testing.T) []byte {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, 4, 4))
+	for y := 0; y < 4; y++ {
+		for x := 0; x < 4; x++ {
+			img.Set(x, y, color.RGBA{uint8(x), uint8(y), 0, 255})
+		}
+	}
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, img, nil); err != nil {
+		t.Fatalf("encode jpeg: %v", err)
+	}
+	return buf.Bytes()
+}
+
 func TestResolveImagesDecodesNormalizesAndCaps(t *testing.T) {
 	// happy path: two images across two events, jpg media type normalized to image/jpeg
-	rawPNG := []byte("\x89PNG fake bytes")
-	rawJPG := []byte("\xff\xd8\xff fake jpeg")
+	rawPNG := realPNG(t)
+	rawJPG := realJPEG(t)
 	events := []InputEvent{
 		{SchemaVersion: SchemaVersion, Type: InputMessage, Role: "user", Content: "a", Images: []InputImage{
 			{MediaType: "image/png", Data: base64.StdEncoding.EncodeToString(rawPNG)},
@@ -201,7 +240,7 @@ func TestResolveImagesDecodesNormalizesAndCaps(t *testing.T) {
 			{MediaType: "jpg", Data: base64.StdEncoding.EncodeToString(rawJPG)},
 		}},
 	}
-	images, err := ResolveImages(events)
+	images, err := ResolveImages(events, imageinput.DefaultLimits())
 	if err != nil {
 		t.Fatalf("ResolveImages returned error: %v", err)
 	}
@@ -216,7 +255,7 @@ func TestResolveImagesDecodesNormalizesAndCaps(t *testing.T) {
 	}
 
 	// no images -> nil, no error
-	none, err := ResolveImages([]InputEvent{{SchemaVersion: SchemaVersion, Type: InputPrompt, Content: "x"}})
+	none, err := ResolveImages([]InputEvent{{SchemaVersion: SchemaVersion, Type: InputPrompt, Content: "x"}}, imageinput.DefaultLimits())
 	if err != nil {
 		t.Fatalf("ResolveImages with no images errored: %v", err)
 	}
@@ -229,14 +268,14 @@ func TestResolveImagesRejectsBadInputs(t *testing.T) {
 	// invalid base64
 	badB64 := []InputEvent{{SchemaVersion: SchemaVersion, Type: InputMessage, Role: "user", Content: "a",
 		Images: []InputImage{{MediaType: "image/png", Data: "not base64!!"}}}}
-	if _, err := ResolveImages(badB64); err == nil || !strings.Contains(err.Error(), "base64") {
+	if _, err := ResolveImages(badB64, imageinput.DefaultLimits()); err == nil || !strings.Contains(err.Error(), "base64") {
 		t.Fatalf("expected base64 decode error, got %v", err)
 	}
 
 	// unsupported media type
 	badType := []InputEvent{{SchemaVersion: SchemaVersion, Type: InputMessage, Role: "user", Content: "a",
 		Images: []InputImage{{MediaType: "image/svg+xml", Data: base64.StdEncoding.EncodeToString([]byte("x"))}}}}
-	if _, err := ResolveImages(badType); err == nil || !strings.Contains(err.Error(), "unsupported image media type") {
+	if _, err := ResolveImages(badType, imageinput.DefaultLimits()); err == nil || !strings.Contains(err.Error(), "unsupported image") {
 		t.Fatalf("expected unsupported media type error, got %v", err)
 	}
 
@@ -244,7 +283,7 @@ func TestResolveImagesRejectsBadInputs(t *testing.T) {
 	oversize := make([]byte, (10<<20)+1)
 	bigEvent := []InputEvent{{SchemaVersion: SchemaVersion, Type: InputMessage, Role: "user", Content: "a",
 		Images: []InputImage{{MediaType: "image/png", Data: base64.StdEncoding.EncodeToString(oversize)}}}}
-	if _, err := ResolveImages(bigEvent); err == nil || !strings.Contains(err.Error(), "exceeds") {
+	if _, err := ResolveImages(bigEvent, imageinput.DefaultLimits()); err == nil || !strings.Contains(err.Error(), "exceeds") {
 		t.Fatalf("expected oversize rejection, got %v", err)
 	}
 }
@@ -263,7 +302,7 @@ func TestResolveImagesRejectsOversizedEncodedLengthBeforeDecode(t *testing.T) {
 	event := []InputEvent{{SchemaVersion: SchemaVersion, Type: InputMessage, Role: "user", Content: "a",
 		Images: []InputImage{{MediaType: "image/png", Data: huge}}}}
 
-	_, err := ResolveImages(event)
+	_, err := ResolveImages(event, imageinput.DefaultLimits())
 	if err == nil || !strings.Contains(err.Error(), "exceeds") {
 		t.Fatalf("expected pre-decode oversize rejection, got %v", err)
 	}
@@ -357,7 +396,7 @@ func TestInputEventImagesRoundTripAndOmitempty(t *testing.T) {
 }
 
 func TestParseInputThenResolveImagesRoundTrip(t *testing.T) {
-	raw := []byte("\x89PNG round trip bytes")
+	raw := realPNG(t)
 	line := `{"schemaVersion":2,"type":"message","role":"user","content":"describe","images":[{"mediaType":"png","data":"` +
 		base64.StdEncoding.EncodeToString(raw) + `"}]}`
 
@@ -375,7 +414,7 @@ func TestParseInputThenResolveImagesRoundTrip(t *testing.T) {
 		t.Fatalf("prompt = %q", prompt)
 	}
 
-	images, err := ResolveImages(events)
+	images, err := ResolveImages(events, imageinput.DefaultLimits())
 	if err != nil {
 		t.Fatalf("ResolveImages: %v", err)
 	}
@@ -388,7 +427,7 @@ func TestParseInputThenResolveImagesRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseInput text-only: %v", err)
 	}
-	imgs, err := ResolveImages(textOnly)
+	imgs, err := ResolveImages(textOnly, imageinput.DefaultLimits())
 	if err != nil {
 		t.Fatalf("ResolveImages text-only: %v", err)
 	}

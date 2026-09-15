@@ -26,9 +26,9 @@ type clipboardImageMsg struct {
 // readClipboardImageCmd reads the OS clipboard for image content off the
 // Update goroutine. Returns a clipboardImageMsg with the bytes, or nil (no
 // command) if there is no image — the caller treats nil as a silent no-op.
-func readClipboardImageCmd() tea.Cmd {
+func readClipboardImageCmd(limits imageinput.Limits) tea.Cmd {
 	return func() tea.Msg {
-		data, mediaType, err := imageinput.ReadClipboardImage()
+		data, mediaType, err := imageinput.ReadClipboardImage(limits)
 		if err != nil {
 			return clipboardImageMsg{err: err}
 		}
@@ -74,7 +74,7 @@ func (m model) routePaste(content string) (tea.Model, tea.Cmd) {
 	if content == "" {
 		// Empty text clipboard — the user may have pasted a screenshot.
 		// Probe the OS clipboard for image content asynchronously.
-		return m, readClipboardImageCmd()
+		return m, readClipboardImageCmd(m.imageLimits)
 	}
 	// Setup and the ask_user questionnaire share the main text input.
 	if m.setup.visible {

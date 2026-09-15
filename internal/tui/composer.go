@@ -27,6 +27,12 @@ type composerPastePreview struct {
 	start  int
 	end    int
 	label  string
+	// attachment links this preview to a staged attachment, 1-based into
+	// model.pendingAttachments. 0 means the preview is a plain text paste, not an
+	// attachment — the zero value, so text-paste previews need no change. An
+	// image/document token is a preview whose span text IS its label
+	// ("[Image #2]"), which is what lets a delete drop exactly that attachment.
+	attachment int
 }
 
 func insertComposerText(state composerState, text string) composerState {
@@ -405,6 +411,7 @@ func (m model) applyComposerKey(msg tea.KeyMsg) (model, bool) {
 	} else {
 		m.recomputeSuggestions()
 	}
+	m.syncAttachmentTokens()
 	return m, true
 }
 

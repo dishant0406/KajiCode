@@ -259,3 +259,24 @@ func TestValidateFileAllowsLegacyProviderKeys(t *testing.T) {
 		}
 	}
 }
+
+func TestValidateFileFlagsNegativeImageLimit(t *testing.T) {
+	path := writeValidateFixture(t, `{
+		"activeProvider": "main",
+		"providers": [
+			{"name": "main", "provider_kind": "openai", "model": "gpt-4.1"}
+		],
+		"images": {"maxBytes": -1}
+	}`)
+
+	_, issues := ValidateFile(path)
+	found := false
+	for _, issue := range issues {
+		if issue.FieldPath == "images.maxBytes" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected an images.maxBytes issue, got %#v", issues)
+	}
+}

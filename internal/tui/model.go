@@ -21,6 +21,7 @@ import (
 	"github.com/dishant0406/KajiCode/internal/config"
 	"github.com/dishant0406/KajiCode/internal/doctor"
 	"github.com/dishant0406/KajiCode/internal/errhint"
+	"github.com/dishant0406/KajiCode/internal/imageinput"
 	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
 	"github.com/dishant0406/KajiCode/internal/lsp"
 	internalmcp "github.com/dishant0406/KajiCode/internal/mcp"
@@ -82,6 +83,7 @@ type model struct {
 	defaultModel         string
 	activeRole           string
 	visionRouting        string
+	imageLimits          imageinput.Limits // provider-safe envelope for attached images (resize/re-encode if needed)
 	// roleBindTarget is the role an open role-bound model picker is configuring.
 	// It is set when /role's stage-1 role list hands off to a model picker, and
 	// cleared once a model is chosen (or the flow is cancelled).
@@ -883,6 +885,7 @@ func newModel(ctx context.Context, options Options) model {
 		defaultModel:                options.DefaultModel,
 		activeRole:                  options.ActiveRole,
 		visionRouting:               options.VisionRouting,
+		imageLimits:                 imageinput.LimitsOrDefault(options.ImageLimits),
 		gitBranch:                   gitBranch(cwd),
 		providerName:                options.ProviderName,
 		modelName:                   options.ModelName,
@@ -1309,7 +1312,7 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if msg.content == "" {
 			// Empty text clipboard — may be a screenshot. Probe for image.
-			return m, readClipboardImageCmd()
+			return m, readClipboardImageCmd(m.imageLimits)
 		}
 		return m.routePaste(msg.content)
 	case clipboardImageMsg:
@@ -1797,14 +1800,6 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// theme preview in sync with it (no-op for other pickers).
 				m.previewSelectedTheme()
 				return m, nil
-			}
-			// On an empty composer, Backspace removes the last attachment chip
-			// ([Image #N] / [Doc #N]) so you can drop one you don't need without
-			// clearing them all. With text present it deletes a character as usual.
-			if m.composerValue() == "" {
-				if next, removed := m.removeLastAttachment(); removed {
-					return next, nil
-				}
 			}
 		case keyIs(msg, tea.KeyTab):
 			if m.transcriptDetailed {
@@ -4241,8 +4236,9 @@ func (m model) composerBox(width int) string {
 
 	rendered := make([]string, 0, len(lines)+3)
 	rendered = append(rendered, kajicodeTheme.lineStrong.Render("╭"+strings.Repeat("─", width-2)+"╮"))
-	// Attachment chips ([Image #1] …) and the first image's live preview render
-	// INSIDE the box, above the input line, instead of as a separate row above it.
+	// Staged image previews render INSIDE the box, above the input line, instead
+	// of as a separate row above it; the [Image #N] token itself is ordinary
+	// composer text within the input.
 	for _, blockLine := range m.attachmentBlock(innerWidth) {
 		fitted := fitStyledLine(blockLine, innerWidth)
 		pad := strings.Repeat(" ", maxInt(0, innerWidth-lipgloss.Width(fitted)))
@@ -4505,10 +4501,12 @@ func (m model) chooseSuggestion() (tea.Model, tea.Cmd) {
 func (m model) handleSubmit() (tea.Model, tea.Cmd) {
 	input := m.composerValue()
 	// A drag-dropped image/PDF path that reached the composer (e.g. inserted as
-	// text) attaches instead of being parsed as an unknown "/…" command.
+	// text) attaches instead of being parsed as an unknown "/…" command. Clear the
+	// path text first so the attach inserts its inline token into an empty
+	// composer — attaching first would then have the token wiped along with the path.
 	if path, ok := droppedAttachmentPath(input, m.cwd); ok {
-		m = m.handleImageCommand(path)
 		m.clearComposer()
+		m = m.handleImageCommand(path)
 		m.clearSuggestions()
 		return m, nil
 	}
@@ -5005,12 +5003,16 @@ func (m model) dispatchCommand(command parsedCommand) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		// Re-stage the remembered attachments alongside the recalled text so an
-		// edited resend carries the same image/PDF context — the reappearing chip
-		// row is the visible confirmation. Without this, editing a vision- or
-		// document-backed prompt would silently submit a text-only version and
-		// answer a different task (the same gap /retry guards against).
+		// edited resend carries the same image/PDF context — the reappearing
+		// [Image #N] token is the visible confirmation. Without this, editing a
+		// vision- or document-backed prompt would silently submit a text-only
+		// version and answer a different task (the same gap /retry guards against).
 		m.pendingAttachments = m.lastAttachments
-		m.input.SetValue(m.lastPrompt)
+		m.setComposerState(composerState{text: m.lastPrompt, cursor: len([]rune(m.lastPrompt))})
+		// Re-derive the token previews from the recalled text so the tokens are
+		// atomic/deletable again and stay in lockstep with the attachments as the
+		// user edits.
+		m.rebuildAttachmentTokensFromText()
 		return m, nil
 	case commandCopy:
 		text := m.lastAssistantAnswer()
@@ -5054,6 +5056,12 @@ func (m model) executeSlash(input string) (tea.Model, tea.Cmd) {
 // stays identical to immediate submissions.
 func (m model) launchPrompt(prompt string) (model, tea.Cmd) {
 	composerInput := prompt
+	// The prompt text carries inline [Image #N] / [Doc #N] tokens; resolve them to
+	// the staged attachments the user actually kept, dropping any whose token was
+	// deleted. Resolving from the text (not the composer previews) also covers a
+	// queued or /retry submission, whose composer has already been cleared.
+	live := attachmentsForPrompt(prompt, m.pendingAttachments)
+	ctx := attachmentContextFor(live)
 	// Remember the verbatim prompt (before specialist/document expansion) so /retry
 	// and /edit can act on exactly what the user submitted. Snapshot the staged
 	// attachments too: launchPrompt clears the pending queues below, so /retry
@@ -5068,14 +5076,14 @@ func (m model) launchPrompt(prompt string) (model, tea.Cmd) {
 		echo = m.promptEchoOverride
 		m.promptEchoOverride = ""
 	}
-	m.lastAttachments = m.pendingAttachments
+	m.lastAttachments = live
 	m.homeNotice = ""
 	m.transcript = reduceTranscript(m.transcript, transcriptAction{
 		kind: actionAppendUser,
 		text: echo,
 		// Carry the live previews into the transcript row so the user's image
 		// thumbs stay visible in history after the turn is sent.
-		thumbs: m.historyThumbs(),
+		thumbs: historyThumbsFor(live),
 	})
 	if m.provider == nil {
 		m.transcript = reduceTranscript(m.transcript, transcriptAction{
@@ -5096,10 +5104,10 @@ func (m model) launchPrompt(prompt string) (model, tea.Cmd) {
 	if expanded, changed := expandSkillMentions(prompt, m.agentOptions.Skills); changed {
 		prompt = expanded
 	}
-	// Prepend any staged PDF document text as a model-facing preamble. The
-	// visible transcript above keeps the user's clean prompt; the agent (and the
-	// recorded session, for resume fidelity) sees the document text first.
-	if preamble := m.consumePendingDocuments(); preamble != "" {
+	// Prepend any live PDF document text as a model-facing preamble. The visible
+	// transcript above keeps the user's clean prompt; the agent (and the recorded
+	// session, for resume fidelity) sees the document text first.
+	if preamble := documentPreamble(ctx.docs); preamble != "" {
 		prompt = preamble + prompt
 	}
 	var err error
@@ -5124,7 +5132,7 @@ func (m model) launchPrompt(prompt string) (model, tea.Cmd) {
 		var sessionRows []transcriptRow
 		m, sessionRows = m.appendSessionEvents([]pendingSessionEvent{
 			{Type: sessions.EventComposerInput, Payload: map[string]any{"text": composerInput}},
-			{Type: sessions.EventMessage, Payload: userMessageSessionPayload(prompt, m.previewThumbEncodings())},
+			{Type: sessions.EventMessage, Payload: userMessageSessionPayload(prompt, previewThumbEncodings(live))},
 		})
 		m.transcript = appendTranscriptRowsDedup(m.transcript, sessionRows)
 	}
@@ -5134,7 +5142,7 @@ func (m model) launchPrompt(prompt string) (model, tea.Cmd) {
 	// model can't accept images, drop them (with an inline notice mirroring
 	// exec's drop+warn wording) rather than sending them to a model that
 	// rejects them. Pending state is cleared either way below.
-	turnImages := m.turnImages()
+	turnImages := ctx.images
 	if len(turnImages) > 0 && !m.modelSupportsVisionTUI() && !m.canRouteVisionImages(m.roleRouter()) {
 		name := m.effectiveModelName()
 		if name == "" {
@@ -5346,6 +5354,7 @@ func (m model) runAgentWithOptions(runID int, runCtx context.Context, prompt str
 		options.ResponseStyle = m.responseStyle
 		options.Cwd = m.cwd
 		options.Images = images
+		options.ImageLimits = m.imageLimits
 		options.InitialMessages = runOptions.initialMessages
 		if m.captureRunImages != nil {
 			m.captureRunImages(images)

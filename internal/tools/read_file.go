@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -13,6 +12,9 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/dishant0406/KajiCode/internal/imageinput"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
 )
 
 type readFileTool struct {
@@ -105,7 +107,7 @@ func (tool readFileTool) run(args map[string]any, options RunOptions, directBudg
 
 	switch classifyFileKind(absolutePath, readFilePrefix(absolutePath)) {
 	case mediaImage:
-		return renderReadMedia(absolutePath, relativePath, mediaMimeForPath(absolutePath))
+		return renderReadImage(absolutePath, relativePath, options)
 	case mediaPDF:
 		return renderReadMedia(absolutePath, relativePath, "application/pdf")
 	case mediaBinary:
@@ -207,22 +209,37 @@ func suggestNearbyPaths(dir string, base string) []string {
 	return matches
 }
 
-// renderReadMedia renders a media (image/PDF) file as a base64 resource line.
-// The tool layer has no provider message channel, so it returns a stable
-// base64 reference the agent can pass upstream; decode failures still surface.
-func renderReadMedia(absolutePath string, relativePath string, mime string) Result {
-	content, err := fileContentFor(absolutePath)
-	if err != nil {
-		return errorResult("Error reading media file " + relativePath + ": " + err.Error())
+// renderReadImage returns a raster image as a real image part for a
+// vision-capable model, or a plain notice when the active model cannot see
+// images. A text-only model would reject an image part with a 400, so the notice
+// lets it report the limitation instead of killing the run. The image is
+// normalized into the run's configured envelope exactly like an attached one.
+func renderReadImage(absolutePath string, relativePath string, options RunOptions) Result {
+	if options.ModelSupportsVision != nil && !options.ModelSupportsVision(options.Model) {
+		return okResult("Image file: " + relativePath +
+			". It was not attached because the active model does not support image input; use a vision-capable model to view it.")
 	}
-	encoded := base64.StdEncoding.EncodeToString(content)
-	output := fmt.Sprintf("Media file: %s (%s)\ndata:%s;base64,%s",
-		relativePath, mime, mime, string(encoded))
+	block, err := imageinput.LoadFile(absolutePath, "", imageinput.LimitsOrDefault(options.ImageLimits))
+	if err != nil {
+		return errorResult("Error reading image " + relativePath + ": " + err.Error())
+	}
 	return Result{
 		Status: StatusOK,
-		Output: output,
-		Meta:   map[string]string{"media": "true", "mime": mime, "path": relativePath},
+		Output: "Image read successfully: " + relativePath,
+		Images: []kajicoderuntime.ImageBlock{block},
 	}
+}
+
+// renderReadMedia extracts a document's text so the model reads usable content
+// rather than an unusable base64 blob. read_file has no vision routing, so PDF
+// pages are not rasterized; a scanned PDF with no text layer reports that
+// clearly instead of returning empty success.
+func renderReadMedia(absolutePath string, relativePath string, mime string) Result {
+	doc, err := imageinput.LoadDocument(absolutePath, "", imageinput.DocumentOptions{})
+	if err != nil {
+		return errorResult("Error reading document " + relativePath + ": " + err.Error())
+	}
+	return okResult("Document: " + relativePath + " (" + mime + ")\n\n" + doc.Text)
 }
 
 func renderReadFileRange(absolutePath string, relativePath string, total int, startLine int, endLine int, maxLines int, maxBytes int) Result {

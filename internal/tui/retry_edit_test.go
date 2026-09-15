@@ -36,7 +36,7 @@ func TestEditRecallsLastPrompt(t *testing.T) {
 // context instead of silently sending a text-only version.
 func TestEditRestagesAttachments(t *testing.T) {
 	m := newModel(context.Background(), Options{ModelName: "gpt-4.1"})
-	m.lastPrompt = "describe the diagram"
+	m.lastPrompt = "describe [Image #1] the [Doc #1] diagram"
 	m.lastAttachments = []stagedAttachment{
 		newImageAttachment("diagram.png", "image/png", nil),
 		{Label: "spec.pdf", DocText: "notes"},
@@ -46,7 +46,7 @@ func TestEditRestagesAttachments(t *testing.T) {
 	updated, _ := m.Update(testKey(tea.KeyEnter))
 	next := updated.(model)
 
-	if got := next.composerValue(); got != "describe the diagram" {
+	if got := next.composerValue(); got != "describe [Image #1] the [Doc #1] diagram" {
 		t.Fatalf("/edit should recall the prompt text, got %q", got)
 	}
 	if len(next.turnImages()) != 1 || next.pendingAttachments[0].Label != "diagram.png" {

@@ -15,10 +15,10 @@ import (
 // keeps a resumed session's history identical without adding any new storage: the
 // payload is the same JSON the session writer already persists.
 
-// previewThumbEncodings encodes the staged previews for the session payload.
-// Returns nil when no image is staged, so a text-only turn stores no extra field.
-func (m model) previewThumbEncodings() []string {
-	thumbs := m.historyThumbs()
+// previewThumbEncodings encodes the previews for the session payload. Returns
+// nil when no image is staged, so a text-only turn stores no extra field.
+func previewThumbEncodings(attachments []stagedAttachment) []string {
+	thumbs := historyThumbsFor(attachments)
 	if len(thumbs) == 0 {
 		return nil
 	}

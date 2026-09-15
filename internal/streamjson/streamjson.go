@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dishant0406/KajiCode/internal/imageinput"
 	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
 	"github.com/dishant0406/KajiCode/internal/sandbox"
 )
@@ -202,14 +203,18 @@ func ResolvePrompt(events []InputEvent) (string, error) {
 	return strings.Join(parts, "\n\n"), nil
 }
 
-// maxStreamImageBytes caps a single decoded image at 10 MiB to bound request bodies.
+// maxStreamImageBytes caps a single decoded image at 10 MiB to bound request
+// bodies. It is the pre-decode guard; the image is then normalized into limits by
+// the shared loader, which is the provider-safe envelope actually sent.
 const maxStreamImageBytes = 10 << 20
 
 // ResolveImages decodes every base64 image attached to the input events into
-// raw-byte ImageBlocks. Each image's media type is normalized and validated
-// against the supported allow-list, and its decoded size is capped. Returns nil
-// when no events carry images.
-func ResolveImages(events []InputEvent) ([]kajicoderuntime.ImageBlock, error) {
+// raw-byte ImageBlocks. Each image's media type is validated against the
+// supported allow-list and its decoded size is capped, then it is normalized
+// into limits (resized/re-encoded if needed) so a stream-json image reaches the
+// provider exactly like a file or clipboard image. Returns nil when no events
+// carry images.
+func ResolveImages(events []InputEvent, limits imageinput.Limits) ([]kajicoderuntime.ImageBlock, error) {
 	var images []kajicoderuntime.ImageBlock
 	for _, event := range events {
 		for _, image := range event.Images {
@@ -228,11 +233,11 @@ func ResolveImages(events []InputEvent) ([]kajicoderuntime.ImageBlock, error) {
 			if len(data) > maxStreamImageBytes {
 				return nil, ProtocolError{fmt.Sprintf("Stream-json image exceeds the %d byte limit.", maxStreamImageBytes)}
 			}
-			mediaType := kajicoderuntime.NormalizeImageMediaType(image.MediaType)
-			if mediaType == "" {
-				return nil, ProtocolError{fmt.Sprintf("Stream-json image has an unsupported image media type %q.", image.MediaType)}
+			block, nerr := imageinput.Normalize(image.MediaType, data, limits)
+			if nerr != nil {
+				return nil, ProtocolError{fmt.Sprintf("Stream-json image %q: %s", image.MediaType, nerr.Error())}
 			}
-			images = append(images, kajicoderuntime.ImageBlock{MediaType: mediaType, Data: data})
+			images = append(images, block)
 		}
 	}
 	return images, nil

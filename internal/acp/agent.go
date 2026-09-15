@@ -11,6 +11,7 @@ import (
 
 	"github.com/dishant0406/KajiCode/internal/agent"
 	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/imageinput"
 	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
 	"github.com/dishant0406/KajiCode/internal/sandbox"
 	"github.com/dishant0406/KajiCode/internal/sessions"
@@ -192,7 +193,10 @@ func (a *Agent) handleSessionPrompt(ctx context.Context, params json.RawMessage)
 	defer sess.turnMu.Unlock()
 
 	userText := promptText(p.Prompt)
-	images := promptImages(p.Prompt)
+	images, err := promptImages(p.Prompt)
+	if err != nil {
+		return nil, err
+	}
 
 	turnCtx, cancel := context.WithCancel(ctx)
 	sess.setCancel(cancel)
@@ -217,6 +221,13 @@ func (a *Agent) runTurn(ctx context.Context, sess *acpSession, userText string, 
 	if err != nil {
 		return "", RPCError(codeInternalError, "config: "+err.Error())
 	}
+	// Normalize client images into the configured provider-safe envelope, exactly
+	// like the exec/TUI surfaces, so an oversized screenshot is resized rather than
+	// rejected by the provider.
+	images, err = normalizeSessionImages(images, resolved.Images)
+	if err != nil {
+		return "", RPCError(codeInvalidParams, err.Error())
+	}
 	provider, err := a.deps.NewProvider(resolved.Provider)
 	if err != nil {
 		return "", RPCError(codeInternalError, "provider: "+err.Error())
@@ -239,6 +250,7 @@ func (a *Agent) runTurn(ctx context.Context, sess *acpSession, userText string, 
 		PermissionMode: sess.currentMode(),
 		MaxTurns:       resolved.MaxTurns,
 		Images:         images,
+		ImageLimits:    imageinput.LimitsFrom(resolved.Images.MaxWidth, resolved.Images.MaxHeight, resolved.Images.MaxBytes, resolved.Images.AutoResize),
 		OnText:         note.text,
 		OnReasoning:    note.thought,
 		OnToolCall:     note.toolCall,
@@ -503,19 +515,58 @@ func buildPrompt(history []turnRecord, userText string) string {
 	return b.String()
 }
 
-func promptImages(blocks []ContentBlock) []kajicoderuntime.ImageBlock {
+// maxPromptImageBytes caps a single base64-decoded client image at 10 MiB, the
+// same pre-decode bound stream-json enforces, so a client cannot force an
+// unbounded allocation by advertising a huge image. The image is normalized into
+// the configured envelope afterward, which is the size actually sent.
+const maxPromptImageBytes = 10 << 20
+
+// promptImages decodes every image block carried on the prompt. A block with
+// malformed base64 or one whose decoded size exceeds the cap fails the request
+// loudly rather than being dropped, so a client is never silently answered from a
+// text-only turn it did not intend.
+func promptImages(blocks []ContentBlock) ([]kajicoderuntime.ImageBlock, error) {
 	var images []kajicoderuntime.ImageBlock
 	for _, blk := range blocks {
 		if blk.Type != "image" || blk.Data == "" {
 			continue
 		}
+		// Bound the encoded length before decoding so the decoder never allocates
+		// more than the cap: 4 base64 chars encode 3 bytes.
+		if len(blk.Data) > (maxPromptImageBytes/3+1)*4 {
+			return nil, RPCError(codeInvalidParams, "image exceeds the 10 MiB limit")
+		}
 		data, err := base64.StdEncoding.DecodeString(blk.Data)
 		if err != nil {
-			continue
+			return nil, RPCError(codeInvalidParams, "image data is not valid base64")
+		}
+		if len(data) > maxPromptImageBytes {
+			return nil, RPCError(codeInvalidParams, "image exceeds the 10 MiB limit")
 		}
 		images = append(images, kajicoderuntime.ImageBlock{MediaType: blk.MimeType, Data: data})
 	}
-	return images
+	return images, nil
+}
+
+// normalizeSessionImages puts client-supplied images through the shared
+// provider-safe loader so the ACP surface matches exec and the TUI. A block that
+// cannot be decoded or normalized fails the request with a params error rather
+// than being dropped, so a client is told its image was rejected instead of
+// silently losing it.
+func normalizeSessionImages(images []kajicoderuntime.ImageBlock, cfg config.ImagesConfig) ([]kajicoderuntime.ImageBlock, error) {
+	if len(images) == 0 {
+		return nil, nil
+	}
+	limits := imageinput.LimitsFrom(cfg.MaxWidth, cfg.MaxHeight, cfg.MaxBytes, cfg.AutoResize)
+	out := make([]kajicoderuntime.ImageBlock, 0, len(images))
+	for _, img := range images {
+		norm, err := imageinput.Normalize(img.MediaType, img.Data, limits)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, norm)
+	}
+	return out, nil
 }
 
 // ---- session registry + accessors ----

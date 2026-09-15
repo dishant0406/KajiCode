@@ -305,7 +305,7 @@ func runExec(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) in
 			if preflightErr := preflightExecSession(options); preflightErr != nil {
 				return writeExecFormatUsageError(stdout, stderr, options.outputFormat, preflightErr.Error())
 			}
-			if _, _, promptErr := resolveExecPrompt(options, workspaceRoot, deps.stdin); promptErr != nil {
+			if _, _, promptErr := resolveExecPrompt(options, workspaceRoot, deps.stdin, config.ImagesConfig{}); promptErr != nil {
 				return writeExecFormatUsageError(stdout, stderr, options.outputFormat, promptErr.Error())
 			}
 		}
@@ -390,7 +390,7 @@ func runExec(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) in
 		return writeExecFormatUsageError(stdout, stderr, options.outputFormat, err.Error())
 	}
 
-	prompt, streamImages, err := resolveExecPrompt(options, workspaceRoot, deps.stdin)
+	prompt, streamImages, err := resolveExecPrompt(options, workspaceRoot, deps.stdin, resolved.Images)
 	if err != nil {
 		return writeExecFormatUsageError(stdout, stderr, options.outputFormat, err.Error())
 	}
@@ -417,7 +417,7 @@ func runExec(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) in
 	}
 	registerToolSearchIfEligible(registry, effectiveDeferThreshold, permissionMode, options.enabledTools, options.disabledTools)
 	registerBatchTool(registry, options.enabledTools, options.disabledTools)
-	images, err := resolveExecImages(options.imagePaths, workspaceRoot)
+	images, err := resolveExecImages(options.imagePaths, workspaceRoot, resolved.Images)
 	if err != nil {
 		return writeExecFormatUsageError(stdout, stderr, options.outputFormat, err.Error())
 	}
@@ -771,6 +771,7 @@ func runExec(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) in
 		Trace:                traceRecorder,
 		Cwd:                  workspaceRoot,
 		Images:               images,
+		ImageLimits:          imageLimits(resolved.Images),
 		Registry:             registry,
 		PermissionMode:       permissionMode,
 		Autonomy:             options.autonomy,
@@ -1125,7 +1126,7 @@ func resolveWorkspaceRoot(cwd string, deps appDeps) (string, error) {
 // text input and for stream-json input that carries no images; it is merged with
 // any --image attachments by the caller before the shared vision gate, so both
 // sources flow through the same drop+warn and agent.Options.Images wiring.
-func resolveExecPrompt(options execOptions, workspaceRoot string, stdin io.Reader) (string, []kajicoderuntime.ImageBlock, error) {
+func resolveExecPrompt(options execOptions, workspaceRoot string, stdin io.Reader, imagesCfg config.ImagesConfig) (string, []kajicoderuntime.ImageBlock, error) {
 	if options.inputFormat == execInputStreamJSON {
 		input := ""
 		if options.file != "" {
@@ -1149,7 +1150,7 @@ func resolveExecPrompt(options execOptions, workspaceRoot string, stdin io.Reade
 		if err != nil {
 			return "", nil, execUsageError{err.Error()}
 		}
-		streamImages, err := streamjson.ResolveImages(events)
+		streamImages, err := streamjson.ResolveImages(events, imageLimits(imagesCfg))
 		if err != nil {
 			return "", nil, execUsageError{err.Error()}
 		}
@@ -1196,21 +1197,29 @@ func resolveExecPrompt(options execOptions, workspaceRoot string, stdin io.Reade
 	return prompt, nil, nil
 }
 
+// imageLimits converts the config image envelope into the shared loader's
+// limits, filling any unset field from the built-in defaults. It is a thin
+// wrapper so call sites read the same at every surface.
+func imageLimits(cfg config.ImagesConfig) imageinput.Limits {
+	return imageinput.LimitsFrom(cfg.MaxWidth, cfg.MaxHeight, cfg.MaxBytes, cfg.AutoResize)
+}
+
 // resolveExecImages loads each --image attachment through the shared
-// imageinput.LoadFile loader (read, sniff, normalize, 10-MiB cap), resolving
+// imageinput.LoadFile loader (read, sniff, normalize into images.* limits), resolving
 // relative paths against workspaceRoot. It is a thin per-path loop: the actual
-// read/sniff/cap logic lives in internal/imageinput so the CLI and TUI surfaces
-// never duplicate it. Any loader error (missing file, unsupported type,
-// oversized) is wrapped into an execUsageError so the run reports it as a usage
+// read/sniff/normalize logic lives in internal/imageinput so the CLI and TUI
+// surfaces never duplicate it. Any loader error (missing file, unsupported type,
+// too large to normalize) is wrapped into an execUsageError so the run reports it as a usage
 // problem rather than reaching a provider with an invalid image. Returns nil for
 // an empty path list (text-only behavior unchanged).
-func resolveExecImages(paths []string, workspaceRoot string) ([]kajicoderuntime.ImageBlock, error) {
+func resolveExecImages(paths []string, workspaceRoot string, imagesCfg config.ImagesConfig) ([]kajicoderuntime.ImageBlock, error) {
 	if len(paths) == 0 {
 		return nil, nil
 	}
+	limits := imageLimits(imagesCfg)
 	images := make([]kajicoderuntime.ImageBlock, 0, len(paths))
 	for _, path := range paths {
-		image, err := imageinput.LoadFile(path, workspaceRoot)
+		image, err := imageinput.LoadFile(path, workspaceRoot, limits)
 		if err != nil {
 			return nil, execUsageError{err.Error()}
 		}

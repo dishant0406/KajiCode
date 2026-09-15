@@ -1,8 +1,6 @@
 package tools
 
 import (
-	"io"
-	"os"
 	"path/filepath"
 	"strings"
 )
@@ -26,9 +24,12 @@ var binaryExtSet = map[string]bool{
 	".wasm": true, ".pyc": true, ".pyo": true,
 }
 
-var imageExtMedia = map[string]string{
-	".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
-	".webp": "image/webp", ".gif": "image/gif", ".bmp": "image/bmp",
+// imageExtSet lists extensions read_file returns as a real image part. bmp/avif
+// are intentionally excluded: imageinput's Normalize allow-list (png, jpeg, gif,
+// webp) is authoritative, so an unsupported raster is refused up front rather
+// than mislabelled.
+var imageExtSet = map[string]bool{
+	".png": true, ".jpg": true, ".jpeg": true, ".webp": true, ".gif": true,
 }
 
 // classifyFileKind determines how read_file should present the file. It mirrors
@@ -37,13 +38,8 @@ var imageExtMedia = map[string]string{
 func classifyFileKind(path string, content []byte) mediaKind {
 	ext := strings.ToLower(filepath.Ext(path))
 
-	if media, ok := imageExtMedia[ext]; ok && media != "image/svg+xml" {
-		// Keep it a text path only if the file is an actual raster image with a
-		// non-text sniff; SVG is text and should render as text.
-		switch ext {
-		case ".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp":
-			return mediaImage
-		}
+	if imageExtSet[ext] {
+		return mediaImage
 	}
 	if ext == ".pdf" {
 		return mediaPDF
@@ -75,27 +71,4 @@ func classifyFileKind(path string, content []byte) mediaKind {
 		return mediaBinary
 	}
 	return mediaText
-}
-
-// mediaMimeForPath returns a mime type for image/PDF paths, or empty.
-func mediaMimeForPath(path string) string {
-	ext := strings.ToLower(filepath.Ext(path))
-	if mime, ok := imageExtMedia[ext]; ok && ext != ".svg" {
-		return mime
-	}
-	if ext == ".pdf" {
-		return "application/pdf"
-	}
-	return ""
-}
-
-// fileContentFor returns the file bytes and any stat error. Used by read_file for
-// binary/media classification and by did-you-mean recovery.
-func fileContentFor(path string) ([]byte, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	return io.ReadAll(f)
 }

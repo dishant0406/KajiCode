@@ -655,6 +655,49 @@ func TestRecoverNoopDoesNotConsumeReactiveBudget(t *testing.T) {
 	}
 }
 
+// TestRecoverStripsImagesWhenTextCompactionCannotShrink pins the media last
+// resort: an image-only active turn has no compactible text middle, so summary
+// compaction returns the history unchanged and the estimate never drops. Without
+// dropping the image the retried turn still blows the window and the run fails;
+// with it, recovery retries and succeeds. This is red against a text-only recover.
+func TestRecoverStripsImagesWhenTextCompactionCannotShrink(t *testing.T) {
+	st := newCompactionState(Options{ContextWindow: 1000, CompactionPreserveLast: 2}, nil)
+	provider := &mockProvider{turns: [][]kajicoderuntime.StreamEvent{{
+		{Type: kajicoderuntime.StreamEventText, Content: "SUMMARY"}, {Type: kajicoderuntime.StreamEventDone},
+	}}}
+
+	// An image-only user turn with a prior text turn. The only reset candidate is
+	// the empty user turn, so CompactMessages finds no middle to summarize and
+	// returns the history verbatim.
+	img := kajicoderuntime.ImageBlock{MediaType: "image/png", Data: []byte("x")}
+	msgs := []kajicoderuntime.Message{
+		{Role: kajicoderuntime.MessageRoleSystem, Content: "sys"},
+		{Role: kajicoderuntime.MessageRoleUser, Content: "look at this"},
+		{Role: kajicoderuntime.MessageRoleAssistant, Content: "ok"},
+		{Role: kajicoderuntime.MessageRoleUser, Images: []kajicoderuntime.ImageBlock{img}},
+	}
+
+	compacted, retried, err := st.recover(context.Background(), provider, msgs, nil, "context length exceeded")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !retried {
+		t.Fatal("expected recovery to strip the image and retry instead of giving up")
+	}
+	if estimateTokens(compacted) >= estimateTokens(msgs) {
+		t.Fatal("expected the image strip to shrink the estimate below the pre-compaction level")
+	}
+	last := compacted[len(compacted)-1]
+	if len(last.Images) != 0 {
+		t.Fatalf("expected the retried turn to carry no images, got %d", len(last.Images))
+	}
+	// The caller's original slice must be untouched: the run may still need it if
+	// the retry also fails.
+	if len(msgs[len(msgs)-1].Images) != 1 {
+		t.Fatal("recover must not mutate the caller's message slice")
+	}
+}
+
 func TestRecoverDisabledIsNoop(t *testing.T) {
 	st := newCompactionState(Options{ContextWindow: 0}, nil)
 	msgs := []kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleUser, Content: "x"}}

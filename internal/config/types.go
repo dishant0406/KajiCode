@@ -467,6 +467,20 @@ type ImagesConfig struct {
 	// available profile; "model" uses ModelRoles["vision"]; "off" keeps the legacy
 	// drop+warn behavior.
 	VisionRouting string `json:"visionRouting,omitempty"`
+	// MaxWidth/MaxHeight cap the pixel dimensions of an attached image. A larger
+	// image is downscaled (aspect ratio preserved) before it is sent, so a 4K
+	// screenshot that a provider would otherwise reject as too large still works.
+	// Zero means the built-in default (2000).
+	MaxWidth  int `json:"maxWidth,omitempty"`
+	MaxHeight int `json:"maxHeight,omitempty"`
+	// MaxBytes caps the base64-encoded size of an attached image (the payload the
+	// request carries, which is what providers limit). A larger image is
+	// downscaled and re-encoded (PNG, then JPEG at descending quality) until it
+	// fits. Zero means the built-in default (5 MiB encoded, ~3.75 MiB raw).
+	MaxBytes int `json:"maxBytes,omitempty"`
+	// AutoResize, when false, rejects an over-limit image instead of resizing it.
+	// Unset defaults to true (resize). A *bool distinguishes "unset" from "false".
+	AutoResize *bool `json:"autoResize,omitempty"`
 }
 
 // EffectiveVisionRouting returns the normalized, safe vision-routing mode. Anything
@@ -481,7 +495,8 @@ func (c ImagesConfig) EffectiveVisionRouting() string {
 }
 
 func (c ImagesConfig) Empty() bool {
-	return strings.TrimSpace(c.VisionRouting) == ""
+	return strings.TrimSpace(c.VisionRouting) == "" &&
+		c.MaxWidth == 0 && c.MaxHeight == 0 && c.MaxBytes == 0 && c.AutoResize == nil
 }
 
 func (cfg FileConfig) MarshalJSON() ([]byte, error) {

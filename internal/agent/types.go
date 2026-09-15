@@ -5,6 +5,7 @@ import (
 
 	"github.com/dishant0406/KajiCode/internal/config"
 	"github.com/dishant0406/KajiCode/internal/hooks"
+	"github.com/dishant0406/KajiCode/internal/imageinput"
 	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
 	"github.com/dishant0406/KajiCode/internal/sandbox"
 	"github.com/dishant0406/KajiCode/internal/streamjson"
@@ -77,6 +78,11 @@ type ToolResult struct {
 	Redacted     bool
 	ChangedFiles []string
 	Display      tools.Display
+	// Images carries image bytes a tool returned for the model to SEE (e.g.
+	// read_file on a raster image). The loop lifts them onto a synthetic user
+	// turn after the tool batch, since providers only accept image parts on a
+	// user role. nil for every text-only result.
+	Images []kajicoderuntime.ImageBlock
 	// DenialReason categorizes why a tool call was blocked (empty when it ran).
 	// It lets a surface distinguish the cause precisely instead of parsing Output.
 	DenialReason DenialCategory
@@ -337,6 +343,11 @@ type Options struct {
 	// nil for text-only runs (the seeded message then carries no images, exactly
 	// as before).
 	Images []kajicoderuntime.ImageBlock
+	// ImageLimits is the provider-safe envelope for attached images (images.*
+	// config). It is also forwarded to tools so an image a tool returns (read_file
+	// on a raster image) is normalized exactly like an attached one. The zero
+	// value means imageinput.DefaultLimits.
+	ImageLimits imageinput.Limits
 	// InitialMessages are prior conversation turns supplied by interactive
 	// surfaces. Run appends the current prompt as the final user message, so the
 	// current task stays distinct from history.

@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
 	"github.com/dishant0406/KajiCode/internal/sandbox"
 )
 
@@ -104,6 +105,12 @@ type Result struct {
 	ChangedFiles []string
 	// Display carries a short, structured summary for the TUI / stream.
 	Display Display
+	// Images carries image bytes a tool returns for the model to SEE (not text) —
+	// today only read_file on a raster image, so the model receives a real image
+	// part instead of unreadable base64 in the tool output. The agent loop lifts
+	// these onto a synthetic user turn after the tool batch, since providers only
+	// accept image parts on a user role. nil for every text-only result.
+	Images []kajicoderuntime.ImageBlock
 }
 
 // Display carries a short, structured summary of a tool result for the TUI/stream.

@@ -493,7 +493,12 @@ There are two compaction paths:
    request is over threshold.
 2. **Reactive compaction** runs after a provider returns a context-limit style
    error. KajiCode compacts once and retries that same turn; if the provider still
-   rejects the request, the error is surfaced rather than looping forever.
+   rejects the request, the error is surfaced rather than looping forever. If
+   summarizing text cannot bring the estimate below its pre-compaction level —
+   the usual cause is a large image attachment that text compaction cannot shrink
+   — recovery drops the image attachments from the retried turn as a last resort,
+   so an oversized vision payload fails safe (the turn runs without its images)
+   rather than wedging the run.
 
 Compaction failures are conservative. If the summarizer fails during proactive
 compaction, KajiCode keeps the original messages and tries to continue. It does not

@@ -2,26 +2,36 @@ package cli
 
 import (
 	"bytes"
+	"image"
+	"image/png"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/dishant0406/KajiCode/internal/config"
 )
 
-// pngBytes is a minimal valid PNG (8-byte signature is enough for
-// http.DetectContentType to sniff "image/png").
-var pngBytes = []byte{
-	0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
-	0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+// testPNG returns a small, fully valid PNG so it passes the real decode step in
+// the shared loader (a bare signature is no longer enough now that the loader
+// requires decodable content).
+func testPNG(t *testing.T) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, image.NewRGBA(image.Rect(0, 0, 4, 4))); err != nil {
+		t.Fatalf("encode png: %v", err)
+	}
+	return buf.Bytes()
 }
 
 func TestResolveExecImagesValidSingle(t *testing.T) {
 	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "shot.png"), pngBytes, 0o600); err != nil {
+	pngData := testPNG(t)
+	if err := os.WriteFile(filepath.Join(root, "shot.png"), pngData, 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	images, err := resolveExecImages([]string{"shot.png"}, root)
+	images, err := resolveExecImages([]string{"shot.png"}, root, config.ImagesConfig{})
 	if err != nil {
 		t.Fatalf("resolveExecImages error: %v", err)
 	}
@@ -31,7 +41,7 @@ func TestResolveExecImagesValidSingle(t *testing.T) {
 	if images[0].MediaType != "image/png" {
 		t.Fatalf("MediaType = %q, want image/png", images[0].MediaType)
 	}
-	if !bytes.Equal(images[0].Data, pngBytes) {
+	if !bytes.Equal(images[0].Data, pngData) {
 		t.Fatalf("Data = %v, want raw png bytes", images[0].Data)
 	}
 }
@@ -42,14 +52,14 @@ func TestResolveExecImagesRepeatedAndRelativeToRoot(t *testing.T) {
 	if err := os.MkdirAll(sub, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "a.png"), pngBytes, 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "a.png"), testPNG(t), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(sub, "b.png"), pngBytes, 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(sub, "b.png"), testPNG(t), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	images, err := resolveExecImages([]string{"a.png", "media/b.png"}, root)
+	images, err := resolveExecImages([]string{"a.png", "media/b.png"}, root, config.ImagesConfig{})
 	if err != nil {
 		t.Fatalf("resolveExecImages error: %v", err)
 	}
@@ -60,7 +70,7 @@ func TestResolveExecImagesRepeatedAndRelativeToRoot(t *testing.T) {
 
 func TestResolveExecImagesMissingFileIsUsageError(t *testing.T) {
 	root := t.TempDir()
-	_, err := resolveExecImages([]string{"nope.png"}, root)
+	_, err := resolveExecImages([]string{"nope.png"}, root, config.ImagesConfig{})
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -78,7 +88,7 @@ func TestResolveExecImagesUnsupportedTypeIsUsageError(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := resolveExecImages([]string{"notes.txt"}, root)
+	_, err := resolveExecImages([]string{"notes.txt"}, root, config.ImagesConfig{})
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -90,28 +100,28 @@ func TestResolveExecImagesUnsupportedTypeIsUsageError(t *testing.T) {
 	}
 }
 
-func TestResolveExecImagesOversizedIsUsageError(t *testing.T) {
+func TestResolveExecImagesOversizeSourceIsUsageError(t *testing.T) {
 	root := t.TempDir()
-	big := make([]byte, (10<<20)+1)
-	copy(big, pngBytes) // keep a valid png sniff at the head
+	big := make([]byte, (40<<20)+1)
+	copy(big, testPNG(t))
 	if err := os.WriteFile(filepath.Join(root, "huge.png"), big, 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	_, err := resolveExecImages([]string{"huge.png"}, root)
+	_, err := resolveExecImages([]string{"huge.png"}, root, config.ImagesConfig{})
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
 	if _, ok := err.(execUsageError); !ok {
 		t.Fatalf("error type = %T, want execUsageError", err)
 	}
-	if !strings.Contains(err.Error(), "10 MiB") {
+	if !strings.Contains(err.Error(), "MiB") {
 		t.Fatalf("error = %q, want size-cap message", err.Error())
 	}
 }
 
 func TestResolveExecImagesEmptyReturnsNil(t *testing.T) {
-	images, err := resolveExecImages(nil, t.TempDir())
+	images, err := resolveExecImages(nil, t.TempDir(), config.ImagesConfig{})
 	if err != nil {
 		t.Fatalf("resolveExecImages error: %v", err)
 	}

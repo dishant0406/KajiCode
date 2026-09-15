@@ -7,6 +7,7 @@ import (
 
 	"github.com/dishant0406/KajiCode/internal/agent"
 	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/imageinput"
 	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
 	"github.com/dishant0406/KajiCode/internal/mcp"
 	"github.com/dishant0406/KajiCode/internal/modelregistry"
@@ -34,6 +35,7 @@ type Options struct {
 	DefaultModel                string                   // default model when no role/model override applies
 	ActiveRole                  string                   // persisted global task role to apply at startup
 	VisionRouting               string                   // images.visionRouting: auto|model|off (per-message image auto-routing)
+	ImageLimits                 imageinput.Limits        // images.*: provider-safe envelope for attached images
 	FavoriteModels              []string
 	RecentModels                []config.RecentModelEntry
 	RecapsEnabled               bool

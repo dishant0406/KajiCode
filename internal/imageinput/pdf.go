@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -75,6 +74,9 @@ type DocumentOptions struct {
 	// MaxPages bounds how many pages the vision path renders. Zero means
 	// defaultMaxRasterPages.
 	MaxPages int
+	// Limits normalizes each rendered page like every other input surface. Zero
+	// means DefaultLimits (2000x2000, 5 MiB, auto-resize).
+	Limits Limits
 
 	// disableExternalTools forces the pure-Go path even if poppler is installed.
 	// It exists so tests are deterministic on any host; it is intentionally
@@ -149,7 +151,7 @@ func LoadDocument(path string, workspaceRoot string, opts DocumentOptions) (Docu
 	// Failures here are non-fatal -- we still return the text layer below.
 	var images []kajicoderuntime.ImageBlock
 	if opts.Vision && useExternal {
-		if rendered, rerr := rasterizeWithPoppler(data, opts.maxPages()); rerr == nil {
+		if rendered, rerr := rasterizeWithPoppler(data, opts.maxPages(), opts.limits()); rerr == nil {
 			images = rendered
 		}
 	}
@@ -315,6 +317,15 @@ func (o DocumentOptions) maxPages() int {
 	return defaultMaxRasterPages
 }
 
+// limits returns the page-normalization limits, defaulting to DefaultLimits when
+// the caller left them unset.
+func (o DocumentOptions) limits() Limits {
+	if o.Limits.MaxBytes > 0 {
+		return o.Limits
+	}
+	return DefaultLimits()
+}
+
 // --- Optional external poppler path -----------------------------------------
 
 // popplerAvailable reports whether a poppler binary is resolvable on PATH.
@@ -351,7 +362,7 @@ func extractTextWithPoppler(data []byte) (string, bool) {
 // and per-image cap). It returns an error when pdftoppm is absent or rendering
 // produced nothing; the caller treats that as "no rasterization available" and
 // keeps the text layer.
-func rasterizeWithPoppler(data []byte, maxPages int) ([]kajicoderuntime.ImageBlock, error) {
+func rasterizeWithPoppler(data []byte, maxPages int, limits Limits) ([]kajicoderuntime.ImageBlock, error) {
 	if !popplerAvailable("pdftoppm") {
 		return nil, fmt.Errorf("pdftoppm not available")
 	}
@@ -395,7 +406,7 @@ func rasterizeWithPoppler(data []byte, maxPages int) ([]kajicoderuntime.ImageBlo
 		if len(images) >= maxPages {
 			break
 		}
-		block, err := loadRenderedPage(name)
+		block, err := loadRenderedPage(name, limits)
 		if err != nil {
 			// Skip a single unreadable page rather than failing the whole render.
 			continue
@@ -408,31 +419,17 @@ func rasterizeWithPoppler(data []byte, maxPages int) ([]kajicoderuntime.ImageBlo
 	return images, nil
 }
 
-// loadRenderedPage reads one rendered PNG page, enforces the per-image cap, and
-// normalizes its media type through the same allow-list LoadFile uses, so
-// rasterized pages flow through the existing image pipeline unchanged.
-func loadRenderedPage(name string) (kajicoderuntime.ImageBlock, error) {
-	info, err := os.Stat(name)
-	if err != nil {
-		return kajicoderuntime.ImageBlock{}, err
-	}
-	if info.Size() > MaxImageBytes {
-		return kajicoderuntime.ImageBlock{}, fmt.Errorf("rendered page %s exceeds the per-image limit", filepath.Base(name))
-	}
+// loadRenderedPage reads one rendered PNG page and normalizes it into limits
+// through the same pipeline LoadFile uses, so rasterized pages flow through the
+// existing image path unchanged.
+func loadRenderedPage(name string, limits Limits) (kajicoderuntime.ImageBlock, error) {
 	data, err := os.ReadFile(name)
 	if err != nil {
 		return kajicoderuntime.ImageBlock{}, err
 	}
-	if len(data) > MaxImageBytes {
-		return kajicoderuntime.ImageBlock{}, fmt.Errorf("rendered page %s exceeds the per-image limit", filepath.Base(name))
+	block, err := normalizeImage(data, limits)
+	if err != nil {
+		return kajicoderuntime.ImageBlock{}, fmt.Errorf("%s: %w", filepath.Base(name), err)
 	}
-	sniffLen := len(data)
-	if sniffLen > 512 {
-		sniffLen = 512
-	}
-	mediaType := kajicoderuntime.NormalizeImageMediaType(http.DetectContentType(data[:sniffLen]))
-	if mediaType == "" {
-		return kajicoderuntime.ImageBlock{}, fmt.Errorf("rendered page %s has an unsupported image type", filepath.Base(name))
-	}
-	return kajicoderuntime.ImageBlock{MediaType: mediaType, Data: data}, nil
+	return block, nil
 }

@@ -128,6 +128,7 @@ func runExecSpecDraft(run execSpecDraftRun) int {
 		Cwd:             run.workspaceRoot,
 		SystemPrompt:    specmode.DraftSystemPrompt,
 		Images:          run.images,
+		ImageLimits:     imageLimits(run.resolved.Images),
 		Registry:        run.registry,
 		PermissionMode:  agent.PermissionModeSpecDraft,
 		Autonomy:        "low",

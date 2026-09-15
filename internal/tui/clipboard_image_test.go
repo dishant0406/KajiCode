@@ -32,13 +32,3 @@ func TestClipboardImageVisionGateRefuses(t *testing.T) {
 		t.Fatalf("expected 0 pending images on non-vision model, got %d", len(m2.turnImages()))
 	}
 }
-
-func TestClipboardImageTooLargeRefuses(t *testing.T) {
-	m := newModel(context.Background(), Options{ModelName: "gpt-4o"})
-	largeData := make([]byte, 11*1024*1024) // 11 MiB > 10 MiB cap
-	updated := m.attachClipboardImage(largeData, "image/png")
-	m2 := updated
-	if len(m2.turnImages()) != 0 {
-		t.Fatalf("expected 0 pending images for oversize clipboard image, got %d", len(m2.turnImages()))
-	}
-}

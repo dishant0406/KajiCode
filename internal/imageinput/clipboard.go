@@ -3,20 +3,18 @@ package imageinput
 import (
 	"bytes"
 	"fmt"
-	"net/http"
 	"os"
 	"os/exec"
 	"runtime"
 	"strings"
-
-	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
 )
 
 // ReadClipboardImage returns the raw image bytes and media type from the OS
 // clipboard, or (nil, "", nil) when the clipboard has no image. Called when
 // text clipboard is empty (the user pasted a screenshot). The media type is
-// sniffed from the bytes, not trusted from the clipboard.
-func ReadClipboardImage() ([]byte, string, error) {
+// sniffed from the bytes, not trusted from the clipboard, and the image is
+// normalized into limits like every other input surface.
+func ReadClipboardImage(limits Limits) ([]byte, string, error) {
 	data, err := readClipboardImageBytes()
 	if err != nil {
 		return nil, "", err
@@ -24,16 +22,11 @@ func ReadClipboardImage() ([]byte, string, error) {
 	if data == nil {
 		return nil, "", nil
 	}
-	// Sniff the media type from the bytes — don't trust the clipboard's claim.
-	sniffLen := len(data)
-	if sniffLen > 512 {
-		sniffLen = 512
+	block, err := normalizeImage(data, limits)
+	if err != nil {
+		return nil, "", fmt.Errorf("clipboard %w", err)
 	}
-	mediaType := kajicoderuntime.NormalizeImageMediaType(http.DetectContentType(data[:sniffLen]))
-	if mediaType == "" {
-		return nil, "", fmt.Errorf("clipboard image is not a supported type (allowed: png, jpeg, gif, webp)")
-	}
-	return data, mediaType, nil
+	return block.Data, block.MediaType, nil
 }
 
 // readClipboardImageBytes calls the platform-specific clipboard tool to extract

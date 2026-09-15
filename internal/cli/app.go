@@ -894,6 +894,7 @@ func runInteractiveTUIWithSetup(stderr io.Writer, deps appDeps, permissionMode a
 		DefaultModel:         resolved.DefaultModel,
 		ActiveRole:           resolved.ActiveRole,
 		VisionRouting:        resolved.Images.EffectiveVisionRouting(),
+		ImageLimits:          imageLimits(resolved.Images),
 		FavoriteModels:       resolved.Preferences.FavoriteModels,
 		RecentModels:         resolved.Preferences.RecentModels,
 		RecapsEnabled:        resolved.Preferences.RecapsEnabled(),
