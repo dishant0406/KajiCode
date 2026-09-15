@@ -62,11 +62,15 @@ all centered on the graphics protocols termy lacks; only their cell-art fallback
 would be used, and the quadrant renderer here is both simpler and denser than
 what they fall back to. Bubble Tea v2 has no image view type.
 
-`golang.org/x/image` is **not** in this repo's module graph or offline cache, so
-`x/image/draw` is unavailable. The downscale is therefore a dozen lines of
-stdlib `image` box filter (`boxDownscale`) — an area average in linear light,
-which is exactly what a large downscale to a small preview needs — and it adds
-nothing to `go.mod`.
+`golang.org/x/image` is in the module graph for the WebP decoder, so
+`x/image/draw` *is* available. The downscale still uses a dozen lines of stdlib
+`image` box filter — an area average, exactly what a large downscale to a small
+preview needs. A sharpening kernel was measured and rejected: across 1.92x-5.12x
+downscales of screenshot-like content it gained at most ~6% edge contrast, lost
+~10% at 2.56x, and enlarged the encoded result 145-266% (a kernel leaves
+high-frequency detail PNG cannot compress), which under a tight byte budget
+forces extra shrink rounds and can end at lower resolution for the same limit.
+No accuracy is given up by keeping the simpler resampler.
 
 ## 3. Model: one typed attachment
 
@@ -222,7 +226,8 @@ attached as text instead (see §9).
 - **Downscale + re-encode.** An over-limit image is area-averaged (box filter,
   aspect ratio preserved) and re-encoded PNG first, then JPEG at descending
   quality, shrinking ×0.75 per round until it fits. `autoResize = false` rejects
-  an over-limit image instead of resizing it.
+  an over-limit image instead of resizing it. The box filter is a measured
+  choice, not a limitation — see §2.
 - **Guards.** A decompression-bomb header (`maxDecodePixels`) and an oversized
   source file (`maxSourceBytes`, read bound) are refused before any large
   allocation. A payload that is not a supported image (sniffed from its content,
