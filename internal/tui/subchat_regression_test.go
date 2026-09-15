@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
 // The subchat drill-in (viewing a subagent/swarm child session) swaps the on-screen
@@ -149,6 +151,112 @@ func TestTranscriptSelectionExtendsAcrossWheelScroll(t *testing.T) {
 	if m.transcriptSelection.cursor.bodyY >= cursorBefore {
 		t.Fatalf("selection cursor bodyY = %d, want < %d (it must extend to follow the scroll, not freeze)", m.transcriptSelection.cursor.bodyY, cursorBefore)
 	}
+}
+
+// TestSubchatToolToggleTargetsChildRows is a regression guard: a click on a
+// collapsible tool card while a subchat is open must toggle the CHILD row the
+// hit-test resolved, not whichever parent row happens to share that index.
+func TestSubchatToolToggleTargetsChildRows(t *testing.T) {
+	m := mouseTestModel()
+	m.mouseCapture = true
+	m.transcript = appendTranscriptRow(m.transcript, transcriptRow{
+		kind: rowToolResult, id: "parent", tool: "parent_tool", status: tools.StatusOK,
+		detail: numberedLines(cardBodyMaxLines + 5)})
+	m.subchat.active = true
+	m.subchat.childSessionID = "child-1"
+	m.subchat.childRows = appendTranscriptRow(m.subchat.childRows, transcriptRow{
+		kind: rowToolResult, id: "child", tool: "child_tool", status: tools.StatusOK,
+		detail: numberedLines(cardBodyMaxLines + 5)})
+
+	updated, _ := m.Update(testMouseClick(tea.MouseLeft, 0, firstTranscriptToggleMouseY(t, m)))
+	next := updated.(model)
+	if next.transcript[0].expanded {
+		t.Fatal("clicking the child card must not toggle the parent transcript row")
+	}
+	if !next.subchat.childRows[0].expanded {
+		t.Fatal("clicking the child card must expand the child row")
+	}
+}
+
+// firstTranscriptToggleMouseY returns the on-screen Y of the topmost visible
+// clickable toggle line, resolved against the same subchat-aware hit-test source
+// the mouse handlers use.
+func firstTranscriptToggleMouseY(t *testing.T, m model) int {
+	t.Helper()
+	_, items, width := m.transcriptHitTestSource()
+	header, _ := m.transcriptViewportHeaderWidth()
+	footer := m.footerView(width)
+	if m.transcriptDetailed {
+		footer = m.detailedTranscriptFooter(width)
+	}
+	frame := m.scrollableTranscriptFrame(header, footer)
+	metrics := measureTranscriptBodyItems(items, m.transcriptBodyHeights)
+	window := transcriptViewportForLayout(metrics, frame, m.chatScrollOffset).window()
+	layout := layoutVisibleTranscriptBodyItems(items, metrics, window)
+	for _, line := range layout.selectable {
+		if line.toggle && line.bodyY >= window.start {
+			return frame.bodyRect.y + (line.bodyY - window.start)
+		}
+	}
+	t.Fatalf("no visible toggle line found: %#v", layout.selectable)
+	return 0
+}
+
+// TestSubchatReasoningToggleTargetsChildRows mirrors the tool-card subchat test
+// for a reasoning ("thinking") row, whose header is the toggle target.
+func TestSubchatReasoningToggleTargetsChildRows(t *testing.T) {
+	m := mouseTestModel()
+	m.mouseCapture = true
+	m.transcript = appendTranscriptRow(m.transcript, transcriptRow{kind: rowReasoning, id: "pr", text: "parent thought"})
+	m.subchat.active = true
+	m.subchat.childSessionID = "child-1"
+	m.subchat.childRows = appendTranscriptRow(m.subchat.childRows, transcriptRow{kind: rowReasoning, id: "cr", text: "child thought"})
+
+	updated, _ := m.Update(testMouseClick(tea.MouseLeft, 0, firstTranscriptToggleMouseY(t, m)))
+	next := updated.(model)
+	if next.transcript[0].expanded {
+		t.Fatal("clicking the child reasoning row must not toggle the parent row")
+	}
+	if !next.subchat.childRows[0].expanded {
+		t.Fatal("clicking the child reasoning row must expand it")
+	}
+}
+
+// TestDetailedSubchatToggleTargetsParentRows guards the precedence between the
+// detailed view and a subchat: the detailed view renders the PARENT transcript
+// even while a subchat is open, so a toggle click must hit the parent row set,
+// not the child rows.
+func TestDetailedSubchatToggleTargetsParentRows(t *testing.T) {
+	m := mouseTestModel()
+	m.mouseCapture = true
+	m.transcript = appendTranscriptRow(m.transcript, transcriptRow{
+		kind: rowToolResult, id: "parent", tool: "parent_tool", status: tools.StatusOK,
+		detail: numberedLines(cardBodyMaxLines + 5)})
+	m.subchat.active = true
+	m.subchat.childSessionID = "child-1"
+	m.subchat.childRows = appendTranscriptRow(m.subchat.childRows, transcriptRow{
+		kind: rowToolResult, id: "child", tool: "child_tool", status: tools.StatusOK,
+		detail: numberedLines(cardBodyMaxLines + 5)})
+	m.transcriptDetailed = true
+
+	updated, _ := m.Update(testMouseClick(tea.MouseLeft, 0, firstTranscriptToggleMouseY(t, m)))
+	next := updated.(model)
+	if !rowExpandedByID(next.transcript, "parent") {
+		t.Fatal("detailed view must toggle the parent row it renders")
+	}
+	if rowExpandedByID(next.subchat.childRows, "child") {
+		t.Fatal("detailed view must not toggle the hidden child rows")
+	}
+}
+
+// rowExpandedByID reports whether the transcript row with the given id is expanded.
+func rowExpandedByID(rows []transcriptRow, id string) bool {
+	for _, row := range rows {
+		if row.id == id {
+			return row.expanded
+		}
+	}
+	return false
 }
 
 // topmostVisibleTranscriptMouseY returns the on-screen Y of the topmost currently

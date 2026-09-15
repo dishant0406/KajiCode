@@ -121,3 +121,164 @@ func TestToolResultRowExposesClickToggle(t *testing.T) {
 		t.Fatalf("tool result visible body/footer must stay selectable, got %#v", selectable)
 	}
 }
+
+// TestCollapsedToolFooterIsClickToggle guards the regression where the
+// "click to expand" footer read as an affordance but was not a real target.
+func TestCollapsedToolFooterIsClickToggle(t *testing.T) {
+	m := transcriptViewTestModel()
+	row := transcriptRow{kind: rowToolResult, id: "t", tool: "custom_tool", status: tools.StatusOK, detail: numberedLines(cardBodyMaxLines + 5)}
+	_, selectable := m.renderSelectableToolResultRow(0, row, m.width, buildRowContext(nil), 0)
+
+	footerToggle := false
+	for _, line := range selectable {
+		if line.toggle && strings.Contains(line.text, "click to expand") {
+			footerToggle = true
+		}
+	}
+	if !footerToggle {
+		t.Fatalf("collapsed 'click to expand' footer must be a toggle target, got %#v", selectable)
+	}
+}
+
+// TestShortCardBodyWithExpandPhraseIsNotToggle guards against the footer target
+// being matched by substring: a short card renders its full body inline (no
+// collapse footer), so a body line that merely contains the words
+// "click to expand" must stay plain selectable text, not become a dead toggle.
+func TestShortCardBodyWithExpandPhraseIsNotToggle(t *testing.T) {
+	m := transcriptViewTestModel()
+	row := transcriptRow{kind: rowToolResult, id: "t", tool: "custom_tool", status: tools.StatusOK,
+		detail: "line one\nclick to expand me\nline three"}
+	_, selectable := m.renderSelectableToolResultRow(0, row, m.width, buildRowContext(nil), 0)
+
+	for _, line := range selectable {
+		if strings.Contains(line.text, "click to expand") && line.toggle && line.bodyY != 0 {
+			t.Fatalf("a body line containing 'click to expand' must not become a toggle, got %#v", line)
+		}
+	}
+}
+
+// TestExpandedToolResultFooterIsClickToggle covers the other half of the
+// affordance: once expanded, the terminal "▾ collapse" footer collapses the card.
+func TestExpandedToolResultFooterIsClickToggle(t *testing.T) {
+	m := transcriptViewTestModel()
+	row := transcriptRow{kind: rowToolResult, id: "t", tool: "custom_tool", status: tools.StatusOK,
+		detail: numberedLines(cardBodyMaxLines + 5), expanded: true}
+	_, selectable := m.renderSelectableToolResultRow(0, row, m.width, buildRowContext(nil), 0)
+
+	footerToggle := false
+	for _, line := range selectable {
+		if line.toggle && line.text == expandCardCollapseFooter {
+			footerToggle = true
+		}
+	}
+	if !footerToggle {
+		t.Fatalf("expanded '▾ collapse' footer must be a toggle target, got %#v", selectable)
+	}
+}
+
+// TestDetailedToolResultHasNoCollapseToggle: the detailed transcript renders
+// bodies uncapped (bodyCap 0), so there is no collapse footer and only the head
+// stays clickable — a body/footer line must never become a dead toggle target.
+func TestDetailedToolResultHasNoCollapseToggle(t *testing.T) {
+	m := transcriptViewTestModel()
+	row := transcriptRow{kind: rowToolResult, id: "t", tool: "mcp_exa_web_search_exa", status: tools.StatusOK,
+		detail: numberedLines(cardBodyMaxLines + 10)}
+	_, selectable := m.renderTranscriptDetailedRow(0, row, m.width, buildRowContext(nil), 0)
+
+	toggles := 0
+	for _, line := range selectable {
+		if line.toggle {
+			toggles++
+		}
+	}
+	if toggles != 1 || !selectable[0].toggle {
+		t.Fatalf("detailed mode must expose only the head toggle, got %d toggles: %#v", toggles, selectable)
+	}
+}
+
+// TestToggleTranscriptRowInvalidatesRenderFingerprint is the root-cause
+// regression: renderFingerprint is cached at append time and every render,
+// height, and scroll-metrics cache key derives from it, so a toggle that did
+// not recompute it produced no visible expansion.
+func TestToggleTranscriptRowInvalidatesRenderFingerprint(t *testing.T) {
+	m := transcriptViewTestModel()
+	row := transcriptRow{kind: rowToolResult, id: "t", tool: "mcp_exa_web_search_exa", status: tools.StatusOK, detail: numberedLines(cardBodyMaxLines + 20)}
+	m.transcript = appendTranscriptRow(m.transcript, row)
+	idx := len(m.transcript) - 1
+
+	// Warm the caches the way the live view would before the user clicks.
+	_, set, _ := m.transcriptHitTestItemSet()
+	before := m.measureTranscriptBodyItemSet(set).totalLines()
+
+	m = m.toggleTranscriptRow(idx)
+	row = m.transcript[idx]
+	if !row.expanded {
+		t.Fatal("toggle should expand the row")
+	}
+	// A fresh fingerprint must be materialized so downstream caches miss.
+	if row.renderFingerprint != transcriptRowFingerprint(row) {
+		t.Fatalf("fingerprint not recomputed on toggle: cached=%q fresh=%q",
+			row.renderFingerprint, transcriptRowFingerprint(row))
+	}
+
+	_, set2, _ := m.transcriptHitTestItemSet()
+	after := m.measureTranscriptBodyItemSet(set2).totalLines()
+	if after <= before {
+		t.Fatalf("expanded body must grow: collapsed=%d expanded=%d", before, after)
+	}
+
+	// And the rendered card itself must actually grow.
+	width := m.chatColumnWidth()
+	rc := buildRowContext(m.transcript)
+	collapsedRow := row
+	collapsedRow.expanded = false
+	collapsedRow.renderFingerprint = transcriptRowFingerprint(collapsedRow)
+	collapsedLines := len(viewLines(plainRender(t, m.renderRow(collapsedRow, width, rc))))
+	expandedLines := len(viewLines(plainRender(t, m.renderRow(row, width, rc))))
+	if expandedLines <= collapsedLines {
+		t.Fatalf("expanded card must be taller: collapsed=%d expanded=%d", collapsedLines, expandedLines)
+	}
+}
+
+// TestToggleTranscriptRowRoundTrips keeps the collapse → expand → collapse
+// cycle stable so a card can be toggled repeatedly with warm caches.
+func TestToggleTranscriptRowRoundTrips(t *testing.T) {
+	m := transcriptViewTestModel()
+	m.transcript = appendTranscriptRow(m.transcript, transcriptRow{
+		kind: rowReasoning, id: "r", runID: 1, text: "line one\nline two\nline three"})
+	idx := len(m.transcript) - 1
+
+	m = m.toggleTranscriptRow(idx)
+	if !m.transcript[idx].expanded {
+		t.Fatal("first toggle should expand")
+	}
+	expandedFingerprint := m.transcript[idx].renderFingerprint
+	if expandedFingerprint != transcriptRowFingerprint(m.transcript[idx]) {
+		t.Fatal("fingerprint must be recomputed when expanding")
+	}
+	m = m.toggleTranscriptRow(idx)
+	if m.transcript[idx].expanded {
+		t.Fatal("second toggle should collapse")
+	}
+	if m.transcript[idx].renderFingerprint == expandedFingerprint {
+		t.Fatal("fingerprint must change again when collapsing")
+	}
+	if m.transcript[idx].renderFingerprint != transcriptRowFingerprint(m.transcript[idx]) {
+		t.Fatal("fingerprint must track the collapsed state after a round trip")
+	}
+}
+
+// TestToggleTranscriptRowClearsHover ensures a stale hover target cannot
+// highlight the wrong row after the geometry changes under the cursor.
+func TestToggleTranscriptRowClearsHover(t *testing.T) {
+	m := transcriptViewTestModel()
+	m.transcript = appendTranscriptRow(m.transcript, transcriptRow{
+		kind: rowReasoning, id: "r", runID: 1, text: "line one\nline two"})
+	idx := len(m.transcript) - 1
+	m.hover = hoverTarget{kind: hoverTranscript, bodyY: 0}
+
+	m = m.toggleTranscriptRow(idx)
+	if m.hover.kind == hoverTranscript {
+		t.Fatalf("toggle should clear the transcript hover, got %#v", m.hover)
+	}
+}

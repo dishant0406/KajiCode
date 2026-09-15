@@ -737,6 +737,52 @@ func TestMouseClickTogglesReasoningRow(t *testing.T) {
 	}
 }
 
+// TestMouseClickTogglesToolCardFooter clicks the collapsed card's "click to
+// expand" footer (not the head) and asserts the body actually expands — the
+// end-to-end route a user takes when they click the affordance.
+func TestMouseClickTogglesToolCardFooter(t *testing.T) {
+	m := mouseTestModel()
+	m.mouseCapture = true
+	m.height = 40
+	m.transcript = appendTranscriptRow(m.transcript, transcriptRow{
+		kind: rowToolResult, id: "t", tool: "mcp_exa_web_search_exa",
+		status: tools.StatusOK, detail: numberedLines(cardBodyMaxLines + 20)})
+
+	width := m.chatColumnWidth()
+	body, selectable := m.transcriptBody(width, "")
+	start, _, top := m.transcriptViewportStart(body, width)
+	var footer transcriptSelectableLine
+	for _, line := range selectable {
+		if line.toggle && strings.Contains(line.text, "click to expand") {
+			footer = line
+			break
+		}
+	}
+	if !footer.toggle {
+		t.Fatalf("collapsed footer must be a toggle target, selectable=%#v", selectable)
+	}
+
+	updated, _ := m.Update(testMouseClick(tea.MouseLeft, footer.textStart, top+footer.bodyY-start))
+	next := updated.(model)
+	if !next.transcript[len(next.transcript)-1].expanded {
+		t.Fatal("clicking the footer should expand the tool card")
+	}
+	// A second click on the (now expanded) footer's "▾ collapse" line — or the
+	// head — collapses it again. Re-resolve the footer after expansion.
+	body, selectable = next.transcriptBody(width, "")
+	start, _, top = next.transcriptViewportStart(body, width)
+	for _, line := range selectable {
+		if line.toggle {
+			updated, _ = next.Update(testMouseClick(tea.MouseLeft, line.textStart, top+line.bodyY-start))
+			break
+		}
+	}
+	next = updated.(model)
+	if next.transcript[len(next.transcript)-1].expanded {
+		t.Fatal("a follow-up toggle click should collapse the tool card again")
+	}
+}
+
 func TestMouseClickTogglesStreamingReasoning(t *testing.T) {
 	m := mouseTestModel()
 	m.mouseCapture = true

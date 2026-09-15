@@ -712,18 +712,22 @@ func (m model) transcriptRowBodyHeightCacheKeyOpts(row transcriptRow, width int,
 	return b.String(), stable
 }
 
+// renderTranscriptRow routes through renderTranscriptRowFn with the live body cap.
 func (m model) renderTranscriptRow(rowIndex int, row transcriptRow, width int, rc rowContext, startBodyY int) (string, []transcriptSelectableLine) {
-	return m.renderTranscriptRowFn(rowIndex, row, width, rc, startBodyY, m.renderRow)
+	return m.renderTranscriptRowFn(rowIndex, row, width, rc, startBodyY, cardBodyMaxLines, m.renderRow)
 }
 
 // renderTranscriptDetailedRow routes through renderTranscriptRowFn with
 // renderRowDetailed (bodyCap: 0) so tool output appears uncapped.
 func (m model) renderTranscriptDetailedRow(rowIndex int, row transcriptRow, width int, rc rowContext, startBodyY int) (string, []transcriptSelectableLine) {
-	return m.renderTranscriptRowFn(rowIndex, row, width, rc, startBodyY, m.renderRowDetailed)
+	return m.renderTranscriptRowFn(rowIndex, row, width, rc, startBodyY, 0, m.renderRowDetailed)
 }
 
 // renderTranscriptRowFn dispatches row-kind rendering using the provided renderFn.
-func (m model) renderTranscriptRowFn(rowIndex int, row transcriptRow, width int, rc rowContext, startBodyY int, renderFn rowRenderFn) (string, []transcriptSelectableLine) {
+// bodyCap is the card body cap renderFn applies (cardBodyMaxLines live, 0 in the
+// detailed view); it is threaded through so the click-target detection matches the
+// footer the card actually rendered instead of assuming the live cap.
+func (m model) renderTranscriptRowFn(rowIndex int, row transcriptRow, width int, rc rowContext, startBodyY int, bodyCap int, renderFn rowRenderFn) (string, []transcriptSelectableLine) {
 	switch row.kind {
 	case rowUser:
 		return m.renderSelectableUserRow(rowIndex, row, width, startBodyY)
@@ -734,7 +738,7 @@ func (m model) renderTranscriptRowFn(rowIndex int, row transcriptRow, width int,
 	case rowSystem, rowError, rowToolCall, rowPermission, rowAskUser:
 		return m.renderSelectableRenderedRowFn(rowIndex, row, width, rc, startBodyY, renderFn)
 	case rowToolResult:
-		return m.renderSelectableToolResultRowFn(rowIndex, row, width, rc, startBodyY, renderFn)
+		return m.renderSelectableToolResultRowFn(rowIndex, row, width, rc, startBodyY, bodyCap, renderFn)
 	case rowSpecialist:
 		return m.renderSelectableSpecialistRowFn(rowIndex, row, width, rc, startBodyY, renderFn)
 	default:
@@ -750,7 +754,7 @@ func (m model) renderTranscriptRowFn(rowIndex int, row transcriptRow, width int,
 // renderSelectableToolResultRow renders the tool result card and marks its head
 // (first line) as a clickable collapse/expand toggle. Body/footer text remains
 // selectable so copying a visible transcript range includes command output.
-func (m model) renderSelectableToolResultRowFn(rowIndex int, row transcriptRow, width int, rc rowContext, startBodyY int, renderFn rowRenderFn) (string, []transcriptSelectableLine) {
+func (m model) renderSelectableToolResultRowFn(rowIndex int, row transcriptRow, width int, rc rowContext, startBodyY int, bodyCap int, renderFn rowRenderFn) (string, []transcriptSelectableLine) {
 	rendered := renderFn(row, width, rc)
 	if rendered == "" {
 		return "", nil
@@ -768,6 +772,25 @@ func (m model) renderSelectableToolResultRowFn(rowIndex int, row transcriptRow, 
 	}
 	selectable := []transcriptSelectableLine{header}
 	selectable = append(selectable, selectableLinesFromRendered(rowIndex, rendered, startBodyY, 1)...)
+	// The collapse affordance reads as clickable, so make it a real toggle target
+	// too: the collapsed footer ("▸ N lines — click to expand") expands the card,
+	// the expanded footer ("▾ collapse") collapses it. The footer is always the
+	// card's last line, and it is matched by EXACT text against what the card
+	// actually rendered — so a tool output/body line that merely contains words
+	// like "click to expand" is never mis-tagged as a toggle.
+	if len(selectable) > 0 {
+		last := &selectable[len(selectable)-1]
+		if footer := toolCardCollapseFooter(row, bodyCap); footer != "" {
+			switch {
+			case !row.expanded && last.text == footer:
+				last.toggle = true
+				last.rowIndex = rowIndex
+			case row.expanded && last.text == expandCardCollapseFooter:
+				last.toggle = true
+				last.rowIndex = rowIndex
+			}
+		}
+	}
 	// The selection highlight is painted once, at the body-item level, AFTER the
 	// reading-column gutter shift (finalizeTranscriptBodyRow) — in the same shifted
 	// coordinate the mouse maps to. Painting it here (unshifted) made the highlight
@@ -776,7 +799,7 @@ func (m model) renderSelectableToolResultRowFn(rowIndex int, row transcriptRow, 
 }
 
 func (m model) renderSelectableToolResultRow(rowIndex int, row transcriptRow, width int, rc rowContext, startBodyY int) (string, []transcriptSelectableLine) {
-	return m.renderSelectableToolResultRowFn(rowIndex, row, width, rc, startBodyY, m.renderRow)
+	return m.renderSelectableToolResultRowFn(rowIndex, row, width, rc, startBodyY, cardBodyMaxLines, m.renderRow)
 }
 
 func (m model) renderSelectableRenderedRowFn(rowIndex int, row transcriptRow, width int, rc rowContext, startBodyY int, renderFn rowRenderFn) (string, []transcriptSelectableLine) {
@@ -1136,6 +1159,24 @@ func splitPlainAtDisplayWidth(text string, width int) (string, string) {
 func (m model) transcriptHitTestSource() (header string, items []transcriptBodyItem, width int) {
 	header, set, width := m.transcriptHitTestItemSet()
 	return header, set.items, width
+}
+
+// transcriptRowsForView returns the transcript rows the transcript viewport is
+// currently showing — the same source View(), the scroll metrics, and the mouse
+// hit-test all resolve against. The detailed view always renders the parent
+// transcript (even from inside a subchat), so it wins over subchat; otherwise a
+// subchat shows the child rows. Callers that map a hit-test rowIndex back to a
+// row (e.g. a collapse toggle) must use this so the index is applied to the row
+// set it was resolved against.
+func (m model) transcriptRowsForView() []transcriptRow {
+	switch {
+	case m.transcriptDetailed:
+		return m.transcript
+	case m.subchat.active:
+		return m.subchat.childRows
+	default:
+		return m.transcript
+	}
 }
 
 func (m model) transcriptViewportHeaderWidth() (header string, width int) {
@@ -1522,16 +1563,33 @@ func (m model) handleTranscriptSelectionMouse(msg tea.MouseMsg) (model, tea.Cmd,
 }
 
 // toggleTranscriptRow flips the collapse state of a collapsible row (a provider
-// thought or a tool result card).
+// thought or a tool result card). A rowIndex resolved by the mouse hit-test is
+// only meaningful against the row set the viewport is showing, so it is applied
+// to transcriptRowsForView (parent rows in the detailed view, child rows in a
+// subchat, otherwise the parent transcript).
 func (m model) toggleTranscriptRow(rowIndex int) model {
-	if rowIndex < 0 || rowIndex >= len(m.transcript) {
+	rows := m.transcriptRowsForView()
+	if rowIndex < 0 || rowIndex >= len(rows) {
 		return m
 	}
-	switch m.transcript[rowIndex].kind {
-	case rowReasoning, rowToolResult:
-		m.transcript[rowIndex].expanded = !m.transcript[rowIndex].expanded
+	rows[rowIndex] = toggledTranscriptRow(rows[rowIndex])
+	// The row's bodyY geometry changes on expand/collapse while the mouse stays
+	// put, so a stale transcript hover could highlight the wrong row.
+	// Re-resolve it on the next motion (same reason a wheel-scroll clears it).
+	return m.clearHover()
+}
+
+// toggledTranscriptRow flips the collapse state of a collapsible row and
+// refreshes its cached renderFingerprint. That fingerprint is computed once at
+// append time (prepareTranscriptRow) and every render/height/scroll cache key
+// derives from it, so a toggle that left it stale produced no visible expansion.
+func toggledTranscriptRow(row transcriptRow) transcriptRow {
+	if row.kind != rowReasoning && row.kind != rowToolResult {
+		return row
 	}
-	return m
+	row.expanded = !row.expanded
+	row.renderFingerprint = transcriptRowFingerprint(row)
+	return row
 }
 
 func (m model) selectedTranscriptText() string {

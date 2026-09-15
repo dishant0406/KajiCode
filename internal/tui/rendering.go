@@ -1577,21 +1577,18 @@ func renderToolResultCard(row transcriptRow, width int, rc rowContext, opts card
 	// the card to expand (▸ → ▾) while it is live; collapsed rows flush to
 	// scrollback clean. Skipped for: the uncapped detailed view (opts.bodyCap==0),
 	// diff tools whose body must stay reviewable, and short output.
-	collapsedFooter := ""
-	if opts.bodyCap > 0 && !toolCardAlwaysExpands(name) && !(!failed && (isExploreTool(name) || isLocalControlTool(name))) {
-		collapsedFooter = collapsedToolFooter(row.detail)
-	}
-	if collapsedFooter != "" && !row.expanded {
+	collapseFooter := toolCardCollapseFooter(row, opts.bodyCap)
+	if collapseFooter != "" && !row.expanded {
 		head := toolCardHead(name, headTarget, headArg, "", row.detail, row.text, false, nameStyle, rc.auto[key], width, opts)
-		return toolCard(head, glyph, nil, collapsedFooter, borderStyle, width)
+		return toolCard(head, glyph, nil, collapseFooter, borderStyle, width)
 	}
 	bodyOpts := opts
 	bodyOpts.expanded = row.expanded
 	body := toolCardBody(name, rc.hints[key], rc.args[key], row.detail, width, bodyOpts, failed)
 	head := toolCardHead(name, headTarget, headArg, body.headTag, row.detail, row.text, false, nameStyle, rc.auto[key], width, opts)
 	footer := body.footer
-	if collapsedFooter != "" && row.expanded && footer == "" {
-		footer = "▾ collapse"
+	if collapseFooter != "" && row.expanded && footer == "" {
+		footer = expandCardCollapseFooter
 	}
 	return toolCard(head, glyph, body.lines, footer, borderStyle, width)
 }
@@ -1624,6 +1621,29 @@ func toolCardAlwaysExpands(name string) bool {
 	}
 	return false
 }
+
+// toolCardCollapseFooter returns the collapse footer a tool-result card shows
+// when it hides its body — "▸ N lines — click to expand" while collapsed, the
+// expandCardCollapseFooter while expanded — or "" when the card renders its body
+// inline instead: short output, expandable diffs, explore/local-control cards, or
+// the uncapped detailed view (bodyCap == 0). It mirrors the collapse branch in
+// renderToolResultCard and is the single source of truth for both the footer text
+// and the click target on it, so the renderer and click detection cannot drift.
+func toolCardCollapseFooter(row transcriptRow, bodyCap int) string {
+	if bodyCap <= 0 || toolCardAlwaysExpands(toolRowName(row)) {
+		return ""
+	}
+	if row.status != tools.StatusError && (isExploreTool(toolRowName(row)) || isLocalControlTool(toolRowName(row))) {
+		return ""
+	}
+	return collapsedToolFooter(row.detail)
+}
+
+// expandCardCollapseFooter is the footer shown at the bottom of an expanded
+// tool-result card — clicking it or the header collapses the card. Kept as one
+// constant so the renderer and the click-target detection in
+// transcript_selection.go can never drift apart.
+const expandCardCollapseFooter = "▾ collapse"
 
 // collapsedToolFooter summarizes the hidden output for a collapsed tool card, or
 // "" when the output is short enough to render inline. Only output longer than
