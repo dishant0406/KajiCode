@@ -10,22 +10,35 @@ import (
 )
 
 // skillTool lets the model pull a reusable instruction "skill" into context on
-// demand (PRD F15). It reads the skills directory itself via the internal/skills
-// loader and returns the named skill's markdown body as its Output, so the model
-// can opt into reusable guidance only when relevant. It is read-only.
+// demand (PRD F15). It is the single skill tool for every surface: it resolves a
+// named skill across the primary skills dir, the shared ~/.agents/skills and
+// ~/.claude/skills roots, the project roots governing the run's working
+// directories (RunOptions.ProjectSkillRoots), and plugin-contributed roots, in the
+// order defined by skills.MergeRoots (global → project → plugin, earlier wins).
+// Keeping one tool — instead of a single-dir core tool plus a multi-root plugin
+// overlay that shadowed each other by registration order — guarantees the skills
+// the system prompt advertises are exactly the skills this tool can load. It is
+// read-only.
 type skillTool struct {
 	baseTool
+	// dir is the primary skills directory (skills.DefaultDir unless overridden).
 	dir string
+	// pluginRoots are the plugin-contributed skill roots for this run, resolved
+	// last, after the global and project roots (see skills.MergeRoots).
+	pluginRoots []string
 }
 
 // NewSkillTool builds the skill tool. An empty dir resolves to the standard
 // skills data directory (skills.DefaultDir); pass an explicit dir in tests.
-func NewSkillTool(dir string) *skillTool {
+// pluginRoots are additional plugin skill roots, resolved after the global
+// roots (see skills.MergeRoots).
+func NewSkillTool(dir string, pluginRoots []string) *skillTool {
 	if strings.TrimSpace(dir) == "" {
 		dir = skills.DefaultDir(nil)
 	}
 	return &skillTool{
-		dir: dir,
+		dir:         dir,
+		pluginRoots: append([]string{}, pluginRoots...),
 		baseTool: baseTool{
 			name: "skill",
 			description: "Load a specialized skill when the task at hand matches one of the available_skills entries. " +
@@ -63,25 +76,27 @@ func (tool *skillTool) Run(_ context.Context, args map[string]any) Result {
 	return tool.run(args, nil, "")
 }
 
-// RunWithOptions implements tools.optionsAwareTool so the core skill tool also
-// resolves project skill roots (skills.ProjectSkillRoots) the run has
-// discovered, keeping the core surface consistent with the plugin overlay's
-// project-scoped discovery.
+// RunWithOptions implements tools.optionsAwareTool so the skill tool also
+// resolves the project skill roots (skills.ProjectSkillRoots) the run has
+// discovered, so repo skills are loadable by name as soon as the run touches
+// their subtree — matching opencode's project-scoped discovery without a restart.
 func (tool *skillTool) RunWithOptions(_ context.Context, args map[string]any, options RunOptions) Result {
 	return tool.run(args, options.ProjectSkillRoots, options.PermissionMode)
 }
 
 // PermissionForArgs implements tools.ArgsPermissioner so the agent loop consults a
 // skill's frontmatter permission (deny/prompt/allow) for a specific load call.
-// It resolves the named skill from the tool's configured dir and returns its
-// permission, falling back to the read-only allow when unprovable. Returning
-// deny here makes the registry hard-block loading that skill before its body is read.
+// It resolves the named skill across the tool's global + plugin roots (the loop
+// has no project roots at this point) and returns its permission, falling back to
+// the read-only allow when unprovable. Returning deny here makes the registry
+// hard-block loading that skill before its body is read; a deny project skill is
+// additionally enforced inside run(), which does receive the project roots.
 func (tool *skillTool) PermissionForArgs(args map[string]any) Permission {
 	name, err := aliasedStringArg(args, []string{"name", "skill"}, "", true, false)
 	if err != nil || name == "" {
 		return PermissionAllow
 	}
-	switch skillPermissionByDir(tool.dir, name) {
+	switch skillPermissionByName(tool.dir, tool.pluginRoots, name) {
 	case skills.PermissionDeny:
 		return PermissionDeny
 	case skills.PermissionPrompt:
@@ -91,10 +106,10 @@ func (tool *skillTool) PermissionForArgs(args map[string]any) Permission {
 	}
 }
 
-// skillPermissionByDir resolves a named skill's frontmatter permission from a
-// single skill directory. Unknown or unconstrained skills return allow.
-func skillPermissionByDir(dir string, name string) string {
-	loaded, _, err := skills.LoadFromRoots([]string{dir})
+// skillPermissionByName resolves a named skill's frontmatter permission across the
+// tool's global + plugin roots. Unknown or unconstrained skills return allow.
+func skillPermissionByName(dir string, pluginRoots []string, name string) string {
+	loaded, _, err := skills.LoadMerged(dir, pluginRoots, nil)
 	if err != nil {
 		return skills.PermissionAllow
 	}
@@ -109,12 +124,12 @@ func skillPermissionByDir(dir string, name string) string {
 	return skills.PermissionAllow
 }
 
-// run resolves a named skill across the tool's directory and the run's project
-// skill roots. projectRoots are merged after the configured dir and treated as
-// least-precedence. permissionMode is threaded from RunOptions so a deny-gated
-// skill yields to bypass-all: profilePermission already lets bypass-all through
-// at the loop before the tool call, and the in-tool guard mirrors it so the same
-// permission system governs skill body loading rather than a separate one.
+// run resolves a named skill across the tool's global + plugin roots and the
+// run's project skill roots, in skills.MergeRoots order (global → project →
+// plugin, earlier wins). permissionMode is threaded from RunOptions so a
+// deny-gated skill yields to bypass-all: the loop's profilePermission already
+// lets bypass-all through at the loop before the tool call, and the in-tool guard
+// mirrors it so the same permission system governs skill body loading.
 func (tool *skillTool) run(args map[string]any, projectRoots []string, permissionMode string) Result {
 	name, err := aliasedStringArg(args, []string{"name", "skill"}, "", true, false)
 	if err != nil {
@@ -123,18 +138,9 @@ func (tool *skillTool) run(args map[string]any, projectRoots []string, permissio
 
 	bypassAll := sandbox.NormalizePermissionMode(sandbox.PermissionMode(permissionMode)) == sandbox.PermissionModeBypassAll
 
-	roots := append([]string{tool.dir}, projectRoots...)
-	loaded, _, err := skills.LoadFromRoots(roots)
+	loaded, _, err := skills.LoadMerged(tool.dir, tool.pluginRoots, projectRoots)
 	if err != nil {
 		return errorResult("Error: failed to load skills: " + err.Error())
-	}
-	if len(loaded) == 0 {
-		// Built-in synthesize skill is always available even when no on-disk skills
-		// are installed, so the always-discoverable customize-kajicode resolves.
-		if strings.EqualFold(name, skills.BuiltinCustomizeKajicodeName) {
-			return okResult(skills.SkillOutput(skills.BuiltinCustomizeKajicode()))
-		}
-		return errorResult(fmt.Sprintf("Error: no skills are available (looked in %s).", tool.dir))
 	}
 
 	names := make([]string, 0, len(loaded))
@@ -155,6 +161,9 @@ func (tool *skillTool) run(args map[string]any, projectRoots []string, permissio
 	// skills are installed but none shares its name.
 	if strings.EqualFold(name, skills.BuiltinCustomizeKajicodeName) {
 		return okResult(skills.SkillOutput(skills.BuiltinCustomizeKajicode()))
+	}
+	if len(names) == 0 {
+		return errorResult(fmt.Sprintf("Error: no skills are available (looked in %s).", tool.dir))
 	}
 	return errorResult(fmt.Sprintf("Error: unknown skill %q. Available skills: %s.", name, strings.Join(names, ", ")))
 }

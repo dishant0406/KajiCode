@@ -10,7 +10,6 @@ import (
 	"github.com/dishant0406/KajiCode/internal/agent"
 	"github.com/dishant0406/KajiCode/internal/config"
 	"github.com/dishant0406/KajiCode/internal/sandbox"
-	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
 const acpUsage = `kajicode acp — serve the Agent Client Protocol (ACP) over stdio
@@ -50,18 +49,26 @@ func runACP(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) int
 		RunAgent:    agent.Run,
 		// Build the SCOPED registry + sandbox engine per workspace, exactly like the
 		// exec surface, so ACP shell/file tools are confined — never run unconfined.
-		BuildWorkspace: func(workspaceRoot string, resolved config.ResolvedConfig) (*tools.Registry, *sandbox.Engine, error) {
+		// Plugin activation overlays the multi-root skill tool and its roots, and the
+		// same roots render the skill catalog, so ACP's advertised skills match what
+		// the skill tool can resolve.
+		BuildWorkspace: func(workspaceRoot string, resolved config.ResolvedConfig) (acp.Workspace, error) {
 			scope, err := sandbox.NewScope(workspaceRoot, resolved.Sandbox.AdditionalWriteRoots)
 			if err != nil {
-				return nil, nil, err
+				return acp.Workspace{}, err
 			}
 			engine, err := buildExecSandboxEngine(workspaceRoot, resolved, deps, scope)
 			if err != nil {
-				return nil, nil, err
+				return acp.Workspace{}, err
 			}
 			registry := newCoreRegistryScoped(workspaceRoot, scope)
 			registerLocalControlTools(registry, workspaceRoot, resolved.LocalControl)
-			return registry, engine, nil
+			activation := activatePlugins(workspaceRoot, registry, deps, stderr, workspaceRoot)
+			return acp.Workspace{
+				Registry: registry,
+				Sandbox:  engine,
+				Skills:   activation.skillInfos(deps.skillsDir(), workspaceRoot),
+			}, nil
 		},
 		ResolveWorkspaceRoot: acpWorkspaceRootResolver(deps),
 		Store:                deps.newSessionStore(),

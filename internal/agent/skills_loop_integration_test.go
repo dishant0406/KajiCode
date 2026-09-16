@@ -75,7 +75,7 @@ func TestEndToEndProjectSkillDiscoveryAndDynamicCatalog(t *testing.T) {
 	registry := tools.NewRegistry()
 	resolver := &observingTool{}
 	registry.Register(resolver)
-	registry.Register(tools.NewSkillTool(filepath.Join(t.TempDir()))) // empty global dir
+	registry.Register(tools.NewSkillTool(filepath.Join(t.TempDir()), nil)) // empty global dir
 
 	provider := &mockProvider{
 		turns: [][]kajicoderuntime.StreamEvent{
@@ -172,7 +172,7 @@ func TestEndToEndSkillAutoLoadOnPathMatch(t *testing.T) {
 	registry := tools.NewRegistry()
 	resolver := &observingTool{}
 	registry.Register(resolver)
-	registry.Register(tools.NewSkillTool(filepath.Join(t.TempDir())))
+	registry.Register(tools.NewSkillTool(filepath.Join(t.TempDir()), nil))
 
 	provider := &mockProvider{
 		turns: [][]kajicoderuntime.StreamEvent{

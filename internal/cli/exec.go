@@ -464,20 +464,7 @@ func runExec(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) in
 	if err != nil {
 		return writeExecProviderError(stdout, stderr, options.outputFormat, "sandbox_error", err.Error())
 	}
-	// Re-register the core tools with the run scope, OVERWRITING the nil-scope
-	// instances registered before config resolve (the registry must exist that
-	// early for --list-tools and tool-filter validation, which run without a
-	// provider). This is safe only while two invariants hold:
-	//   1. Registry.Register replaces by NAME, so every path-confining core
-	//      tool is swapped wholesale; and
-	//   2. nothing between the initial registration and this point captures a
-	//      core-tool INSTANCE (tool_search holds the *Registry* and resolves
-	//      names lazily; --list-tools and filter validation use names only).
-	// A new wrapper that snapshots a core tool before this line would silently
-	// ship nil-scope enforcement — add it below this re-registration instead.
-	for _, tool := range tools.CoreToolsScoped(workspaceRoot, execScope) {
-		registry.Register(tool)
-	}
+	registerExecScopedTools(registry, workspaceRoot, execScope, deps.skillsDir(), pluginActivation.skillRoots)
 	sandboxEngine, err := buildExecSandboxEngine(workspaceRoot, resolved, deps, execScope)
 	if err != nil {
 		return writeExecProviderError(stdout, stderr, options.outputFormat, "sandbox_error", err.Error())
@@ -1047,6 +1034,29 @@ func registerBatchTool(registry *tools.Registry, enabledTools []string, disabled
 		return
 	}
 	registry.Register(tools.NewBatchTool(registry))
+}
+
+// registerExecScopedTools re-registers the core tools with the run's execScope,
+// OVERWRITING the nil-scope instances registered before config resolve (the
+// registry must exist that early for --list-tools and tool-filter validation,
+// which run without a provider). This is safe only while two invariants hold:
+//  1. Registry.Register replaces by NAME, so every path-confining core tool is
+//     swapped wholesale; and
+//  2. nothing between the initial registration and this point captures a
+//     core-tool INSTANCE (tool_search holds the *Registry* and resolves names
+//     lazily; --list-tools and filter validation use names only).
+//
+// A new path-confining core tool must be added inside CoreToolsScoped so it picks
+// up execScope. CoreToolsScoped also ships the core skill tool WITHOUT plugin
+// roots, so this loop would drop the plugin roots activatePlugins installed
+// earlier and re-shadow global ~/.agents/skills + ~/.claude/skills discovery.
+// Re-assert the skill tool with the activation's plugin roots afterward so the
+// catalog the model sees stays loadable.
+func registerExecScopedTools(registry *tools.Registry, workspaceRoot string, scope *sandbox.Scope, skillsDir string, pluginSkillRoots []string) {
+	for _, tool := range tools.CoreToolsScoped(workspaceRoot, scope) {
+		registry.Register(tool)
+	}
+	registry.Register(tools.NewSkillTool(skillsDir, pluginSkillRoots))
 }
 
 func buildExecSandboxEngine(workspaceRoot string, resolved config.ResolvedConfig, deps appDeps, scope *sandbox.Scope) (*sandbox.Engine, error) {

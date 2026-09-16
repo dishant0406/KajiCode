@@ -53,9 +53,9 @@ func activatePlugins(workspaceRoot string, registry *tools.Registry, deps appDep
 	loaded, err := deps.loadPlugins(plugins.LoadOptions{Cwd: workspaceRoot, ExcludeProject: excludeProject})
 	if err != nil {
 		writePluginActivationWarning(stderr, "failed to load plugins: "+err.Error())
-		// Still overlay multi-root discovery (primary + agents) so a plugin load
-		// failure cannot hide shared skills.
-		registry.Register(plugins.NewSkillTool(deps.skillsDir(), nil))
+		// Still overlay multi-root discovery (global + agents + claude) so a plugin
+		// load failure cannot hide shared skills.
+		registry.Register(tools.NewSkillTool(deps.skillsDir(), nil))
 		return pluginActivation{trustSkip: skip}
 	}
 
@@ -71,11 +71,11 @@ func activatePlugins(workspaceRoot string, registry *tools.Registry, deps appDep
 		writePluginActivationWarning(stderr, warning)
 	}
 
-	// Always overlay the multi-root skill tool so discovery is identical with or
-	// without plugins: primary DefaultDir + optional ~/.agents/skills + plugin
-	// roots (earlier wins). With empty SkillRoots and no agents dir this is
-	// byte-equivalent to the core single-dir skill surface.
-	registry.Register(plugins.NewSkillTool(deps.skillsDir(), result.SkillRoots))
+	// Always register the multi-root skill tool so discovery is identical with or
+	// without plugins: primary DefaultDir + optional ~/.agents/skills and
+	// ~/.claude/skills + plugin roots (earlier wins). With empty SkillRoots and no
+	// convention dirs this is byte-equivalent to the core single-dir skill surface.
+	registry.Register(tools.NewSkillTool(deps.skillsDir(), result.SkillRoots))
 
 	return pluginActivation{hooks: result.Hooks, skillRoots: result.SkillRoots, trustSkip: skip}
 }
@@ -92,13 +92,13 @@ func projectPluginsDirExists(workspaceRoot string) bool {
 }
 
 // skillInfos resolves the reusable skills the model can load via the skill tool —
-// primary dir + optional ~/.agents/skills + project skills governing cwd + plugin
-// skill roots, the same set the multi-root skill tool resolves against — as plain
-// data for the agent's system prompt. It returns nil when no skills are installed,
-// so a skill-less run leaves the prompt byte-identical.
+// primary dir + optional ~/.agents/skills and ~/.claude/skills + project skills
+// governing cwd + plugin skill roots, the same set the multi-root skill tool
+// resolves against — as plain data for the agent's system prompt. It returns nil
+// when no skills are installed, so a skill-less run leaves the prompt byte-identical.
 func (a pluginActivation) skillInfos(defaultDir string, cwd string) []agent.SkillInfo {
-	merged, _ := plugins.MergedSkillsForCwd(defaultDir, a.skillRoots, cwd)
-	if len(merged) == 0 {
+	merged, _, err := skills.ListMerged(defaultDir, a.skillRoots, skills.ProjectRootsForCwd(cwd))
+	if err != nil || len(merged) == 0 {
 		return nil
 	}
 	// Synthesize the built-in customize-kajicode skill into the boot catalog so

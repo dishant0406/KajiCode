@@ -27,15 +27,28 @@ type Deps struct {
 	ResolveConfig func(workspaceRoot string, overrides config.Overrides) (config.ResolvedConfig, error)
 	NewProvider   func(profile config.ProviderProfile) (kajicoderuntime.Provider, error)
 	RunAgent      func(ctx context.Context, prompt string, provider kajicoderuntime.Provider, opts agent.Options) (agent.Result, error)
-	// BuildWorkspace builds the SCOPED tool registry and the sandbox engine for a
-	// validated workspace root, so ACP shell tools (bash/exec_command) are confined
-	// exactly like the exec surface — never run unconfined on the host.
-	BuildWorkspace func(workspaceRoot string, resolved config.ResolvedConfig) (*tools.Registry, *sandbox.Engine, error)
+	// BuildWorkspace builds the SCOPED tool registry, the sandbox engine, and the
+	// skill catalog for a validated workspace root. The registry confines ACP
+	// shell tools (bash/exec_command) exactly like the exec surface — never run
+	// unconfined on the host. The skill catalog is resolved together with the
+	// registry so the <available_skills> the model sees matches the skills the
+	// registry's skill tool can actually load.
+	BuildWorkspace func(workspaceRoot string, resolved config.ResolvedConfig) (Workspace, error)
 	// ResolveWorkspaceRoot validates + normalizes a client-supplied cwd (must be an
 	// existing directory; never the bare root). It is the file-tool confinement root.
 	ResolveWorkspaceRoot func(cwd string) (string, error)
 	Store                *sessions.Store
 	AgentInfo            Implementation
+}
+
+// Workspace is the per-session toolkit ACP runs a turn against: the scoped tool
+// registry, the sandbox engine (nil for ACP, which runs no sandboxed backend of
+// its own), and the skill catalog advertised in the system prompt. They are built
+// together so the catalog and the registry's skill tool share one root set.
+type Workspace struct {
+	Registry *tools.Registry
+	Sandbox  *sandbox.Engine
+	Skills   []agent.SkillInfo
 }
 
 // Agent is the ACP agent server bound to one JSON-RPC connection (one editor).
@@ -232,12 +245,15 @@ func (a *Agent) runTurn(ctx context.Context, sess *acpSession, userText string, 
 	if err != nil {
 		return "", RPCError(codeInternalError, "provider: "+err.Error())
 	}
-	// Build the SCOPED registry + sandbox engine for this session's workspace so
-	// shell/file tools are confined to the workspace exactly like the exec surface.
-	registry, sandboxEngine, err := a.deps.BuildWorkspace(sess.cwd, resolved)
+	// Build the SCOPED registry + sandbox engine + skill catalog for this session's
+	// workspace so shell/file tools are confined to the workspace exactly like the
+	// exec surface, and the system prompt advertises the same skills the skill tool
+	// can load.
+	workspace, err := a.deps.BuildWorkspace(sess.cwd, resolved)
 	if err != nil {
 		return "", RPCError(codeInternalError, "workspace: "+err.Error())
 	}
+	registry := workspace.Registry
 	note := &notifier{conn: a.conn, sessionID: sess.id}
 
 	opts := agent.Options{
@@ -246,11 +262,12 @@ func (a *Agent) runTurn(ctx context.Context, sess *acpSession, userText string, 
 		ProviderName:   resolved.Provider.Name,
 		Model:          resolved.Provider.Model,
 		Registry:       registry,
-		Sandbox:        sandboxEngine,
+		Sandbox:        workspace.Sandbox,
 		PermissionMode: sess.currentMode(),
 		MaxTurns:       resolved.MaxTurns,
 		Images:         images,
 		ImageLimits:    imageinput.LimitsFrom(resolved.Images.MaxWidth, resolved.Images.MaxHeight, resolved.Images.MaxBytes, resolved.Images.AutoResize),
+		Skills:         workspace.Skills,
 		OnText:         note.text,
 		OnReasoning:    note.thought,
 		OnToolCall:     note.toolCall,

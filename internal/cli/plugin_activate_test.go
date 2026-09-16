@@ -94,7 +94,7 @@ func TestActivatePluginsRegistersPluginSkillTool(t *testing.T) {
 	}}
 
 	registry := tools.NewRegistry()
-	registry.Register(tools.NewSkillTool(t.TempDir())) // core skill tool, like the real bootstrap
+	registry.Register(tools.NewSkillTool(t.TempDir(), nil)) // core skill tool, like the real bootstrap
 	var stderr bytes.Buffer
 	workspace := t.TempDir()
 	activation := activatePlugins(workspace, registry, fakePluginDeps(t, loaded), &stderr, workspace)
@@ -132,7 +132,7 @@ func TestActivatePluginsAlwaysRegistersMultiRootSkillTool(t *testing.T) {
 	}
 
 	registry := tools.NewRegistry()
-	registry.Register(tools.NewSkillTool(t.TempDir())) // core single-dir tool
+	registry.Register(tools.NewSkillTool(t.TempDir(), nil)) // core single-dir tool
 	var stderr bytes.Buffer
 	workspace := t.TempDir()
 	activation := activatePlugins(workspace, registry, fakePluginDeps(t, nil), &stderr, workspace)

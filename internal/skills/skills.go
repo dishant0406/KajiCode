@@ -76,7 +76,8 @@ var errNotDirectory = errors.New("not a directory")
 // NOT created — a missing directory simply yields no skills.
 //
 // DefaultDir is the primary write root for install/remove/lock. Runtime discovery
-// also considers AgentsDir and plugin skill roots via DiscoveryRoots / LoadFromRoots.
+// also considers AgentsDir, ClaudeDir, project roots, and plugin skill roots via
+// MergeRoots / LoadMerged.
 func DefaultDir(env map[string]string) string {
 	if override := strings.TrimSpace(envValue(env, "KAJICODE_SKILLS_DIR")); override != "" {
 		return override
@@ -158,19 +159,19 @@ func ClaudeDir(env map[string]string) string {
 	return dir
 }
 
-// DiscoveryRoots returns ordered skill roots for runtime discovery: primary
-// DefaultDir, optional AgentsDir when present, optional ClaudeDir when present,
-// then pluginRoots. Empty strings are omitted. Earlier entries win on name
-// clashes.
-func DiscoveryRoots(env map[string]string, pluginRoots []string) []string {
-	return collectRoots(DefaultDir(env), AgentsDir(env), ClaudeDir(env), pluginRoots)
+// GlobalRoots returns ordered global skill roots: the primary skills dir, then
+// the optional shared convention roots (~/.agents/skills, then ~/.claude/skills)
+// when present. Empty strings are omitted. Earlier entries win on name clashes.
+// Runtime discovery uses MergeRoots, which extends this with project/plugin roots.
+func GlobalRoots(primary string) []string {
+	return collectRoots(primary, AgentsDir(nil), ClaudeDir(nil))
 }
 
-// collectRoots assembles ordered non-empty skill roots. primary is typically
-// DefaultDir (or an injected test dir); agents is typically AgentsDir's result;
-// claude is typically ClaudeDir's result.
-func collectRoots(primary string, agents string, claude string, pluginRoots []string) []string {
-	roots := make([]string, 0, 3+len(pluginRoots))
+// collectRoots assembles ordered non-empty global skill roots. primary is
+// typically DefaultDir (or an injected test dir); agents is typically AgentsDir's
+// result; claude is typically ClaudeDir's result.
+func collectRoots(primary string, agents string, claude string) []string {
+	roots := make([]string, 0, 3)
 	if primary = strings.TrimSpace(primary); primary != "" {
 		roots = append(roots, primary)
 	}
@@ -180,20 +181,7 @@ func collectRoots(primary string, agents string, claude string, pluginRoots []st
 	if claude = strings.TrimSpace(claude); claude != "" {
 		roots = append(roots, claude)
 	}
-	for _, root := range pluginRoots {
-		if root = strings.TrimSpace(root); root != "" {
-			roots = append(roots, root)
-		}
-	}
 	return roots
-}
-
-// GlobalRoots returns discovery roots for management CLI list/info: an explicit
-// primary write/root dir (usually skillsDir / DefaultDir) plus the optional
-// shared convention roots (AgentsDir, ClaudeDir) when present. Plugin roots are
-// excluded from management UX.
-func GlobalRoots(primary string) []string {
-	return collectRoots(primary, AgentsDir(nil), ClaudeDir(nil), nil)
 }
 
 // DuplicateName records two skills that resolved to the same frontmatter name.
@@ -217,10 +205,10 @@ type DuplicateName struct {
 // winner regardless of sort stability. Use Duplicates to surface a warning about
 // any such collisions.
 //
-// NOTE: Load scans one root. Runtime discovery uses LoadFromRoots /
-// DiscoveryRoots (primary DefaultDir, optional ~/.agents/skills, then plugin
-// skill roots). Prefer those multi-root helpers for agent/CLI discovery; keep
-// Load for single-dir install/write call sites.
+// NOTE: Load scans one root. Runtime discovery uses MergeRoots / LoadMerged
+// (global roots, then project roots, then plugin roots). Prefer those multi-root
+// helpers for agent/CLI discovery; keep Load for single-dir install/write call
+// sites.
 func Load(dir string) ([]Skill, error) {
 	skills, _, err := load(dir)
 	return skills, err

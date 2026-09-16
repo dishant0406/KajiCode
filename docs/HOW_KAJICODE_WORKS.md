@@ -878,10 +878,13 @@ flowchart TD
   re-lists that server's tools live. Per-server `timeout` bounds each call and a
   `notifications/progress` message resets the deadline; a remote `http` server
   falls back to SSE only when the failure is not an auth failure.
-- **Plugins** can add tools, hooks, and skill roots. Bootstrap always registers a
-  multi-root skill tool: primary KajiCode skills dir, optional `~/.agents/skills`,
-  then plugin skill roots (earlier wins). `internal/skills` owns that merge via
-  `LoadFromRoots` / `DiscoveryRoots`; single-root `Load` remains for install/write.
+- **Plugins** can add tools, hooks, and skill roots. The single skill tool is
+  multi-root: primary KajiCode skills dir, optional `~/.agents/skills` and
+  `~/.claude/skills`, project roots governing the working directory, then plugin
+  skill roots (earlier wins). `internal/skills` owns that merge via
+  `MergeRoots` / `LoadMerged` / `ListMerged`; single-root `Load` remains for
+  install/write. Both the tool and the system-prompt catalog resolve through the
+  same `MergeRoots`, so the advertised skills are always loadable.
 - **Hooks** can observe or block tool lifecycle events.
 
 ## End-to-End Data Flow

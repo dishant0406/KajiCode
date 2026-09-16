@@ -956,7 +956,7 @@ func runInteractiveTUIWithSetup(stderr io.Writer, deps appDeps, permissionMode a
 		// roots) as the skill tool and the system-prompt list, re-read per use so
 		// newly installed skills work without a restart.
 		LoadSkills: cachedSkillsLoader(func() []skills.Skill {
-			merged, _ := plugins.MergedSkillsForCwdLoaded(deps.skillsDir(), pluginActivation.skillRoots, workspaceRoot)
+			merged, _, _ := skills.LoadMerged(deps.skillsDir(), pluginActivation.skillRoots, skills.ProjectRootsForCwd(workspaceRoot))
 			return merged
 		}),
 		PermissionMode: permissionMode,

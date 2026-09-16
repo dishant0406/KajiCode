@@ -19,6 +19,7 @@ import (
 	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
 	"github.com/dishant0406/KajiCode/internal/modelregistry"
 	"github.com/dishant0406/KajiCode/internal/sessions"
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
 func TestRunExecHelpDocumentsM1Flags(t *testing.T) {
@@ -1973,5 +1974,46 @@ func TestRunExecTopTierDeclineNoSwitch(t *testing.T) {
 	}
 	if providerModels[0] != "claude-opus-4.1" {
 		t.Fatalf("provider model = %q, want claude-opus-4.1", providerModels[0])
+	}
+}
+
+// TestRegisterExecScopedToolsKeepsGlobalSkillTool proves the exec registry
+// finalization does NOT clobber the multi-root skill tool with the plugin-root-less
+// core one: a global skill (~/.agents/skills) and the plugin skill roots must stay
+// resolvable after the scoped re-registration, which was the exact bug where the
+// catalog advertised skills the tool could not load.
+func TestRegisterExecScopedToolsKeepsGlobalSkillTool(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	agents := filepath.Join(home, ".agents", "skills")
+	if err := os.MkdirAll(filepath.Join(agents, "global-skill"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(agents, "global-skill", "SKILL.md"), []byte("---\nname: global-skill\n---\nglobal body"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	pluginRoot := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(pluginRoot, "plugin-skill"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pluginRoot, "plugin-skill", "SKILL.md"), []byte("---\nname: plugin-skill\n---\nplugin body"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	registry := newCoreRegistry(t.TempDir())
+	registerExecScopedTools(registry, t.TempDir(), nil, filepath.Join(home, "missing-primary"), []string{pluginRoot})
+
+	tool, ok := registry.Get("skill")
+	if !ok {
+		t.Fatal("skill tool missing after scoped re-registration")
+	}
+	global := tool.Run(context.Background(), map[string]any{"name": "global-skill"})
+	if global.Status != tools.StatusOK || !strings.Contains(global.Output, "global body") {
+		t.Fatalf("global skill not resolvable after scoped re-registration: %s %s", global.Status, global.Output)
+	}
+	plugin := tool.Run(context.Background(), map[string]any{"name": "plugin-skill"})
+	if plugin.Status != tools.StatusOK || !strings.Contains(plugin.Output, "plugin body") {
+		t.Fatalf("plugin skill not resolvable after scoped re-registration: %s %s", plugin.Status, plugin.Output)
 	}
 }

@@ -20,7 +20,7 @@ func writeSkillFile(t *testing.T, dir string, name string, content string) {
 }
 
 func TestSkillToolIsReadOnly(t *testing.T) {
-	tool := NewSkillTool(t.TempDir())
+	tool := NewSkillTool(t.TempDir(), nil)
 	if tool.Name() != "skill" {
 		t.Fatalf("Name = %q, want skill", tool.Name())
 	}
@@ -39,7 +39,7 @@ func TestSkillToolReturnsContentForKnownSkill(t *testing.T) {
 	dir := t.TempDir()
 	writeSkillFile(t, dir, "confirmation-policy", "---\nname: confirmation-policy\ndescription: ask first\n---\n\n# Confirmation Policy\n\nAsk before risky actions.")
 
-	tool := NewSkillTool(dir)
+	tool := NewSkillTool(dir, nil)
 	result := tool.Run(context.Background(), map[string]any{"name": "confirmation-policy"})
 	if result.Status != StatusOK {
 		t.Fatalf("Status = %s, want ok (output: %s)", result.Status, result.Output)
@@ -53,7 +53,7 @@ func TestSkillToolAcceptsSkillAlias(t *testing.T) {
 	dir := t.TempDir()
 	writeSkillFile(t, dir, "demo", "body of demo")
 
-	tool := NewSkillTool(dir)
+	tool := NewSkillTool(dir, nil)
 	result := tool.Run(context.Background(), map[string]any{"skill": "demo"})
 	if result.Status != StatusOK {
 		t.Fatalf("Status = %s, want ok (output: %s)", result.Status, result.Output)
@@ -68,7 +68,7 @@ func TestSkillToolUnknownSkillErrorsAndListsAvailable(t *testing.T) {
 	writeSkillFile(t, dir, "alpha", "a")
 	writeSkillFile(t, dir, "beta", "b")
 
-	tool := NewSkillTool(dir)
+	tool := NewSkillTool(dir, nil)
 	result := tool.Run(context.Background(), map[string]any{"name": "missing"})
 	if result.Status != StatusError {
 		t.Fatalf("Status = %s, want error", result.Status)
@@ -79,7 +79,7 @@ func TestSkillToolUnknownSkillErrorsAndListsAvailable(t *testing.T) {
 }
 
 func TestSkillToolMissingNameErrors(t *testing.T) {
-	tool := NewSkillTool(t.TempDir())
+	tool := NewSkillTool(t.TempDir(), nil)
 	result := tool.Run(context.Background(), map[string]any{})
 	if result.Status != StatusError {
 		t.Fatalf("Status = %s, want error", result.Status)
@@ -87,7 +87,10 @@ func TestSkillToolMissingNameErrors(t *testing.T) {
 }
 
 func TestSkillToolNoSkillsAvailable(t *testing.T) {
-	tool := NewSkillTool(filepath.Join(t.TempDir(), "missing"))
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	tool := NewSkillTool(filepath.Join(t.TempDir(), "missing"), nil)
 	result := tool.Run(context.Background(), map[string]any{"name": "anything"})
 	if result.Status != StatusError {
 		t.Fatalf("Status = %s, want error", result.Status)
@@ -111,7 +114,7 @@ func TestSkillToolResolvesProjectSkillRoots(t *testing.T) {
 	// same name must still resolve (project merged after global, no clobber).
 	writeSkillFile(t, projectRoot, "shared", "project shared body")
 
-	tool := NewSkillTool(globalDir)
+	tool := NewSkillTool(globalDir, nil)
 
 	// Without project roots, the local-only skill is unknown.
 	missing := tool.Run(context.Background(), map[string]any{"name": "local-only"})
@@ -147,8 +150,53 @@ func TestSkillToolResolvesProjectSkillRoots(t *testing.T) {
 	}
 }
 
+// TestSkillToolResolvesPluginRoots proves the core skill tool resolves
+// plugin-contributed roots (supplied at construction), so a plugin's skill is
+// loadable by name and appears alongside the primary dir's skills.
+func TestSkillToolResolvesPluginRoots(t *testing.T) {
+	dir := t.TempDir()
+	writeSkillFile(t, dir, "core-skill", "core body")
+	pluginRoot := t.TempDir()
+	writeSkillFile(t, pluginRoot, "plugin-skill", "plugin body")
+
+	tool := NewSkillTool(dir, []string{pluginRoot})
+
+	got := tool.Run(context.Background(), map[string]any{"name": "plugin-skill"})
+	if got.Status != StatusOK || !strings.Contains(got.Output, "plugin body") {
+		t.Fatalf("plugin skill resolve failed: %s %s", got.Status, got.Output)
+	}
+	core := tool.Run(context.Background(), map[string]any{"name": "core-skill"})
+	if core.Status != StatusOK || !strings.Contains(core.Output, "core body") {
+		t.Fatalf("core skill resolve failed: %s %s", core.Status, core.Output)
+	}
+	// An unknown name lists both the core and plugin skills.
+	unknown := tool.Run(context.Background(), map[string]any{"name": "nope"})
+	if unknown.Status != StatusError {
+		t.Fatalf("unknown skill must error, got %s", unknown.Status)
+	}
+	if !strings.Contains(unknown.Output, "core-skill") || !strings.Contains(unknown.Output, "plugin-skill") {
+		t.Fatalf("unknown error should list both skills, got %q", unknown.Output)
+	}
+}
+
+// TestSkillToolPluginRootDenyBlocksLoad proves a plugin-contributed skill's
+// frontmatter deny still gates both the tool body and PermissionForArgs.
+func TestSkillToolPluginRootDenyBlocksLoad(t *testing.T) {
+	pluginRoot := t.TempDir()
+	writeSkillFile(t, pluginRoot, "plugin-deny", "---\nname: plugin-deny\ndescription: restricted\npermission: deny\n---\n\nSECRET PLUGIN BODY")
+	tool := NewSkillTool(t.TempDir(), []string{pluginRoot})
+
+	if got := tool.PermissionForArgs(map[string]any{"name": "plugin-deny"}); got != PermissionDeny {
+		t.Fatalf("PermissionForArgs(plugin-deny) = %s, want deny", got)
+	}
+	result := tool.Run(context.Background(), map[string]any{"name": "plugin-deny"})
+	if result.Status != StatusError || strings.Contains(result.Output, "SECRET PLUGIN BODY") {
+		t.Fatalf("plugin deny skill leaked: %s %q", result.Status, result.Output)
+	}
+}
+
 func TestSkillToolBuiltinCustomizeKajicodeResolves(t *testing.T) {
-	tool := NewSkillTool(t.TempDir())
+	tool := NewSkillTool(t.TempDir(), nil)
 	result := tool.Run(context.Background(), map[string]any{"name": "customize-kajicode"})
 	if result.Status != StatusOK {
 		t.Fatalf("builtin resolve failed: %s %s", result.Status, result.Output)
@@ -159,7 +207,7 @@ func TestSkillToolBuiltinCustomizeKajicodeResolves(t *testing.T) {
 	// A real on-disk skill of the same name shadows the builtin.
 	dir := t.TempDir()
 	writeSkillFile(t, dir, "customize-kajicode", "---\nname: customize-kajicode\ndescription: user override\n---\n\nuser body")
-	tool = NewSkillTool(dir)
+	tool = NewSkillTool(dir, nil)
 	result = tool.Run(context.Background(), map[string]any{"name": "customize-kajicode"})
 	if result.Status != StatusOK {
 		t.Fatalf("override resolve failed: %s %s", result.Status, result.Output)
@@ -174,7 +222,7 @@ func TestSkillToolDenyPermissionBlocksLoad(t *testing.T) {
 	writeSkillFile(t, dir, "secret-skill", "---\nname: secret-skill\ndescription: restricted\npermission: deny\n---\n\n# SECRET BODY\n\nDo not leak.")
 	writeSkillFile(t, dir, "open-skill", "---\nname: open-skill\ndescription: public\n---\n\n# Open\n\nFine to load.")
 
-	tool := NewSkillTool(dir)
+	tool := NewSkillTool(dir, nil)
 
 	// Run: the deny skill's body must never be returned.
 	denied := tool.Run(context.Background(), map[string]any{"name": "secret-skill"})
@@ -205,7 +253,7 @@ func TestSkillToolDenyPermissionBlocksLoad(t *testing.T) {
 func TestSkillToolPromptPermissionFlagged(t *testing.T) {
 	dir := t.TempDir()
 	writeSkillFile(t, dir, "guard-skill", "---\nname: guard-skill\ndescription: needs care\npermission: prompt\n---\n\n# Guard\n\nCareful body.")
-	tool := NewSkillTool(dir)
+	tool := NewSkillTool(dir, nil)
 	if got := tool.PermissionForArgs(map[string]any{"name": "guard-skill"}); got != PermissionPrompt {
 		t.Fatalf("PermissionForArgs(guard-skill) = %s, want prompt", got)
 	}
@@ -218,7 +266,7 @@ func TestSkillToolPromptPermissionFlagged(t *testing.T) {
 func TestSkillToolDenyYieldsToBypassAll(t *testing.T) {
 	dir := t.TempDir()
 	writeSkillFile(t, dir, "secret-skill", "---\nname: secret-skill\ndescription: restricted\npermission: deny\n---\n\n# SECRET BODY\n\nDo not leak.")
-	tool := NewSkillTool(dir)
+	tool := NewSkillTool(dir, nil)
 
 	// ask-all (or no mode): deny stays hard-blocked, body never returned.
 	denied := tool.RunWithOptions(context.Background(), map[string]any{"name": "secret-skill"}, RunOptions{PermissionMode: "ask-all"})

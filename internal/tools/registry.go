@@ -347,9 +347,10 @@ func CoreReadOnlyToolsScoped(workspaceRoot string, scope PathScope) []Tool {
 		// workspace, and degrades to a clear "unavailable" when no server is
 		// installed for the file type.
 		NewScopedLSPNavigateTool(workspaceRoot, scope),
-		// skill reads reusable instruction files from the skills dir (it resolves
-		// skills.DefaultDir itself); read-only, so it is safe in the core/MCP set.
-		NewSkillTool(""),
+		// skill reads reusable instruction files across the global, plugin, and
+		// project skill roots (it resolves skills.DefaultDir itself); read-only, so
+		// it is safe in the core/MCP set.
+		NewSkillTool("", nil),
 		NewAskUserTool(),
 		NewRequestPermissionsTool(),
 	}

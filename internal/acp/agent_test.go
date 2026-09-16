@@ -51,10 +51,10 @@ func testDeps(t *testing.T) Deps {
 			return fakeProvider{text: "Hello from KAJICODE"}, nil
 		},
 		RunAgent: agent.Run,
-		BuildWorkspace: func(string, config.ResolvedConfig) (*tools.Registry, *sandbox.Engine, error) {
+		BuildWorkspace: func(string, config.ResolvedConfig) (Workspace, error) {
 			r := tools.NewRegistry()
 			r.Register(tools.NewTodoWriteTool())
-			return r, nil, nil
+			return Workspace{Registry: r}, nil
 		},
 		ResolveWorkspaceRoot: func(cwd string) (string, error) { return cwd, nil },
 		Store:                store,
@@ -192,15 +192,17 @@ func TestACPSetModeUpdatesSession(t *testing.T) {
 }
 
 // TestACPRunTurnWiresSandboxAndScopedRegistry proves the sandbox engine and the
-// scoped registry from BuildWorkspace actually reach agent.Options — i.e. ACP
-// shell tools run confined, not unconfined on the host.
+// scoped registry from BuildWorkspace actually reach agent.Options, and that the
+// skill catalog from the same build reaches agent.Options too — i.e. ACP shell
+// tools run confined and the advertised skills match the registry's skill tool.
 func TestACPRunTurnWiresSandboxAndScopedRegistry(t *testing.T) {
 	deps := testDeps(t)
 	reg := tools.NewRegistry()
 	reg.Register(tools.NewTodoWriteTool())
 	engine := sandbox.NewEngine(sandbox.EngineOptions{WorkspaceRoot: t.TempDir()})
-	deps.BuildWorkspace = func(string, config.ResolvedConfig) (*tools.Registry, *sandbox.Engine, error) {
-		return reg, engine, nil
+	skills := []agent.SkillInfo{{Name: "demo", Description: "demo skill"}}
+	deps.BuildWorkspace = func(string, config.ResolvedConfig) (Workspace, error) {
+		return Workspace{Registry: reg, Sandbox: engine, Skills: skills}, nil
 	}
 	var captured agent.Options
 	deps.RunAgent = func(_ context.Context, _ string, _ kajicoderuntime.Provider, opts agent.Options) (agent.Result, error) {
@@ -225,6 +227,9 @@ func TestACPRunTurnWiresSandboxAndScopedRegistry(t *testing.T) {
 	}
 	if captured.Registry != reg {
 		t.Fatal("scoped registry was not wired into agent.Options")
+	}
+	if len(captured.Skills) != 1 || captured.Skills[0].Name != "demo" {
+		t.Fatalf("skill catalog was not wired into agent.Options: %#v", captured.Skills)
 	}
 }
 
