@@ -94,13 +94,17 @@ func TestNormalizeShrinksToByteLimitViaJPEG(t *testing.T) {
 
 func TestNormalizeBoundsEncodedSizeNotRaw(t *testing.T) {
 	// The cap is on the base64 payload the provider receives, not the raw bytes.
-	// This image's raw size fits the cap while its encoded size does not, so a
-	// raw-only check would pass it through and the provider would reject it.
-	limits := Limits{MaxWidth: 2000, MaxHeight: 2000, MaxBytes: 20000, AutoResize: true}
+	// The fixture only needs a raw size whose base64 form exceeds MaxBytes while
+	// the raw bytes fit it — that window is derived from the actual encoder output
+	// rather than assumed, because PNG output size varies across Go versions and
+	// platforms (a hardcoded size produced a fixture that only met the bounds on
+	// some toolchains).
 	src := encodePNG(t, 900, 900)
-	if len(src) > limits.MaxBytes {
-		t.Fatalf("test image must fit raw (%d) to exercise the encoded-only case", len(src))
-	}
+	// base64Len(raw) = raw rounded up to a multiple of 3, times 4/3, so any cap in
+	// [len(src), base64Len(len(src))) has the raw bytes fit while the encoded form
+	// exceeds it. Picking len(src) exactly also proves the passthrough check uses
+	// the encoded measure: a raw-byte comparison would treat this as over-cap.
+	limits := Limits{MaxWidth: 2000, MaxHeight: 2000, MaxBytes: base64Len(len(src)) - 1, AutoResize: true}
 	if base64Len(len(src)) <= limits.MaxBytes {
 		t.Fatalf("test image must EXCEED the cap once encoded: base64Len(%d) = %d", len(src), base64Len(len(src)))
 	}
