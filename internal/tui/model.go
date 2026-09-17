@@ -2846,8 +2846,8 @@ func (m model) transcriptView() string {
 	pickerOverlay := m.pickerOverlay(width)
 	sttKeyOverlay := m.sttKeyPromptOverlay(width)
 	webSearchOverlay := m.webSearchFormOverlay(width)
-	promptEditorOverlay := m.promptEditorOverlay(width)
-	styleOverlay := m.styleEditorOverlay(width)
+	promptEditorOverlay := m.promptEditorOverlay(width, overlayMaxHeight)
+	styleOverlay := m.styleEditorOverlay(width, overlayMaxHeight)
 	viewportOverlay := ""
 	switch {
 	case promptEditorOverlay != "":

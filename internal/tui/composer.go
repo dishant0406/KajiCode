@@ -775,3 +775,16 @@ func composerLineEnd(state composerState) int {
 	}
 	return pos
 }
+
+// composerCursorLine returns the zero-based line index the cursor sits on.
+func composerCursorLine(state composerState) int {
+	state = normalizeComposerState(state)
+	runes := []rune(state.text)
+	line := 0
+	for i := 0; i < state.cursor; i++ {
+		if runes[i] == '\n' {
+			line++
+		}
+	}
+	return line
+}

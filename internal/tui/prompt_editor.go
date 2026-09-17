@@ -158,7 +158,7 @@ func (m model) savePromptEditor(overwrite bool) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m model) promptEditorOverlay(width int) string {
+func (m model) promptEditorOverlay(width int, maxHeight int) string {
 	if m.promptEditor == nil {
 		return ""
 	}
@@ -168,36 +168,96 @@ func (m model) promptEditorOverlay(width int) string {
 	}
 	innerWidth := maxInt(1, overlayWidth-4)
 	editor := m.promptEditor
-	lines := []string{
+
+	prefix := []string{
 		kajicodeTheme.faint.Render("Create a reusable personal prompt snippet."),
 		"",
 		kajicodeTheme.faint.Render("Slug"),
 		fitStyledLine(kajicodeTheme.userPrompt.Render("/ ")+kajicodeTheme.ink.Render(editor.slug+promptEditorCursor(editor.step == promptEditorSlug)), innerWidth),
 	}
+	var bodyLines []string
+	cursorLine := 0
 	if editor.step != promptEditorSlug {
-		lines = append(lines, "", kajicodeTheme.faint.Render("Prompt"))
+		prefix = append(prefix, "", kajicodeTheme.faint.Render("Prompt"))
 		body := editor.body.text
 		if body == "" {
-			body = promptEditorCursor(editor.step == promptEditorBody)
-		} else if editor.step == promptEditorBody {
-			body = insertPromptEditorCursor(editor.body)
+			bodyLines = []string{promptEditorCursor(editor.step == promptEditorBody)}
+		} else {
+			if editor.step == promptEditorBody {
+				body = insertPromptEditorCursor(editor.body)
+			}
+			bodyLines = strings.Split(body, "\n")
 		}
-		for _, line := range strings.Split(body, "\n") {
-			lines = append(lines, kajicodeTheme.ink.Render(truncateRunes(line, innerWidth)))
-		}
+		cursorLine = composerCursorLine(editor.body)
 	}
+	suffix := []string{}
 	if editor.step == promptEditorOverwrite {
-		lines = append(lines, "", kajicodeTheme.amber.Render("This personal prompt already exists. Overwrite it? (y/n)"))
+		suffix = append(suffix, "", kajicodeTheme.amber.Render("This personal prompt already exists. Overwrite it? (y/n)"))
 	}
 	if editor.err != "" {
-		lines = append(lines, "", kajicodeTheme.red.Render(editor.err))
+		suffix = append(suffix, "", kajicodeTheme.red.Render(editor.err))
 	}
 	footer := "Enter continue  •  Esc back/cancel"
 	if editor.step == promptEditorBody {
 		footer = "Enter newline  •  Ctrl+S save  •  Esc back"
 	}
-	lines = append(lines, "", kajicodeTheme.line.Render(strings.Repeat("─", innerWidth)), kajicodeTheme.faint.Render(footer))
+	suffix = append(suffix, "", kajicodeTheme.line.Render(strings.Repeat("─", innerWidth)), kajicodeTheme.faint.Render(footer))
+
+	prefix, bodyLines, suffix = fitEditorOverlay(prefix, bodyLines, suffix, cursorLine, maxHeight)
+	lines := make([]string, 0, len(prefix)+len(bodyLines)+len(suffix))
+	lines = append(lines, prefix...)
+	for _, line := range bodyLines {
+		lines = append(lines, kajicodeTheme.ink.Render(truncateRunes(line, innerWidth)))
+	}
+	lines = append(lines, suffix...)
 	return centerRenderedBlock(styledBlockFillTitle(overlayWidth, "Save Prompt", lines, kajicodeTheme.lineStrong, lipgloss.NewStyle()), width)
+}
+
+// fitEditorOverlay fits a bordered modal's sections into maxHeight rows, always
+// keeping the footer (the last suffix lines, ending in the save hint). It drops
+// prefix lines first (the intro is least important), then windows the body
+// around cursorLine, and, if the overlay still overflows on a very short
+// terminal, trims the leading suffix rows (blank line + separator) so the save
+// hint and bottom border survive. maxHeight <= 0 means the overlay is not
+// clipped (the non-alt-screen path) so every line is rendered unchanged.
+func fitEditorOverlay(prefix []string, body []string, suffix []string, cursorLine int, maxHeight int) ([]string, []string, []string) {
+	if maxHeight <= 0 {
+		return prefix, body, suffix
+	}
+	// Two rows are the block's top and bottom border lines.
+	avail := maxInt(0, maxHeight-2)
+	// Reserve the suffix and at least one body row, then fit the prefix into the
+	// remainder — the intro/slug chrome is the least important content.
+	prefixRoom := maxInt(0, avail-len(suffix)-1)
+	if len(prefix) > prefixRoom {
+		prefix = prefix[len(prefix)-prefixRoom:]
+	}
+	bodyBudget := avail - len(prefix) - len(suffix)
+	// Trim the suffix's leading padding/separator rows so its final footer line
+	// survives even when the terminal is too short for the full chrome.
+	for bodyBudget < 0 && len(suffix) > 1 {
+		suffix = suffix[1:]
+		bodyBudget++
+	}
+	if bodyBudget < 0 {
+		bodyBudget = 0
+	}
+	return prefix, windowEditorLines(body, cursorLine, bodyBudget), suffix
+}
+
+// windowEditorLines returns the slice of body lines to render so the cursor's
+// line stays visible and at most avail lines are shown. A body that already
+// fits is returned unchanged; when no rows are available the body is dropped.
+func windowEditorLines(body []string, cursorLine int, avail int) []string {
+	if len(body) <= avail {
+		return body
+	}
+	if avail <= 0 {
+		return nil
+	}
+	cursorLine = clampInt(cursorLine, 0, len(body)-1)
+	start := clampInt(cursorLine-avail+1, 0, len(body)-avail)
+	return body[start : start+avail]
 }
 
 func promptEditorCursor(active bool) string {

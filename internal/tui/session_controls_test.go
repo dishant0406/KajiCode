@@ -254,6 +254,32 @@ func TestStyleEditorPasteIsModal(t *testing.T) {
 	}
 }
 
+// A long style body must keep the save hint visible, same as the prompt editor.
+func TestStyleEditorLongBodyKeepsSaveFooterVisible(t *testing.T) {
+	root := t.TempDir()
+	m := newModel(context.Background(), Options{UserConfigPath: filepath.Join(root, "kajicode", "config.json")})
+	m.altScreen = true
+	m.width, m.height = 96, 18
+	m = m.appendSystemNotice("some transcript content")
+	m = m.openStyleEditor()
+	var body strings.Builder
+	for i := 0; i < 40; i++ {
+		body.WriteString("style line\n")
+	}
+	m.styleEditor.body = composeBody(body.String())
+
+	view := plainRender(t, m.View())
+	if !strings.Contains(view, "Speaking Style") {
+		t.Fatalf("title clipped:\n%s", view)
+	}
+	if !strings.Contains(view, "Ctrl+S save") {
+		t.Fatalf("save footer clipped:\n%s", view)
+	}
+	if got := len(strings.Split(view, "\n")); got != m.height {
+		t.Fatalf("rendered %d lines, want %d", got, m.height)
+	}
+}
+
 func TestCompactStatusShowsManualFlowState(t *testing.T) {
 	called := false
 	m := newModel(context.Background(), Options{

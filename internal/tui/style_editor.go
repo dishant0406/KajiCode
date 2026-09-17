@@ -180,7 +180,7 @@ func readPersistedStyle(path string) string {
 }
 
 // styleEditorOverlay renders the style editor as a modal overlay.
-func (m model) styleEditorOverlay(width int) string {
+func (m model) styleEditorOverlay(width int, maxHeight int) string {
 	if m.styleEditor == nil {
 		return ""
 	}
@@ -190,7 +190,8 @@ func (m model) styleEditorOverlay(width int) string {
 	}
 	innerWidth := maxInt(1, overlayWidth-4)
 	editor := m.styleEditor
-	lines := []string{
+
+	prefix := []string{
 		kajicodeTheme.faint.Render("Your speaking style, applied to every reply and persisted globally."),
 		"",
 		kajicodeTheme.faint.Render("Style"),
@@ -201,13 +202,21 @@ func (m model) styleEditorOverlay(width int) string {
 	} else {
 		body = insertPromptEditorCursor(editor.body)
 	}
-	for _, line := range strings.Split(body, "\n") {
+	bodyLines := strings.Split(body, "\n")
+
+	suffix := []string{}
+	if editor.err != "" {
+		suffix = append(suffix, "", kajicodeTheme.red.Render(editor.err))
+	}
+	suffix = append(suffix, "", kajicodeTheme.line.Render(strings.Repeat("─", innerWidth)), kajicodeTheme.faint.Render("Enter newline  •  Ctrl+S save  •  Esc cancel"))
+
+	prefix, bodyLines, suffix = fitEditorOverlay(prefix, bodyLines, suffix, composerCursorLine(editor.body), maxHeight)
+	lines := make([]string, 0, len(prefix)+len(bodyLines)+len(suffix))
+	lines = append(lines, prefix...)
+	for _, line := range bodyLines {
 		lines = append(lines, kajicodeTheme.ink.Render(truncateRunes(line, innerWidth)))
 	}
-	if editor.err != "" {
-		lines = append(lines, "", kajicodeTheme.red.Render(editor.err))
-	}
-	lines = append(lines, "", kajicodeTheme.line.Render(strings.Repeat("─", innerWidth)), kajicodeTheme.faint.Render("Enter newline  •  Ctrl+S save  •  Esc cancel"))
+	lines = append(lines, suffix...)
 	return centerRenderedBlock(styledBlockFillTitle(overlayWidth, "Speaking Style", lines, kajicodeTheme.lineStrong, lipgloss.NewStyle()), width)
 }
 

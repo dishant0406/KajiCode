@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -138,4 +139,63 @@ func TestPromptEditorPasteIsModal(t *testing.T) {
 	if got := next.composerValue(); got != "underlying" {
 		t.Fatalf("modal paste leaked into underlying composer: %q", got)
 	}
+}
+
+// A long body must not push the save hint or the cursor's line below the
+// viewport: the overlay windows the body around the cursor and keeps the footer.
+func TestPromptEditorLongBodyKeepsSaveFooterVisible(t *testing.T) {
+	for _, height := range []int{20, 30, 40} {
+		m := promptEditorModel(t)
+		m.altScreen = true
+		m.width, m.height = 96, height
+		m = m.appendSystemNotice("some transcript content")
+		m = m.openPromptEditor()
+		m.promptEditor.slug = "long"
+		m.promptEditor.step = promptEditorBody
+		var body strings.Builder
+		for i := 0; i < 60; i++ {
+			if i > 0 {
+				body.WriteString("\n")
+			}
+			fmt.Fprintf(&body, "zz%02d", i)
+		}
+		m.promptEditor.body = composeBody(body.String())
+
+		view := plainRender(t, m.View())
+		if !strings.Contains(view, "Save Prompt") {
+			t.Fatalf("height %d: title clipped:\n%s", height, view)
+		}
+		if !strings.Contains(view, "Ctrl+S save") {
+			t.Fatalf("height %d: save footer clipped:\n%s", height, view)
+		}
+		if got := len(strings.Split(view, "\n")); got != height {
+			t.Fatalf("height %d: rendered %d lines", height, got)
+		}
+		// The cursor sits on the last body line (zz59); the window must include it.
+		if !strings.Contains(view, "zz59") {
+			t.Fatalf("height %d: cursor line not shown:\n%s", height, view)
+		}
+	}
+}
+
+// A body that fits needs no windowing and renders verbatim.
+func TestPromptEditorShortBodyRendersUnchanged(t *testing.T) {
+	m := promptEditorModel(t)
+	m.altScreen = true
+	m.width, m.height = 96, 40
+	m = m.openPromptEditor()
+	m.promptEditor.slug = "short"
+	m.promptEditor.step = promptEditorBody
+	m.promptEditor.body = composeBody("first\nsecond\nthird")
+
+	view := plainRender(t, m.View())
+	for _, want := range []string{"first", "second", "third", "Ctrl+S save"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("expected %q in view:\n%s", want, view)
+		}
+	}
+}
+
+func composeBody(text string) composerState {
+	return composerState{text: text, cursor: len([]rune(text))}
 }
