@@ -14,15 +14,20 @@ import (
 // their full path instead of being silently dropped by json.Unmarshal.
 //
 // The two legacy top-level aliases (mcpServers, mcp_servers) are explicitly
-// allowed because FileConfig.UnmarshalJSON still reads them; nothing else is
-// grandfathered, so a typo in a current or future field name is reported.
+// allowed because FileConfig.UnmarshalJSON still reads them. "modelOverrides" is
+// also allowed: it was a per-model transport override that catalog-derived
+// routing replaced, so an existing config that still carries it must keep loading
+// cleanly (the key is ignored) instead of tripping a false "unknown field" issue.
+// Nothing else is grandfathered, so a typo in a current or future field name is
+// reported.
+//
 // Detection only inspects the documented JSON schema (struct json tags), so a
 // config written by a newer KajiCode that carries genuinely new fields is still
 // loaded and merged normally — only validate/doctor call this, and they
 // surface the unknown keys as issues rather than rejecting the file.
 func unknownFieldIssues(data []byte) []Issue {
 	var issues []Issue
-	collectUnknownFields(reflect.TypeOf(FileConfig{}), data, "", []string{"mcpServers", "mcp_servers"}, &issues)
+	collectUnknownFields(reflect.TypeOf(FileConfig{}), data, "", []string{"mcpServers", "mcp_servers", "modelOverrides"}, &issues)
 	return issues
 }
 

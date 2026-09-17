@@ -99,3 +99,27 @@ func ResolveRecord(provider, id string) (Record, bool) {
 	}
 	return cat.resolve(provider, id)
 }
+
+// ProviderRecord returns a model's row as published by one specific provider,
+// matched by exact key (or the provider's own "vendor/<id>" suffix). Unlike
+// ResolveRecord it never falls back to the canonical list or a fuzzy name match,
+// so a custom or unlisted provider cannot inherit another provider's wire
+// protocol. ok is false when that provider has no such row.
+func ProviderRecord(provider, id string) (Record, bool) {
+	cat := snapshot()
+	if cat == nil {
+		return Record{}, false
+	}
+	rows, ok := cat.byProvider[strings.TrimSpace(provider)]
+	if !ok {
+		return Record{}, false
+	}
+	key := normalizeKey(id)
+	if key == "" {
+		return Record{}, false
+	}
+	if record, ok := rows[key]; ok {
+		return record, true
+	}
+	return matchSuffix(rows, key)
+}

@@ -25,6 +25,14 @@ type Record struct {
 	Reasoning  bool
 	ToolCall   bool
 
+	// NPM is the models.dev per-model `provider.npm` API-SDK package naming the
+	// wire protocol this model is served on ("@ai-sdk/openai", "@ai-sdk/anthropic",
+	// "@ai-sdk/google", "@ai-sdk/openai-compatible"). Only a per-model override is
+	// captured (the provider-level npm is deliberately not inherited, so a
+	// first-party provider's default never reroutes its models). Empty means the
+	// model carries no override and the provider kind's default path applies.
+	NPM string
+
 	// ReasoningEfforts are the effort tiers from reasoning_options, e.g.
 	// ["low","medium","high"]. Empty means the model has no effort tiers.
 	ReasoningEfforts []string
@@ -80,6 +88,10 @@ type rawRecord struct {
 	Reasoning  bool   `json:"reasoning"`
 	ToolCall   bool   `json:"tool_call"`
 	Status     string `json:"status"`
+	// Provider is the model's per-model override block; only npm is meaningful here.
+	Provider struct {
+		NPM string `json:"npm"`
+	} `json:"provider"`
 	Modalities struct {
 		Input  []string `json:"input"`
 		Output []string `json:"output"`
@@ -112,6 +124,7 @@ func (r rawRecord) toRecord(provider, fallbackID string) Record {
 		Name:             strings.TrimSpace(r.Name),
 		Family:           strings.TrimSpace(r.Family),
 		Provider:         provider,
+		NPM:              strings.TrimSpace(r.Provider.NPM),
 		InputModalities:  cleanStrings(r.Modalities.Input),
 		OutputModalities: cleanStrings(r.Modalities.Output),
 		Attachment:       r.Attachment,

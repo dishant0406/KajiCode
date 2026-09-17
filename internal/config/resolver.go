@@ -164,7 +164,6 @@ func Resolve(options ResolveOptions) (ResolvedConfig, error) {
 		Providers:      providers,
 		Provider:       active,
 		ModelRoles:     cloneStringMap(cfg.ModelRoles),
-		ModelOverrides: cloneModelOverrides(cfg.ModelOverrides),
 		DefaultModel:   cfg.DefaultModel,
 		ActiveRole:     cfg.ActiveRole,
 		MaxTurns:       cfg.MaxTurns,
@@ -238,7 +237,6 @@ func mergeConfig(dst *FileConfig, src FileConfig) {
 	for _, provider := range src.Providers {
 		mergeProvider(dst, provider)
 	}
-	mergeModelOverrides(dst, src.ModelOverrides)
 	mergeMCPConfig(&dst.MCP, src.MCP, true)
 	if network := strings.TrimSpace(src.Sandbox.Network); network != "" {
 		dst.Sandbox.Network = network
@@ -786,28 +784,7 @@ func applyOverrides(cfg *FileConfig, overrides Overrides) {
 	if hasProviderFields(overrides.Provider) {
 		mergeProvider(cfg, overrides.Provider)
 	}
-	mergeModelOverrides(cfg, overrides.ModelOverrides)
 	mergeMCPConfig(&cfg.MCP, overrides.MCP, true)
-}
-
-// mergeModelOverrides overlays src's per-model routing over dst. Model slugs
-// present in src win wholesale; slugs absent from src keep their dst entry.
-func mergeModelOverrides(dst *FileConfig, src map[string]ModelOverride) {
-	if len(src) == 0 {
-		return
-	}
-	if dst.ModelOverrides == nil {
-		dst.ModelOverrides = map[string]ModelOverride{}
-	}
-	for slug, override := range src {
-		slug = strings.TrimSpace(slug)
-		if slug == "" {
-			continue
-		}
-		override.Provider = strings.TrimSpace(override.Provider)
-		override.Type = strings.TrimSpace(override.Type)
-		dst.ModelOverrides[slug] = override
-	}
 }
 
 func mergeLocalControlConfig(dst *LocalControlConfig, src LocalControlConfig) {
@@ -950,17 +927,6 @@ func cloneStringMap(src map[string]string) map[string]string {
 		return nil
 	}
 	dst := make(map[string]string, len(src))
-	for k, v := range src {
-		dst[k] = v
-	}
-	return dst
-}
-
-func cloneModelOverrides(src map[string]ModelOverride) map[string]ModelOverride {
-	if src == nil {
-		return nil
-	}
-	dst := make(map[string]ModelOverride, len(src))
 	for k, v := range src {
 		dst[k] = v
 	}

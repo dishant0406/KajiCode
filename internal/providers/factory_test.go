@@ -10,6 +10,7 @@ import (
 
 	"github.com/dishant0406/KajiCode/internal/config"
 	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
+	"github.com/dishant0406/KajiCode/internal/modelsource"
 	"github.com/dishant0406/KajiCode/internal/oauth"
 )
 
@@ -721,26 +722,154 @@ type captureTransport struct {
 	responseBody string
 }
 
-// TestNewRoutesResponsesOverrideToResponsesAPI verifies that a per-model
-// "responses" modelOverride routes an openai-compatible profile to
-// {baseURL}/responses with the x-opencode-session header, instead of the
-// default chat-completions path.
-func TestNewRoutesResponsesOverrideToResponsesAPI(t *testing.T) {
-	transport := &captureTransport{
-		responseBody: "data: [DONE]\n\n",
+// catalogFixture is a minimal models.dev catalog.json carrying per-model npm
+// overrides, loaded into the modelsource snapshot so the factory can route a
+// model to its published endpoint the way it does against the live catalog.
+const catalogFixture = `{
+  "models": {},
+  "providers": {
+    "opencode": {
+      "models": {
+        "union-alpha": {"id": "union-alpha", "provider": {"npm": "@ai-sdk/anthropic"},
+          "limit": {"context": 200000, "output": 32000}},
+        "muse-spark-1.3": {"id": "muse-spark-1.3", "provider": {"npm": "@ai-sdk/openai"},
+          "limit": {"context": 200000, "output": 32000}},
+        "deepseek-v4-flash": {"id": "deepseek-v4-flash",
+          "limit": {"context": 200000, "output": 32000}}
+      }
+    }
+  }
+}`
+
+// loadCatalog installs the fixture as the process modelsource snapshot for the
+// duration of a test.
+func loadCatalog(t *testing.T) {
+	t.Helper()
+	modelsource.Enable()
+	if err := modelsource.LoadDocument([]byte(catalogFixture)); err != nil {
+		t.Fatalf("LoadDocument: %v", err)
 	}
+	t.Cleanup(modelsource.Disable)
+}
+
+// TestNewRoutesByModelsDevNPM verifies that a model's models.dev provider.npm
+// override selects the wire protocol: an anthropic-npm model is sent to
+// /v1/messages, an openai-npm model to /responses, and a model without an npm
+// override keeps the provider's default /chat/completions path. Every OpenCode
+// request must carry the x-opencode-session header.
+func TestNewRoutesByModelsDevNPM(t *testing.T) {
+	loadCatalog(t)
+	cases := []struct {
+		name     string
+		model    string
+		wantPath string
+		wantBody string
+	}{
+		{"anthropic override -> messages", "union-alpha", "https://opencode.ai/zen/v1/messages", `"messages"`},
+		{"openai override -> responses", "muse-spark-1.3", "https://opencode.ai/zen/v1/responses", `"input"`},
+		{"no override -> chat completions", "deepseek-v4-flash", "https://opencode.ai/zen/v1/chat/completions", `"messages"`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			transport := &captureTransport{responseBody: "data: [DONE]\n\n"}
+			provider, err := New(config.ProviderProfile{
+				Name:         "opencode",
+				ProviderKind: config.ProviderKindOpenAICompatible,
+				CatalogID:    "opencode",
+				BaseURL:      "https://opencode.ai/zen/v1",
+				APIKey:       "sk-zen",
+				Model:        tc.model,
+			}, Options{
+				HTTPClient: &http.Client{Transport: transport},
+				UserAgent:  "kajicode-factory-test",
+			})
+			if err != nil {
+				t.Fatalf("New() error = %v", err)
+			}
+			stream, err := provider.StreamCompletion(context.Background(), kajicoderuntime.CompletionRequest{
+				Messages: []kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleUser, Content: "hi"}},
+			})
+			if err != nil {
+				t.Fatalf("StreamCompletion() error = %v", err)
+			}
+			for range stream {
+			}
+			if transport.request == nil {
+				t.Fatal("HTTP client was not used")
+			}
+			if got := transport.request.URL.String(); got != tc.wantPath {
+				t.Fatalf("request URL = %q, want %q", got, tc.wantPath)
+			}
+			if !strings.Contains(transport.requestBody, tc.wantBody) {
+				t.Fatalf("request body = %q, want it to contain %q", transport.requestBody, tc.wantBody)
+			}
+			if got := transport.request.Header.Get("x-opencode-session"); got == "" {
+				t.Fatal("x-opencode-session header must be set (OpenCode requires it)")
+			}
+		})
+	}
+}
+
+// TestNewIgnoresNPMForUnknownProvider verifies a provider with no models.dev row
+// (a custom or unlisted gateway) never inherits another provider's protocol: its
+// model stays on the default chat-completions path.
+func TestNewIgnoresNPMForUnknownProvider(t *testing.T) {
+	loadCatalog(t)
+	tests := []struct {
+		name      string
+		catalogID string
+	}{
+		{"unlisted provider slug", "custom-openai-compatible"},
+		{"no catalog id", ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			transport := &captureTransport{responseBody: "data: [DONE]\n\n"}
+			provider, err := New(config.ProviderProfile{
+				Name:         "my-gateway",
+				ProviderKind: config.ProviderKindOpenAICompatible,
+				CatalogID:    tc.catalogID,
+				BaseURL:      "https://gateway.example/v1",
+				APIKey:       "sk-x",
+				Model:        "union-alpha",
+			}, Options{
+				HTTPClient: &http.Client{Transport: transport},
+				UserAgent:  "kajicode-factory-test",
+			})
+			if err != nil {
+				t.Fatalf("New() error = %v", err)
+			}
+			stream, err := provider.StreamCompletion(context.Background(), kajicoderuntime.CompletionRequest{
+				Messages: []kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleUser, Content: "hi"}},
+			})
+			if err != nil {
+				t.Fatalf("StreamCompletion() error = %v", err)
+			}
+			for range stream {
+			}
+			if got := transport.request.URL.String(); got != "https://gateway.example/v1/chat/completions" {
+				t.Fatalf("request URL = %q, want the chat-completions default", got)
+			}
+		})
+	}
+}
+
+// TestNewKeepsFirstPartyOpenAIOnChat verifies the npm override never moves the
+// first-party openai provider kind onto a different path: its models carry no
+// per-model npm, so it stays on chat-completions with the OpenAI base URL.
+func TestNewKeepsFirstPartyOpenAIOnChat(t *testing.T) {
+	loadCatalog(t)
+	transport := &captureTransport{responseBody: "data: [DONE]\n\n"}
 	provider, err := New(config.ProviderProfile{
-		Name:         "opencode-go",
-		ProviderKind: config.ProviderKindOpenAICompatible,
-		BaseURL:      "https://opencode.ai/zen/go/v1",
-		APIKey:       "sk-go",
-		Model:        "muse-spark-1.3-contributor",
+		Name:         "openai",
+		ProviderKind: config.ProviderKindOpenAI,
+		CatalogID:    "openai",
+		BaseURL:      "https://api.openai.com/v1",
+		APIKey:       "sk-openai",
+		Model:        "gpt-4.1",
 	}, Options{
 		HTTPClient: &http.Client{Transport: transport},
 		UserAgent:  "kajicode-factory-test",
-		ModelOverrides: map[string]config.ModelOverride{
-			"muse-spark-1.3-contributor": {Type: "responses"},
-		},
 	})
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
@@ -753,17 +882,8 @@ func TestNewRoutesResponsesOverrideToResponsesAPI(t *testing.T) {
 	}
 	for range stream {
 	}
-	if transport.request == nil {
-		t.Fatal("HTTP client was not used")
-	}
-	if got := transport.request.URL.Path; !strings.HasSuffix(got, "/responses") {
-		t.Fatalf("request URL path = %q, want .../responses", got)
-	}
-	if got := transport.request.URL.String(); !strings.Contains(got, "zen/go/v1/responses") {
-		t.Fatalf("request URL = %q, want it to include zen/go/v1/responses", got)
-	}
-	if got := transport.request.Header.Get("x-opencode-session"); got == "" {
-		t.Fatal("x-opencode-session header must be set (OpenCode Go requires it)")
+	if got := transport.request.URL.String(); got != "https://api.openai.com/v1/chat/completions" {
+		t.Fatalf("request URL = %q, want the first-party chat-completions path", got)
 	}
 }
 

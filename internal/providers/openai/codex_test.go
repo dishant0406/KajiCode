@@ -132,7 +132,7 @@ func TestCodexProviderSetsExpectedHeaders(t *testing.T) {
 }
 
 // TestNewResponsesProviderHitsResponsesEndpointWithSession verifies the generic
-// Responses-API provider used for modelOverrides routes to {baseURL}/responses
+// Responses-API provider used for catalog-routed models routes to {baseURL}/responses
 // and always sets x-opencode-session (auto-generated when none is supplied).
 func TestNewResponsesProviderHitsResponsesEndpointWithSession(t *testing.T) {
 	var rec codexRequest

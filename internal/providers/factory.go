@@ -11,6 +11,7 @@ import (
 	"github.com/dishant0406/KajiCode/internal/config"
 	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
 	"github.com/dishant0406/KajiCode/internal/modelregistry"
+	"github.com/dishant0406/KajiCode/internal/modelsource"
 	"github.com/dishant0406/KajiCode/internal/oauth"
 	"github.com/dishant0406/KajiCode/internal/providercatalog"
 	"github.com/dishant0406/KajiCode/internal/providermodelcatalog"
@@ -44,11 +45,6 @@ type Options struct {
 	// here so a slow reasoning model can opt into longer silent stretches without
 	// touching environment variables.
 	StreamIdleTimeout time.Duration
-	// ModelOverrides is the per-model transport routing. When the resolved model
-	// id has a "responses" override, the provider is built as a Responses-API
-	// provider ({baseURL}/responses) instead of chat-completions. Keyed by the
-	// resolved model slug. See config.ModelOverride.
-	ModelOverrides map[string]config.ModelOverride
 }
 
 // New creates a runtime provider for a resolved provider profile.
@@ -74,11 +70,28 @@ func New(profile config.ProviderProfile, options Options) (kajicoderuntime.Provi
 
 	switch resolved.providerKind {
 	case config.ProviderKindOpenAI, config.ProviderKindOpenAICompatible:
-		// A per-model "responses" override routes this model to the Responses API
-		// ({baseURL}/responses) instead of chat-completions — required by OpenCode Go
-		// for Muse-style models that only serve /responses. The shared responses
-		// transport injects x-opencode-session so the request is routable.
-		if resolved.useResponses {
+		// The models.dev provider.npm override routes this model to its real
+		// endpoint when the provider serves models on more than one protocol
+		// (e.g. OpenCode Zen serves union-alpha on /messages and deepseek on
+		// /chat/completions from the same base URL). Both branches keep the
+		// x-opencode-session header so an OpenCode request stays routable.
+		switch resolved.protocol {
+		case providercatalog.APIFormatAnthropicMessages:
+			return anthropic.New(anthropic.Options{
+				APIKey:            profile.APIKey,
+				BaseURL:           messagesBaseURL(resolved.baseURL),
+				Model:             resolved.apiModel,
+				AuthHeader:        profile.AuthHeader,
+				AuthScheme:        profile.AuthScheme,
+				AuthHeaderValue:   profile.AuthHeaderValue,
+				CustomHeaders:     opencodeHeaders(resolved.baseURL, profile.CustomHeaders),
+				OAuthResolver:     options.OAuthResolver,
+				MaxTokens:         resolved.maxOutputTokens,
+				HTTPClient:        options.HTTPClient,
+				UserAgent:         options.UserAgent,
+				StreamIdleTimeout: idleTimeout,
+			})
+		case providercatalog.APIFormatOpenAIResponses:
 			return openai.NewResponsesProvider(openai.Options{
 				APIKey:                profile.APIKey,
 				BaseURL:               resolved.baseURL,
@@ -258,10 +271,12 @@ type resolvedProfile struct {
 	apiModel        string
 	baseURL         string
 	maxOutputTokens int
-	// useResponses routes requests to {baseURL}/responses (Responses API) instead
-	// of the default chat-completions path. Set when the resolved model id has a
-	// `responses` model override matching this provider.
-	useResponses bool
+	// protocol is the wire protocol (a providercatalog.APIFormat) for this model,
+	// derived from the models.dev `provider.npm` override the provider publishes
+	// for it — e.g. OpenCode Zen serves union-alpha on the Anthropic Messages API
+	// while serving deepseek on chat-completions. Empty means "use the provider
+	// kind's default path".
+	protocol providercatalog.APIFormat
 }
 
 // RuntimeMetadata describes the provider identity and concrete API model used
@@ -335,7 +350,7 @@ func resolveProfile(profile config.ProviderProfile, options Options) (resolvedPr
 			apiModel:        entry.APIModel,
 			baseURL:         baseURL,
 			maxOutputTokens: entry.ContextLimits.MaxOutputTokens,
-			useResponses:    responsesOverrideActive(entry.APIModel, profile, options.ModelOverrides),
+			protocol:        modelProtocol(profile, entry.APIModel, providerKind),
 		}, nil
 	}
 
@@ -349,8 +364,33 @@ func resolveProfile(profile config.ProviderProfile, options Options) (resolvedPr
 		providerKind: providerKind,
 		apiModel:     model,
 		baseURL:      baseURL,
-		useResponses: responsesOverrideActive(model, profile, options.ModelOverrides),
+		protocol:     modelProtocol(profile, model, providerKind),
 	}, nil
+}
+
+// modelProtocol picks the wire protocol for a resolved model from the models.dev
+// `provider.npm` override the provider publishes for it. It only applies to the
+// OpenAI chat-completions family (openai / openai-compatible): Anthropic, Google,
+// and Azure profiles already fix their protocol by provider kind, and a model
+// override there would be meaningless (Azure serves its Claude models through
+// Azure's own endpoint, not api.anthropic.com).
+//
+// The lookup is scoped to the profile's own catalog id and matched exactly, so a
+// custom or unlisted provider never inherits another provider's protocol. Unknown
+// or unsupported npm values return "" and keep the existing chat path.
+func modelProtocol(profile config.ProviderProfile, model string, providerKind config.ProviderKind) providercatalog.APIFormat {
+	if providerKind != config.ProviderKindOpenAI && providerKind != config.ProviderKindOpenAICompatible {
+		return ""
+	}
+	catalogID := providercatalog.NormalizeID(profile.CatalogID)
+	if catalogID == "" {
+		return ""
+	}
+	record, ok := modelsource.ProviderRecord(catalogID, model)
+	if !ok {
+		return ""
+	}
+	return protocolFromNPM(record.NPM)
 }
 
 // opencodeHostname is the canonical OpenCode base URL host. Both OpenCode Zen
@@ -401,19 +441,14 @@ func opencodeHeaders(baseURL string, customHeaders map[string]string) map[string
 	return headers
 }
 
-func responsesOverrideActive(model string, profile config.ProviderProfile, overrides map[string]config.ModelOverride) bool {
-	if len(overrides) == 0 {
-		return false
-	}
-	override, ok := overrides[model]
-	if !ok {
-		return false
-	}
-	if other := strings.TrimSpace(override.Provider); other != "" &&
-		!strings.EqualFold(other, strings.TrimSpace(profile.Name)) {
-		return false
-	}
-	return override.UsesResponses()
+// messagesBaseURL adapts a provider's base URL to what the Anthropic Messages
+// provider expects. The messages provider appends "/v1/messages" itself, so a
+// base that already ends in "/v1" (OpenCode Zen's https://opencode.ai/zen/v1)
+// would otherwise become "/v1/v1/messages" and 404. Stripping the trailing "/v1"
+// yields the correct "/v1/messages".
+func messagesBaseURL(baseURL string) string {
+	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	return strings.TrimSuffix(baseURL, "/v1")
 }
 
 // validateModelAllowedForProvider enforces provider-scoped model allowlists at

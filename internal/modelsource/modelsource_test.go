@@ -40,11 +40,24 @@ const fixture = `{
   },
   "providers": {
     "opencode": {
+      "npm": "@ai-sdk/openai-compatible",
       "models": {
         "glm-5": {
           "id": "glm-5", "name": "GLM-5",
           "modalities": {"input": ["text"], "output": ["text"]},
           "limit": {"context": 128000, "output": 16000}
+        },
+        "union-alpha": {
+          "id": "union-alpha", "name": "Union Alpha",
+          "provider": {"npm": "@ai-sdk/anthropic"},
+          "modalities": {"input": ["text"], "output": ["text"]},
+          "limit": {"context": 200000, "output": 32000}
+        },
+        "muse-spark-1.3": {
+          "id": "muse-spark-1.3", "name": "Muse Spark 1.3",
+          "provider": {"npm": "@ai-sdk/openai"},
+          "modalities": {"input": ["text"], "output": ["text"]},
+          "limit": {"context": 200000, "output": 32000}
         }
       }
     },
@@ -67,6 +80,52 @@ func loadFixture(t *testing.T) {
 	Enable()
 	if err := LoadDocument([]byte(fixture)); err != nil {
 		t.Fatalf("LoadDocument: %v", err)
+	}
+}
+
+func TestResolveNPM(t *testing.T) {
+	loadFixture(t)
+	// Only a per-model npm override produces a protocol signal; a row without one
+	// has none (the provider's kind is the default, never inherited here).
+	if rec, ok := ResolveRecord("opencode", "union-alpha"); !ok || rec.NPM != "@ai-sdk/anthropic" {
+		t.Errorf("union-alpha npm = %q (ok=%v), want @ai-sdk/anthropic", rec.NPM, ok)
+	}
+	if rec, ok := ResolveRecord("opencode", "muse-spark-1.3"); !ok || rec.NPM != "@ai-sdk/openai" {
+		t.Errorf("muse-spark-1.3 npm = %q (ok=%v), want @ai-sdk/openai", rec.NPM, ok)
+	}
+	if rec, ok := ResolveRecord("opencode", "glm-5"); !ok || rec.NPM != "" {
+		t.Errorf("glm-5 npm = %q (ok=%v), want empty (no model-level override)", rec.NPM, ok)
+	}
+}
+
+func TestProviderRecordIsExact(t *testing.T) {
+	loadFixture(t)
+	// A row that exists only for another provider (or canonical) must not resolve
+	// through the exact provider lookup, so no custom provider inherits it.
+	if _, ok := ProviderRecord("freeform-gateway", "union-alpha"); ok {
+		t.Error("ProviderRecord must not fall back to another provider's row")
+	}
+	if rec, ok := ProviderRecord("opencode", "union-alpha"); !ok || rec.NPM != "@ai-sdk/anthropic" {
+		t.Errorf("ProviderRecord(opencode, union-alpha) = %q (ok=%v), want @ai-sdk/anthropic", rec.NPM, ok)
+	}
+}
+
+// TestEmbeddedSeedCarriesNPM guards the offline first-run path: the embedded
+// snapshot must parse and carry model-level npm overrides, so a machine with no
+// cache and no network still routes a model like union-alpha to its real endpoint
+// instead of defaulting to chat-completions.
+func TestEmbeddedSeedCarriesNPM(t *testing.T) {
+	models, providers, ok := SeedSummary()
+	if !ok || models == 0 || providers == 0 {
+		t.Fatalf("embedded seed unreadable: models=%d providers=%d ok=%v", models, providers, ok)
+	}
+	cat := seedCatalog()
+	rows := cat.byProvider["opencode"]
+	if rows == nil {
+		t.Fatal("embedded seed has no opencode provider rows")
+	}
+	if rec, ok := rows[normalizeKey("union-alpha")]; !ok || rec.NPM != "@ai-sdk/anthropic" {
+		t.Errorf("seed opencode/union-alpha npm = %q (ok=%v), want @ai-sdk/anthropic", rec.NPM, ok)
 	}
 }
 

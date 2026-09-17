@@ -172,6 +172,27 @@ live in `docs/MULTI_MODEL_ROUTING.md`.
   `modelRoles[role]` via `config.SetModelRole`. `/role name` still switches the active
   role for the session; `/role status`/`/role list`/`/role clear` print/clear.
 
+### Wire Protocol Routing
+
+A provider can serve its models on several wire protocols from one base URL
+(OpenCode Zen serves `union-alpha` on the Anthropic Messages API and `deepseek-*`
+on chat-completions). KajiCode routes each model to its real endpoint
+automatically from the models.dev catalog, not from per-model config:
+
+- `internal/modelsource` decodes the catalog's per-model `provider.npm`
+  (`@ai-sdk/anthropic` → Messages, `@ai-sdk/openai` → Responses,
+  `@ai-sdk/openai-compatible` → chat-completions) into `Record.NPM`, and exposes
+  `ProviderRecord` — a strict, provider-scoped exact lookup so a custom or
+  unlisted provider never inherits another provider's protocol.
+- `internal/providers` (the `providers.New` switch) builds the matching adapter:
+  `anthropic.New` for `/messages` (with `messagesBaseURL` trimming a trailing
+  `/v1` so the path is not doubled), `openai.NewResponsesProvider` for
+  `/responses`, and `openai.New` otherwise. Only the OpenAI chat-completions
+  family is rerouted; Anthropic/Google/Azure profiles keep their kind's protocol.
+- The embedded offline seed (`internal/modelsource/modelsdev_seed.json.gz`) carries
+  the same `provider.npm` overrides, so a first run with no cache and no network
+  still routes correctly.
+
 ### Built-in default roles
 
 Beyond the free-form `modelRoles` schema, KajiCode ships a small fixed, canonical

@@ -2,11 +2,11 @@ package openai
 
 // Generalized OpenAI Responses-API transport.
 //
-// The ChatGPT Codex backend and OpenCode Go both serve the OpenAI Responses API
-// at {baseURL}/responses (not chat-completions). Both need the same request
-// builder, typed SSE dispatcher, and tool-call accumulator. This file hosts that
-// transport so CodexProvider (Codex headers) and the per-model responses override
-// (x-opencode-session for OpenCode Go) can share one implementation.
+// The ChatGPT Codex backend and OpenCode serve the OpenAI Responses API at
+// {baseURL}/responses (not chat-completions). Both need the same request builder,
+// typed SSE dispatcher, and tool-call accumulator. This file hosts that transport
+// so CodexProvider (Codex headers) and the catalog-routed responses path
+// (x-opencode-session for OpenCode) can share one implementation.
 
 import (
 	"context"

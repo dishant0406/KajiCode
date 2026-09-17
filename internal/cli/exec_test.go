@@ -351,7 +351,7 @@ func TestRunExecModeSeedsModelAndTurnOverrides(t *testing.T) {
 	}
 }
 
-func TestRunExecExplicitModelOverridesMode(t *testing.T) {
+func TestRunExecExplicitModelBeatsMode(t *testing.T) {
 	cwd := t.TempDir()
 	var gotModel string
 

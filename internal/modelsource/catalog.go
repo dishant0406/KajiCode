@@ -34,7 +34,8 @@ type indexed struct {
 // parseCatalog decodes catalog.json: {"models": {"<lab>/<slug>": <record>},
 // "providers": {"<slug>": {"models": {"<key>": <record>}}}}. This single document
 // carries both the canonical model list and every provider's rows, so one fetch
-// indexes everything.
+// indexes everything. Each row's own provider.npm override is captured; the
+// provider-level npm is intentionally ignored (see Record.NPM).
 func parseCatalog(data []byte) (*catalog, error) {
 	var doc struct {
 		Models    map[string]rawRecord `json:"models"`
