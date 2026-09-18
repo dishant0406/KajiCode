@@ -40,7 +40,7 @@ func splitTurns(messages []kajicoderuntime.Message, startIndex int) []tailTurn {
 		if messages[i].Role != kajicoderuntime.MessageRoleUser {
 			continue // assistant/tool follow their user
 		}
-		if isSummaryMarkerMessage(messages[i]) {
+		if !beginsNewTurn(messages[i]) {
 			continue
 		}
 		if lastStart >= 0 {
@@ -58,6 +58,13 @@ func isSummaryMarkerMessage(message kajicoderuntime.Message) bool {
 	return strings.HasPrefix(message.Content, summaryLabel)
 }
 
+// beginsNewTurn reports whether a message starts a new user turn for tail
+// selection. Injected compaction messages (the summary and the synthetic
+// continuation turn) are not real asks, so they must not begin a turn.
+func beginsNewTurn(message kajicoderuntime.Message) bool {
+	return !isSummaryMarkerMessage(message) && !isCompactionContinuation(message)
+}
+
 // turnTokens estimates the model-token cost of a whole turn (user + assistant +
 // tool messages) using the same dependency-free estimator as the rest of the
 // compaction pipeline, so tail budgeting is consistent with the trigger check.
@@ -65,23 +72,24 @@ func (turn tailTurn) turnTokens(messages []kajicoderuntime.Message) int {
 	return estimateTokens(messages[turn.start:turn.end])
 }
 
-// planTail selects the newest tailTurns complete user turns to keep verbatim,
-// budgeting them to budget estimated tokens, and returns the boundary index at
-// which the kept suffix begins. The mandatory newest user turn (the active
-// prompt and its turn) is ALWAYS retained in full, even when it alone exceeds
-// budget — a run must keep the ask it is answering. Older turns are retained
-// newest-first while they fit the remainder of the budget; a single over-budget
-// turn is split so its newest suffix remains verbatim and the rest folds into
-// the summary head.
+// planTail selects the recent complete user turns to keep verbatim, budgeting
+// them to budget estimated tokens, and returns the boundary index at which the
+// kept suffix begins. The mandatory newest user turn (the active prompt and its
+// turn) is ALWAYS retained in full, even when it alone exceeds budget — a run
+// must keep the ask it is answering. Older turns are retained newest-first while
+// they fit the remainder of the budget; a single over-budget turn is split so its
+// newest suffix remains verbatim and the rest folds into the summary head.
+//
+// tailTurns caps how many older turns are considered (<= 0 means unbounded: keep
+// every turn that fits the budget). The budget, not a turn count, is the real
+// constraint — a count cap would drop recent turns that fit and is what made
+// compaction lose "what we were doing".
 //
 // Returns len(messages) when the whole history is kept (nothing to summarize),
 // and a boundary at or after headLimit when there is room to summarize a head.
 func planTail(messages []kajicoderuntime.Message, headLimit int, tailTurns int, budget int) int {
 	if len(messages) == 0 {
 		return 0
-	}
-	if tailTurns <= 0 {
-		tailTurns = 1
 	}
 	// Build turns from headLimit (after the leading system messages) forward.
 	turns := splitTurns(messages, headLimit)
@@ -107,7 +115,7 @@ func planTail(messages []kajicoderuntime.Message, headLimit int, tailTurns int, 
 	// Walk newest → oldest, retaining older turns within the budget and the
 	// tailTurns window.
 	for i := len(turns) - 2; i >= 0; i-- {
-		if keptTurns >= tailTurns {
+		if tailTurns > 0 && keptTurns >= tailTurns {
 			break
 		}
 		t := turns[i]
@@ -132,23 +140,20 @@ func planTail(messages []kajicoderuntime.Message, headLimit int, tailTurns int, 
 
 // splitTurnToBudget returns the newest start index within turn whose kept suffix
 // fits within remaining budget, or -1 when even the newest message of the turn
-// cannot be kept within budget (in which case the whole turn is summarized).
-// It walks newest-first inside the turn, accumulating suffix tokens, and stops
-// at the farthest-back index whose suffix still fits. The newest user message of
-// the turn is always the anchor and is retained regardless.
+// does not fit (in which case the whole turn is summarized). It walks
+// newest-first inside the turn, accumulating suffix tokens, and stops at the
+// farthest-back index whose suffix still fits.
+//
+// Unlike the mandatory NEWEST turn — which planTail keeps whole regardless of
+// budget because a run must answer its active ask — an older turn is not special:
+// if its newest message alone busts the budget the whole turn folds into the
+// summary. Forcing a huge older message into the tail here is what previously
+// left compaction unable to shrink a history it had to shrink.
 func splitTurnToBudget(messages []kajicoderuntime.Message, turn tailTurn, remaining int) int {
-	// Walk newest → oldest within the turn, accumulating suffix tokens.
 	keepFrom := turn.end
 	used := 0
 	for i := turn.end - 1; i >= turn.start; i-- {
 		msgTokens := estimateTokens(messages[i : i+1])
-		// The newest message in the turn is mandatory; older suffixes must fit
-		// within remaining, else we stop extending backward.
-		if i == turn.end-1 {
-			keepFrom = i
-			used = msgTokens
-			continue
-		}
 		if used+msgTokens > remaining {
 			break
 		}
@@ -156,27 +161,35 @@ func splitTurnToBudget(messages []kajicoderuntime.Message, turn tailTurn, remain
 		used += msgTokens
 	}
 	if keepFrom == turn.end {
-		return -1 // turn entirely unrepresentable without overflow at suffix level
+		return -1 // the whole turn exceeds the remaining budget
 	}
 	return keepFrom
 }
 
 // tailTokenBudget derives a tail token budget (the verbatim recent working
 // window) from a context window, matching opencode's clamp of
-// max(2000, min(8000, usable*0.25)).
+// max(2000, min(15000, usable*0.25)): a quarter of the window, floored so tiny
+// windows still keep a usable tail and capped so the tail never dominates the
+// budget. The 15k ceiling (vs opencode's own 8k default in older code) is what
+// keeps a full working turn window verbatim on 100k+ windows.
 func tailTokenBudget(contextWindow int) int {
 	if contextWindow <= 0 {
 		return 0
 	}
 	budget := int(float64(contextWindow) * 0.25)
-	if budget < 2000 {
-		budget = 2000
+	if budget < minTailTokenBudget {
+		budget = minTailTokenBudget
 	}
-	if budget > 8000 {
-		budget = 8000
+	if budget > maxTailTokenBudget {
+		budget = maxTailTokenBudget
 	}
 	return budget
 }
+
+const (
+	minTailTokenBudget = 2000
+	maxTailTokenBudget = 15000
+)
 
 // defaultBudgetedTailMinWindow is the smallest context window at which the
 // compactor turns on the budgeted tail path by default. Real coding models are
@@ -185,7 +198,14 @@ func tailTokenBudget(contextWindow int) int {
 // floor. The budgeted path is always available on demand by setting TailTurns.
 const defaultBudgetedTailMinWindow = 32_000
 
-// defaultCompactionTailTurns is how many complete recent user turns the
-// budgeted tail keeps verbatim (beyond the mandatory newest turn) before
-// older turns fold into the summary.
-const defaultCompactionTailTurns = 2
+// defaultCompactionTailTurns is the tail-turn setting the budgeted path uses
+// when the caller does not specify one: unboundedTailTurns, i.e. keep every
+// recent turn that fits the token budget. A turn count is not the real
+// constraint (the budget is), and a small cap is what made compaction drop
+// recent turns the model still needed.
+const defaultCompactionTailTurns = unboundedTailTurns
+
+// unboundedTailTurns is the TailTurns value meaning "no turn-count cap": keep
+// every recent turn that fits the budget. 0 is reserved for "use the legacy
+// message-count tail", so a negative value is needed to mean unbounded.
+const unboundedTailTurns = -1

@@ -437,7 +437,7 @@ flowchart TD
     Under -- Yes --> Keep[Keep context as-is]
     Under -- No --> Grown{Grown past low-water mark?}
     Grown -- No --> Keep
-    Grown -- Yes --> Prune[Prune stale large tool outputs]
+    Grown -- Yes --> Prune[Prune stale + duplicate tool outputs]
     Prune --> Recheck{Back under threshold?}
     Recheck -- Yes --> KeepPruned[Use pruned context]
     Recheck -- No --> Summarize[Summarize oldest middle]
@@ -467,19 +467,26 @@ When compaction actually runs, it tries to preserve the parts most likely to be
 needed by the model:
 
 - leading system messages stay verbatim;
-- the most recent turns stay verbatim (`CompactionPreserveLast`, defaulting to the
-  agent's normal preserve count, 12);
+- a recent window of complete user turns stays verbatim, budgeted to
+  `max(2000, min(15000, window*0.25))` tokens (the goal is to keep the working
+  window, not a fixed message count);
 - the preserved suffix is widened to a provider-valid turn boundary so tool-result
   messages are not replayed without their corresponding assistant tool call;
 - the older middle is summarized into one user-role message labeled
   `[Summary of earlier conversation]`;
 - structured state that should not be paraphrased away, such as the original task
   objective, the active plan, loaded skill/tool state, and recent edits, is
-  preserved alongside the prose summary.
+  preserved alongside the prose summary;
+- a synthetic "continue if you have next steps" user turn is appended so the model
+  resumes the task after a compaction instead of treating the summary as a closed
+  conversation.
 
-The agent auto-compaction and the manual session-compaction path (`/compact`)
-share the same 12-message preserve window, so both keep the same recent tail
-verbatim.
+Before paying for the summarizer, KajiCode reclaims context at zero cost: it prunes
+the bodies of older large tool results and collapses older byte-identical duplicate
+results (keeping the newest copy of any content).
+
+The agent auto-compaction and the manual session-compaction path (`/compact`) keep
+the same recent working window verbatim.
 
 The TUI surfaces auto-compaction in three places: a live in-thread "compressing
 conversation…" row while the agent compacts (replaced by a "Compression

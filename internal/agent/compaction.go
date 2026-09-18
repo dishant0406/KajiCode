@@ -53,6 +53,39 @@ const compactionTriggerRatio = 0.7
 // transcript (and so tests can assert on it).
 const summaryLabel = "[Summary of earlier conversation]"
 
+// compactionContinuationText is the synthetic user turn the loop appends right
+// after a compaction actually ran. A summary plus a recent tail still reads to
+// the model like a closed conversation, so without an explicit cue it tends to
+// stop and re-ask what to do. This matches opencode's auto-compaction behavior:
+// resume the task, or ask if genuinely unsure.
+const compactionContinuationText = "Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed."
+
+// isCompactionContinuation reports whether a user message is the synthetic
+// post-compaction continuation turn. It is not a real user turn, so turn
+// splitting and other transcript logic must skip it.
+func isCompactionContinuation(message kajicoderuntime.Message) bool {
+	return message.Role == kajicoderuntime.MessageRoleUser &&
+		strings.HasPrefix(message.Content, compactionContinuationText)
+}
+
+// appendCompactionContinuation appends the synthetic resume cue after a
+// compaction, unless the history already ends with a user message (idempotent
+// across repeated compactions, and never tells the model to "continue" past a
+// fresh, unanswered user ask). It is called before any guideline re-assert so
+// the guard sees the real tail, not the re-asserted instruction blocks.
+func appendCompactionContinuation(messages []kajicoderuntime.Message) []kajicoderuntime.Message {
+	if len(messages) == 0 {
+		return messages
+	}
+	if messages[len(messages)-1].Role == kajicoderuntime.MessageRoleUser {
+		return messages
+	}
+	return append(messages, kajicoderuntime.Message{
+		Role:    kajicoderuntime.MessageRoleUser,
+		Content: compactionContinuationText,
+	})
+}
+
 // summaryTemplate is the strict Markdown outline the summarizer must fill out.
 // Keeping a fixed structure means repeated compactions stay mutually consistent,
 // so the running summary accumulates facts rather than drifting in shape across
@@ -98,6 +131,29 @@ const (
 	previousSummaryCloseTag = "</previous-summary>"
 )
 
+// summaryUpdateInstructions builds the user prompt for a RE-compaction, when a
+// prior summary block sits at the head of the slice being summarized. The prior
+// summary is discarded after this call, so anything not carried into the new one
+// is lost — the rules spell that out and pin the conflict resolution (newest
+// conversation wins) so value does not decay across a compaction chain.
+func summaryUpdateInstructions(previousSummary string) string {
+	return "Update the anchored summary below using the conversation history that follows it. " +
+		"The previous summary is DISCARDED after this call, so anything you do not carry into the " +
+		"new summary is lost.\n\n" +
+		"When combining:\n" +
+		"- Carry forward objectives, constraints, user directives, decisions, and parallel " +
+		"workstreams from the previous summary even when the conversation does not mention them. " +
+		"Drop only what is finished and no longer needed.\n" +
+		"- The conversation is more recent than the previous summary. Where they conflict, the " +
+		"conversation wins: state the corrected fact and drop the old claim.\n" +
+		"- Add new progress, decisions, constraints, and context from the conversation.\n" +
+		"- Move completed work from Active to Completed.\n" +
+		"- If a blocker was resolved, update the summary to reflect that while keeping any details " +
+		"still needed to continue.\n" +
+		"- Update Objective and Next Move to reflect the current work state.\n\n" +
+		previousSummaryOpenTag + "\n" + previousSummary + "\n" + previousSummaryCloseTag
+}
+
 // extractPreviousSummary returns the most recent injected summary text carried
 // in the head to fold into a new summarization, or "" if there is none. It
 // recognizes a user message starting with the summary label and strips the
@@ -135,15 +191,15 @@ type CompactionOptions struct {
 	// user/assistant boundary. <= 0 falls back to defaultCompactionPreserveLast.
 	PreserveLast int
 	// TailTurns enables opencode-style turn/budget-aware tail selection. When
-	// > 0, the preserved suffix is a recent window of complete user turns — the
-	// TOTAL count of recent turns kept verbatim (including the mandatory newest
-	// turn) — budgeted to TailTokenBudget tokens (see compaction_tail.go) instead
-	// of a bare message count, and an over-budget turn is split so its newest
-	// part stays verbatim. When <= 0 the legacy PreserveLast message-count tail
-	// is used.
+	// non-zero, the preserved suffix is a recent window of complete user turns —
+	// budgeted to TailTokenBudget tokens (see compaction_tail.go) instead of a
+	// bare message count — and an over-budget turn is split so its newest part
+	// stays verbatim. A negative value keeps every turn that fits the budget; a
+	// positive value caps the number of turns. When 0 the legacy PreserveLast
+	// message-count tail is used.
 	TailTurns int
 	// TailTokenBudget is the token budget for the verbatim tail when TailTurns
-	// is active. <= 0 falls back to tailTokenBudget(ContextWindow).
+	// is non-zero. <= 0 falls back to tailTokenBudget(ContextWindow).
 	TailTokenBudget int
 	// ContextWindow is the model's context window, used to derive the tail
 	// budget when TailTurns is active and TailTokenBudget is unset.
@@ -320,17 +376,26 @@ func CompactMessages(messages []kajicoderuntime.Message, opts CompactionOptions)
 		systemEnd++
 	}
 
-	// Determine the preserve boundary. When TailTurns is active, keep a recent
+	// Determine the preserve boundary. When TailTurns != 0, keep a recent
 	// window of complete user turns budgeted to a token budget (opencode-style);
 	// otherwise keep the legacy trailing message count. Both widen to a safe
 	// boundary so the preserved suffix never starts on a tool result.
 	var boundary int
-	if opts.TailTurns > 0 {
+	if opts.TailTurns != 0 {
 		budget := opts.TailTokenBudget
 		if budget <= 0 {
 			budget = tailTokenBudget(opts.ContextWindow)
 		}
 		boundary = planTail(messages, systemEnd, opts.TailTurns, budget)
+		// planTail returns len(messages) to mean "the budget keeps everything" —
+		// nothing to summarize. Without this guard the middle would span the whole
+		// non-system history and Compact would re-summarize a prior summary.
+		if boundary >= len(messages) {
+			return CompactionResult{
+				Messages:       messages,
+				PreservedCount: len(messages),
+			}, nil
+		}
 	} else {
 		boundary = len(messages) - opts.PreserveLast
 	}
@@ -544,36 +609,40 @@ func newCompactionState(options Options, task *taskState) *compactionState {
 		tailTurns = defaultCompactionTailTurns
 	}
 	state.tailTurns = tailTurns
-	if tailTurns > 0 {
+	if tailTurns != 0 {
 		state.tailBudget = tailTokenBudget(options.ContextWindow)
 	}
 	return state
 }
 
 // maybeCompact runs proactive compaction at the top of a turn. It returns the
-// (possibly compacted) message slice. It is a no-op when compaction is disabled,
-// when the history is under threshold, or when the history has not grown past
-// the low-water mark since the last compaction (the infinite-loop guard).
+// (possibly compacted) message slice and whether a summary was actually injected.
+// The bool is reported separately from the slice because a compaction can be
+// length-neutral (one middle message removed, one summary added) yet still needs
+// the caller's post-compaction safety net (guideline re-assert, resume cue) to
+// fire. It is a no-op when compaction is disabled, when the history is under
+// threshold, or when the history has not grown past the low-water mark since the
+// last compaction (the infinite-loop guard).
 func (state *compactionState) maybeCompact(
 	ctx context.Context,
 	provider Provider,
 	messages []kajicoderuntime.Message,
 	tools []kajicoderuntime.ToolDefinition,
-) []kajicoderuntime.Message {
+) ([]kajicoderuntime.Message, bool) {
 	if !state.enabled {
-		return messages
+		return messages, false
 	}
 	plan := planTurnContext(messages, tools, state.threshold, state.preserveLast, state.calibrationRatio)
 	toolTokens := plan.ToolTokens
 	size := plan.TotalTokens
 	if !plan.ShouldCompact {
-		return messages
+		return messages, false
 	}
 	// Only compact when the history has grown past where we last left it. This
 	// stops the loop from re-summarizing an already-compacted history every turn
 	// when it sits just over the threshold.
 	if state.lowWaterMark > 0 && size <= state.lowWaterMark {
-		return messages
+		return messages, false
 	}
 
 	// CHEAP FIRST STAGE: reclaim context at zero token/latency cost by pruning
@@ -585,7 +654,7 @@ func (state *compactionState) maybeCompact(
 		size = state.calibratedTokens(estimateTokens(messages) + toolTokens)
 		if size <= state.threshold {
 			state.lowWaterMark = size
-			return messages
+			return messages, false
 		}
 	}
 
@@ -600,7 +669,7 @@ func (state *compactionState) maybeCompact(
 	if err != nil {
 		// Summarizer failed: keep the original history. The reactive path (or a
 		// later turn) can try again; we never drop messages on failure here.
-		return messages
+		return messages, false
 	}
 	compacted := result.Messages
 	newSize := state.calibratedTokens(estimateTokens(compacted) + toolTokens)
@@ -608,7 +677,7 @@ func (state *compactionState) maybeCompact(
 		// Compaction did not actually shrink anything (e.g. nothing to
 		// summarize). Leave the history untouched and don't churn next turn.
 		state.lowWaterMark = size
-		return messages
+		return messages, false
 	}
 	// Only count a compaction when it actually shrank the history, so the
 	// compaction counter reflects real context reductions rather than paid
@@ -618,7 +687,7 @@ func (state *compactionState) maybeCompact(
 	}
 	state.lowWaterMark = newSize
 	state.emitCompaction("proactive", result)
-	return compacted
+	return compacted, result.Compacted
 }
 
 // recover runs reactive compaction after a provider/stream error. It compacts
@@ -645,33 +714,44 @@ func (state *compactionState) recover(
 		return messages, false, nil
 	}
 
-	result, compactErr := CompactMessages(messages, CompactionOptions{
-		PreserveLast: state.preserveLast,
-		// REACTIVE compaction must guarantee a shrink so the retried turn fits:
-		// a budgeted tail can keep a small whole history verbatim and no-op.
-		// Just set TailTurns=0 to force the aggressive legacy message-count tail
-		// here; the richer turn/budget tail is reserved for proactive splts.
-		TailTurns: 0,
-		Summarize: summarizeClosure(ctx, provider, state.onUsage),
-		taskState: state.task.snapshotForCompaction(messages),
-	})
+	// Reactive compaction must GUARANTEE a shrink so the retried turn fits, but
+	// the budgeted tail (used proactively) can legitimately keep a whole small
+	// history verbatim and produce no shrink. So try the same budgeted tail first
+	// — identical recent context to the proactive path — and fall back to the
+	// aggressive legacy message-count tail only when it would not shrink.
+	result, compactErr := state.compactForRecovery(ctx, provider, messages, state.tailTurns)
 	if compactErr != nil {
 		// A genuine compaction attempt was made (and failed): the budget is spent
 		// so the loop gives up rather than retrying a failing summarizer forever.
 		state.reactiveAttempted = true
 		return messages, true, compactErr
 	}
-	// Reactive compaction can be a no-op for size even though it summarized text:
-	// a large image in the preserved tail (or an image-only newest turn) is charged
-	// imageTokenEstimate and keeps the estimate at or above the pre-compaction
-	// level, so the retried turn would still blow the window. Summarized text alone
-	// cannot fix that, so drop media from the candidate as a second, media-specific
-	// recovery step. This is deliberately last-resort: the retried turn loses its
-	// vision payload but runs instead of failing outright.
 	candidate := result.Messages
 	if estimateTokens(candidate) >= estimateTokens(messages) {
-		if stripped := stripMessageImages(candidate); estimateTokens(stripped) < estimateTokens(messages) {
-			candidate = stripped
+		// The budgeted tail can legitimately keep a small whole history verbatim
+		// (no shrink). Fall back to the aggressive legacy message-count tail so the
+		// retried turn still fits. This costs a second summarizer call, but only on
+		// the rare recovery where the budgeted tail could not shrink a history the
+		// provider already rejected.
+		if state.tailTurns != 0 {
+			if legacy, legacyErr := state.compactForRecovery(ctx, provider, messages, 0); legacyErr == nil {
+				if estimateTokens(legacy.Messages) < estimateTokens(candidate) {
+					result, candidate = legacy, legacy.Messages
+				}
+			}
+		}
+		// Reactive compaction can be a no-op for size even though it summarized
+		// text: a large image in the preserved tail (or an image-only newest turn)
+		// is charged imageTokenEstimate and keeps the estimate at or above the
+		// pre-compaction level, so the retried turn would still blow the window.
+		// Summarized text alone cannot fix that, so drop media from the candidate
+		// as a second, media-specific recovery step. This is deliberately
+		// last-resort: the retried turn loses its vision payload but runs instead
+		// of failing outright.
+		if estimateTokens(candidate) >= estimateTokens(messages) {
+			if stripped := stripMessageImages(candidate); estimateTokens(stripped) < estimateTokens(messages) {
+				candidate = stripped
+			}
 		}
 	}
 	if estimateTokens(candidate) >= estimateTokens(messages) {
@@ -695,6 +775,30 @@ func (state *compactionState) recover(
 	state.lowWaterMark = state.calibratedTokens(estimateTokens(result.Messages) + estimateToolDefTokens(tools))
 	state.emitCompaction("reactive", result)
 	return result.Messages, true, nil
+}
+
+// compactForRecovery performs one compaction attempt for the reactive path with
+// the given tail mode (state.tailTurns for the budgeted tail, 0 for the legacy
+// message-count tail). It exists so recover can try the budgeted tail and fall
+// back to the aggressive tail when the former would not shrink the history.
+func (state *compactionState) compactForRecovery(
+	ctx context.Context,
+	provider Provider,
+	messages []kajicoderuntime.Message,
+	tailTurns int,
+) (CompactionResult, error) {
+	tailBudget := 0
+	if tailTurns != 0 {
+		tailBudget = state.tailBudget
+	}
+	return CompactMessages(messages, CompactionOptions{
+		PreserveLast:    state.preserveLast,
+		TailTurns:       tailTurns,
+		TailTokenBudget: tailBudget,
+		ContextWindow:   state.window,
+		Summarize:       summarizeClosure(ctx, provider, state.onUsage),
+		taskState:       state.task.snapshotForCompaction(messages),
+	})
 }
 
 func (state *compactionState) emitCompaction(trigger string, result CompactionResult) {
@@ -816,9 +920,7 @@ func summarizeMessagesOnce(ctx context.Context, provider Provider, messages []ka
 	// any) lives at the head of the middle being summarized on repeated runs.
 	userPrompt := "Summarize this conversation:\n\n" + renderTranscript(messages)
 	if previous := extractPreviousSummary(messages); previous != "" {
-		userPrompt = "Update the anchored summary below using the conversation history above. " +
-			"Preserve still-true details, remove stale details, and merge in the new facts.\n\n" +
-			previousSummaryOpenTag + "\n" + previous + "\n" + previousSummaryCloseTag +
+		userPrompt = summaryUpdateInstructions(previous) +
 			"\n\nConversation history:\n\n" + renderTranscript(messages)
 	}
 	request := kajicoderuntime.CompletionRequest{

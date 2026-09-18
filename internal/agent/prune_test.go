@@ -120,3 +120,45 @@ func TestPruneDoesNotMutateInput(t *testing.T) {
 		t.Fatal("pruneStaleToolOutput must not mutate the caller's slice")
 	}
 }
+
+func TestPruneCollapsesOlderDuplicates(t *testing.T) {
+	// The same large tool result appears twice (a re-run / re-read). The newer
+	// copy must stay verbatim; the older one collapses to a pointer.
+	duplicate := strings.Repeat("d", 30000*4)
+	msgs := []kajicoderuntime.Message{
+		toolCallMsg("dup1", "read_file"),
+		{Role: kajicoderuntime.MessageRoleTool, ToolCallID: "dup1", Content: duplicate},
+		toolCallMsg("other", "grep"),
+		bigToolResult("other", 30000), // pushes dup1 out of the protected window
+		toolCallMsg("dup2", "read_file"),
+		{Role: kajicoderuntime.MessageRoleTool, ToolCallID: "dup2", Content: duplicate},
+	}
+	out, reclaimed := pruneStaleToolOutput(msgs, 1)
+	if reclaimed <= 0 {
+		t.Fatalf("expected duplicate reclaim, got %d", reclaimed)
+	}
+	if !isPrunedPlaceholder(out[1].Content) {
+		t.Fatalf("older duplicate should collapse, got %q", out[1].Content[:48])
+	}
+	if out[5].Content != duplicate {
+		t.Fatal("the newer copy of a duplicate must stay verbatim")
+	}
+}
+
+func TestPruneKeepsNonDuplicateSameToolResults(t *testing.T) {
+	// Same tool, DIFFERENT content → both are real results and neither is a
+	// duplicate, so both survive.
+	msgs := []kajicoderuntime.Message{
+		toolCallMsg("a", "read_file"),
+		{Role: kajicoderuntime.MessageRoleTool, ToolCallID: "a", Content: strings.Repeat("a", 6000*4)},
+		toolCallMsg("b", "read_file"),
+		{Role: kajicoderuntime.MessageRoleTool, ToolCallID: "b", Content: strings.Repeat("b", 6000*4)},
+	}
+	out, _ := pruneStaleToolOutput(msgs, 1)
+	if out[1].Content != msgs[1].Content {
+		t.Fatal("distinct content must not be treated as a duplicate")
+	}
+	if out[3].Content != msgs[3].Content {
+		t.Fatal("distinct content must not be treated as a duplicate")
+	}
+}

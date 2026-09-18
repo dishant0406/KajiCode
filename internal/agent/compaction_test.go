@@ -768,9 +768,12 @@ func TestMaybeCompactNoThrash(t *testing.T) {
 		CompactionPreserveLast: 1,
 	}, nil)
 
-	first := st.maybeCompact(context.Background(), provider, bigMessages, nil)
+	first, didCompact := st.maybeCompact(context.Background(), provider, bigMessages, nil)
 	if provider.summarizeCalls == 0 {
 		t.Fatal("expected the first maybeCompact to compact")
+	}
+	if !didCompact {
+		t.Fatal("maybeCompact must report that it compacted")
 	}
 	if estimateTokens(first) >= estimateTokens(bigMessages) {
 		t.Fatalf("first compaction did not shrink history: %d -> %d", estimateTokens(bigMessages), estimateTokens(first))
@@ -779,9 +782,12 @@ func TestMaybeCompactNoThrash(t *testing.T) {
 	callsAfterFirst := provider.summarizeCalls
 	// Feed the already-compacted history back — it now sits at the low-water
 	// mark, so a second pass must NOT compact again.
-	second := st.maybeCompact(context.Background(), provider, first, nil)
+	second, didCompactAgain := st.maybeCompact(context.Background(), provider, first, nil)
 	if provider.summarizeCalls != callsAfterFirst {
 		t.Fatalf("second maybeCompact compacted again (thrash): summarize calls %d -> %d", callsAfterFirst, provider.summarizeCalls)
+	}
+	if didCompactAgain {
+		t.Fatal("no-thrash pass must not report a compaction")
 	}
 	if len(second) != len(first) {
 		t.Fatalf("no-thrash pass must return messages unchanged, got %d -> %d", len(first), len(second))
@@ -830,5 +836,53 @@ func TestRunProactiveCompactionEmitsPhaseEvent(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("expected a %q phase event, got %#v", PhaseCompacting, phaseKinds)
+	}
+}
+
+// TestRunProactiveCompactionAppendsResumeCue proves that after a proactive
+// compaction actually runs, the very next provider request carries the synthetic
+// resume cue. Without it, the model reads the summary + recent tail as a closed
+// conversation and tends to stop instead of continuing the task.
+func TestRunProactiveCompactionAppendsResumeCue(t *testing.T) {
+	bigText := strings.Repeat("x", 8000) // ~2000 estimated tokens
+	provider := &summarizeRecordingProvider{
+		turns: [][]kajicoderuntime.StreamEvent{
+			toolTurnWithText(bigText, "1", "read_file", `{"path":"x"}`),
+			textTurn("done"),
+		},
+	}
+	registry := tools.NewRegistry()
+	registry.Register(tools.NewReadFileTool(t.TempDir()))
+
+	result, err := Run(context.Background(), strings.Repeat("y", 8000), provider, Options{
+		Registry:               registry,
+		PermissionMode:         PermissionModeUnsafe,
+		ContextWindow:          1000, // trips the proactive top-of-turn check
+		CompactionPreserveLast: 2,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if provider.summarizeCalls == 0 {
+		t.Fatal("expected proactive compaction to run")
+	}
+	if result.FinalAnswer != "done" {
+		t.Fatalf("expected run to complete with 'done', got %q", result.FinalAnswer)
+	}
+	// The post-compaction turn request is the first tool-bearing request issued
+	// AFTER the summarizer ran, so it must carry the resume cue.
+	cueSeen := false
+	for _, request := range provider.requests {
+		if len(request.Tools) == 0 {
+			continue // the tool-less summarizer call
+		}
+		for _, message := range request.Messages {
+			if isCompactionContinuation(message) {
+				cueSeen = true
+			}
+		}
+	}
+	if !cueSeen {
+		t.Fatal("expected the resume cue in a post-compaction provider request")
 	}
 }

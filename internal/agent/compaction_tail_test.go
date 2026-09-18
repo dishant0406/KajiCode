@@ -118,8 +118,8 @@ func TestTailTokenBudgetClamps(t *testing.T) {
 	if got := tailTokenBudget(0); got != 0 {
 		t.Fatalf("zero window should yield 0 budget, got %d", got)
 	}
-	if got := tailTokenBudget(200_000); got != 8000 {
-		t.Fatalf("large window should clamp to 8000, got %d", got)
+	if got := tailTokenBudget(200_000); got != 15000 {
+		t.Fatalf("large window should clamp to 15000, got %d", got)
 	}
 	// 10000*0.25 = 2500.
 	if got := tailTokenBudget(10_000); got != 2500 {
@@ -320,7 +320,7 @@ func TestMaybeCompactBudgetedTailActivatesForRealisticWindow(t *testing.T) {
 	// verbatim rather than only a bare message count.
 	turns := []kajicoderuntime.Message{
 		sysMsg("s"),
-		userMsg("q1"), asstMsg(strings.Repeat("a1", 60_000)), // big old head
+		userMsg(strings.Repeat("q1", 60_000)), asstMsg("a1"), // big old head
 		userMsg("q2"), asstMsg("a2"),
 		userMsg("q3"), asstMsg("a3"),
 	}
@@ -335,9 +335,15 @@ func TestMaybeCompactBudgetedTailActivatesForRealisticWindow(t *testing.T) {
 	if st.tailTurns == 0 {
 		t.Fatal("realistic window should enable the budgeted tail by default")
 	}
-	out := st.maybeCompact(context.Background(), provider, turns, nil)
+	if st.tailTurns > 0 {
+		t.Fatalf("default tail must be uncapped (keep every turn that fits), got %d", st.tailTurns)
+	}
+	out, didCompact := st.maybeCompact(context.Background(), provider, turns, nil)
 	if provider.summarizeCalls == 0 {
 		t.Fatal("expected compaction to run")
+	}
+	if !didCompact {
+		t.Fatal("maybeCompact must report that it compacted")
 	}
 	var contents []string
 	for _, m := range out {
@@ -357,5 +363,103 @@ func TestSummaryInstructionsMandatesTemplate(t *testing.T) {
 		!strings.Contains(summaryInstructions, "## Work State") ||
 		!strings.Contains(summaryInstructions, "## Relevant Files") {
 		t.Fatal("summary instructions must mandate the strict Markdown template")
+	}
+}
+
+// --- Unbounded tail + continuation cue ------------------------------------
+
+func TestPlanTailUnboundedKeepsAllTurnsThatFit(t *testing.T) {
+	msgs := []kajicoderuntime.Message{
+		sysMsg("s"),
+		userMsg("q1"), asstMsg("a1"),
+		userMsg("q2"), asstMsg("a2"),
+		userMsg("q3"), asstMsg("a3"),
+		userMsg("q4"), asstMsg("a4"),
+	}
+	// TailTurns <= 0 means unbounded: a generous budget keeps every turn, so the
+	// boundary lands at the oldest turn (index 1) and q1 stays verbatim.
+	if got := planTail(msgs, 1, unboundedTailTurns, 100000); got != 1 {
+		t.Fatalf("unbounded tail with a big budget should keep every turn (boundary 1), got %d", got)
+	}
+}
+
+func TestPlanTailPositiveCapStillCaps(t *testing.T) {
+	msgs := []kajicoderuntime.Message{
+		sysMsg("s"),
+		userMsg("q1"), asstMsg("a1"),
+		userMsg("q2"), asstMsg("a2"),
+		userMsg("q3"), asstMsg("a3"),
+	}
+	// An explicit cap of 1 keeps only the newest turn even with a huge budget.
+	if got := planTail(msgs, 1, 1, 100000); got != 5 {
+		t.Fatalf("explicit cap of 1 should keep only the newest turn (boundary 5), got %d", got)
+	}
+}
+
+func TestSplitTurnsSkipsContinuationCue(t *testing.T) {
+	msgs := []kajicoderuntime.Message{
+		sysMsg("s"),
+		userMsg("real ask"), asstMsg("a1"),
+		{Role: kajicoderuntime.MessageRoleUser, Content: compactionContinuationText},
+		asstMsg("a2"),
+	}
+	turns := splitTurns(msgs, 1)
+	if len(turns) != 1 {
+		t.Fatalf("the synthetic continuation cue must not begin a turn; got %d turns", len(turns))
+	}
+	if turns[0].start != 1 {
+		t.Fatalf("the only turn should start at the real ask (1), got %d", turns[0].start)
+	}
+}
+
+func TestAppendCompactionContinuation(t *testing.T) {
+	// After an assistant/tool turn, the cue is appended once (idempotent).
+	base := []kajicoderuntime.Message{sysMsg("s"), userMsg("q"), asstMsg("a")}
+	got := appendCompactionContinuation(base)
+	if len(got) != len(base)+1 || !isCompactionContinuation(got[len(got)-1]) {
+		t.Fatalf("expected one appended continuation cue, got %#v", got)
+	}
+	if again := appendCompactionContinuation(got); len(again) != len(got) {
+		t.Fatal("appending the cue twice must be a no-op when the tail is already a user message")
+	}
+	// A fresh, unanswered user ask must NOT get a "continue" cue.
+	withUser := []kajicoderuntime.Message{sysMsg("s"), userMsg("q"), asstMsg("a"), userMsg("fresh ask")}
+	if out := appendCompactionContinuation(withUser); len(out) != len(withUser) {
+		t.Fatal("a trailing user ask must not get a continuation cue")
+	}
+}
+
+// TestCompactBudgetedNoopWhenTailKeepsEverything covers the post-compaction
+// shape with no real user turn: a summary marker followed only by assistant/tool
+// messages. planTail reports "keep everything", and CompactMessages must honor
+// that by leaving the history untouched — not re-summarizing a prior summary.
+func TestCompactBudgetedNoopWhenTailKeepsEverything(t *testing.T) {
+	msgs := []kajicoderuntime.Message{
+		sysMsg("s"),
+		{Role: kajicoderuntime.MessageRoleUser, Content: summaryLabel + "\nold summary"},
+		asstMsg("a1"),
+		{Role: kajicoderuntime.MessageRoleTool, ToolCallID: "c1", Content: "tool result"},
+	}
+	if got := planTail(msgs, 1, unboundedTailTurns, 1000); got != len(msgs) {
+		t.Fatalf("preserved-shape history should be kept whole (boundary %d), got %d", len(msgs), got)
+	}
+	called := false
+	out, err := Compact(msgs, CompactionOptions{
+		TailTurns:       unboundedTailTurns,
+		TailTokenBudget: 1000,
+		ContextWindow:   200_000,
+		Summarize: func([]kajicoderuntime.Message) (string, error) {
+			called = true
+			return "NEW", nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if called {
+		t.Fatal("history with no compactable user turn must not be re-summarized")
+	}
+	if len(out) != len(msgs) {
+		t.Fatalf("history must be unchanged, got %d messages", len(out))
 	}
 }

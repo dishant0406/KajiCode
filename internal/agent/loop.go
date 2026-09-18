@@ -265,6 +265,28 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 	guidelineTrack.setCatalog(options.Skills, dynamicSkillsCatalogRenderer(options))
 	options.guidelineTrack = guidelineTrack
 
+	// applyPostCompactionSafetyNet runs the two things EVERY compaction needs but
+	// a length-neutral one (one middle message removed, one summary added) would
+	// otherwise skip: it appends the resume cue, then re-asserts the authoritative
+	// AGENTS.md/KAJICODE.md instruction blocks for the current directory as verbatim
+	// <INSTRUCTIONS> user messages. The cue goes first so its guard sees the real
+	// tail (a fresh unanswered user ask) rather than the re-asserted blocks.
+	//
+	// It is idempotent: appendCompactionContinuation no-ops when the tail is already
+	// a user message, and reassertGuidelines only returns blocks for files present
+	// on disk. Every compaction site (proactive + both reactive) calls this so the
+	// safety net cannot drift between them.
+	applyPostCompactionSafetyNet := func(messages []kajicoderuntime.Message) []kajicoderuntime.Message {
+		messages = appendCompactionContinuation(messages)
+		for _, block := range guidelineTrack.reassertGuidelines(options.Cwd) {
+			messages = append(messages, kajicoderuntime.Message{
+				Role:    kajicoderuntime.MessageRoleUser,
+				Content: block,
+			})
+		}
+		return messages
+	}
+
 	// loaded tracks deferred-eligible tools the model has pulled via tool_search
 	// during THIS run. It is consulted by partitionTools each turn to expose a
 	// loaded tool's full schema; it lives only for the run (v1 within-run scope).
@@ -490,23 +512,15 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 		// context window, summarize the oldest middle before building the
 		// request. A no-op when ContextWindow == 0 (compaction disabled).
 		compactionSpan := options.Trace.Span(trace.SpanCompaction)
-		lenBefore := len(messages)
-		messages = compactor.maybeCompact(ctx, provider, messages, exposed)
+		var didCompact bool
+		messages, didCompact = compactor.maybeCompact(ctx, provider, messages, exposed)
 		compactionSpan.End()
 		// Compaction-safety net: after ANY compaction, re-assert the authoritative
 		// AGENTS.md/KAJICODE.md rules for the current working directory as verbatim
-		// <INSTRUCTIONS> user messages. This guarantees the rules survive a compact
-		// even when a root-level AGENTS.md was edited mid-run (no longer in the boot
-		// system prompt) or a summarizer paraphrased an instruction block away — and
-		// re-applies them on this very next request. Idempotent: only fires when a
-		// compaction actually ran.
-		if lenBefore != len(messages) {
-			for _, block := range guidelineTrack.reassertGuidelines(options.Cwd) {
-				messages = append(messages, kajicoderuntime.Message{
-					Role:    kajicoderuntime.MessageRoleUser,
-					Content: block,
-				})
-			}
+		// <INSTRUCTIONS> user messages and add the resume cue. See
+		// applyPostCompactionSafetyNet.
+		if didCompact {
+			messages = applyPostCompactionSafetyNet(messages)
 		}
 		// Self-learning hook: after compaction (and once per turn) run the
 		// review→plan→apply pipeline when its gates open (interval,
@@ -516,7 +530,7 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 		// message so they take effect on this very next provider call
 		// (same-session pickup) instead of waiting for the next run.
 		if ilc := options.Learning; ilc != nil {
-			if ilc.TurnElapsed(ctx, messages, lenBefore != len(messages)) {
+			if ilc.TurnElapsed(ctx, messages, didCompact) {
 				messages = ilc.EnsurePromptHasMemory(messages)
 			}
 		}
@@ -553,7 +567,7 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 			// REACTIVE compaction: a context-limit failure on the call itself
 			// can be recovered by compacting once and retrying the same turn.
 			if compacted, retried, retryErr := compactor.recover(ctx, provider, messages, request.Tools, err.Error()); retried {
-				messages = compacted
+				messages = applyPostCompactionSafetyNet(compacted)
 				if retryErr != nil {
 					result.Messages = copyMessages(messages)
 					return result, retryErr
@@ -652,15 +666,10 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 					return collected, retryErr
 				}
 				// Compaction-safety net on the reactive path too: re-assert the
-				// authoritative AGENTS.md/KAJICODE.md rules for the current working
-				// directory so they are verbatim in the compacted history retried
-				// below, rather than relying on the summarizer having preserved them.
-				for _, block := range guidelineTrack.reassertGuidelines(options.Cwd) {
-					messages = append(messages, kajicoderuntime.Message{
-						Role:    kajicoderuntime.MessageRoleUser,
-						Content: block,
-					})
-				}
+				// authoritative AGENTS.md/KAJICODE.md rules and add the resume cue
+				// so they are verbatim in the compacted history retried below,
+				// rather than relying on the summarizer having preserved them.
+				messages = applyPostCompactionSafetyNet(messages)
 				// Reuse the SAME active-mode partition (exposed) from this turn rather
 				// than the bare toolDefinitions: exposed depends on registry+loaded (not
 				// the messages), so it stays valid after compaction.

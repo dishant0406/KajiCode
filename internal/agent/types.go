@@ -360,12 +360,14 @@ type Options struct {
 	// CompactionPreserveLast is how many trailing messages compaction keeps
 	// verbatim. <= 0 falls back to defaultCompactionPreserveLast.
 	CompactionPreserveLast int
-	// CompactionTailTurns, when > 0, enables opencode-style turn/budget-aware
+	// CompactionTailTurns, when non-zero, enables opencode-style turn/budget-aware
 	// tail selection: the preserved suffix is a recent window of complete user
 	// turns budgeted to a fraction of the context window (see compaction_tail.go)
-	// rather than a bare message count. When 0 the decision is automatic: the
-	// budgeted path is active for realistic context windows (>= 32k tokens) and
-	// the legacy message-count tail is used below that.
+	// rather than a bare message count. A negative value keeps every turn that
+	// fits the budget (the default); a positive value caps the turn count. When 0
+	// the decision is automatic: the budgeted path is active for realistic
+	// context windows (>= 32k tokens) and the legacy message-count tail is used
+	// below that.
 	CompactionTailTurns int
 	Registry            *tools.Registry
 	PermissionMode      PermissionMode
