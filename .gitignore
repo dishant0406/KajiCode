@@ -47,6 +47,10 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 /.kajicode-binary-version
 /snake-game.html
 
+# Generated self-learning memory store — never tree state (config.json,
+# hooks.json, and plugins/ under .kajicode/ ARE committed and stay tracked).
+/.kajicode/learning/
+
 # Superpowers skill artifacts (brainstorm mockups, specs, plans) — local only
 .superpowers/
 docs/superpowers/

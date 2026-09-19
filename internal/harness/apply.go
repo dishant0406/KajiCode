@@ -11,6 +11,11 @@ type ApplyOptions struct {
 	Plan    LearningPlan
 	Trigger string
 	Now     func() time.Time
+	// ToolNames is the set of currently-registered tool names. When non-nil, a
+	// recipe proposal is validated against it and persisted to
+	// <store.Dir>/recipes/<name>/recipe.json so the learned procedure is actually
+	// runnable via recipe_run, not merely recorded as a state entry.
+	ToolNames map[string]bool
 }
 
 // ApplyLearning runs the apply critical section: under the store's OS file
@@ -18,6 +23,10 @@ type ApplyOptions struct {
 // plan's baseline saw, applies each proposal, and records a refinement event.
 // It is the single writer path for automatic learning and never leaves the
 // store partially written.
+//
+// Callers route proposals by scope: each call receives the proposals destined
+// for one store, so a session-scoped lesson never lands in the project or global
+// store.
 func ApplyLearning(store *Store, options ApplyOptions) LearningResult {
 	now := options.Now
 	if now == nil {
@@ -52,6 +61,17 @@ func ApplyLearning(store *Store, options ApplyOptions) LearningResult {
 	if err != nil {
 		result.Errors = append(result.Errors, fmt.Sprintf("apply failed: %v", err))
 	}
+	// Persist any applied recipe as a runnable manifest outside the lock: the
+	// file write is independent of the state file and must not hold the store's
+	// cross-process lock while doing filesystem I/O.
+	for _, outcome := range result.Outcomes {
+		if !outcome.Applied || outcome.Proposal.Kind != KindRecipe || outcome.After == nil || outcome.After.Recipe == nil {
+			continue
+		}
+		if _, saveErr := SaveRecipe(store.Dir, *outcome.After.Recipe, options.ToolNames); saveErr != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("persist recipe %q: %v", outcome.Proposal.ID, saveErr))
+		}
+	}
 	return result
 }
 
@@ -83,6 +103,7 @@ func applyProposals(state State, proposals []EditProposal, baselineVersions map[
 			Changes:   changes,
 			Evidence:  strings.Join(changes, ", "),
 			CreatedAt: now.UTC().Format(time.RFC3339),
+			Rollback:  appliedOutcomes(outcomes),
 		})
 	}
 	return state, outcomes, errorsList
@@ -97,7 +118,7 @@ func applyOne(proposal EditProposal, entries []Entry, baselineVersions map[strin
 	}
 	target := proposal.Scope
 	if target == "" {
-		target = ScopeLocal
+		target = ScopeSession
 	}
 
 	switch proposal.Action {
@@ -164,6 +185,18 @@ func applyOne(proposal EditProposal, entries []Entry, baselineVersions map[strin
 	default:
 		return EditOutcome{Proposal: proposal, Error: fmt.Sprintf("unknown action %q", proposal.Action)}, entries, false
 	}
+}
+
+// appliedOutcomes returns the subset of outcomes that actually landed, preserving
+// the before/after snapshots rollback needs.
+func appliedOutcomes(outcomes []EditOutcome) []EditOutcome {
+	var applied []EditOutcome
+	for _, outcome := range outcomes {
+		if outcome.Applied {
+			applied = append(applied, outcome)
+		}
+	}
+	return applied
 }
 
 func beforePtr(entries []Entry, idx int) *Entry {

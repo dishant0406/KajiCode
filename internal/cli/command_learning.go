@@ -8,16 +8,18 @@ import (
 	"strings"
 
 	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/harness"
 )
 
 // learningStatusJSON is the resolved learning config for `status --json`. It
 // uses explicit bools so the effective defaults always print (unlike
 // LearningConfig.MarshalJSON, which omits fields that read as their defaults).
 type learningStatusJSON struct {
-	Enabled      bool  `json:"enabled"`
-	TurnInterval int   `json:"turnInterval"`
-	Compact      bool  `json:"compact"`
-	CooldownMs   int64 `json:"cooldownMs"`
+	Enabled        bool  `json:"enabled"`
+	DebounceMs     int64 `json:"debounceMs"`
+	Compact        bool  `json:"compact"`
+	PruneAfterDays int   `json:"pruneAfterDays"`
+	MaxEntries     int   `json:"maxEntries"`
 }
 
 // runLearningConfig controls KajiCode's self-learning (perpetual memory)
@@ -34,6 +36,8 @@ func runLearningConfig(args []string, stdout io.Writer, stderr io.Writer, deps a
 		return runLearningStatus(args[1:], stdout, stderr, deps)
 	case "set":
 		return runLearningSet(args[1:], stdout, stderr, deps)
+	case "revert", "rollback":
+		return runLearningRevert(stdout, stderr, deps)
 	case "on", "off":
 		return runLearningSet([]string{"enabled", args[0]}, stdout, stderr, deps)
 	default:
@@ -71,10 +75,11 @@ func runLearningStatus(args []string, stdout io.Writer, stderr io.Writer, deps a
 		// MarshalJSON omits fields their defaults make indistinguishable from
 		// "unset" when nothing was explicitly configured.
 		out := learningStatusJSON{
-			Enabled:      learning.IsEnabled(),
-			TurnInterval: learning.TurnInterval,
-			Compact:      learning.IsCompactEnabled(),
-			CooldownMs:   learning.CooldownMs,
+			Enabled:        learning.IsEnabled(),
+			DebounceMs:     learning.DebounceMs,
+			Compact:        learning.IsCompactEnabled(),
+			PruneAfterDays: learning.PruneAfterDays,
+			MaxEntries:     learning.MaxEntries,
 		}
 		if err := writePrettyJSON(stdout, out); err != nil {
 			return exitCrash
@@ -92,7 +97,7 @@ func runLearningSet(args []string, stdout io.Writer, stderr io.Writer, deps appD
 		return writeLearningHelp(stdout)
 	}
 	if len(args) != 2 {
-		return writeExecUsageError(stderr, "usage: kajicode learning set <key> <value> (keys: enabled, turnInterval, compact, cooldownMs)")
+		return writeExecUsageError(stderr, "usage: kajicode learning set <key> <value> (keys: enabled, debounceMs, compact, pruneAfterDays, maxEntries)")
 	}
 	key := strings.TrimSpace(args[0])
 	value := strings.TrimSpace(args[1])
@@ -128,18 +133,20 @@ func displayLearningValue(key, value string) string {
 func formatLearning(learning config.LearningConfig) string {
 	lines := []string{"Learning"}
 	lines = append(lines, fmt.Sprintf("enabled: %s", onOff(learning.IsEnabled())))
-	lines = append(lines, fmt.Sprintf("turnInterval: %d", learning.TurnInterval))
+	lines = append(lines, fmt.Sprintf("debounceMs: %d", learning.DebounceMs))
 	lines = append(lines, fmt.Sprintf("compact: %s", onOff(learning.IsCompactEnabled())))
-	lines = append(lines, fmt.Sprintf("cooldownMs: %d", learning.CooldownMs))
+	lines = append(lines, fmt.Sprintf("pruneAfterDays: %d", learning.PruneAfterDays))
+	lines = append(lines, fmt.Sprintf("maxEntries: %d", learning.MaxEntries))
 	return strings.Join(lines, "\n")
 }
 
 func formatLearningInline(learning config.LearningConfig) string {
-	return fmt.Sprintf("enabled=%s turnInterval=%d compact=%s cooldownMs=%d",
+	return fmt.Sprintf("enabled=%s debounceMs=%d compact=%s pruneAfterDays=%d maxEntries=%d",
 		onOff(learning.IsEnabled()),
-		learning.TurnInterval,
+		learning.DebounceMs,
 		onOff(learning.IsCompactEnabled()),
-		learning.CooldownMs,
+		learning.PruneAfterDays,
+		learning.MaxEntries,
 	)
 }
 
@@ -156,16 +163,22 @@ func writeLearningHelp(w io.Writer) int {
   kajicode learning set <key> <value>
   kajicode learning on|off
 
-Inspect and configure KajiCode's self-learning (perpetual memory) auto-review.
+Inspect and configure KajiCode's self-learning (perpetual memory).
+
+Learning is event-driven: a pass runs when the agent does something worth
+learning from (a tool failure that was fixed, a user correction, a repeat of a
+recorded workflow) or when a run finishes.
 
 Subcommands:
   status     Show the effective learning config (default)
   set        Set one learning key:
                enabled      on|off
-               turnInterval <int>   (>= 0; 0 resets to default)
-               compact      on|off
-               cooldownMs   <int>   (>= 0; 0 resets to default)
+               debounceMs      <int>   (>= 0; minimum gap between auto passes)
+               compact         on|off  (learn after a context compaction)
+               pruneAfterDays  <int>   (>= 0; drop unreinforced entries)
+               maxEntries      <int>   (>= 0; cap per scope)
   on|off     Shorthand for `+"`set enabled on|off`"+`
+  revert     Undo the most recent automatic learning pass
 
 Flags:
       --json      Print JSON summary (status)
@@ -174,5 +187,40 @@ Flags:
 	if err != nil {
 		return exitCrash
 	}
+	return exitSuccess
+}
+
+// runLearningRevert undoes the most recent automatic learning pass by inverting
+// the outcomes recorded on its refinement event. It is the recovery path for a
+// bad lesson: the store keeps a self-contained rollback record, so no separate
+// backup is needed.
+func runLearningRevert(stdout io.Writer, stderr io.Writer, deps appDeps) int {
+	workspaceRoot, err := resolveWorkspaceRoot("", deps)
+	if err != nil {
+		return writeExecUsageError(stderr, err.Error())
+	}
+	root := harness.ProjectDir(workspaceRoot)
+	store := harness.NewStore(harness.StoreOptions{Dir: root, Scope: harness.ScopeProject})
+	state, err := store.Load()
+	if err != nil {
+		return writeAppError(stderr, err.Error(), exitProvider)
+	}
+	outcomes, ok := harness.LatestRollback(state)
+	if !ok {
+		_, _ = fmt.Fprintln(stdout, "No learning refinement to revert.")
+		return exitSuccess
+	}
+	result := harness.RollbackInverts(store, harness.RollbackOptions{Outcomes: outcomes})
+	reverted := 0
+	for _, outcome := range outcomes {
+		if outcome.Applied {
+			reverted++
+		}
+	}
+	if len(result.Errors) > 0 {
+		_, _ = fmt.Fprintf(stdout, "Reverted %d change(s) with %d issue(s): %s\n", reverted, len(result.Errors), strings.Join(result.Errors, "; "))
+		return exitSuccess
+	}
+	_, _ = fmt.Fprintf(stdout, "Reverted %d change(s) from refinement %s.\n", reverted, result.RefinementID)
 	return exitSuccess
 }

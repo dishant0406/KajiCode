@@ -844,11 +844,11 @@ func runInteractiveTUIWithSetup(stderr io.Writer, deps appDeps, permissionMode a
 	// notice when project hooks/plugins were dropped for an untrusted workspace.
 	hookDispatcher, hookSkip := newHookDispatcherWithExtra(workspaceRoot, pluginActivation.hooks, trustRoot)
 	emitTrustNotice(stderr, hookSkip, pluginActivation.trustSkip, mcpSkip)
-	// Self-learning engine for the TUI run. The TUI resolves learning at the
-	// global scope (matching the learn/recipe tools at registration), because a
-	// per-session root is negotiated inside the TUI run; a nil engine leaves the
-	// agent loop byte-identical.
-	learning := learningEngine(resolved.Learning, provider, harness.GlobalDir(nil), "")
+	// Self-learning engine for the TUI run. It is backed by the project store
+	// (<workspace>/.kajicode/learning), matching the learn/recipe tools at
+	// registration, because a per-session root is negotiated inside the TUI run;
+	// a nil engine leaves the agent loop byte-identical.
+	learning := learningEngine(resolved.Learning, provider, harness.GlobalDir(nil), harness.ProjectDir(workspaceRoot), "")
 	// Bind the resolved model to the models.dev snapshot, exactly as exec does, so
 	// TUI fact reads (vision gate, compaction window, /effort, cost, pickers) all
 	// resolve against one record. /model switches re-bind via tui.Options callbacks.
@@ -1032,8 +1032,9 @@ func newCoreRegistryScoped(workspaceRoot string, scope tools.PathScope) *tools.R
 	registerLocalControlTools(registry, workspaceRoot, config.LocalControlConfig{})
 	// Self-learning tools need an assembled registry (recipe_run dispatches
 	// through it) and the resolved global learning directory.
-	registry.Register(tools.NewLearnTool(harness.GlobalDir(nil)))
-	registry.Register(tools.NewRecipeRunTool(registry, harness.GlobalDir(nil)))
+	registry.Register(tools.NewLearnTool(harness.ProjectDir(workspaceRoot)))
+	registry.Register(tools.NewRecipeRunTool(registry, harness.ProjectDir(workspaceRoot)))
+	registry.Register(tools.NewRecallTool(harness.ProjectDir(workspaceRoot)))
 	return registry
 }
 

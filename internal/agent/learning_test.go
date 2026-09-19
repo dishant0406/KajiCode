@@ -10,13 +10,13 @@ import (
 	"github.com/dishant0406/KajiCode/internal/config"
 	"github.com/dishant0406/KajiCode/internal/harness"
 	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
 // fakeLearningProvider has two modes: review (returns shouldLearn) and plan
 // (returns a plan). The engine calls review then plan, in order, on successive
 // StreamCompletion calls.
 type fakeLearningProvider struct {
-	mu        int
 	learn     bool
 	planResp  string
 	lastReq   *kajicoderuntime.CompletionRequest
@@ -39,39 +39,39 @@ func (p *fakeLearningProvider) StreamCompletion(_ context.Context, request kajic
 	return ch, nil
 }
 
-func newEngineStores(t *testing.T) (*harness.Store, *harness.Store) {
+func newEngineStores(t *testing.T) (global, project, session *harness.Store) {
 	t.Helper()
 	base := t.TempDir()
 	now := func() time.Time { return time.Date(2025, 1, 2, 3, 4, 5, 0, time.UTC) }
 	return harness.NewStore(harness.StoreOptions{Dir: filepath.Join(base, "global"), Scope: harness.ScopeGlobal, Now: now}),
-		harness.NewStore(harness.StoreOptions{Dir: filepath.Join(base, "local"), Scope: harness.ScopeLocal, Now: now})
+		harness.NewStore(harness.StoreOptions{Dir: filepath.Join(base, "project"), Scope: harness.ScopeProject, Now: now}),
+		harness.NewStore(harness.StoreOptions{Dir: filepath.Join(base, "session"), Scope: harness.ScopeSession, Now: now})
 }
 
+func testNow() time.Time { return time.Date(2025, 1, 2, 3, 4, 5, 0, time.UTC) }
+
 func TestLearningEngineDisabledWithoutProvider(t *testing.T) {
-	gs, ls := newEngineStores(t)
-	eng := NewLearningEngine(config.LearningConfig{}, nil, gs, ls)
+	gs, ps, ss := newEngineStores(t)
+	eng := NewLearningEngine(config.LearningConfig{}, nil, gs, ps, ss)
 	if eng.Enabled() {
 		t.Fatal("engine should be disabled with nil provider")
 	}
 	// Must not panic.
 	eng.NoteToolResult(ToolResult{Meta: map[string]string{requestLearnMeta: "true"}})
-	eng.TurnElapsed(context.Background(), nil, false)
+	eng.RunTurn(context.Background(), nil)
 }
 
 func TestLearningEngineRunsPipelineOnManualRequest(t *testing.T) {
-	gs, ls := newEngineStores(t)
+	gs, ps, ss := newEngineStores(t)
 	p := &fakeLearningProvider{learn: true, planResp: `{"summary":"s","rationale":"r","edits":[{"action":"create","kind":"memory","id":"fact","title":"F","content":"cmake"}]}`}
-	eng := NewLearningEngine(config.LearningConfig{TurnInterval: 100, CooldownMs: 0}, p, gs, ls)
-	if !eng.Enabled() {
-		t.Fatal("engine should be enabled")
-	}
-	// Manual learn-tool request arms a pass regardless of interval.
+	eng := NewLearningEngine(config.LearningConfig{}, p, gs, ps, ss)
+	// Manual learn-tool request arms a pass with no other signal.
 	eng.NoteToolResult(ToolResult{Meta: map[string]string{requestLearnMeta: "true"}})
-	eng.TurnElapsed(context.Background(), []kajicoderuntime.Message{
+	eng.RunTurn(context.Background(), []kajicoderuntime.Message{
 		{Role: kajicoderuntime.MessageRoleUser, Content: "use cmake to build"},
-	}, false)
+	})
 
-	state, err := gs.Load()
+	state, err := ps.Load()
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -86,45 +86,133 @@ func TestLearningEngineRunsPipelineOnManualRequest(t *testing.T) {
 	}
 }
 
-func TestLearningEngineReviewGateSkipsWhenNoLesson(t *testing.T) {
-	gs, ls := newEngineStores(t)
-	p := &fakeLearningProvider{planResp: `{"summary":"s","edits":[]}`}
-	eng := NewLearningEngine(config.LearningConfig{TurnInterval: 1, CooldownMs: 0}, p, gs, ls)
-	// Interval gate fires, but review says no lesson.
-	eng.TurnElapsed(context.Background(), []kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleUser, Content: "hi"}}, false)
-	state, _ := gs.Load()
-	if len(state.Entries) != 0 || len(state.Refinements) != 0 {
-		t.Fatalf("expected no learning, got %#v", state)
-	}
-}
+func TestLearningEngineFiresOnFailureThenFix(t *testing.T) {
+	gs, ps, ss := newEngineStores(t)
+	p := &fakeLearningProvider{learn: true, planResp: `{"summary":"s","edits":[{"action":"create","kind":"memory","id":"retry","title":"Retry","content":"retry flaky test"}]}`}
+	eng := NewLearningEngine(config.LearningConfig{}, p, gs, ps, ss)
+	// A tool fails then succeeds: the eager event trigger.
+	eng.NoteToolResult(ToolResult{Name: "exec_command", Status: tools.StatusError})
+	eng.NoteToolResult(ToolResult{Name: "exec_command", Status: tools.StatusOK})
+	eng.RunTurn(context.Background(), []kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleUser, Content: "build"}})
 
-func TestLearningEngineCooldownSuppressesInterval(t *testing.T) {
-	gs, ls := newEngineStores(t)
-	p := &fakeLearningProvider{learn: true, planResp: `{"summary":"s","edits":[{"action":"create","kind":"memory","id":"x","title":"X","content":"c"}]}`}
-	eng := NewLearningEngine(config.LearningConfig{TurnInterval: 1, CooldownMs: 60_000}, p, gs, ls)
-	// First pass runs.
-	eng.TurnElapsed(context.Background(), []kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleUser, Content: "x"}}, false)
-	// Second pass within cooldown is suppressed (no new entry).
-	eng.TurnElapsed(context.Background(), []kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleUser, Content: "x"}}, false)
-	state, _ := gs.Load()
+	state, _ := ps.Load()
 	if len(state.Entries) != 1 {
-		t.Fatalf("cooldown failed to suppress re-review: %#v", state.Entries)
+		t.Fatalf("failure→fix should have produced a lesson, got %#v", state.Entries)
+	}
+	// The signal must have been passed to the plan as focus.
+	if p.lastReq == nil {
+		t.Fatal("no plan request captured")
 	}
 }
 
-func testNow() time.Time { return time.Date(2025, 1, 2, 3, 4, 5, 0, time.UTC) }
+func TestLearningEngineNoSignalSkipsPass(t *testing.T) {
+	gs, ps, ss := newEngineStores(t)
+	p := &fakeLearningProvider{learn: true, planResp: `{"summary":"s","edits":[{"action":"create","kind":"memory","id":"x","title":"X","content":"c"}]}`}
+	eng := NewLearningEngine(config.LearningConfig{}, p, gs, ps, ss)
+	// No signal, no manual request, no compaction: nothing runs.
+	eng.RunTurn(context.Background(), []kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleUser, Content: "hi"}})
+	state, _ := ps.Load()
+	if len(state.Entries) != 0 {
+		t.Fatalf("expected no learning without a signal, got %#v", state.Entries)
+	}
+	if p.callCount != 0 {
+		t.Fatalf("expected no provider calls, got %d", p.callCount)
+	}
+}
+
+func TestLearningEngineDebounceSuppressesSignals(t *testing.T) {
+	gs, ps, ss := newEngineStores(t)
+	p := &fakeLearningProvider{learn: true, planResp: `{"summary":"s","edits":[{"action":"create","kind":"memory","id":"x","title":"X","content":"c"}]}`}
+	eng := NewLearningEngine(config.LearningConfig{DebounceMs: 60_000}, p, gs, ps, ss)
+	fire := func() {
+		eng.NoteToolResult(ToolResult{Name: "exec_command", Status: tools.StatusError})
+		eng.NoteToolResult(ToolResult{Name: "exec_command", Status: tools.StatusOK})
+		eng.RunTurn(context.Background(), []kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleUser, Content: "x"}})
+	}
+	fire() // runs
+	fire() // within debounce: suppressed
+	state, _ := ps.Load()
+	if len(state.Entries) != 1 {
+		t.Fatalf("debounce failed to suppress re-review: %#v", state.Entries)
+	}
+}
+
+func TestLearningEngineRoutesProposalsByScope(t *testing.T) {
+	gs, ps, ss := newEngineStores(t)
+	plan := `{"summary":"s","edits":[` +
+		`{"action":"create","kind":"memory","id":"proj","title":"P","content":"project","scope":"project"},` +
+		`{"action":"create","kind":"memory","id":"sess","title":"S","content":"session","scope":"session"}]}`
+	p := &fakeLearningProvider{learn: true, planResp: plan}
+	eng := NewLearningEngine(config.LearningConfig{}, p, gs, ps, ss)
+	eng.NoteToolResult(ToolResult{Meta: map[string]string{requestLearnMeta: "true"}})
+	eng.RunTurn(context.Background(), []kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleUser, Content: "x"}})
+
+	project, _ := ps.Load()
+	session, _ := ss.Load()
+	if len(project.Entries) != 1 || project.Entries[0].ID != "proj" {
+		t.Fatalf("project store = %#v", project.Entries)
+	}
+	if len(session.Entries) != 1 || session.Entries[0].ID != "sess" {
+		t.Fatalf("session store = %#v", session.Entries)
+	}
+}
+
+func TestLearningEngineRoutesGlobalScope(t *testing.T) {
+	gs, ps, ss := newEngineStores(t)
+	plan := `{"summary":"s","edits":[{"action":"create","kind":"memory","id":"glob","title":"G","content":"c","scope":"global"}]}`
+	p := &fakeLearningProvider{learn: true, planResp: plan}
+	eng := NewLearningEngine(config.LearningConfig{}, p, gs, ps, ss)
+	eng.NoteToolResult(ToolResult{Meta: map[string]string{requestLearnMeta: "true"}})
+	eng.RunTurn(context.Background(), []kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleUser, Content: "x"}})
+	global, _ := gs.Load()
+	if len(global.Entries) != 1 || global.Entries[0].ID != "glob" {
+		t.Fatalf("global store = %#v", global.Entries)
+	}
+	project, _ := ps.Load()
+	if len(project.Entries) != 0 {
+		t.Fatalf("global lesson leaked into project store: %#v", project.Entries)
+	}
+}
+
+func TestLearningEngineSessionProposalFallsBackToProject(t *testing.T) {
+	_, ps, _ := newEngineStores(t)
+	plan := `{"summary":"s","edits":[{"action":"create","kind":"memory","id":"sess","title":"S","content":"c","scope":"session"}]}`
+	p := &fakeLearningProvider{learn: true, planResp: plan}
+	eng := NewLearningEngine(config.LearningConfig{}, p, nil, ps, nil) // no session store
+	eng.NoteToolResult(ToolResult{Meta: map[string]string{requestLearnMeta: "true"}})
+	eng.RunTurn(context.Background(), []kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleUser, Content: "x"}})
+	project, _ := ps.Load()
+	if len(project.Entries) != 1 {
+		t.Fatalf("session lesson should fall back to the project store, got %#v", project.Entries)
+	}
+}
+
+func TestLooksLikeCorrection(t *testing.T) {
+	yes := []string{"no, use cmake instead", "that's wrong", "don't do that", "actually, use go test", "revert that"}
+	no := []string{"build the project", "what does this do?", ""}
+	for _, s := range yes {
+		if !looksLikeCorrection(s) {
+			t.Fatalf("expected correction: %q", s)
+		}
+	}
+	for _, s := range no {
+		if looksLikeCorrection(s) {
+			t.Fatalf("unexpected correction: %q", s)
+		}
+	}
+}
 
 func TestLearningEngineContext(t *testing.T) {
-	gs, ls := newEngineStores(t)
-	seed := harness.NewEntry(harness.KindMemory, "Use cmake", "Always build with cmake", "cmake", "general", harness.ScopeGlobal, "agent", testNow())
-	recipe := harness.NewEntry(harness.KindRecipe, "Build", "build recipe", "build", "general", harness.ScopeGlobal, "agent", testNow())
-	if err := gs.WithLock(func(state harness.State) (harness.State, error) {
+	gs, ps, ss := newEngineStores(t)
+	seed := harness.NewEntry(harness.KindMemory, "Use cmake", "Always build with cmake", "cmake", "general", harness.ScopeProject, "agent", testNow())
+	recipe := harness.NewEntry(harness.KindRecipe, "Build", "build recipe", "build", "general", harness.ScopeProject, "agent", testNow())
+	if err := ps.WithLock(func(state harness.State) (harness.State, error) {
 		state.Entries = append(state.Entries, seed, recipe)
 		return state, nil
 	}); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	eng := NewLearningEngine(config.LearningConfig{}, nil, gs, ls)
+	eng := NewLearningEngine(config.LearningConfig{}, nil, gs, ps, ss)
 	ctx := eng.Context()
 	if !strings.Contains(ctx, "cmake") {
 		t.Fatalf("context missing cmake entry: %q", ctx)
@@ -137,15 +225,37 @@ func TestLearningEngineContext(t *testing.T) {
 	}
 }
 
-func TestLearningPromptSection(t *testing.T) {
-	gs, ls := newEngineStores(t)
-	if err := gs.WithLock(func(state harness.State) (harness.State, error) {
-		state.Entries = append(state.Entries, harness.NewEntry(harness.KindMemory, "Use cmake", "Always build with cmake", "cmake", "general", harness.ScopeGlobal, "agent", testNow()))
+func TestLearningEngineReinforcesSurfacedLessons(t *testing.T) {
+	gs, ps, ss := newEngineStores(t)
+	seed := harness.NewEntry(harness.KindMemory, "Use cmake", "Always build with cmake", "cmake", "general", harness.ScopeProject, "agent", testNow())
+	if err := ps.WithLock(func(state harness.State) (harness.State, error) {
+		state.Entries = append(state.Entries, seed)
 		return state, nil
 	}); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	eng := NewLearningEngine(config.LearningConfig{}, nil, gs, ls)
+	eng := NewLearningEngine(config.LearningConfig{}, nil, gs, ps, ss)
+	eng.Context() // surfaces and records the lesson
+	eng.Reinforce()
+
+	state, _ := ps.Load()
+	if state.Entries[0].Reinforcements != 1 {
+		t.Fatalf("reinforcements = %d, want 1", state.Entries[0].Reinforcements)
+	}
+	if state.Entries[0].LastUsedAt == "" {
+		t.Fatal("LastUsedAt should be stamped by reinforcement")
+	}
+}
+
+func TestLearningPromptSection(t *testing.T) {
+	gs, ps, ss := newEngineStores(t)
+	if err := ps.WithLock(func(state harness.State) (harness.State, error) {
+		state.Entries = append(state.Entries, harness.NewEntry(harness.KindMemory, "Use cmake", "Always build with cmake", "cmake", "general", harness.ScopeProject, "agent", testNow()))
+		return state, nil
+	}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	eng := NewLearningEngine(config.LearningConfig{}, nil, gs, ps, ss)
 	prompt := buildSystemPrompt(Options{Learning: eng})
 	if !strings.Contains(prompt, "<learned_memory>") || !strings.Contains(prompt, "cmake") {
 		t.Fatalf("learned memory section not injected:\n%s", prompt)
@@ -155,8 +265,8 @@ func TestLearningPromptSection(t *testing.T) {
 	}
 }
 
-func TestLearningContextBoundsAndMergesLocal(t *testing.T) {
-	gs, ls := newEngineStores(t)
+func TestLearningContextBoundsAndMergesScopes(t *testing.T) {
+	gs, ps, ss := newEngineStores(t)
 	seed := func(kind harness.Kind, id, content string, store *harness.Store) {
 		t.Helper()
 		if err := store.WithLock(func(state harness.State) (harness.State, error) {
@@ -166,45 +276,41 @@ func TestLearningContextBoundsAndMergesLocal(t *testing.T) {
 			t.Fatalf("seed %s: %v", id, err)
 		}
 	}
-	// Populate more memory entries than the per-kind cap, split across scopes.
-	for i := 0; i < learnedPromptoMaxPerKind+3; i++ {
-		store := gs
+	for i := 0; i < learnedPromptMaxPerKind+3; i++ {
+		store := ps
 		if i%2 == 0 {
-			store = ls
+			store = ss
 		}
 		seed(harness.KindMemory, "mem"+string('a'+rune(i)), strings.Repeat("x", 400), store)
 	}
-	// A local memory entry must shadow the global one with the same id.
-	seed(harness.KindMemory, "dup", "local-wins", ls)
-	seed(harness.KindMemory, "dup", "global-value", gs)
+	// A session memory entry must shadow the project one with the same id.
+	seed(harness.KindMemory, "dup", "session-wins", ss)
+	seed(harness.KindMemory, "dup", "project-value", ps)
 
-	eng := NewLearningEngine(config.LearningConfig{}, nil, gs, ls)
+	eng := NewLearningEngine(config.LearningConfig{}, nil, gs, ps, ss)
 	ctx := eng.Context()
-	// Local merge included and local entry wins on duplicate id.
-	if !strings.Contains(ctx, "local-wins") || strings.Contains(ctx, "global-value") {
-		t.Fatalf("local shadowing broken: %q", ctx)
+	if !strings.Contains(ctx, "session-wins") || strings.Contains(ctx, "project-value") {
+		t.Fatalf("session shadowing broken: %q", ctx)
 	}
-	// Bound: at most cap memory entries are surfaced.
-	if got := strings.Count(ctx, "- ["); got > learnedPromptoMaxPerKind {
-		t.Fatalf("surfaced %d entries, want <= %d: %q", got, learnedPromptoMaxPerKind, ctx)
+	if got := strings.Count(ctx, "- ["); got > learnedPromptMaxPerKind {
+		t.Fatalf("surfaced %d entries, want <= %d: %q", got, learnedPromptMaxPerKind, ctx)
 	}
-	// Truncation: no full 400-char blob survives; every line is bounded.
 	for _, line := range strings.Split(ctx, "\n") {
-		if len(line) > learnedPromptoMaxContentLen+40 {
+		if len(line) > learnedPromptMaxContentLen+40 {
 			t.Fatalf("line too long (%d): %q", len(line), line)
 		}
 	}
 }
 
 func TestEnsurePromptHasMemorySplicesIdempotently(t *testing.T) {
-	gs, ls := newEngineStores(t)
-	if err := gs.WithLock(func(state harness.State) (harness.State, error) {
-		state.Entries = append(state.Entries, harness.NewEntry(harness.KindMemory, "Use cmake", "Always build with cmake", "cmake", "general", harness.ScopeGlobal, "agent", testNow()))
+	gs, ps, ss := newEngineStores(t)
+	if err := ps.WithLock(func(state harness.State) (harness.State, error) {
+		state.Entries = append(state.Entries, harness.NewEntry(harness.KindMemory, "Use cmake", "Always build with cmake", "cmake", "general", harness.ScopeProject, "agent", testNow()))
 		return state, nil
 	}); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	eng := NewLearningEngine(config.LearningConfig{}, nil, gs, ls)
+	eng := NewLearningEngine(config.LearningConfig{}, nil, gs, ps, ss)
 	base := kajicoderuntime.Message{Role: kajicoderuntime.MessageRoleSystem, Content: "core instructions"}
 	msgs := []kajicoderuntime.Message{base}
 	out1 := eng.EnsurePromptHasMemory(msgs)
@@ -217,7 +323,6 @@ func TestEnsurePromptHasMemorySplicesIdempotently(t *testing.T) {
 	if !strings.Contains(out1[0].Content, "cmake") {
 		t.Fatalf("spliced block missing cmake: %q", out1[0].Content)
 	}
-	// Idempotent: a second splice replaces rather than duplicates.
 	out2 := eng.EnsurePromptHasMemory(out1)
 	if strings.Count(out2[0].Content, learnedMemoryOpen) != 1 {
 		t.Fatal("splice is not idempotent")
@@ -225,9 +330,8 @@ func TestEnsurePromptHasMemorySplicesIdempotently(t *testing.T) {
 	if out2[0].Content != out1[0].Content {
 		t.Fatalf("second splice should be a no-op:\n%q\n!=\n%q", out2[0].Content, out1[0].Content)
 	}
-	// A store with no entries is a byte-identical no-op.
-	gsEmpty, lsEmpty := newEngineStores(t)
-	empty := NewLearningEngine(config.LearningConfig{}, nil, gsEmpty, lsEmpty)
+	gsEmpty, psEmpty, ssEmpty := newEngineStores(t)
+	empty := NewLearningEngine(config.LearningConfig{}, nil, gsEmpty, psEmpty, ssEmpty)
 	unchanged := empty.EnsurePromptHasMemory(baseMsgs())
 	if unchanged[0].Content != baseMsgs()[0].Content {
 		t.Fatal("empty store spliced memory")
@@ -236,7 +340,6 @@ func TestEnsurePromptHasMemorySplicesIdempotently(t *testing.T) {
 
 func TestSpliceMemoryBlockEdgeCases(t *testing.T) {
 	block := learningMemoryBlock("a lesson")
-	// Replace an existing block in the middle of other content.
 	src := "sys" + block + " tail"
 	got := spliceMemoryBlock(src, learningMemoryBlock("new lesson"))
 	if strings.Contains(got, "a lesson") || !strings.Contains(got, "new lesson") {
@@ -248,33 +351,30 @@ func TestSpliceMemoryBlockEdgeCases(t *testing.T) {
 	if strings.Count(got, learnedMemoryOpen) != 1 {
 		t.Fatalf("duplicate block after replace: %q", got)
 	}
-	// Append when no block present.
 	plain := "sys only"
 	appended := spliceMemoryBlock(plain, block)
 	if !strings.Contains(appended, learnedMemoryOpen) || !strings.Contains(appended, "sys only") {
 		t.Fatalf("append failed: %q", appended)
 	}
-	// Empty replacement removes the block.
 	removed := spliceMemoryBlock(src, "")
 	if strings.Contains(removed, learnedMemoryOpen) || strings.Contains(removed, "a lesson") {
 		t.Fatalf("remove failed: %q", removed)
 	}
-	// No block, empty replacement: no change.
 	if spliceMemoryBlock(plain, "") != plain {
 		t.Fatal("no-op expected")
 	}
 }
 
-func TestTurnElapsedReportsApplied(t *testing.T) {
-	gs, ls := newEngineStores(t)
-	provider := &fakeLearningProvider{learn: true, planResp: `{"summary":"capture cmake","rationale":"evidence","edits":[{"action":"create","kind":"memory","id":"cmake","title":"cmake","content":"use cmake","scope":"local"}]}`}
-	eng := NewLearningEngine(config.LearningConfig{Enabled: boolP(true), TurnInterval: 10, Compact: boolP(true)}, provider, gs, ls)
+func TestRunTurnReportsApplied(t *testing.T) {
+	gs, ps, ss := newEngineStores(t)
+	provider := &fakeLearningProvider{learn: true, planResp: `{"summary":"capture cmake","rationale":"evidence","edits":[{"action":"create","kind":"memory","id":"cmake","title":"cmake","content":"use cmake","scope":"project"}]}`}
+	eng := NewLearningEngine(config.LearningConfig{Enabled: boolP(true), Compact: boolP(true)}, provider, gs, ps, ss)
 	msgs := []kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleUser, Content: "hi"}}
-	applied := eng.TurnElapsed(context.Background(), msgs, true) // compact trigger
+	eng.NoteCompaction()
+	applied := eng.RunTurn(context.Background(), msgs)
 	if !applied {
-		t.Fatal("expected TurnElapsed to report an applied lesson")
+		t.Fatal("expected RunTurn to report an applied lesson")
 	}
-	// The applied entry should now be splicable into a fresh system message.
 	promptMsg := []kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleSystem, Content: "core"}}
 	refreshed := eng.EnsurePromptHasMemory(promptMsg)
 	if !strings.Contains(refreshed[0].Content, "cmake") {
@@ -302,7 +402,7 @@ func (p *learnScriptedProvider) StreamCompletion(_ context.Context, request kaji
 	case strings.Contains(joined, "auto-learning review gate"):
 		resp = `{"shouldLearn": true, "rationale": "cmake is durable", "instructions": "capture cmake"}`
 	case strings.Contains(joined, "optimizer for KajiCode's self-learning memory"):
-		resp = `{"summary":"s","rationale":"r","edits":[{"action":"create","kind":"memory","id":"fact","title":"Fact","content":"always use cmake"}]}`
+		resp = `{"summary":"s","rationale":"r","edits":[{"action":"create","kind":"memory","id":"fact","title":"Fact","content":"always use cmake","scope":"project"}]}`
 	default:
 		resp = "Done."
 	}
@@ -313,15 +413,15 @@ func (p *learnScriptedProvider) StreamCompletion(_ context.Context, request kaji
 	return ch, nil
 }
 
-// TestRunSplicesFreshLearnedMemoryIntoSameSessionRequests is the loop-level
-// counterpart to the unit splice tests: it proves that a lesson applied during
-// a live Run (loop.go TurnElapsed → EnsurePromptHasMemory) is spliced into the
-// actual provider request of that same session.
+// TestRunSplicesFreshLearnedMemoryIntoSameSessionRequests proves that a lesson
+// applied during a live Run is spliced into the actual provider request of that
+// same session. The opening prompt is a correction, which is the in-run signal
+// that arms an eager pass.
 func TestRunSplicesFreshLearnedMemoryIntoSameSessionRequests(t *testing.T) {
-	gs, ls := newEngineStores(t)
+	gs, ps, ss := newEngineStores(t)
 	provider := &learnScriptedProvider{}
-	eng := NewLearningEngine(config.LearningConfig{TurnInterval: 1, CooldownMs: 100_000}, provider, gs, ls)
-	_, err := Run(context.Background(), "build the project", provider, Options{
+	eng := NewLearningEngine(config.LearningConfig{}, provider, gs, ps, ss)
+	_, err := Run(context.Background(), "no, build with cmake instead", provider, Options{
 		SessionID:    "learn-splice",
 		Cwd:          t.TempDir(),
 		ProviderName: "test-provider",
@@ -331,9 +431,7 @@ func TestRunSplicesFreshLearnedMemoryIntoSameSessionRequests(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-
-	// Locate the first agent-loop request, excluding the review/plan pipeline
-	// calls (they carry a distinctive system prompt).
+	// The lesson was applied mid-run and is visible to the provider request.
 	var loopReq *kajicoderuntime.CompletionRequest
 	for i := range provider.requests {
 		joined := ""
@@ -350,12 +448,14 @@ func TestRunSplicesFreshLearnedMemoryIntoSameSessionRequests(t *testing.T) {
 	if loopReq == nil {
 		t.Fatal("no agent-loop request captured")
 	}
-	sys := loopReq.Messages[0].Content
-	if !strings.Contains(sys, learnedMemoryOpen) {
-		t.Fatalf("fresh learned_memory block not spliced into loop request:\n%.500s", sys)
+	if !strings.Contains(loopReq.Messages[0].Content, learnedMemoryOpen) ||
+		!strings.Contains(loopReq.Messages[0].Content, "always use cmake") {
+		t.Fatalf("fresh learned_memory block not spliced into loop request:\n%.500s", loopReq.Messages[0].Content)
 	}
-	if !strings.Contains(sys, "always use cmake") {
-		t.Fatalf("applied lesson content missing from spliced block:\n%.500s", sys)
+	// The lesson is durably stored too.
+	state, _ := ps.Load()
+	if len(state.Entries) != 1 || state.Entries[0].ID != "fact" {
+		t.Fatalf("mid-run capture did not persist the lesson: %#v", state.Entries)
 	}
 }
 
@@ -364,11 +464,11 @@ func baseMsgs() []kajicoderuntime.Message {
 }
 
 func TestLearningContextRecencyFirstWithinBudget(t *testing.T) {
-	gs, ls := newEngineStores(t)
+	gs, ps, ss := newEngineStores(t)
 	seed := func(id, content, updated, lastUsed string) {
 		t.Helper()
-		if err := gs.WithLock(func(state harness.State) (harness.State, error) {
-			e := harness.NewEntry(harness.KindMemory, id, content, id, "general", harness.ScopeGlobal, "agent", testNow())
+		if err := ps.WithLock(func(state harness.State) (harness.State, error) {
+			e := harness.NewEntry(harness.KindMemory, id, content, id, "general", harness.ScopeProject, "agent", testNow())
 			e.UpdatedAt = updated
 			e.LastUsedAt = lastUsed
 			state.Entries = append(state.Entries, e)
@@ -382,34 +482,31 @@ func TestLearningContextRecencyFirstWithinBudget(t *testing.T) {
 	seed("reused", "lesson A", older, used)
 	seed("plain_old", strings.Repeat("old content ", 20), older, "")
 
-	eng := NewLearningEngine(config.LearningConfig{}, nil, gs, ls)
+	eng := NewLearningEngine(config.LearningConfig{}, nil, gs, ps, ss)
 	ctx := eng.Context()
 	if !strings.Contains(ctx, "reused") || !strings.Contains(ctx, "plain_old") {
 		t.Fatalf("context missing entries: %q", ctx)
 	}
-	// Reused lesson must surface before the unused one.
 	if strings.Index(ctx, "reused") > strings.Index(ctx, "plain_old") {
 		t.Fatalf("recency ordering broken:\n%s", ctx)
 	}
 }
 
 func TestLearningContextTokenBudgetCapsBlock(t *testing.T) {
-	gs, ls := newEngineStores(t)
-	// A single large entry that exceeds the whole-block budget must not blow it.
-	if err := gs.WithLock(func(state harness.State) (harness.State, error) {
-		state.Entries = append(state.Entries, harness.NewEntry(harness.KindMemory, "big", strings.Repeat("very long content ", 4000), "big", "general", harness.ScopeGlobal, "agent", testNow()))
+	gs, ps, ss := newEngineStores(t)
+	if err := ps.WithLock(func(state harness.State) (harness.State, error) {
+		state.Entries = append(state.Entries, harness.NewEntry(harness.KindMemory, "big", strings.Repeat("very long content ", 4000), "big", "general", harness.ScopeProject, "agent", testNow()))
 		return state, nil
 	}); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	eng := NewLearningEngine(config.LearningConfig{}, nil, gs, ls)
+	eng := NewLearningEngine(config.LearningConfig{}, nil, gs, ps, ss)
 	ctx := eng.Context()
-	if ApproxTextTokens(ctx) > learnedMemoryTokenBudget() {
-		t.Fatalf("context exceeded token budget: %d > %d", ApproxTextTokens(ctx), learnedMemoryTokenBudget())
+	if ApproxTextTokens(ctx) > learnedMemoryTokenBudgetValue {
+		t.Fatalf("context exceeded token budget: %d > %d", ApproxTextTokens(ctx), learnedMemoryTokenBudgetValue)
 	}
-	// Even so, content is per-line truncated to the per-kind content cap.
 	for _, line := range strings.Split(ctx, "\n") {
-		if len(line) > learnedPromptoMaxContentLen+40 {
+		if len(line) > learnedPromptMaxContentLen+40 {
 			t.Fatalf("line too long: %q", line)
 		}
 	}

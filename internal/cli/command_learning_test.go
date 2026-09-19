@@ -12,7 +12,7 @@ func TestRunLearningStatusShowsDefaults(t *testing.T) {
 	if code != exitSuccess {
 		t.Fatalf("status exit = %d stderr=%q stdout=%q", code, stderr, stdout)
 	}
-	for _, want := range []string{"enabled: on", "turnInterval: 10", "compact: on", "cooldownMs: 1200000"} {
+	for _, want := range []string{"enabled: on", "debounceMs: 30000", "compact: on", "pruneAfterDays: 90", "maxEntries: 200"} {
 		if !strings.Contains(stdout, want) {
 			t.Fatalf("status output missing %q:\n%s", want, stdout)
 		}
@@ -26,25 +26,27 @@ func TestRunLearningStatusJSON(t *testing.T) {
 	if code != exitSuccess {
 		t.Fatalf("status --json exit = %d\nstdout:\n%s", code, stdout)
 	}
-	if !strings.Contains(stdout, `"turnInterval"`) {
-		t.Fatalf("JSON output missing turnInterval:\n%s", stdout)
+	for _, want := range []string{`"debounceMs"`, `"pruneAfterDays"`, `"maxEntries"`} {
+		if !strings.Contains(stdout, want) {
+			t.Fatalf("JSON output missing %s:\n%s", want, stdout)
+		}
 	}
 }
 
 func TestRunLearningSetPersists(t *testing.T) {
 	deps, userConfig, _ := harnessCommandDeps(t)
 
-	code, stdout, stderr := runCLICommand([]string{"learning", "set", "turnInterval", "3"}, deps)
+	code, stdout, stderr := runCLICommand([]string{"learning", "set", "debounceMs", "3000"}, deps)
 	if code != exitSuccess {
 		t.Fatalf("set exit = %d stderr=%q stdout=%q", code, stderr, stdout)
 	}
-	if !strings.Contains(stdout, "turnInterval=3") {
-		t.Fatalf("set output missing turnInterval=3:\n%s", stdout)
+	if !strings.Contains(stdout, "debounceMs=3000") {
+		t.Fatalf("set output missing debounceMs=3000:\n%s", stdout)
 	}
 
 	cfg := readHarnessCLIConfig(t, userConfig)
-	if cfg.Learning.TurnInterval != 3 {
-		t.Fatalf("persisted turnInterval = %d, want 3", cfg.Learning.TurnInterval)
+	if cfg.Learning.DebounceMs != 3000 {
+		t.Fatalf("persisted debounceMs = %d, want 3000", cfg.Learning.DebounceMs)
 	}
 }
 
@@ -88,7 +90,7 @@ func TestRunLearningHelp(t *testing.T) {
 		if code != exitSuccess {
 			t.Fatalf("%v exit = %d", args, code)
 		}
-		for _, want := range []string{"learning set", "turnInterval", "cooldownMs"} {
+		for _, want := range []string{"learning set", "debounceMs", "pruneAfterDays", "maxEntries"} {
 			if !strings.Contains(stdout, want) {
 				t.Fatalf("%v help missing %q:\n%s", args, want, stdout)
 			}

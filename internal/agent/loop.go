@@ -200,6 +200,11 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 
 	promptParts := buildSystemPromptParts(options)
 	messages := seedRunMessages(promptParts.prompt, prompt, options.Images, options.InitialMessages)
+	// Self-learning: the opening user turn is itself a candidate correction
+	// (a re-instruction after a bad prior run), so the engine sees it too.
+	if options.Learning != nil {
+		options.Learning.NoteUserTurn(prompt)
+	}
 
 	guards := newGuardState()
 	task := newTaskState(prompt, options.Trace)
@@ -408,7 +413,13 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 		// context is already canceled by the time this defer runs, and a canceled
 		// parent would make Hooks.Dispatch's context.WithTimeout derive an
 		// already-expired context, so the sessionEnd hook would never actually run.
-		dispatchSessionEnd(context.WithoutCancel(ctx), options, result, err)
+		// The same detached context serves the end-of-run learning capture, whose
+		// provider calls must not be aborted by the run's own cancellation.
+		detached := context.WithoutCancel(ctx)
+		dispatchSessionEnd(detached, options, result, err)
+		if options.Learning != nil {
+			options.Learning.Finish(detached, messages)
+		}
 	}()
 	for turn := 0; turn < maxTurns; turn++ {
 		result.Turns = turn + 1
@@ -530,7 +541,10 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 		// message so they take effect on this very next provider call
 		// (same-session pickup) instead of waiting for the next run.
 		if ilc := options.Learning; ilc != nil {
-			if ilc.TurnElapsed(ctx, messages, didCompact) {
+			if didCompact {
+				ilc.NoteCompaction()
+			}
+			if ilc.RunTurn(ctx, messages) {
 				messages = ilc.EnsurePromptHasMemory(messages)
 			}
 		}

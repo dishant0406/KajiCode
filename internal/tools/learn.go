@@ -17,18 +17,16 @@ import (
 // the scheduled work when Options.Harness wires a learning controller.
 const LearnRequestMeta = "request_learn"
 
-// learnTool is the model-facing manual learning surface. It mirrors
-// prime-agent's rlm.harness.* / refine.run split:
+// learnTool is the model-facing manual learning surface:
 //
-//   - status: report whether a learning pass is pending/in flight and list the
-//     current memory/prompt/recipe/subagent entries.
+//   - status: report the current memory/prompt/recipe/subagent entries.
 //   - run: signal the loop to run a full review+plan+apply at the next turn
 //     boundary (the loop checks Meta[request_learn]).
 //   - create/update/delete: direct editorial CRUD on the durable store so the
 //     model can persist a lesson immediately without waiting for review.
 //
-// The tool only schedules or writes local learning state; it never touches the
-// workspace.
+// The tool only schedules or writes the project learning store; it never
+// touches the workspace outside .kajicode.
 type learnTool struct {
 	baseTool
 	learningRoot string
@@ -42,9 +40,10 @@ func NewLearnTool(learningRoot string) Tool {
 		now:          time.Now,
 		baseTool: baseTool{
 			name: "learn",
-			description: "Manage KajiCode's self-learning memory. status reports pending learning and current entries; " +
+			description: "Manage KajiCode's self-learning memory. status lists the current entries; " +
 				"run schedules a review pass at the next turn boundary; create/update/delete persist prompt notes, " +
-				"durable facts (memory), reusable procedures (recipe), or delegation specs (subagent).",
+				"durable facts (memory), reusable procedures (recipe), or delegation specs (subagent). " +
+				"Use recall to search stored lessons.",
 			parameters: Schema{
 				Type: "object",
 				Properties: map[string]PropertySchema{
@@ -88,7 +87,7 @@ func (tool *learnTool) Run(_ context.Context, args map[string]any) Result {
 }
 
 func (tool *learnTool) status(_ map[string]any) Result {
-	store := harness.NewStore(harness.StoreOptions{Dir: tool.learningRoot, Scope: harness.ScopeGlobal, Now: tool.now})
+	store := harness.NewStore(harness.StoreOptions{Dir: tool.learningRoot, Scope: harness.ScopeProject, Now: tool.now})
 	state, _ := store.Load()
 	var b strings.Builder
 	b.WriteString("Learning status:\n")
@@ -153,10 +152,10 @@ func (tool *learnTool) edit(action string, args map[string]any) Result {
 	content := strings.TrimSpace(stringArgSafe(args, "content"))
 	path := strings.TrimSpace(stringArgSafe(args, "path"))
 
-	store := harness.NewStore(harness.StoreOptions{Dir: tool.learningRoot, Scope: harness.ScopeGlobal, Now: tool.now})
+	store := harness.NewStore(harness.StoreOptions{Dir: tool.learningRoot, Scope: harness.ScopeProject, Now: tool.now})
 	state, err := store.Load()
 	if err != nil {
-		state = harness.State{Scope: harness.ScopeGlobal}
+		state = harness.State{Scope: harness.ScopeProject}
 	}
 
 	switch action {
@@ -173,7 +172,7 @@ func (tool *learnTool) edit(action string, args map[string]any) Result {
 		if entryExists(state.Entries, kind, id) {
 			return errorResult(fmt.Sprintf("Error: %s:%s already exists; use update", kind, id))
 		}
-		entry := harness.NewEntry(kind, title, content, id, path, harness.ScopeGlobal, "manual", tool.now())
+		entry := harness.NewEntry(kind, title, content, id, path, harness.ScopeProject, "manual", tool.now())
 		if kind == harness.KindRecipe {
 			recipe, perr := parseRecipeArg(args)
 			if perr != nil {
@@ -224,6 +223,15 @@ func (tool *learnTool) edit(action string, args map[string]any) Result {
 
 	if err := store.Save(state); err != nil {
 		return errorResult("Error: failed to save learning state: " + err.Error())
+	}
+	// A recipe entry is only runnable once its manifest is persisted; keep the
+	// state entry and the recipes/<name>/recipe.json manifest in step.
+	if kind == harness.KindRecipe {
+		if idx := findEntry(state.Entries, kind, id); idx >= 0 && state.Entries[idx].Recipe != nil {
+			if _, err := harness.SaveRecipe(tool.learningRoot, *state.Entries[idx].Recipe, nil); err != nil {
+				return errorResult("Error: failed to persist recipe manifest: " + err.Error())
+			}
+		}
 	}
 	return okResult(fmt.Sprintf("ok: %s %s:%s", action, kind, id))
 }

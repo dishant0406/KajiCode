@@ -720,14 +720,15 @@ func runExec(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) in
 	// project hooks/plugins were dropped for an untrusted workspace.
 	hookDispatcher, hookSkip := newHookDispatcherWithExtra(workspaceRoot, pluginActivation.hooks, trustRoot)
 	emitTrustNotice(stderr, hookSkip, pluginActivation.trustSkip, mcpSkip)
-	// Self-learning: the global store always backs the engine, and a per-session
-	// local store backs it when a real exec session is present. Enabled via the
-	// resolved learning config; nil disables learning entirely (loop unchanged).
-	learningLocalRoot := ""
+	// Self-learning: the project store backs the engine (lessons scoped to this
+	// repository), and a per-session store backs it when a real exec session is
+	// present. Enabled via the resolved learning config; nil disables learning
+	// entirely (loop unchanged).
+	learningSessionRoot := ""
 	if preparedSession.Store != nil && preparedSession.Session.SessionID != "" {
-		learningLocalRoot = harness.LocalDir(filepath.Join(preparedSession.Store.RootDir, preparedSession.Session.SessionID))
+		learningSessionRoot = harness.SessionDir(filepath.Join(preparedSession.Store.RootDir, preparedSession.Session.SessionID))
 	}
-	learning := learningEngine(resolved.Learning, provider, harness.GlobalDir(nil), learningLocalRoot)
+	learning := learningEngine(resolved.Learning, provider, harness.GlobalDir(nil), harness.ProjectDir(workspaceRoot), learningSessionRoot)
 	if options.noLearning {
 		learning = nil // --no-learning: never run a learning pass this run.
 	}

@@ -173,7 +173,7 @@ func buildPlanPrompt(options PlanOptions) string {
 	b.WriteString("<scope_policy>\n" + strings.TrimSpace(options.ScopePolicy) + "\n</scope_policy>\n\n")
 	b.WriteString("<current_learning_state>\n")
 	merged := MergeHarnessStates(options.State, State{})
-	b.WriteString(FormatHarnessStateForPrompt(ScopeLocal, merged, 20))
+	b.WriteString(FormatHarnessStateForPrompt(ScopeProject, merged, 20))
 	b.WriteString("\n</current_learning_state>\n\n")
 	// Anchored plan: the current state is the bounded, freshest-first view the
 	// plan will mutate. Mirror compaction's "preserve still-true details" — the
@@ -294,7 +294,7 @@ func ValidateProposal(proposal EditProposal) error {
 	if proposal.Recipe != nil && proposal.Action == ActionDelete {
 		return errors.New("delete cannot carry a recipe")
 	}
-	if proposal.Scope != "" && proposal.Scope != ScopeLocal && proposal.Scope != ScopeGlobal {
+	if proposal.Scope != "" && proposal.Scope != ScopeSession && proposal.Scope != ScopeProject && proposal.Scope != ScopeGlobal {
 		return fmt.Errorf("scope must be local or global, got %q", proposal.Scope)
 	}
 	return nil

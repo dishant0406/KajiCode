@@ -1,18 +1,17 @@
 // Package harness owns KajiCode's self-learning (perpetual memory) system.
-// It is a port of prime-agent's continual-harness + /refine architecture:
 //
-//   - A durable harness_state.json store of four editable kinds (prompt, memory,
-//     recipe, subagent) in two scopes (global, per-session local).
-//   - A learning pipeline (review gate -> plan -> apply -> record) whose apply
-//     step is a guarded critical section with real conflict detection.
-//   - Go-native "recipe" entries (command chains over already-registered tools)
-//     that replace prime-agent's Python callables, so they run on any platform
-//     with no additional interpreter.
-//   - Rollback + full refinement history.
+// It is a Go-native take on prime-agent's Continual Harness: a durable store of
+// editable kinds (prompt, memory, recipe, subagent) in two scopes (session,
+// project) plus a learning pipeline (review gate → plan → apply → record) whose
+// apply step is a guarded critical section with real conflict detection. Recipe
+// entries are Go-native command chains over already-registered tools, so learned
+// procedures run on any platform with no extra interpreter.
 //
-// The learning loop is opt-in from the agent's perspective: a nil controller in
-// agent.Options leaves the loop byte-identical (same convention as SelfCorrect,
-// Profile, and Trace).
+// The system is event-driven: the agent loop reports what actually happened
+// (failures, denials, user corrections) and the engine decides whether a pass is
+// warranted, rather than running a pass on a fixed turn schedule. Learned
+// lessons are surfaced through two paths — a bounded prompt block and recall/
+// reflect tools — so a large memory never monopolizes the context window.
 package harness
 
 import (
@@ -48,16 +47,37 @@ const (
 
 var allKinds = []Kind{KindPrompt, KindMemory, KindRecipe, KindSubagent}
 
-// Scope identifies whether an entry lives in the global or per-session store.
+// Scope identifies where an entry lives. Session entries belong to one session
+// directory; project entries are shared across every session in a project;
+// global entries are shared across every project on the machine.
+//
+// Legacy is the pre-v2 alias for a per-session store: old records that already
+// wrote "local" are read back as session entries so existing memory survives the
+// taxonomy change. New writes never use it.
 type Scope string
 
 const (
-	ScopeLocal  Scope = "local"
-	ScopeGlobal Scope = "global"
+	ScopeSession Scope = "session"
+	ScopeProject Scope = "project"
+	ScopeGlobal  Scope = "global"
+	ScopeLegacy  Scope = "local"
 )
 
+// normalizeScope maps a legacy scope onto its current equivalent.
+func normalizeScope(scope Scope) Scope {
+	if scope == ScopeLegacy {
+		return ScopeSession
+	}
+	return scope
+}
+
 func (scope Scope) valid() bool {
-	return scope == ScopeLocal || scope == ScopeGlobal
+	switch scope {
+	case ScopeSession, ScopeProject, ScopeGlobal, ScopeLegacy:
+		return true
+	default:
+		return false
+	}
 }
 
 // RecipeCommand describes one step of a recipe as a call to an already-registered
@@ -80,22 +100,26 @@ type Recipe struct {
 
 // Entry is a single durable harness record.
 type Entry struct {
-	ID        string         `json:"id"`
-	Kind      Kind           `json:"kind"`
-	Title     string         `json:"title"`
-	Content   string         `json:"content"`
-	Path      string         `json:"path,omitempty"`
-	Scope     Scope          `json:"scope"`
-	Recipe    *Recipe        `json:"recipe,omitempty"`
-	Metadata  map[string]any `json:"metadata,omitempty"`
-	Source    string         `json:"source,omitempty"`
-	CreatedAt string         `json:"createdAt"`
-	UpdatedAt string         `json:"updatedAt"`
-	// LastUsedAt is stamped by TouchEntry when the model actually applies the
-	// lesson in a turn. It drives recall (freshest-first) so re-used lessons are
-	// pinned at the top of the prompted budget while stale ones age out.
+	ID        string  `json:"id"`
+	Kind      Kind    `json:"kind"`
+	Title     string  `json:"title"`
+	Content   string  `json:"content"`
+	Path      string  `json:"path,omitempty"`
+	Scope     Scope   `json:"scope"`
+	Recipe    *Recipe `json:"recipe,omitempty"`
+	Source    string  `json:"source,omitempty"`
+	CreatedAt string  `json:"createdAt"`
+	UpdatedAt string  `json:"updatedAt"`
+	// LastUsedAt is stamped by TouchEntry when the lesson was surfaced in memory
+	// for a run that then completed. It drives recall (freshest-first) so re-used
+	// lessons are pinned at the top of the prompted budget while stale ones age
+	// out.
 	LastUsedAt string `json:"lastUsedAt,omitempty"`
-	Version    int    `json:"version"`
+	// Reinforcements counts how many completed runs surfaced this entry. A lesson
+	// that keeps proving useful accumulates a high count and resists pruning; one
+	// that is never surfaced again ages out.
+	Reinforcements int `json:"reinforcements,omitempty"`
+	Version        int `json:"version"`
 }
 
 // NewEntry builds an entry with defaults applied. ID is derived from title when
@@ -108,7 +132,7 @@ func NewEntry(kind Kind, title, content string, id string, path string, scope Sc
 		path = "general"
 	}
 	if scope == "" {
-		scope = ScopeLocal
+		scope = ScopeSession
 	}
 	if source == "" {
 		source = "agent"
@@ -139,6 +163,10 @@ type RefinementEvent struct {
 	Evidence  string   `json:"evidence,omitempty"`
 	Outcome   string   `json:"outcome,omitempty"`
 	CreatedAt string   `json:"createdAt"`
+	// Rollback carries the applied outcomes (with their before/after snapshots)
+	// so a pass can be reverted later via RollbackInverts without storing a second
+	// copy of the plan. Omitted for events that changed nothing.
+	Rollback []EditOutcome `json:"rollback,omitempty"`
 }
 
 // State is the in-memory mutable harness state for one scope. It is persisted to
@@ -159,8 +187,9 @@ const StateFile = "harness_state.json"
 // from this dedicated root, never merged into internal/skills.
 const RecipesDir = "recipes"
 
-// DefaultName is used to derive the global learning data directory from the
-// shared data home, mirroring sessions.DefaultRoot (".../kajicode/learning").
+// homeRelDir is the per-scope learning subdirectory name (the global store uses
+// it under the data home, exactly like sessions.DefaultRoot, and the session
+// store uses it under a session directory).
 const homeRelDir = "learning"
 
 // Store persists a State to a harness_state.json under a learning directory.
@@ -214,10 +243,17 @@ func GlobalDir(env map[string]string) string {
 	return filepath.Join(base, "kajicode", homeRelDir)
 }
 
-// LocalDir derives a session-local learning root from a session directory.
+// SessionDir derives a session-scoped learning root from a session directory.
 // It is "<sessionDir>/learning".
-func LocalDir(sessionDir string) string {
+func SessionDir(sessionDir string) string {
 	return filepath.Join(sessionDir, homeRelDir)
+}
+
+// ProjectDir derives a project-scoped learning root from the workspace root. It
+// lives beside the rest of the project's KajiCode state under <root>/.kajicode,
+// so what the agent learns about a repository stays with that repository.
+func ProjectDir(workspaceRoot string) string {
+	return filepath.Join(workspaceRoot, ".kajicode", homeRelDir)
 }
 
 func envValue(env map[string]string, key string) string {
@@ -268,7 +304,7 @@ func decodeState(data []byte, fallbackScope Scope) (State, error) {
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return State{}, err
 	}
-	state := State{Scope: Scope(raw.Scope)}
+	state := State{Scope: normalizeScope(Scope(raw.Scope))}
 	if !state.Scope.valid() {
 		state.Scope = fallbackScope
 	}
@@ -295,6 +331,7 @@ func decodeEntry(raw json.RawMessage, fallbackScope Scope) (Entry, error) {
 	if strings.TrimSpace(entry.ID) == "" || strings.TrimSpace(entry.Title) == "" {
 		return Entry{}, errors.New("missing id or title")
 	}
+	entry.Scope = normalizeScope(entry.Scope)
 	if !entry.Scope.valid() {
 		entry.Scope = fallbackScope
 	}
@@ -341,12 +378,12 @@ func (store *Store) WithLock(fn func(State) (State, error)) error {
 	return store.saveLocked(next)
 }
 
-// TouchEntry stamps LastUsedAt on an existing entry (under the OS file lock) to
-// record that the model actually applied that lesson in a run. bumpVersion
-// controls whether the entry's Version advances: bumping keeps touch traffic
-// conflict-visible for concurrent writers, while false isolates recall metadata
-// from real content edits. Touch on a missing entry or a nil store is a no-op.
-// The returned bool reports whether the touch landed.
+// TouchEntry stamps LastUsedAt on an existing entry (under the OS file lock) and
+// increments its reinforcement counter, recording that the lesson was surfaced
+// for a run. bumpVersion controls whether the entry's Version advances (bumping
+// keeps touches conflict-visible for concurrent writers; false isolates recall
+// metadata from real content edits). Touch on a missing entry or a nil store is
+// a no-op. The returned bool reports whether the touch landed.
 func (store *Store) TouchEntry(kind Kind, id string, now time.Time, bumpVersion bool) bool {
 	if store == nil || kind == "" || id == "" {
 		return false
@@ -359,6 +396,7 @@ func (store *Store) TouchEntry(kind Kind, id string, now time.Time, bumpVersion 
 			return state, nil
 		}
 		state.Entries[idx].LastUsedAt = stamp
+		state.Entries[idx].Reinforcements++
 		if bumpVersion {
 			state.Entries[idx].Version++
 		}
@@ -442,9 +480,12 @@ func OrderByRecency(entries []Entry) {
 	})
 }
 
-// compareRecency orders higher on LastUsedAt, falling back to UpdatedAt. Returns
-// negative when a is more recent than b, zero on a tie. timestamps that do not
-// parse as RFC3339 are treated as never-used (oldest).
+// compareRecency orders higher on LastUsedAt, then on reinforcement count, then
+// on UpdatedAt. Returns negative when a should surface before b, zero on a tie.
+// Timestamps that do not parse as RFC3339 are treated as never-used (oldest).
+// Reinforcement is the tiebreak after last-used: two lessons surfaced at the
+// same time rank by how often they proved useful, so a repeatedly-validated
+// lesson beats a one-off that merely shares a timestamp (it also survives decay).
 func compareRecency(a, b Entry) int {
 	at, errA := time.Parse(time.RFC3339, a.LastUsedAt)
 	bt, errB := time.Parse(time.RFC3339, b.LastUsedAt)
@@ -458,6 +499,12 @@ func compareRecency(a, b Entry) int {
 		return -1
 	}
 	if bt.After(at) {
+		return 1
+	}
+	if a.Reinforcements != b.Reinforcements {
+		if a.Reinforcements > b.Reinforcements {
+			return -1
+		}
 		return 1
 	}
 	ua, errA := time.Parse(time.RFC3339, a.UpdatedAt)
@@ -478,10 +525,9 @@ func compareRecency(a, b Entry) int {
 	}
 }
 
-// MergeHarnessStates unions a global and a local state into one view for
-// planning/prompt display. Local entries win on id+kind conflict (a local entry
-// shadows the global one) and are surfaced with a "local:" scope prefix on the
-// id so editorial intent is unambiguous.
+// MergeHarnessStates unions a project and a session state into one view for
+// planning/prompt display. A session entry wins on id+kind conflict (it shadows
+// the project entry, so a per-session override is unambiguous).
 func MergeHarnessStates(global, local State) []Entry {
 	byKey := map[string]Entry{}
 	var order []string
@@ -549,6 +595,76 @@ func Slug(raw, fallback string) string {
 		out = out[:80]
 	}
 	return out
+}
+
+// PruneStale drops entries whose last reinforcement (or last update, when never
+// reinforced) is older than maxAgeDays, and caps the surviving set to maxEntries
+// per store by dropping the least-recently-used entries. It is the decay side of
+// reinforcement: a lesson that is never surfaced again ages out, while a lesson
+// that keeps proving useful is protected by its LastUsedAt stamp.
+//
+// It runs under the store's file lock and returns the number of entries removed.
+// A non-positive maxAgeDays disables age pruning; a non-positive maxEntries
+// disables the cap.
+func (store *Store) PruneStale(maxAgeDays, maxEntries int, now time.Time) int {
+	if store == nil {
+		return 0
+	}
+	removed := 0
+	_ = store.WithLock(func(state State) (State, error) {
+		before := len(state.Entries)
+		state.Entries = pruneEntries(state.Entries, maxAgeDays, now)
+		state.Entries = capEntries(state.Entries, maxEntries)
+		removed = before - len(state.Entries)
+		return state, nil
+	})
+	return removed
+}
+
+// pruneEntries removes entries older than maxAgeDays (by LastUsedAt, falling back
+// to UpdatedAt/CreatedAt). A timestamp that does not parse is treated as ancient
+// only when CreatedAt is also unusable; otherwise the entry is kept, so a
+// partially-legacy store is never wiped by a parse quirk.
+func pruneEntries(entries []Entry, maxAgeDays int, now time.Time) []Entry {
+	if maxAgeDays <= 0 {
+		return entries
+	}
+	cutoff := now.AddDate(0, 0, -maxAgeDays)
+	out := entries[:0]
+	for _, e := range entries {
+		if entryRecency(e).Before(cutoff) {
+			continue
+		}
+		out = append(out, e)
+	}
+	return out
+}
+
+// entryRecency returns the timestamp that governs an entry's age: the last time
+// it was surfaced (LastUsedAt), else the last content change (UpdatedAt), else
+// its creation (CreatedAt). An unparseable record is treated as now so a bad
+// timestamp never removes a valid entry.
+func entryRecency(e Entry) time.Time {
+	for _, raw := range []string{e.LastUsedAt, e.UpdatedAt, e.CreatedAt} {
+		if raw == "" {
+			continue
+		}
+		if t, err := time.Parse(time.RFC3339, raw); err == nil {
+			return t
+		}
+	}
+	return time.Now()
+}
+
+// capEntries keeps the maxEntries most-recently-used entries, dropping the rest.
+// A non-positive cap leaves the set unchanged.
+func capEntries(entries []Entry, maxEntries int) []Entry {
+	if maxEntries <= 0 || len(entries) <= maxEntries {
+		return entries
+	}
+	cp := append([]Entry(nil), entries...)
+	OrderByRecency(cp)
+	return cp[:maxEntries]
 }
 
 // FormatHarnessStateForPrompt renders a compact, bounded overview of merged

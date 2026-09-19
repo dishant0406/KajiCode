@@ -45,13 +45,13 @@ func TestStoreSaveLoadRoundTrip(t *testing.T) {
 }
 
 func TestLoadMissingFileDegradesToEmpty(t *testing.T) {
-	store := NewStore(StoreOptions{Dir: filepath.Join(t.TempDir(), "nope"), Scope: ScopeLocal})
+	store := NewStore(StoreOptions{Dir: filepath.Join(t.TempDir(), "nope"), Scope: ScopeSession})
 	state, err := store.Load()
 	if err != nil {
 		t.Fatalf("Load missing: %v", err)
 	}
-	if state.Scope != ScopeLocal {
-		t.Fatalf("scope = %q, want local", state.Scope)
+	if state.Scope != ScopeSession {
+		t.Fatalf("scope = %q, want session", state.Scope)
 	}
 	if len(state.Entries) != 0 {
 		t.Fatalf("entries = %d, want 0", len(state.Entries))
@@ -81,9 +81,9 @@ func TestMergeHarnessStatesLocalWins(t *testing.T) {
 		NewEntry(KindMemory, "global fact", "v1", "fact", "general", ScopeGlobal, "agent", time.Now()),
 		NewEntry(KindPrompt, "global note", "keep", "note", "policy", ScopeGlobal, "agent", time.Now()),
 	}}
-	local := State{Scope: ScopeLocal, Entries: []Entry{
+	local := State{Scope: ScopeSession, Entries: []Entry{
 		// Same id+kind => local wins.
-		NewEntry(KindMemory, "global fact", "v2 local override", "fact", "general", ScopeLocal, "agent", time.Now()),
+		NewEntry(KindMemory, "global fact", "v2 local override", "fact", "general", ScopeSession, "agent", time.Now()),
 	}}
 
 	merged := MergeHarnessStates(global, local)
@@ -118,11 +118,11 @@ func TestSlug(t *testing.T) {
 func TestFormatHarnessStateForPromptBounded(t *testing.T) {
 	entries := make([]Entry, 30)
 	for i := range entries {
-		e := NewEntry(KindMemory, "fact", strings.Repeat("x", 300), "", "general", ScopeLocal, "agent", time.Now())
+		e := NewEntry(KindMemory, "fact", strings.Repeat("x", 300), "", "general", ScopeSession, "agent", time.Now())
 		e.ID = "fact"
 		entries[i] = e
 	}
-	out := FormatHarnessStateForPrompt(ScopeLocal, entries, 5)
+	out := FormatHarnessStateForPrompt(ScopeSession, entries, 5)
 	if out == "" {
 		t.Fatal("expected non-empty overview")
 	}
@@ -135,16 +135,16 @@ func TestFormatHarnessStateForPromptBounded(t *testing.T) {
 }
 
 func TestFormatHarnessStateForPromptEmpty(t *testing.T) {
-	if out := FormatHarnessStateForPrompt(ScopeLocal, nil, 20); out != "" {
+	if out := FormatHarnessStateForPrompt(ScopeSession, nil, 20); out != "" {
 		t.Fatalf("empty overview = %q, want empty", out)
 	}
 }
 
 func TestStateJSONRoundTripIsStable(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "learning")
-	store := NewStore(StoreOptions{Dir: dir, Scope: ScopeLocal})
-	state := State{Scope: ScopeLocal, Entries: []Entry{
-		NewEntry(KindRecipe, "greet", "Say hello", "greet", "general", ScopeLocal, "agent", time.Now()),
+	store := NewStore(StoreOptions{Dir: dir, Scope: ScopeSession})
+	state := State{Scope: ScopeSession, Entries: []Entry{
+		NewEntry(KindRecipe, "greet", "Say hello", "greet", "general", ScopeSession, "agent", time.Now()),
 	}}
 	state.Entries[0].Recipe = &Recipe{
 		Name:        "greet",
@@ -236,5 +236,106 @@ func TestOrderByRecency(t *testing.T) {
 	// d (updated newest but never used) beats c (mid UpdatedAt).
 	if entries[1].ID != "d" {
 		t.Fatalf("updated-newest should beat mid-updated, got %#v", entries[1])
+	}
+}
+
+func TestPruneStaleDropsOldUnreinforcedEntries(t *testing.T) {
+	dir := t.TempDir()
+	store := NewStore(StoreOptions{Dir: dir, Scope: ScopeProject})
+	now := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
+	old := now.AddDate(0, 0, -200).Format(time.RFC3339)
+	fresh := now.AddDate(0, 0, -5).Format(time.RFC3339)
+	if err := store.WithLock(func(state State) (State, error) {
+		stale := NewEntry(KindMemory, "stale", "old", "stale", "general", ScopeProject, "agent", now)
+		stale.LastUsedAt = old
+		stale.UpdatedAt = old
+		kept := NewEntry(KindMemory, "kept", "fresh", "kept", "general", ScopeProject, "agent", now)
+		kept.LastUsedAt = fresh
+		state.Entries = append(state.Entries, stale, kept)
+		return state, nil
+	}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if removed := store.PruneStale(90, 0, now); removed != 1 {
+		t.Fatalf("removed = %d, want 1", removed)
+	}
+	state, _ := store.Load()
+	if len(state.Entries) != 1 || state.Entries[0].ID != "kept" {
+		t.Fatalf("entries = %#v", state.Entries)
+	}
+}
+
+func TestPruneStaleCapsByRecency(t *testing.T) {
+	dir := t.TempDir()
+	store := NewStore(StoreOptions{Dir: dir, Scope: ScopeProject})
+	now := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
+	mk := func(id string, used time.Time) Entry {
+		e := NewEntry(KindMemory, id, id, id, "general", ScopeProject, "agent", now)
+		e.LastUsedAt = used.Format(time.RFC3339)
+		e.UpdatedAt = used.Format(time.RFC3339)
+		return e
+	}
+	if err := store.WithLock(func(state State) (State, error) {
+		state.Entries = append(state.Entries,
+			mk("old", now.AddDate(0, 0, -3)),
+			mk("newest", now),
+			mk("mid", now.AddDate(0, 0, -1)),
+		)
+		return state, nil
+	}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if removed := store.PruneStale(0, 2, now); removed != 1 {
+		t.Fatalf("removed = %d, want 1", removed)
+	}
+	state, _ := store.Load()
+	if len(state.Entries) != 2 {
+		t.Fatalf("entries = %#v", state.Entries)
+	}
+	for _, e := range state.Entries {
+		if e.ID == "old" {
+			t.Fatalf("least-recently-used entry should have been capped: %#v", state.Entries)
+		}
+	}
+}
+
+func TestTouchEntryIncrementsReinforcements(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Date(2025, 1, 2, 3, 4, 5, 0, time.UTC)
+	store := NewStore(StoreOptions{Dir: dir, Scope: ScopeProject, Now: func() time.Time { return now }})
+	if err := store.WithLock(func(state State) (State, error) {
+		state.Entries = append(state.Entries, NewEntry(KindMemory, "fact", "c", "fact", "general", ScopeProject, "agent", now))
+		return state, nil
+	}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if !store.TouchEntry(KindMemory, "fact", now, false) {
+		t.Fatal("TouchEntry returned false for existing entry")
+	}
+	if !store.TouchEntry(KindMemory, "fact", now, false) {
+		t.Fatal("TouchEntry returned false on second call")
+	}
+	state, _ := store.Load()
+	if state.Entries[0].Reinforcements != 2 {
+		t.Fatalf("reinforcements = %d, want 2", state.Entries[0].Reinforcements)
+	}
+}
+
+func TestLoadNormalizesLegacyLocalScope(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	legacy := `{"scope":"local","entries":[{"id":"f","kind":"memory","title":"F","content":"c","scope":"local","createdAt":"2025-01-01T00:00:00Z","updatedAt":"2025-01-01T00:00:00Z","version":1}]}`
+	if err := os.WriteFile(filepath.Join(dir, StateFile), []byte(legacy), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	store := NewStore(StoreOptions{Dir: dir, Scope: ScopeSession})
+	state, err := store.Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(state.Entries) != 1 || state.Entries[0].Scope != ScopeSession {
+		t.Fatalf("legacy scope not normalized: %#v", state.Entries)
 	}
 }

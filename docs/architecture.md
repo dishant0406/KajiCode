@@ -40,7 +40,7 @@ the next model turn.
 | CLI composition | `internal/cli` | Argument parsing, config resolution, provider creation, registry setup, prompt/harness inspection commands, sandbox/session/plugin/MCP wiring, and launch routing. |
 | Interactive UI | `internal/tui` | Bubble Tea model/update/view state, transcript rendering, composer, modals, slash commands, setup, and runtime callbacks. |
 | Agent loop | `internal/agent` | Prompt assembly, provider turns, tool execution, compaction, retries, completion policy, self-correction, and callback emission. |
-| Self-learning | `internal/config` (learning settings), `internal/agent/learning.go` (runtime gate), `internal/harness` (learn pipeline, recipes, apply/rollback), `internal/tools` (`_learning_apply`, `_learning_review`, `_learning_recipe`) | Perpetual-memory loop: turn/compaction-triggered reviews produce durable learned lessons, reviewed with diff + tests, applied on approval with rollback, and controlled by the `learning` CLI/`cmd_kajicode` settings. |
+| Self-learning | `internal/config` (learning settings), `internal/agent/learning.go` (event gate), `internal/harness` (store, pipeline, recipes, apply/rollback/decay), `internal/tools` (`learn`, `recall`, `recipe_run`) | Perpetual-memory loop: event-driven passes (failure→fix, user correction, compaction, `learn run`) capture durable lessons, routed by session/project scope, with conflict-checked apply, rollback, decay, and the `learning` CLI. |
 | Model facts | `internal/modelsource` | models.dev snapshot (fetch/cache/resolve) plus an embedded seed for offline first-run. The single source of truth for a model's capabilities, modalities, reasoning tiers, context/output limits, and pricing. The curated catalog supplies identity and aliases; there is no model-name heuristic for vision or effort tiers. |
 | Provider adapters | `internal/providers`, `internal/aimlapi`, provider catalog packages | API-specific translation for OpenAI, Azure OpenAI, Anthropic, Gemini, compatible gateways, OAuth/API key resolution, model discovery, provider health, and onboarding. |
 | Tools | `internal/tools` | Tool interface, registry, built-in tools, redaction, output budgets, display metadata, and mutation tracking. |
@@ -249,37 +249,38 @@ serves can opt out in two ways:
 
 ## Self-Learning
 
-KajiCode can learn durable, cross-session lessons about a project's conventions
-and apply them automatically. Auto-learning is on by default and is tuned by a
-`learning` config block (`enabled`, `turnInterval` >= 0 defaulting to 10,
-`compact` on/off, `cooldownMs` defaulting to 20 minutes). The `learning` CLI
-subcommand inspects and changes these settings.
+KajiCode learns durable, evidence-backed lessons about a project and applies them
+automatically. Auto-learning is on by default and is tuned by the `learning`
+config block (`enabled`, `debounceMs` default 30 seconds, `compact`,
+`pruneAfterDays` default 90, `maxEntries` default 200). The `kajicode learning`
+subcommand inspects and changes these settings and reverts the last pass.
 
-The loop lives in several owned layers, each with its own tests:
+Learning is **event-driven**. The gate (`internal/agent/learning.go`) runs a pass
+when the agent hits a real signal — a tool that failed then was fixed, a user
+correction, a compaction (when enabled) — or on an explicit `learn run`, subject
+to a debounce. A clean run with no signal does no provider work.
+
+The layers, each with its own tests:
 
 - `internal/config/learning*.go` defines the settings, defaults, merge,
   validation, and the config-file writer used by the CLI.
-- `internal/agent/learning.go` gates triggers: a review runs after N assistant
-  turns (`turnInterval`) or after a context compaction when `compact` is on,
-  subject to the cooldown. It bubbles reviews up and applies results through
-  callbacks so the agent loop stays provider-neutral.
-- `internal/harness` owns the learning pipeline/pipeline recipe types. A recipe
-  standard can turn a run into a repeatable learn (prompts, tool budget,
-  expectations). Pipeline executions may apply changes only after a diff and
-  test verification, with file locks, state records, and rollback on failure.
-- `internal/tools` exposes `_learning_apply`, `_learning_review`, and
-  `_learning_recipe` tools that inspect/apply learned lessons and recipes.
+- `internal/agent/learning.go` is the engine: it captures signals from tool
+  results and user turns, gates on the debounce, routes proposals by scope, and
+  splices a refreshed `<learned_memory>` block into the next request so a
+  mid-session lesson takes effect immediately.
+- `internal/harness` owns the durable store and pipeline: the review gate, the
+  plan pass (anchored so it prefers update-over-create), the guarded apply
+  critical section with version-conflict detection, refinement history with a
+  self-contained rollback record, decay/cap (`PruneStale`), and Go-native recipe
+  manifests that `recipe_run` executes through the tool registry.
+- `internal/tools` exposes the `learn` (status/run/CRUD) and `recall` (search)
+  tools plus `recipe_run`.
 
-Learned lessons are surfaced to the model as durable memory
-(`<learned_memory>` prompt addendum) and treated as project/user conventions that
-yield to any current, explicit instruction. Apply is safe-by-default: diff +
-tests gate the change, and a failed apply rolls back to the pre-run state.
-
-Recall mirrors compaction's budgeted-tail principle: entries carry a `lastUsedAt`
-stamp (`harness.TouchEntry`) that the injected `learning.Context` view orders by
-(freshest-first, capped per kind and by a whole-block token budget), and the plan
-pass is anchored (`buildPlanPrompt`) to preserve the curated state by preferring
-update-over-create, backstopped by a normalized-title dedup guard in `apply.go`.
+Scopes are `session`, `project` (default; `<workspace>/.kajicode/learning`), and
+`global`; legacy per-session stores recorded as `local` are read back as
+`session`. Recall is recall-ordered by `lastUsedAt`/`reinforcements` and bounded
+per kind and by a whole-block token budget, so a growing store can never blow the
+context window.
 
 ## Tools, Sandbox, And Hooks
 

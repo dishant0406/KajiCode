@@ -274,49 +274,64 @@ always wins over the heuristic. See
 
 ### Self-Learning
 
-KajiCode can carry durable lessons across sessions instead of relearning the same
+KajiCode carries durable lessons across sessions instead of relearning the same
 project conventions every run. Self-learning is on by default and is driven by
 the `learning` config block (`internal/config/learning*.go`): `enabled`,
-`turnInterval` (default 10 turns), `compact` (review after a compaction), and
-`cooldownMs` (default 20 minutes between reviews). The `learning` CLI
-subcommand (`kajicode learning status|set <key> <value>`) inspects and changes
-these settings.
+`debounceMs` (minimum gap between automatic passes, default 30 seconds),
+`compact` (learn after a compaction), `pruneAfterDays` (age out unreinforced
+lessons, default 90), and `maxEntries` (per-scope cap, default 200). The
+`kajicode learning status|set <key> <value>|revert` subcommand inspects the
+settings and undoes the most recent automatic pass.
 
-The runtime gate lives in `internal/agent/learning.go`, which is wired into the
-agent loop by callbacks so the loop itself stays provider-neutral: after N
-assistant turns or a compaction (when enabled), a review is scheduled and
-throttled by the cooldown. A failed or buggy review also stamps the cooldown so
-it cannot burn provider budget in a tight loop.
+Learning is **event-driven, not timer-driven**. The gate lives in
+`internal/agent/learning.go`, wired into the loop so the loop stays
+provider-neutral. A pass runs when the agent does something worth learning from:
 
-Reviews, applies, and repeatable recipes are owned by `internal/harness`:
+- a tool call that **failed and was then fixed** (`NoteToolResult` tracks the
+  per-tool outcome history — the strongest "you learned something" signal),
+- a **user correction or re-instruction** (`NoteUserTurn`, a local classifier),
+- a **compaction** (when `compact` is on), or
+- an explicit **`learn run`** request from the model.
 
-- A review examines recent tool activity and drafts durable lessons.
-- Applying a lesson only succeeds after a diff and test verification, guarded by
-  file locks and recorded state, and rolls back to the pre-run state on failure.
-- A recipe is a repeatable standard (prompts, tool budget, expectations) that can
-  turn a run into a learning pass.
+The debounce coalesces a burst of signals; a manual request bypasses it. A clean
+run with no signal performs no provider work.
 
-Learned lessons are injected as `<learned_memory>` prompt addenda: they are
-treated as project/user conventions, not immutable facts, and a current explicit
-instruction always wins over one of them.
+Reviews, applies, and recipes are owned by `internal/harness`:
 
-The learned-memory view mirrors the compaction engine's "keep the freshest within
-a budget" principle:
+- A review (`RunReview`) cheaply decides whether the conversation holds a durable,
+  reusable lesson; only then does the plan pass (`PlanLearning`) run.
+- The plan proposes minimal, evidence-backed edits; apply (`ApplyLearning`) is a
+  guarded critical section with real version-conflict detection, and each applied
+  pass records a self-contained rollback on its refinement event so
+  `kajicode learning revert` can undo it (`RollbackInverts`).
+- Proposals are **routed by scope**: session-scoped lessons land in the session
+  store, everything else in the **project** store (`<workspace>/.kajicode/learning`),
+  so what the agent learns about a repository stays with that repository.
+- A `recipe` entry is persisted as a runnable manifest
+  (`<root>/recipes/<name>/recipe.json`) and executed via the `recipe_run` tool,
+  which dispatches each command through the registered tools.
+- Entries are pruned and capped per store (`PruneStale`) so memory cannot grow
+  without bound.
 
-- Entries carry a `lastUsedAt` stamp updated by `harness.TouchEntry` when a model
-  actually re-applies a lesson, so the injected block is recall-ordered
-  (freshest-first) rather than an alphabetical slab.
-- The whole block obeys a token budget (`learning.Context`), capped per kind
-  too, so a growing store can never blow the context window; lessons the model
-  re-uses stay pinned at the top and unused ones age out.
+Learned lessons are surfaced two ways. The bounded `<learned_memory>` prompt block
+(`learning.Context`) shows the freshest few, and the `learn` (CRUD/status) and
+`recall` (search) tools provide the deep-retrieval path. Both are treated as
+project/user conventions, not immutable facts, and a current explicit instruction
+always wins over one of them.
+
+Recall mirrors the compaction engine's "keep the freshest within a budget"
+principle:
+
+- Entries carry a `lastUsedAt` stamp and a `reinforcements` counter, updated by
+  `harness.TouchEntry` for every lesson a completed run actually surfaced, so the
+  injected block is recall-ordered (freshest/most-reinforced-first) rather than an
+  alphabetical slab.
+- The whole block obeys a token budget, capped per kind too, so a growing store
+  can never blow the context window.
 - The plan pass is anchored (`buildPlanPrompt`): the current curated state is
   shown as a live anchor the plan must preserve, telling the optimizer to prefer
   update-over-create instead of re-adding a near-duplicate. `apply.go` backstops
-  this by rejecting creates a that exactly duplicate an existing same-kind title.
-- Applying a lesson only succeeds after a diff and test verification, guarded by
-  file locks and recorded state, and rolls back to the pre-run state on failure.
-- A recipe is a repeatable standard (prompts, tool budget, expectations) that can
-  turn a run into a learning pass.
+  this by rejecting a create that duplicates an existing same-kind title.
 
 ## Tool Execution Lifecycle
 

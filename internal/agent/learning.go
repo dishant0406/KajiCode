@@ -10,117 +10,228 @@ import (
 	"github.com/dishant0406/KajiCode/internal/config"
 	"github.com/dishant0406/KajiCode/internal/harness"
 	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
 // requestLearnMeta is the Meta key the learn tool sets to request a manual
 // learning pass at the next safe boundary.
 const requestLearnMeta = "request_learn"
 
-// Learned-memory prompt-bounds. Durable state is stored unbounded on disk, but
-// only a bounded, truncated slice is ever injected into the prompt so a growing
-// memory can never blow the model's context window. These mirror prime-agent's
-// per-kind overview caps.
+// Learned-memory prompt-bounds. Durable state is stored unbounded on disk (up to
+// the configured cap), but only a bounded, truncated slice is ever injected into
+// the prompt so a growing memory can never blow the model's context window.
 const (
-	// learnedPromptoMaxPerKind caps how many entries of a given kind are
-	// surfaced in the <learned_memory> prompt block.
-	learnedPromptoMaxPerKind = 6
-	// learnedPromptoMaxContentLen truncates each entry's content shown in the
+	// learnedPromptMaxPerKind caps how many entries of a given kind are surfaced
+	// in the <learned_memory> prompt block.
+	learnedPromptMaxPerKind = 6
+	// learnedPromptMaxContentLen truncates each entry's content shown in the
 	// <learned_memory> prompt block.
-	learnedPromptoMaxContentLen = 160
+	learnedPromptMaxContentLen = 160
+	// learnedMemoryTokenBudgetValue bounds the whole <learned_memory> block so a
+	// store with many lessons can never monopolize the context budget.
+	learnedMemoryTokenBudgetValue = 1200
 )
 
-// LearningEngine is the opt-in self-learning controller for a run. It is the
-// agent-side counterpart to the harness pipeline (review → plan → apply →
-// record) and to the manual learn tool. Hooking a non-nil engine into
-// agent.Options.Learning enables automatic learning; nil leaves the loop
-// byte-identical, exactly like Profile, SelfCorrect, and Trace.
-//
-// The engine owns: the turn-interval / compact / cooldown gates, a manual
-// request flag consumed from tool result Meta, and the provider + stores it
-// uses for the pipeline. It is safe for concurrent use (a sync.Mutex guards
-// counters and the pending flag).
-//
-// Provider and stores are injected at construction (by the CLI), so the loop
-// hook needs no provider plumbing.
-type LearningEngine struct {
-	cfg         config.LearningConfig
-	provider    kajicoderuntime.Provider
-	globalStore *harness.Store
-	localStore  *harness.Store
-
-	mu          sync.Mutex
-	turnCount   int
-	lastReview  time.Time
-	manualReady bool
+// usedLesson records a lesson that was surfaced in the prompt, so a completed
+// run can reinforce exactly what it re-used.
+type usedLesson struct {
+	store *harness.Store
+	kind  harness.Kind
+	id    string
 }
 
-// NewLearningEngine builds the engine. cfg is the effective (defaulted)
-// learning config; provider must be non-nil or the engine is a no-op;
-// globalStore and localStore are the harness stores for each scope.
-func NewLearningEngine(cfg config.LearningConfig, provider kajicoderuntime.Provider, globalStore, localStore *harness.Store) *LearningEngine {
+// storeDir keys a lesson for de-duplication within a run.
+func (u usedLesson) storeDir() string {
+	if u.store == nil {
+		return ""
+	}
+	return u.store.Dir
+}
+
+// LearningEngine is the self-learning controller for a run. It is the agent-side
+// counterpart to the harness pipeline (review → plan → apply → record) and to
+// the manual learn tool. Hooking a non-nil engine into agent.Options.Learning
+// enables automatic learning; nil leaves the loop byte-identical, exactly like
+// Profile, SelfCorrect, and Trace.
+//
+// Learning is event-driven. The loop reports what actually happened — a tool
+// call that failed, a user correction — and the engine runs a pass when those
+// signals say a lesson is worth capturing, subject to a debounce, plus once
+// after a compaction and once when a run completes. It is safe for concurrent
+// use (the mutex guards counters and the pending flags).
+//
+// Provider and stores are injected at construction (by the CLI), so the loop
+// hook needs no provider plumbing. Proposals are routed by scope: session-scoped
+// lessons land in the session store, everything else in the project store.
+type LearningEngine struct {
+	cfg          config.LearningConfig
+	provider     kajicoderuntime.Provider
+	globalStore  *harness.Store
+	projectStore *harness.Store
+	sessionStore *harness.Store
+
+	mu sync.Mutex
+	// pendingSignals holds human-readable reasons a pass is warranted. A pass
+	// consumes them; the reasons become the plan's focus so the refinement targets
+	// the failure the agent actually hit.
+	pendingSignals []string
+	// failedTools / fixedTools track the per-tool outcome history for the current
+	// run: a tool that failed and later succeeded is the strongest "you learned
+	// something" signal (the model found a working approach).
+	failedTools map[string]bool
+	fixedTools  map[string]bool
+	// compactionSignal is set when a compaction happened this turn.
+	compactionSignal bool
+	// manualReady is set by the learn tool's run action.
+	manualReady bool
+	// used records the lessons surfaced in the prompt this run, keyed so a run
+	// that surfaces the same lesson on several turns reinforces it once.
+	used     map[string]usedLesson
+	lastPass time.Time
+	finished bool
+}
+
+// NewLearningEngine builds the engine. cfg is the effective (defaulted) learning
+// config; provider must be non-nil or the engine is a no-op. globalStore,
+// projectStore, and sessionStore are the harness stores for each scope. A nil
+// store for a scope means a proposal destined for it is promoted to the next
+// broader scope (session -> project -> global) rather than silently dropped.
+func NewLearningEngine(cfg config.LearningConfig, provider kajicoderuntime.Provider, globalStore, projectStore, sessionStore *harness.Store) *LearningEngine {
 	return &LearningEngine{
-		cfg:         cfg.Effective(),
-		provider:    provider,
-		globalStore: globalStore,
-		localStore:  localStore,
+		cfg:          cfg.Effective(),
+		provider:     provider,
+		globalStore:  globalStore,
+		projectStore: projectStore,
+		sessionStore: sessionStore,
+		failedTools:  map[string]bool{},
+		fixedTools:   map[string]bool{},
+		used:         map[string]usedLesson{},
 	}
 }
 
-// Enabled reports whether the engine will act. An engine with a nil provider
-// or a disabled config is inert.
+// Enabled reports whether the engine will act. An engine with a nil provider or
+// a disabled config is inert.
 func (e *LearningEngine) Enabled() bool {
 	return e != nil && e.provider != nil && e.cfg.IsEnabled()
 }
 
-// NoteToolResult lets the loop hand each tool result to the engine; a result
-// whose Meta sets request_learn arms a manual pass at the next boundary.
+// NoteToolResult lets the loop hand each tool result to the engine. It records
+// the failure/success history that drives the eager triggers: a tool that fails
+// and later succeeds becomes a pending signal. A manual learn-tool request
+// (Meta["request_learn"]=="true") arms a pass at the next boundary.
 func (e *LearningEngine) NoteToolResult(result ToolResult) {
 	if e == nil {
 		return
 	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if result.Status == tools.StatusError {
+		e.failedTools[result.Name] = true
+		e.fixedTools[result.Name] = false
+	} else if e.failedTools[result.Name] && !e.fixedTools[result.Name] {
+		// This tool failed earlier and now succeeded: the model worked out how to
+		// use it. Capture the lesson.
+		e.fixedTools[result.Name] = true
+		e.addSignalLocked("tool " + result.Name + " failed then succeeded")
+	}
 	if result.Meta[requestLearnMeta] == "true" {
-		e.mu.Lock()
 		e.manualReady = true
-		e.mu.Unlock()
 	}
 }
 
-// TurnElapsed is the loop hook, called once per assistant turn (after a
-// compaction). compacted reports whether this turn followed a context
-// compaction. It runs the gate, and when the gate opens, the pipeline:
-//
-//	review → (if should learn) plan → apply → record
-//
-// Failures are non-fatal: a transient provider/auth error just skips this
-// pass and re-arms the cooldown so it cannot retry in a tight loop. It returns
-// whether any learning was actually applied, so the loop can splice the fresh
-// learned-memory block into the next request (same-session pickup) without an
-// extra store read on every turn.
-func (e *LearningEngine) TurnElapsed(ctx context.Context, messages []kajicoderuntime.Message, compacted bool) bool {
-	applied := false
-	if !e.Enabled() {
-		return applied
+// NoteUserTurn lets the loop report a user turn that looks like a correction or
+// re-instruction — the classic "the agent got it wrong and the user told it how"
+// signal that is otherwise lost. It is a cheap, local classification.
+func (e *LearningEngine) NoteUserTurn(text string) {
+	if e == nil || !looksLikeCorrection(text) {
+		return
 	}
 	e.mu.Lock()
-	e.turnCount++
-	manual := e.manualReady
-	due := manual || (compacted && e.cfg.IsCompactEnabled()) || (e.turnCount > 0 && e.turnCount%e.cfg.TurnInterval == 0)
-	if due {
-		// Cooldown gate: respect the minimum gap unless a manual request armed
-		// it (the user explicitly asked, bypassing cooldown).
-		if !manual && !e.lastReview.IsZero() && time.Since(e.lastReview) < time.Duration(e.cfg.CooldownMs)*time.Millisecond {
-			due = false
+	e.addSignalLocked("user correction")
+	e.mu.Unlock()
+}
+
+// NoteCompaction records that a context compaction happened, which on its own is
+// enough to warrant a pass: a compaction means a lot of context is about to be
+// lost, so it is a natural capture point.
+func (e *LearningEngine) NoteCompaction() {
+	if e == nil {
+		return
+	}
+	e.mu.Lock()
+	e.compactionSignal = true
+	e.mu.Unlock()
+}
+
+// addSignalLocked records a pending signal (callers hold the mutex).
+func (e *LearningEngine) addSignalLocked(reason string) {
+	for _, existing := range e.pendingSignals {
+		if existing == reason {
+			return
 		}
 	}
-	if due {
-		e.manualReady = false
-		e.lastReview = time.Now()
-	}
-	e.mu.Unlock()
+	e.pendingSignals = append(e.pendingSignals, reason)
+}
 
-	if !due {
-		return applied
+// RunTurn is the loop hook, called once per assistant turn after any compaction.
+// It runs a pass when a signal is pending, a compaction happened (when enabled),
+// or a manual request was armed, subject to the debounce. It returns whether any
+// learning was applied, so the loop can splice the fresh learned-memory block
+// into the next request (same-session pickup) without an extra store read on
+// every turn.
+func (e *LearningEngine) RunTurn(ctx context.Context, messages []kajicoderuntime.Message) bool {
+	return e.run(ctx, messages, false)
+}
+
+// Finish is the end-of-run hook. It runs a final pass over the completed session
+// turn is processed here (a failure→fix or correction raised on the last turn
+// that the loop did not get to act on) and the lessons the run actually surfaced
+// are reinforced. A clean run with no signal performs no provider work, so a
+// routine session costs nothing extra; it is idempotent per run.
+func (e *LearningEngine) Finish(ctx context.Context, messages []kajicoderuntime.Message) bool {
+	if e == nil {
+		return false
 	}
+	e.mu.Lock()
+	if e.finished {
+		e.mu.Unlock()
+		return false
+	}
+	e.finished = true
+	e.mu.Unlock()
+	applied := e.run(ctx, messages, true)
+	e.Reinforce()
+	return applied
+}
+
+// run is the shared implementation of RunTurn and Finish. force bypasses the
+// debounce (a run boundary is a natural capture point).
+func (e *LearningEngine) run(ctx context.Context, messages []kajicoderuntime.Message, force bool) bool {
+	if !e.Enabled() {
+		return false
+	}
+	e.mu.Lock()
+	signals := e.pendingSignals
+	manual := e.manualReady
+	compacted := e.compactionSignal
+	due := manual || len(signals) > 0 || (compacted && e.cfg.IsCompactEnabled())
+	if !due {
+		e.mu.Unlock()
+		return false
+	}
+	// Debounce: an automatic pass within the window is deferred, NOT dropped —
+	// the pending signals stay queued and the next turn or the end of the run
+	// processes them. A manual request bypasses the debounce.
+	if !force && !manual && !e.lastPass.IsZero() && time.Since(e.lastPass) < e.cfg.Debounce() {
+		e.mu.Unlock()
+		return false
+	}
+	// The pass runs now: consume the queued signals and one-shot flags.
+	e.pendingSignals = nil
+	e.compactionSignal = false
+	e.manualReady = false
+	e.lastPass = time.Now()
+	e.mu.Unlock()
 
 	conversation := renderTranscript(messages)
 	decision, err := harness.RunReview(ctx, harness.ReviewOptions{
@@ -128,40 +239,85 @@ func (e *LearningEngine) TurnElapsed(ctx context.Context, messages []kajicoderun
 		Conversation: conversation,
 	})
 	if err != nil || decision == nil || !decision.ShouldLearn {
-		return applied
+		return false
+	}
+	// The plan's focus is the union of the model's own instructions and the local
+	// signals that triggered the pass, so the refinement targets the failure the
+	// agent actually hit rather than a generic transcript summary.
+	instructions := strings.TrimSpace(decision.Instructions)
+	if len(signals) > 0 {
+		joined := "Observed during this run: " + strings.Join(signals, "; ") + "."
+		if instructions == "" {
+			instructions = joined
+		} else {
+			instructions = instructions + "\n" + joined
+		}
 	}
 
 	plan, err := harness.PlanLearning(ctx, harness.PlanOptions{
 		Provider:     e.provider,
 		Conversation: conversation,
-		State:        e.loadGlobalState(),
+		State:        e.loadProjectState(),
 		Refinements:  e.loadRefinements(),
-		Instructions: decision.Instructions,
-		ScopePolicy:  "Prefer local (session-scoped) entries. Use global only for durable cross-session lessons.",
+		Instructions: instructions,
+		ScopePolicy:  "Default to the project scope. Use the session scope only for lessons that apply to this one session, and the global scope only for durable cross-project lessons.",
 	})
-	if err != nil {
-		return applied
+	if err != nil || len(plan.Proposals) == 0 {
+		return false
 	}
-	if len(plan.Proposals) == 0 {
-		return applied
+	return e.apply(plan)
+}
+
+// apply routes the plan's proposals by scope and writes each group to the store
+// that owns it, so a session-scoped lesson never lands in the project store and
+// vice versa. Each store is pruned and capped afterwards.
+func (e *LearningEngine) apply(plan harness.LearningPlan) bool {
+	byScope := map[harness.Scope][]harness.EditProposal{}
+	for _, proposal := range plan.Proposals {
+		scope := proposal.Scope
+		if scope == "" {
+			scope = harness.ScopeProject
+		}
+		byScope[scope] = append(byScope[scope], proposal)
 	}
-	if e.globalStore != nil {
-		outcome := harness.ApplyLearning(e.globalStore, harness.ApplyOptions{
-			Plan:    plan,
+
+	applied := false
+	for scope, proposals := range byScope {
+		store := e.storeForScope(scope)
+		if store == nil {
+			continue
+		}
+		outcome := harness.ApplyLearning(store, harness.ApplyOptions{
+			Plan:    harness.LearningPlan{Summary: plan.Summary, Rationale: plan.Rationale, Proposals: proposals, Baseline: plan.Baseline},
 			Trigger: "auto",
 			Now:     time.Now,
 		})
-		applied = countApplied(outcome.Outcomes) > 0
-	}
-	if !applied && e.localStore != nil {
-		outcome := harness.ApplyLearning(e.localStore, harness.ApplyOptions{
-			Plan:    plan,
-			Trigger: "auto",
-			Now:     time.Now,
-		})
-		applied = countApplied(outcome.Outcomes) > 0
+		if countApplied(outcome.Outcomes) > 0 {
+			applied = true
+		}
+		store.PruneStale(e.cfg.PruneAfterDays, e.cfg.MaxEntries, time.Now())
 	}
 	return applied
+}
+
+// storeForScope resolves the store a proposal's scope writes to. A missing
+// narrower store falls back to a broader one (session -> project -> global) so a
+// lesson is never silently dropped.
+func (e *LearningEngine) storeForScope(scope harness.Scope) *harness.Store {
+	switch scope {
+	case harness.ScopeSession:
+		if e.sessionStore != nil {
+			return e.sessionStore
+		}
+		fallthrough
+	case harness.ScopeProject:
+		if e.projectStore != nil {
+			return e.projectStore
+		}
+		return e.globalStore
+	default:
+		return e.globalStore
+	}
 }
 
 // countApplied reports how many proposals in a set actually landed. A proposal
@@ -177,6 +333,14 @@ func countApplied(outcomes []harness.EditOutcome) int {
 	return n
 }
 
+func (e *LearningEngine) loadProjectState() harness.State {
+	if e.projectStore == nil {
+		return harness.State{Scope: harness.ScopeProject}
+	}
+	state, _ := e.projectStore.Load()
+	return state
+}
+
 func (e *LearningEngine) loadGlobalState() harness.State {
 	if e.globalStore == nil {
 		return harness.State{Scope: harness.ScopeGlobal}
@@ -185,41 +349,44 @@ func (e *LearningEngine) loadGlobalState() harness.State {
 	return state
 }
 
-func (e *LearningEngine) loadLocalState() harness.State {
-	if e.localStore == nil {
-		return harness.State{Scope: harness.ScopeLocal}
+func (e *LearningEngine) loadSessionState() harness.State {
+	if e.sessionStore == nil {
+		return harness.State{Scope: harness.ScopeSession}
 	}
-	state, _ := e.localStore.Load()
+	state, _ := e.sessionStore.Load()
 	return state
 }
 
 func (e *LearningEngine) loadRefinements() []harness.RefinementEvent {
-	return e.loadGlobalState().Refinements
+	return e.loadProjectState().Refinements
 }
 
-// Context renders the bounded, merged learned memory as a system prompt
-// section. It is called at run start by buildSystemPromptParts so the model
-// sees durable lessons (memory/prompt/subagent entries) on the first turn, and
-// later by the loop's same-session refresh to pick up newly applied lessons.
-// The merged set is recall-ordered (freshest-first), the block is capped per
-// kind, and the whole block obeys a token budget — so a growing harness store
-// can never blow the context window and is biased toward memory the model has
-// actually re-used (compaction's "keep the freshest within a budget").
+// Context renders the bounded, merged learned memory as a system prompt section.
+// It is called at run start by buildSystemPromptParts so the model sees durable
+// lessons on the first turn, and later by the loop's same-session refresh to pick
+// up newly applied lessons. The merged set is recall-ordered (freshest-first),
+// capped per kind, and obeys a whole-block token budget, so a growing store can
+// never blow the context window and is biased toward memory that has actually
+// been re-used. Each surfaced lesson is remembered for reinforcement.
 func (e *LearningEngine) Context() string {
 	if e == nil {
 		return ""
 	}
-	merged := harness.MergeHarnessStates(e.loadGlobalState(), e.loadLocalState())
+	// Merge broadest-first: global, then project over it, then session over that.
+	project := harness.MergeHarnessStates(e.loadGlobalState(), e.loadProjectState())
+	session := e.loadSessionState()
+	merged := harness.MergeHarnessStates(harness.State{Entries: project}, session)
 	if len(merged) == 0 {
 		return ""
 	}
 	var b strings.Builder
 	shows := map[harness.Kind]int{}
-	budget := learnedMemoryTokenBudget()
+	budget := learnedMemoryTokenBudgetValue
+	surfaced := make([]usedLesson, 0, len(merged))
 	for _, entry := range merged {
 		switch entry.Kind {
 		case harness.KindMemory, harness.KindPrompt, harness.KindSubagent:
-			if shows[entry.Kind] >= learnedPromptoMaxPerKind {
+			if shows[entry.Kind] >= learnedPromptMaxPerKind {
 				continue
 			}
 			title := strings.TrimSpace(entry.Title)
@@ -228,45 +395,67 @@ func (e *LearningEngine) Context() string {
 			}
 			scope := string(entry.Scope)
 			if scope == "" {
-				scope = string(harness.ScopeLocal)
+				scope = string(harness.ScopeProject)
 			}
 			line := fmt.Sprintf("- [%s] %s: %s\n", scope, title, trimLearningContent(entry.Content))
 			weight := ApproxTextTokens(line)
 			if weight > budget {
-				// The whole block is over budget; drop the rest (which are all
-				// strictly older than what we've already shown).
 				break
 			}
 			b.WriteString(line)
 			budget -= weight
 			shows[entry.Kind]++
+			surfaced = append(surfaced, usedLesson{store: e.storeForEntryScope(entry.Scope), kind: entry.Kind, id: entry.ID})
 		}
 	}
+	e.mu.Lock()
+	for _, lesson := range surfaced {
+		e.used[string(lesson.kind)+"\x00"+lesson.id+"\x00"+lesson.storeDir()] = lesson
+	}
+	e.mu.Unlock()
 	return strings.TrimSpace(b.String())
 }
 
-// learnedMemoryTokenBudget bounds the whole <learned_memory> block so a store
-// with many lessons can never monopolize the context budget, mirroring the
-// compaction tail budget (a fraction of the window). A static, self-contained
-// ceiling keeps the block deterministic and cheap to reason about.
-const learnedMemoryTokenBudgetValue = 1200
+// storeForEntryScope resolves which store an entry lives in, so reinforcement
+// stamps the store that actually holds it. It mirrors storeForScope exactly.
+func (e *LearningEngine) storeForEntryScope(scope harness.Scope) *harness.Store {
+	return e.storeForScope(scope)
+}
 
-func learnedMemoryTokenBudget() int { return learnedMemoryTokenBudgetValue }
+// Reinforce stamps every lesson the run surfaced, so a lesson that keeps proving
+// useful accumulates reinforcements and resists pruning. It is called once when a
+// run completes.
+func (e *LearningEngine) Reinforce() {
+	if e == nil {
+		return
+	}
+	e.mu.Lock()
+	used := e.used
+	e.used = map[string]usedLesson{}
+	e.mu.Unlock()
+	now := time.Now()
+	for _, lesson := range used {
+		if lesson.store == nil || lesson.id == "" {
+			continue
+		}
+		lesson.store.TouchEntry(lesson.kind, lesson.id, now, false)
+	}
+}
 
 // trimLearningContent normalizes a learned entry's content for the one-line
 // prompt summary: newlines collapse to spaces and the value is truncated with a
 // marker so a verbose lesson cannot monopolize the context budget.
 func trimLearningContent(content string) string {
 	normalized := strings.Join(strings.Fields(content), " ")
-	if len(normalized) <= learnedPromptoMaxContentLen {
+	if len(normalized) <= learnedPromptMaxContentLen {
 		return normalized
 	}
 	const marker = "..."
-	return normalized[:learnedPromptoMaxContentLen-len(marker)] + marker
+	return normalized[:learnedPromptMaxContentLen-len(marker)] + marker
 }
 
 // learnedMemoryOpen and learnedMemoryClose delimit the same-session injectable
-// block. They match (part of) the static block built in system_prompt.go's
+// block. They match the static block built in system_prompt.go's
 // learningContext, so splicing an updated block replaces the prior one without
 // duplicating it.
 const (
@@ -278,10 +467,8 @@ const (
 // leading system message so lessons applied mid-session take effect on the next
 // provider call (same-session pickup). It is idempotent: if the message already
 // carries a <learned_memory> block, only that block is replaced; otherwise the
-// block is appended after any existing content. It returns true when the message
-// changed so the loop can decide whether to re-seed the request. Gating mirrors
-// the seed-time path (learningContext): a nil engine or no durable entries is a
-// byte-identical no-op, and a nil provider never forces an arbitrary reflection.
+// block is appended after any existing content. It returns the messages
+// unchanged when there is nothing to add.
 func (e *LearningEngine) EnsurePromptHasMemory(messages []kajicoderuntime.Message) []kajicoderuntime.Message {
 	if e == nil {
 		return messages
@@ -340,4 +527,27 @@ func spliceMemoryBlock(content, replacement string) string {
 		return replacement
 	}
 	return strings.TrimSpace(content) + "\n\n" + replacement
+}
+
+// looksLikeCorrection reports whether a user turn reads as a correction or
+// re-instruction ("no, use X", "don't do that", "actually ...", "that's wrong").
+// It is a conservative, local heuristic: a false negative just means the normal
+// end-of-run capture handles it.
+func looksLikeCorrection(text string) bool {
+	lower := strings.ToLower(strings.TrimSpace(text))
+	if lower == "" {
+		return false
+	}
+	markers := []string{
+		"no,", "no ", "nope", "wrong", "incorrect", "that's not", "thats not",
+		"don't ", "dont ", "do not ", "stop ", "instead", "actually", "but i ",
+		"you should", "you need to", "should have", "i said", "i meant", "not what",
+		"revert", "undo", "fix that", "not correct",
+	}
+	for _, marker := range markers {
+		if strings.Contains(lower, marker) {
+			return true
+		}
+	}
+	return false
 }

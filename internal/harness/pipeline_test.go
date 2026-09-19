@@ -199,18 +199,6 @@ func TestRunReviewDegradesOnBadOutput(t *testing.T) {
 	}
 }
 
-func TestRecordRefinement(t *testing.T) {
-	store := NewStore(StoreOptions{Dir: filepath.Join(t.TempDir(), "learning"), Scope: ScopeGlobal, Now: fixedNow})
-	ref := NewRefinementEvent("manual", []string{"create:memory:f"}, "evidence", fixedNow())
-	if err := RecordRefinement(store, ref); err != nil {
-		t.Fatalf("RecordRefinement: %v", err)
-	}
-	state, _ := store.Load()
-	if len(state.Refinements) != 1 || state.Refinements[0].Trigger != "manual" {
-		t.Fatalf("refinements = %#v", state.Refinements)
-	}
-}
-
 func TestPlanPromptCarriesAnchorAndRecencyOrder(t *testing.T) {
 	older := "2025-01-01T00:00:00Z"
 	newer := "2026-02-02T00:00:00Z"
@@ -230,5 +218,60 @@ func TestPlanPromptCarriesAnchorAndRecencyOrder(t *testing.T) {
 	oldIdx := strings.Index(prompt, "old")
 	if youngIdx < 0 || oldIdx < 0 || youngIdx > oldIdx {
 		t.Fatalf("expected re-used entry 'used' before 'old' in plan state:\n%s", prompt)
+	}
+}
+
+func TestApplyRecordsRollbackAndLatestRollbackReverts(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "learning")
+	store := NewStore(StoreOptions{Dir: dir, Scope: ScopeProject, Now: fixedNow})
+	plan := LearningPlan{
+		Summary: "s",
+		Proposals: []EditProposal{
+			{Action: ActionCreate, Kind: KindMemory, ID: "fact", Title: "Fact", Content: "use cmake"},
+		},
+	}
+	result := ApplyLearning(store, ApplyOptions{Plan: plan, Trigger: "auto", Now: fixedNow})
+	if len(result.Outcomes) != 1 || !result.Outcomes[0].Applied {
+		t.Fatalf("outcomes = %#v", result.Outcomes)
+	}
+	state, _ := store.Load()
+	if len(state.Refinements) != 1 || len(state.Refinements[0].Rollback) != 1 {
+		t.Fatalf("refinement rollback not recorded: %#v", state.Refinements)
+	}
+	outcomes, ok := LatestRollback(state)
+	if !ok {
+		t.Fatal("LatestRollback found nothing")
+	}
+	rollback := RollbackInverts(store, RollbackOptions{Outcomes: outcomes, Now: fixedNow})
+	if len(rollback.Errors) != 0 {
+		t.Fatalf("rollback errors: %v", rollback.Errors)
+	}
+	after, _ := store.Load()
+	if len(after.Entries) != 0 {
+		t.Fatalf("revert left entries: %#v", after.Entries)
+	}
+	if _, ok := LatestRollback(after); ok {
+		t.Fatal("a rollback event must not itself be revertible")
+	}
+}
+
+func TestApplyPersistsRecipeManifest(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "learning")
+	store := NewStore(StoreOptions{Dir: dir, Scope: ScopeProject, Now: fixedNow})
+	plan := LearningPlan{
+		Summary: "s",
+		Proposals: []EditProposal{{
+			Action: ActionCreate, Kind: KindRecipe, ID: "build", Title: "Build",
+			Content: "build the project",
+			Recipe:  &Recipe{Name: "build", Commands: []RecipeCommand{{ID: "b", Tool: "bash", Args: map[string]any{"command": "make build"}}}},
+		}},
+	}
+	result := ApplyLearning(store, ApplyOptions{Plan: plan, Trigger: "auto", Now: fixedNow, ToolNames: map[string]bool{"bash": true}})
+	if len(result.Errors) != 0 {
+		t.Fatalf("apply errors: %v", result.Errors)
+	}
+	recipes, problems := ListRecipes(dir, map[string]bool{"bash": true})
+	if len(problems) != 0 || len(recipes) != 1 || recipes[0].Name != "build" {
+		t.Fatalf("recipes = %#v problems = %#v", recipes, problems)
 	}
 }

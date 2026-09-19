@@ -7,10 +7,27 @@ import (
 )
 
 // RollbackOptions configures a rollback. Outcomes are the recorded outcomes of
-// a prior ApplyLearning result.
+// a prior ApplyLearning result (persisted on its RefinementEvent.Rollback).
 type RollbackOptions struct {
 	Outcomes []EditOutcome
 	Now      func() time.Time
+}
+
+// LatestRollback returns the recorded outcomes of the most recent applied
+// refinement that has not already been reverted, so its changes can be undone. A
+// rollback event acts as a barrier: refinements recorded before it are considered
+// already reverted. It returns false when nothing is left to revert.
+func LatestRollback(state State) ([]EditOutcome, bool) {
+	for i := len(state.Refinements) - 1; i >= 0; i-- {
+		event := state.Refinements[i]
+		if event.Trigger == "rollback" {
+			return nil, false
+		}
+		if len(event.Rollback) > 0 {
+			return event.Rollback, true
+		}
+	}
+	return nil, false
 }
 
 // RollbackInverts undoes a prior apply pass by inverting each applied proposal
