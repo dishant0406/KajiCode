@@ -214,6 +214,7 @@ func (m model) setDoctorStatusRow(text string) model {
 	for i := len(m.transcript) - 1; i >= 0; i-- {
 		if m.transcript[i].id == doctorStatusRowID {
 			m.transcript[i] = row
+			m.transcriptMutations++
 			return m
 		}
 	}

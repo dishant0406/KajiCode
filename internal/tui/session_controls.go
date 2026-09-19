@@ -1032,6 +1032,7 @@ func (m model) setCompactStatusRow(text string) model {
 	for i := len(m.transcript) - 1; i >= 0; i-- {
 		if m.transcript[i].id == compactStatusRowID {
 			m.transcript[i] = row
+			m.transcriptMutations++
 			return m
 		}
 	}
@@ -1049,6 +1050,7 @@ func (m model) setAgentCompactionRow(text string) model {
 	for i := len(m.transcript) - 1; i >= 0; i-- {
 		if m.transcript[i].id == agentCompactionRowID {
 			m.transcript[i] = row
+			m.transcriptMutations++
 			return m
 		}
 	}

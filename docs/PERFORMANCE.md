@@ -66,6 +66,26 @@ Supported environment variables:
 - `KAJICODE_PERF_FIRST_OUTPUT_WARN_MS`
 - `KAJICODE_PERF_HARNESS_END_RSS_WARN_MB`
 
+## TUI Render Benchmarks
+
+The interactive shell's per-frame cost is guarded by Go benchmarks in
+`internal/tui`:
+
+```bash
+go test ./internal/tui/ -run '^$' -bench 'LongThread' -benchmem
+```
+
+- `BenchmarkScrollWheelLongThread` / `BenchmarkScrollCommandLongThread` — a scroll
+  frame on a long transcript.
+- `BenchmarkStreamingTurnLongThread` — one frame of a live streaming turn whose
+  tail carries an animating tool card.
+
+While a run is live, the settled prefix of the transcript (every row before
+`runStartIndex`) is frozen and its folded body items are memoized
+(`transcriptPrefixCache`); only the volatile tail is re-folded each frame. Keep
+these benchmarks flat across row counts (`item-1000` ≈ `item-6000`) — a cost that
+grows with transcript length means the settled-prefix fast path regressed.
+
 ## CI Behavior
 
 The `Performance Smoke` job builds the binary, runs

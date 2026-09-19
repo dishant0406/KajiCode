@@ -234,9 +234,6 @@ func (m model) transcriptBaseBodyItems(width int, emptyOverlay string, detailed 
 	// Transcript ROWS render at the full chat width; row/status glyphs provide
 	// structure without adding another body margin. Block items (title bar, empty
 	// state, prompts) keep the full column width below.
-	contentWidth := transcriptContentWidth(width)
-	gutter := transcriptGutter(width)
-
 	// The inline title bar prints once into scrollback on the first WindowSizeMsg;
 	// until then it renders managed so the surface never appears headless.
 	if m.titleBarInTranscriptBody() {
@@ -253,7 +250,6 @@ func (m model) transcriptBaseBodyItems(width int, emptyOverlay string, detailed 
 		}
 	} else {
 		rc := buildRowContext(m.transcript)
-		shownAny := false
 		// The detailed view shows the full transcript from index 0, not
 		// the managed region after m.flushed.
 		startIdx := m.flushed
@@ -265,127 +261,18 @@ func (m model) transcriptBaseBodyItems(width int, emptyOverlay string, detailed 
 			renderRowFn = transcriptRowDispatchFn(m.renderTranscriptDetailedRow)
 		}
 		previousKind, havePreviousKind = previousVisibleTranscriptKind(m.transcript, startIdx, rc)
-		specialistSummaryEmitted := false
-		for index := startIdx; index < len(m.transcript); index++ {
-			row := m.transcript[index]
-			// A welcome row carries no Lime visual (the empty state replaced it)
-			// and a resolved tool call collapses into its result's card.
-			if row.kind == rowWelcome || rc.skip(row) {
-				continue
-			}
-			if isSuccessfulExploreResult(row) {
-				groupRows, groupIndices, nextIndex := collectExploreResultGroup(m.transcript, index, rc)
-				if len(groupRows) > 0 {
-					if (shownAny || m.flushedAny) && startsTurn(row.kind) {
-						items = append(items, transcriptBlankBodyItem())
-					}
-					if shownAny && havePreviousKind && needsSeparatorBeforeToolCard(previousKind, row.kind) {
-						items = append(items, transcriptBlankBodyItem())
-					}
-					firstRowIndex := groupIndices[0]
-					groupRowsCopy := append([]transcriptRow(nil), groupRows...)
-					groupIndicesCopy := append([]int(nil), groupIndices...)
-					block := m.renderExploreResultGroup(groupRowsCopy, contentWidth, rc)
-					items = append(items, transcriptBodyItem{
-						kind:              transcriptBodyItemRow,
-						rowIndex:          firstRowIndex,
-						heightCacheKey:    transcriptBlockBodyHeightCacheKey(transcriptBodyItemRow, block),
-						heightCacheStable: true,
-						render: func(startBodyY int) transcriptBodyRenderedItem {
-							rendered := m.renderExploreResultGroup(groupRowsCopy, contentWidth, rc)
-							selectable := make([]transcriptSelectableLine, 0, len(groupIndicesCopy)+1)
-							for offset, line := range viewLines(rendered) {
-								rowIndex := firstRowIndex
-								if offset > 0 && offset-1 < len(groupIndicesCopy) {
-									rowIndex = groupIndicesCopy[offset-1]
-								}
-								if meta, ok := selectableLineFromRenderedLine(rowIndex, startBodyY+offset, line, false); ok {
-									selectable = append(selectable, meta)
-								}
-							}
-							return m.finalizeTranscriptBodyRow(rendered, selectable, gutter, startBodyY)
-						},
-					})
-					shownAny = true
-					previousKind = row.kind
-					havePreviousKind = true
-					index = nextIndex - 1
-					continue
-				}
-			}
-			// Blank-line separation before turns, including between flushed
-			// history and the first live row.
-			if (shownAny || m.flushedAny) && startsTurn(row.kind) {
-				if havePreviousKind && shouldRuleBeforeTurn(previousKind, row.kind) {
-					items = append(items, transcriptRuleBodyItem(contentWidth, gutter))
-				} else {
-					items = append(items, transcriptBlankBodyItem())
-				}
-			}
-			if (shownAny || (m.flushedAny && havePreviousKind)) && previousKind == rowUser && row.kind == rowReasoning {
-				items = append(items, transcriptBlankBodyItem())
-			}
-			// Breathing room between back-to-back tool cards in the same turn: a
-			// tool result collapses its call into one card, so consecutive cards
-			// would otherwise stack with no gap (the dense "wall" look). One blank
-			// line between them matches the reference agents. Turn-starters are
-			// separated above, so this only fires tool-card -> tool-card.
-			if shownAny && havePreviousKind && needsSeparatorBeforeToolCard(previousKind, row.kind) {
-				items = append(items, transcriptBlankBodyItem())
-			}
-			// A "Thought for X" reasoning header opens the next think→act group, so
-			// give it a blank above when it follows a tool card. Reasoning interleaves
-			// the tool cards (tool → thought → tool …), which breaks the
-			// tool-card→tool-card rule above; without this the groups pack into a wall.
-			if shownAny && havePreviousKind && row.kind == rowReasoning && isToolCardKind(previousKind) {
-				items = append(items, transcriptBlankBodyItem())
-			}
-			// The plan panel is no longer injected inline here — it is pinned
-			// above the composer (see footerView) so a streaming turn can't push
-			// it off-screen.
-			// Inject the specialist summary line once, before the first
-			// specialist card in this turn's contiguous group.
-			if row.kind == rowSpecialist && !specialistSummaryEmitted {
-				specialistSummaryEmitted = true
-				specialists := m.specialists.all()
-				if len(specialists) == 0 {
-					// Fall back to the specialist info carried by the
-					// transcript rows themselves (covers tests and any path
-					// where the tracker has been cleared).
-					for j := index; j < len(m.transcript); j++ {
-						r := m.transcript[j]
-						if r.kind != rowSpecialist || r.specialistInfo == nil {
-							break
-						}
-						specialists = append(specialists, *r.specialistInfo)
-					}
-				}
-				summary := renderSpecialistSummary(specialists, m.spinnerGlyph())
-				if summary != "" {
-					items = append(items, transcriptBlockBodyItem(transcriptBodyItemRow, -1, summary))
-					items = append(items, transcriptBlankBodyItem())
-				}
-			}
-			rowIndex, transcriptRow := index, row
-			bodyCap := cardBodyMaxLines
-			if detailed {
-				bodyCap = 0
-			}
-			heightCacheKey, heightCacheStable := m.transcriptRowBodyHeightCacheKeyOpts(transcriptRow, contentWidth, rc, bodyCap)
-			items = append(items, transcriptBodyItem{
-				kind:              transcriptBodyItemRow,
-				rowIndex:          rowIndex,
-				heightCacheKey:    heightCacheKey,
-				heightCacheStable: heightCacheStable,
-				render: func(startBodyY int) transcriptBodyRenderedItem {
-					rendered, selectable := renderRowFn(rowIndex, transcriptRow, contentWidth, rc, startBodyY)
-					return m.finalizeTranscriptBodyRow(rendered, selectable, gutter, startBodyY)
-				},
-			})
-			shownAny = true
-			previousKind = row.kind
-			havePreviousKind = true
-		}
+		state := transcriptFoldState{items: items, previousKind: previousKind, havePreviousKind: havePreviousKind}
+		// While a run is live, rows from the run's start onward can change (their
+		// tool card animates, their text streams), but every row before it is
+		// frozen. Fold the frozen prefix once (memoized) and refold only the live
+		// tail, so a streaming turn stays cheap on a long thread instead of
+		// re-folding the whole transcript every frame.
+		prefixEnd := maxInt(startIdx, minInt(m.runStartIndex, len(m.transcript)))
+		state = m.transcriptPrefixFold(state, startIdx, prefixEnd, width, emptyOverlay, detailed, rc, renderRowFn)
+		state = m.foldTranscriptRange(state, prefixEnd, len(m.transcript), width, detailed, rc, renderRowFn)
+		items = state.items
+		previousKind = state.previousKind
+		havePreviousKind = state.havePreviousKind
 		// The plan panel is pinned above the composer (footerView), not injected
 		// into the scrolling body, so there is nothing to emit here anymore.
 	}
@@ -394,6 +281,149 @@ func (m model) transcriptBaseBodyItems(width int, emptyOverlay string, detailed 
 		items:            items,
 		previousKind:     previousKind,
 		havePreviousKind: havePreviousKind,
+	}
+}
+
+// foldTranscriptRange appends the body items for transcript rows [start, end)
+// onto state, carrying the layout continuity state (shown-any flag, previous
+// visible kind, and the one-shot specialist summary flag) across the range
+// boundary. It is the shared fold body for both the memoized settled prefix and
+// the live tail — splitting a range here must render identically to folding the
+// whole transcript in one pass.
+func (m model) foldTranscriptRange(state transcriptFoldState, start, end int, width int, detailed bool, rc rowContext, renderRowFn transcriptRowDispatchFn) transcriptFoldState {
+	items := state.items
+	shownAny := state.shownAny
+	previousKind := state.previousKind
+	havePreviousKind := state.havePreviousKind
+	specialistSummaryEmitted := state.specialistSummaryEmitted
+	contentWidth := transcriptContentWidth(width)
+	gutter := transcriptGutter(width)
+	for index := start; index < end; index++ {
+		row := m.transcript[index]
+		// A welcome row carries no Lime visual (the empty state replaced it)
+		// and a resolved tool call collapses into its result's card.
+		if row.kind == rowWelcome || rc.skip(row) {
+			continue
+		}
+		if isSuccessfulExploreResult(row) {
+			groupRows, groupIndices, nextIndex := collectExploreResultGroup(m.transcript, index, rc)
+			if len(groupRows) > 0 {
+				if (shownAny || m.flushedAny) && startsTurn(row.kind) {
+					items = append(items, transcriptBlankBodyItem())
+				}
+				if shownAny && havePreviousKind && needsSeparatorBeforeToolCard(previousKind, row.kind) {
+					items = append(items, transcriptBlankBodyItem())
+				}
+				firstRowIndex := groupIndices[0]
+				groupRowsCopy := append([]transcriptRow(nil), groupRows...)
+				groupIndicesCopy := append([]int(nil), groupIndices...)
+				block := m.renderExploreResultGroup(groupRowsCopy, contentWidth, rc)
+				items = append(items, transcriptBodyItem{
+					kind:              transcriptBodyItemRow,
+					rowIndex:          firstRowIndex,
+					heightCacheKey:    transcriptBlockBodyHeightCacheKey(transcriptBodyItemRow, block),
+					heightCacheStable: true,
+					render: func(startBodyY int) transcriptBodyRenderedItem {
+						rendered := m.renderExploreResultGroup(groupRowsCopy, contentWidth, rc)
+						selectable := make([]transcriptSelectableLine, 0, len(groupIndicesCopy)+1)
+						for offset, line := range viewLines(rendered) {
+							rowIndex := firstRowIndex
+							if offset > 0 && offset-1 < len(groupIndicesCopy) {
+								rowIndex = groupIndicesCopy[offset-1]
+							}
+							if meta, ok := selectableLineFromRenderedLine(rowIndex, startBodyY+offset, line, false); ok {
+								selectable = append(selectable, meta)
+							}
+						}
+						return m.finalizeTranscriptBodyRow(rendered, selectable, gutter, startBodyY)
+					},
+				})
+				shownAny = true
+				previousKind = row.kind
+				havePreviousKind = true
+				index = nextIndex - 1
+				continue
+			}
+		}
+		// Blank-line separation before turns, including between flushed
+		// history and the first live row.
+		if (shownAny || m.flushedAny) && startsTurn(row.kind) {
+			if havePreviousKind && shouldRuleBeforeTurn(previousKind, row.kind) {
+				items = append(items, transcriptRuleBodyItem(contentWidth, gutter))
+			} else {
+				items = append(items, transcriptBlankBodyItem())
+			}
+		}
+		if (shownAny || (m.flushedAny && havePreviousKind)) && previousKind == rowUser && row.kind == rowReasoning {
+			items = append(items, transcriptBlankBodyItem())
+		}
+		// Breathing room between back-to-back tool cards in the same turn: a
+		// tool result collapses its call into one card, so consecutive cards
+		// would otherwise stack with no gap (the dense "wall" look). One blank
+		// line between them matches the reference agents. Turn-starters are
+		// separated above, so this only fires tool-card -> tool-card.
+		if shownAny && havePreviousKind && needsSeparatorBeforeToolCard(previousKind, row.kind) {
+			items = append(items, transcriptBlankBodyItem())
+		}
+		// A "Thought for X" reasoning header opens the next think→act group, so
+		// give it a blank above when it follows a tool card. Reasoning interleaves
+		// the tool cards (tool → thought → tool …), which breaks the
+		// tool-card→tool-card rule above; without this the groups pack into a wall.
+		if shownAny && havePreviousKind && row.kind == rowReasoning && isToolCardKind(previousKind) {
+			items = append(items, transcriptBlankBodyItem())
+		}
+		// The plan panel is no longer injected inline here — it is pinned
+		// above the composer (see footerView) so a streaming turn can't push
+		// it off-screen.
+		// Inject the specialist summary line once, before the first
+		// specialist card in this turn's contiguous group.
+		if row.kind == rowSpecialist && !specialistSummaryEmitted {
+			specialistSummaryEmitted = true
+			specialists := m.specialists.all()
+			if len(specialists) == 0 {
+				// Fall back to the specialist info carried by the
+				// transcript rows themselves (covers tests and any path
+				// where the tracker has been cleared).
+				for j := index; j < len(m.transcript); j++ {
+					r := m.transcript[j]
+					if r.kind != rowSpecialist || r.specialistInfo == nil {
+						break
+					}
+					specialists = append(specialists, *r.specialistInfo)
+				}
+			}
+			summary := renderSpecialistSummary(specialists, m.spinnerGlyph())
+			if summary != "" {
+				items = append(items, transcriptBlockBodyItem(transcriptBodyItemRow, -1, summary))
+				items = append(items, transcriptBlankBodyItem())
+			}
+		}
+		rowIndex, transcriptRow := index, row
+		bodyCap := cardBodyMaxLines
+		if detailed {
+			bodyCap = 0
+		}
+		heightCacheKey, heightCacheStable := m.transcriptRowBodyHeightCacheKeyOpts(transcriptRow, contentWidth, rc, bodyCap)
+		items = append(items, transcriptBodyItem{
+			kind:              transcriptBodyItemRow,
+			rowIndex:          rowIndex,
+			heightCacheKey:    heightCacheKey,
+			heightCacheStable: heightCacheStable,
+			render: func(startBodyY int) transcriptBodyRenderedItem {
+				rendered, selectable := renderRowFn(rowIndex, transcriptRow, contentWidth, rc, startBodyY)
+				return m.finalizeTranscriptBodyRow(rendered, selectable, gutter, startBodyY)
+			},
+		})
+		shownAny = true
+		previousKind = row.kind
+		havePreviousKind = true
+	}
+	return transcriptFoldState{
+		items:                    items,
+		shownAny:                 shownAny,
+		previousKind:             previousKind,
+		havePreviousKind:         havePreviousKind,
+		specialistSummaryEmitted: specialistSummaryEmitted,
 	}
 }
 
@@ -1573,6 +1603,11 @@ func (m model) toggleTranscriptRow(rowIndex int) model {
 		return m
 	}
 	rows[rowIndex] = toggledTranscriptRow(rows[rowIndex])
+	// Every in-place row rewrite bumps the mutation counter so the settled-prefix
+	// fold cache (keyed on it) is invalidated, even when the toggled row lives in
+	// the frozen prefix — otherwise the memoized items would keep the old
+	// collapsed/expanded visual.
+	m.transcriptMutations++
 	// The row's bodyY geometry changes on expand/collapse while the mouse stays
 	// put, so a stale transcript hover could highlight the wrong row.
 	// Re-resolve it on the next motion (same reason a wheel-scroll clears it).

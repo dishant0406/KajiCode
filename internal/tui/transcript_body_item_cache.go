@@ -106,6 +106,17 @@ func (m model) transcriptBodyBaseItemCacheKey(width int, emptyOverlay string, de
 	if m.titleBarInTranscriptBody() {
 		return "", false
 	}
+	// Check cacheability FIRST, before hashing every row. A live run makes its
+	// own tool calls / undecided prompts uncacheable, and the fingerprint loop
+	// below would otherwise hash the whole transcript (O(n) per frame) only to
+	// throw the result away. One cheap pass to find the blocker keeps a streaming
+	// turn proportional to the live tail, not the whole history.
+	rc := buildRowContext(m.transcript)
+	for _, row := range m.transcript {
+		if !transcriptBodyBaseRowCacheable(m.pending, m.activeRunID, row, rc) {
+			return "", false
+		}
+	}
 	hash := newTranscriptFingerprintHash()
 	writeFingerprintField(&hash, "transcript-body-items-v1")
 	writeFingerprintField(&hash, strconv.Itoa(width))
@@ -116,21 +127,22 @@ func (m model) transcriptBodyBaseItemCacheKey(width int, emptyOverlay string, de
 	writeFingerprintField(&hash, m.selectedFile)
 	writeFingerprintField(&hash, m.cwd)
 	writeFingerprintField(&hash, strconv.Itoa(len(m.transcript)))
-	rc := buildRowContext(m.transcript)
 	for _, row := range m.transcript {
-		if !m.transcriptBodyBaseRowCacheable(row, rc) {
-			return "", false
-		}
 		writeFingerprintField(&hash, transcriptRowRenderFingerprint(row))
 	}
 	return hash.sumString(), true
 }
 
-func (m model) transcriptBodyBaseRowCacheable(row transcriptRow, rc rowContext) bool {
+// transcriptBodyBaseRowCacheable reports whether a row's live render can be
+// reused across frames. It is a free function (not a model method) because the
+// loop above calls it once per transcript row every frame; a value-receiver
+// method would copy the ~22 KB model struct on each call, which dominated the
+// per-frame cost of long transcripts.
+func transcriptBodyBaseRowCacheable(pending bool, activeRunID int, row transcriptRow, rc rowContext) bool {
 	if row.kind == rowSpecialist && row.specialistInfo != nil && row.specialistInfo.status == specialistRunning {
 		return false
 	}
-	if !m.pending || row.runID == 0 || row.runID != m.activeRunID || rc.skip(row) {
+	if !pending || row.runID == 0 || row.runID != activeRunID || rc.skip(row) {
 		return true
 	}
 	if row.kind == rowToolCall {

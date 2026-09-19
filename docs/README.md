@@ -7,6 +7,9 @@ KajiCode.
 
 - [Install](INSTALL.md)
 - [Update flow](UPDATE.md)
+- [Terminal setup](TERMINALS.md)
+- [TUI themes](THEMES.md)
+- [Extending KajiCode](EXTENDING.md)
 
 ## Automation And Integrations
 
@@ -19,6 +22,8 @@ KajiCode.
 - [Architecture](architecture.md)
 - [How KajiCode Works](HOW_KAJICODE_WORKS.md)
 - [Multi-Model Routing](MULTI_MODEL_ROUTING.md)
+- [Attachment thumbnails](attachment-thumbnails.md)
+- [npm packaging](NPM_PACKAGING.md)
 - [npm wrapper smoke checklist](NPM_WRAPPER_SMOKE.md)
 - [Benchmarks](BENCHMARK.md)
 - [Performance benchmarks](PERFORMANCE.md)

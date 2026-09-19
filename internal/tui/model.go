@@ -204,6 +204,19 @@ type model struct {
 	transcriptBodyHeights *transcriptBodyHeightCache
 	transcriptBodyCache   *transcriptBodyItemCache
 	transcriptScrollCache *transcriptScrollMetricsCache
+	// transcriptPrefixCache memoizes the body-item fold of the settled prefix
+	// (every row before the live run's first row) so a streaming turn only
+	// refolds the rows it can still change instead of the whole history. See
+	// transcriptPrefixFold. It is a pointer so the cache survives the
+	// value-receiver View/Update copies, like transcriptBodyCache.
+	transcriptPrefixCache *transcriptPrefixCache
+	// runStartIndex is the transcript length when the active run began; rows
+	// before it cannot change while the run is live. Zero when idle.
+	runStartIndex int
+	// transcriptMutations counts in-place transcript row rewrites (expand/collapse,
+	// status-card upserts). The settled-prefix fold cache keys on it so a row
+	// edited inside the frozen prefix invalidates the memoized items.
+	transcriptMutations   int
 	sidebarDerivedCache   *sidebarDerivedCache
 	input                 textinput.Model
 	composer              composerState
@@ -923,6 +936,7 @@ func newModel(ctx context.Context, options Options) model {
 		transcriptBodyHeights:       newTranscriptBodyHeightCache(defaultTranscriptBodyHeightCacheMaxEntries),
 		transcriptBodyCache:         newTranscriptBodyItemCache(),
 		transcriptScrollCache:       newTranscriptScrollMetricsCache(),
+		transcriptPrefixCache:       newTranscriptPrefixCache(),
 		sidebarDerivedCache:         newSidebarDerivedCache(),
 		prService:                   prService,
 		prState:                     prService.GetState(),
@@ -2368,6 +2382,7 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.runCancel = nil
 		m.activeRunID = 0
+		m.runStartIndex = 0
 		m.plan.frozenAt = m.now() // freeze the plan clock while idle (no run in flight)
 		// A fully successful turn means the task is done. Weaker models often
 		// forget the final todo_write, leaving the panel stuck mid-progress;
@@ -5177,6 +5192,9 @@ func (m model) beginRun(cancel context.CancelFunc) model {
 	m.activeRunID = m.runID
 	m.runCancel = cancel
 	m.pending = true
+	// Rows before this point are frozen for the whole run, so the body fold can
+	// reuse their memoized items instead of rebuilding the history each frame.
+	m.runStartIndex = len(m.transcript)
 	m.activePhase = agent.PhaseEvent{}
 	m.clearStreamRender()
 	// Clear per-run tracking state so stale specialists and plans from the
@@ -5286,6 +5304,7 @@ func (m *model) cancelRun() {
 	m.activePhase = agent.PhaseEvent{}
 	m.runCancel = nil
 	m.activeRunID = 0
+	m.runStartIndex = 0
 	m.cancelConfirmActive = false // whatever path got here, there's nothing left to confirm cancelling
 	m.plan.frozenAt = m.now()     // freeze the plan clock while idle (no run in flight)
 	m.pendingPermission = nil

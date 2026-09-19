@@ -109,10 +109,37 @@ func longThreadScrollBenchmarkModel(pending bool) model {
 	if pending {
 		m.pending = true
 		m.activeRunID = 42
+		// A real pending run sets runStartIndex in beginRun; mirror it so the
+		// settled-prefix fast path is exercised, like production.
+		m.runStartIndex = len(m.transcript)
 		m.streamingText = []byte("still working")
 		m.streamingTextHasContent = true
 		m.streamingTextTail = "still working"
 	}
 	_ = m.View()
 	return m
+}
+
+// BenchmarkStreamingTurnLongThread measures one View() per streamed frame during
+// a live run whose tail carries an active (animating) tool card — the shape that
+// previously re-folded the entire history every frame. It guards the settled-
+// prefix fast path: the frozen history must be reused, not re-rendered, so the
+// frame cost tracks the live tail rather than the whole thread.
+func BenchmarkStreamingTurnLongThread(b *testing.B) {
+	for _, rowCount := range []int{1000, 6000} {
+		b.Run(stringKey(rowCount), func(b *testing.B) {
+			m := longThreadScrollBenchmarkModel(true)
+			m.transcript = appendTranscriptRow(m.transcript, transcriptRow{
+				kind: rowToolCall, id: "live", tool: "bash", runID: m.activeRunID, detail: "go test ./...",
+			})
+			_ = m.View()
+			b.ReportAllocs()
+			b.ResetTimer()
+			for range b.N {
+				m.streamingText = append(m.streamingText, 'x')
+				m.streamingTextTail = "still working"
+				_ = m.View()
+			}
+		})
+	}
 }
