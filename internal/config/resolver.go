@@ -140,9 +140,6 @@ func Resolve(options ResolveOptions) (ResolvedConfig, error) {
 			return ResolvedConfig{}, fmt.Errorf("invalid notify.focusMode %q: expected unfocused, always, or focused", focusMode)
 		}
 	}
-	if err := validateSTTConfig(cfg.STT); err != nil {
-		return ResolvedConfig{}, err
-	}
 	if issues := validateHarnessConfig(cfg.Harness); len(issues) > 0 {
 		return ResolvedConfig{}, fmt.Errorf("%s: %s", issues[0].FieldPath, issues[0].Message)
 	}
@@ -163,9 +160,7 @@ func Resolve(options ResolveOptions) (ResolvedConfig, error) {
 		ActiveProvider: active.Name,
 		Providers:      providers,
 		Provider:       active,
-		ModelRoles:     cloneStringMap(cfg.ModelRoles),
 		DefaultModel:   cfg.DefaultModel,
-		ActiveRole:     cfg.ActiveRole,
 		MaxTurns:       cfg.MaxTurns,
 		MCP:            cfg.MCP,
 		Sandbox:        cfg.Sandbox,
@@ -178,7 +173,6 @@ func Resolve(options ResolveOptions) (ResolvedConfig, error) {
 		KeyBindings:    cfg.KeyBindings,
 		LocalControl:   cfg.LocalControl,
 		Images:         cfg.Images,
-		STT:            cfg.STT,
 	}, nil
 }
 
@@ -283,12 +277,7 @@ func mergeConfig(dst *FileConfig, src FileConfig) {
 	}
 	mergeLocalControlConfig(&dst.LocalControl, src.LocalControl)
 	mergeKeyBindings(&dst.KeyBindings, src.KeyBindings)
-	mergeSTTConfig(&dst.STT, src.STT)
-	if strings.TrimSpace(src.ActiveRole) != "" {
-		dst.ActiveRole = strings.TrimSpace(src.ActiveRole)
-	}
 	mergeRoleOverrides(dst, Overrides{
-		ModelRoles:   src.ModelRoles,
 		DefaultModel: src.DefaultModel,
 		Images:       src.Images,
 	})
@@ -776,7 +765,6 @@ func applyOverrides(cfg *FileConfig, overrides Overrides) {
 	mergeLearningConfig(&cfg.Learning, overrides.Learning)
 	mergeLocalControlConfig(&cfg.LocalControl, overrides.LocalControl)
 	mergeKeyBindings(&cfg.KeyBindings, overrides.KeyBindings)
-	mergeSTTConfig(&cfg.STT, overrides.STT)
 	mergeRoleOverrides(cfg, overrides)
 	for _, provider := range overrides.Providers {
 		mergeProvider(cfg, provider)
@@ -831,80 +819,12 @@ func mergeKeyBindings(dst *KeyBindingsConfig, src KeyBindingsConfig) {
 	}
 }
 
-// mergeSTTConfig overlays any set field of src onto dst. Each field carries its
-// own "unset" sentinel (empty string, 0, or nil *bool), matching how the other
-// section mergers detect intent.
-func mergeSTTConfig(dst *STTConfig, src STTConfig) {
-	if src.Provider != "" {
-		dst.Provider = src.Provider
-	}
-	if src.StreamProvider != "" {
-		dst.StreamProvider = src.StreamProvider
-	}
-	if src.Streaming != nil {
-		dst.Streaming = src.Streaming
-	}
-	if src.Model != "" {
-		dst.Model = src.Model
-	}
-	if src.StreamModel != "" {
-		dst.StreamModel = src.StreamModel
-	}
-	if src.LocalModelPath != "" {
-		dst.LocalModelPath = src.LocalModelPath
-	}
-	if src.LocalBinary != "" {
-		dst.LocalBinary = src.LocalBinary
-	}
-	if src.LocalServerBinary != "" {
-		dst.LocalServerBinary = src.LocalServerBinary
-	}
-	if src.LocalServerPort != 0 {
-		dst.LocalServerPort = src.LocalServerPort
-	}
-	if src.EngineVersion != "" {
-		dst.EngineVersion = src.EngineVersion
-	}
-	if src.NumThreads != 0 {
-		dst.NumThreads = src.NumThreads
-	}
-	if src.Language != "" {
-		dst.Language = src.Language
-	}
-	if src.MaxDurationSeconds != 0 {
-		dst.MaxDurationSeconds = src.MaxDurationSeconds
-	}
-	if src.SilenceAutoStop != nil {
-		dst.SilenceAutoStop = src.SilenceAutoStop
-	}
-	if src.AutoSubmit != nil {
-		dst.AutoSubmit = src.AutoSubmit
-	}
-	if src.WindowsAudioDevice != "" {
-		dst.WindowsAudioDevice = src.WindowsAudioDevice
-	}
-}
-
-// mergeRoleOverrides copies the CLI override layer's model routing into the file
-// config: a merged ModelRoles map, a DefaultModel, and the VisionRouting image
-// setting. Only set fields override; an empty override leaves the file value intact.
+// mergeRoleOverrides copies the CLI override layer's DefaultModel and image
+// settings into the file config. Only set fields override; an empty override
+// leaves the file value intact.
 func mergeRoleOverrides(cfg *FileConfig, overrides Overrides) {
-	if len(overrides.ModelRoles) > 0 {
-		if cfg.ModelRoles == nil {
-			cfg.ModelRoles = map[string]string{}
-		}
-		for k, v := range overrides.ModelRoles {
-			cfg.ModelRoles[k] = v
-		}
-	}
 	if strings.TrimSpace(overrides.DefaultModel) != "" {
 		cfg.DefaultModel = strings.TrimSpace(overrides.DefaultModel)
-	}
-	if strings.TrimSpace(overrides.ActiveRole) != "" {
-		cfg.ActiveRole = strings.TrimSpace(overrides.ActiveRole)
-	}
-	if strings.TrimSpace(overrides.Images.VisionRouting) != "" {
-		cfg.Images.VisionRouting = strings.TrimSpace(overrides.Images.VisionRouting)
 	}
 	if overrides.Images.MaxWidth > 0 {
 		cfg.Images.MaxWidth = overrides.Images.MaxWidth
@@ -918,50 +838,6 @@ func mergeRoleOverrides(cfg *FileConfig, overrides Overrides) {
 	if overrides.Images.AutoResize != nil {
 		cfg.Images.AutoResize = overrides.Images.AutoResize
 	}
-}
-
-// cloneStringMap returns a defensive copy of a string→string map, or nil for a nil
-// input, so ResolvedConfig never aliases the caller-owned FileConfig map.
-func cloneStringMap(src map[string]string) map[string]string {
-	if src == nil {
-		return nil
-	}
-	dst := make(map[string]string, len(src))
-	for k, v := range src {
-		dst[k] = v
-	}
-	return dst
-}
-
-// validateSTTConfig rejects unknown provider/streamProvider values and a
-// negative maxDurationSeconds at load time — a clear startup error naming the
-// bad value and the valid options, never a silent fallback the user did not ask
-// for (§11a).
-func validateSTTConfig(cfg STTConfig) error {
-	if cfg.Provider != "" {
-		switch cfg.Provider {
-		case STTProviderLocal, STTProviderGroq, STTProviderOpenAI:
-		default:
-			return fmt.Errorf("invalid stt.provider %q: expected local, groq, or openai", cfg.Provider)
-		}
-	}
-	if cfg.StreamProvider != "" {
-		switch cfg.StreamProvider {
-		case STTProviderLocal, STTProviderDeepgram, STTProviderOpenAI:
-		default:
-			return fmt.Errorf("invalid stt.streamProvider %q: expected local, deepgram, or openai", cfg.StreamProvider)
-		}
-	}
-	if cfg.MaxDurationSeconds < 0 {
-		return fmt.Errorf("invalid stt.maxDurationSeconds %d: must be >= 0 (0 uses the default)", cfg.MaxDurationSeconds)
-	}
-	if cfg.NumThreads < 0 {
-		return fmt.Errorf("invalid stt.numThreads %d: must be >= 0 (0 uses the engine default)", cfg.NumThreads)
-	}
-	if cfg.LocalServerPort < 0 || cfg.LocalServerPort > 65535 {
-		return fmt.Errorf("invalid stt.localServerPort %d: must be between 1 and 65535 (0 uses the default)", cfg.LocalServerPort)
-	}
-	return nil
 }
 
 func hasProviderFields(profile ProviderProfile) bool {

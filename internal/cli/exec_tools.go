@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/dishant0406/KajiCode/internal/agent"
-	"github.com/dishant0406/KajiCode/internal/specmode"
 	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
@@ -50,14 +49,6 @@ func validateExecToolFilters(options execOptions, registry *tools.Registry) erro
 	for _, name := range options.enabledTools {
 		if disabled[name] {
 			return execUsageError{fmt.Sprintf("Tool cannot be both enabled and disabled: %s", name)}
-		}
-	}
-	if options.useSpec {
-		if disabled[specmode.SubmitToolName] {
-			return execUsageError{"--use-spec requires submit_spec; remove it from --disabled-tools."}
-		}
-		if len(options.enabledTools) > 0 && !toolListContains(options.enabledTools, specmode.SubmitToolName) {
-			return execUsageError{"--use-spec requires submit_spec; include it in --enabled-tools."}
 		}
 	}
 	return nil

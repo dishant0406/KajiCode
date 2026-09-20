@@ -26,7 +26,6 @@ import (
 	"github.com/dishant0406/KajiCode/internal/providers"
 	"github.com/dishant0406/KajiCode/internal/sandbox"
 	"github.com/dishant0406/KajiCode/internal/sessions"
-	"github.com/dishant0406/KajiCode/internal/specmode"
 	"github.com/dishant0406/KajiCode/internal/streamjson"
 	"github.com/dishant0406/KajiCode/internal/tools"
 	"github.com/dishant0406/KajiCode/internal/trace"
@@ -67,10 +66,6 @@ type execOptions struct {
 	imagePaths  []string
 	mode        string
 	model       string
-	// role selects the task role to route the run to (e.g. "design"), driving
-	// multi-model task routing. Empty means no explicit role — the default model
-	// and images.visionRouting govern model selection.
-	role string
 	// modelProfile captures the legacy --profile flag. It is accepted for
 	// backward compatibility (so old invocations do not error) but is
 	// intentionally inert: nothing consumes it. Model selection is driven by
@@ -85,9 +80,6 @@ type execOptions struct {
 	// from the legacy inert --profile above. See internal/execprofile.
 	execProfile           string
 	reasoningEffort       string
-	useSpec               bool
-	specModel             string
-	specReasoningEffort   string
 	maxTurns              int
 	cwd                   string
 	inputFormat           execInputFormat
@@ -258,9 +250,6 @@ func runExec(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) in
 	if storedPermissionMode != "" {
 		permissionMode = storedPermissionMode
 	}
-	if options.useSpec {
-		permissionMode = agent.PermissionModeSpecDraft
-	}
 	mcpRuntime, mcpSkip, err := registerMCPToolsForWorkspace(context.Background(), workspaceRoot, registry, deps, execMCPAutonomy(options), trustRoot)
 	if err != nil {
 		return writeExecProviderError(stdout, stderr, options.outputFormat, "mcp_error", err.Error())
@@ -271,9 +260,6 @@ func runExec(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) in
 	// tool below. Done before --list-tools and filter validation so plugin tools
 	// are listable and filter-validatable; it fails OPEN (a bad plugin is skipped).
 	pluginActivation := activatePlugins(workspaceRoot, registry, deps, stderr, trustRoot)
-	if options.useSpec {
-		specmode.RegisterDraftTools(registry, workspaceRoot, deps.now)
-	}
 	// Build the model registry once and reuse it across every model-aware
 	// lookup in this exec run (model resolution, reasoning-effort advisory, and
 	// context-window sizing). DefaultRegistry builds the full catalog and
@@ -284,9 +270,6 @@ func runExec(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) in
 
 	overrides := config.Overrides{}
 	modelOverride := options.model
-	if options.useSpec && options.specModel != "" {
-		modelOverride = options.specModel
-	}
 	if modelOverride != "" {
 		resolvedModel, notice := resolveSelectedModel(modelRegistry, modelOverride)
 		overrides.Provider.Model = resolvedModel
@@ -316,49 +299,11 @@ func runExec(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) in
 	// on one record. The provider slug is the provider's catalog id; Resolve falls
 	// back to the canonical row when that slug has no row of its own.
 	modelsource.Bind(resolved.Provider.CatalogID, resolved.Provider.Model)
-	// Multi-model task routing: build the RoleRouter once and share it across exec
-	// (role dispatch, DefaultModel seeding, vision routing) and the TUI. deps.newProvider
-	// is wrapped by fillAppDeps to apply the stored key, so role/vision routing builds a
-	// provider for ANY profile and stays authenticated (same contract as escalation).
-	router := agent.RoleRouter{
-		Resolved: resolved,
-		Registry: modelRegistry,
-		NewProvider: func(_ context.Context, p config.ProviderProfile) (kajicoderuntime.Provider, error) {
-			return deps.newProvider(p)
-		},
-		DefaultModel: resolved.DefaultModel,
-	}
-	// When no explicit --model/--spec-model was given AND a DefaultModel is configured,
-	// seed the run's active profile model with the effective model (DefaultModel wins
-	// over the profile's own Model). The provider built below then serves the seeded
-	// model; later role/vision routing can still swap it.
+	// DefaultModel, when configured and no explicit --model was given, seeds the
+	// run's active profile model (it wins over the profile's own Model).
 	if modelOverride == "" && resolved.DefaultModel != "" {
-		resolved.Provider.Model = router.EffectiveModel()
-	}
-	// Wire multi-model task routing into the loop. Opt-in: it routes ONLY when an
-	// explicit --role is given (headless has no live plan/write signal for the
-	// auto-classifier); otherwise RoleFor returns "" and the loop is byte-identical
-	// to today. Current resolves the role's provider profile via the router, and
-	// ContextWindowFor refreshes the compactor budget on a model swap.
-	var roleRouting *agent.RoleRouting
-	if strings.TrimSpace(options.role) != "" {
-		explicitRole := strings.TrimSpace(options.role)
-		roleRouting = &agent.RoleRouting{
-			Current: func(ctx context.Context, role string) (agent.Provider, config.ProviderProfile, bool) {
-				profile, ok := router.ProfileFor(role)
-				if !ok || profile.Model == "" {
-					return nil, config.ProviderProfile{}, false
-				}
-				p, err := deps.newProvider(profile)
-				if err != nil || p == nil {
-					return nil, config.ProviderProfile{}, false
-				}
-				return p, profile, true
-			},
-			RoleFor: func(agent.RoleContext) string { return explicitRole },
-			ContextWindowFor: func(p config.ProviderProfile) int {
-				return modelContextWindow(modelRegistry, p.Model)
-			},
+		if entry, _, ok := modelRegistry.ResolveWithFallback(resolved.DefaultModel); ok && entry.APIModel != "" {
+			resolved.Provider.Model = entry.APIModel
 		}
 	}
 	var displacedMaxTurns int
@@ -422,39 +367,13 @@ func runExec(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) in
 	// agent.Options.Images wiring below. Without this merge, images sent over
 	// stream-json are parsed and validated but never reach the agent.
 	images = append(images, streamImages...)
-	// Vision routing (D1): when images are present and the effective model is not
-	// vision-capable, the whole run's provider is switched to a vision-capable
-	// profile instead of dropping the images — unless visionRouting is "off", which
-	// preserves the legacy drop+warn. "model" uses ModelRoles["vision"]; "auto" picks
-	// the first vision-capable available profile. Routing engages only when a
-	// vision-capable profile actually differs from the effective model; any routing
-	// failure falls through to drop+warn (image input is best-effort, never fatal).
-	effectiveModel := router.EffectiveModel()
-	needVision := len(images) > 0 && !modelregistry.SupportsVision(modelRegistry, effectiveModel)
-	if needVision {
-		switch resolved.Images.EffectiveVisionRouting() {
-		case "model":
-			if profile, ok := router.ProfileFor("vision"); ok && profile.Model != "" && profile.Model != effectiveModel {
-				if err := installVisionProvider(&resolved, profile, stderr); err != nil {
-					return writeExecProviderError(stdout, stderr, options.outputFormat, "provider_error", err.Error())
-				}
-				break
-			}
-			fallthrough // per-role vision route failed -> try auto
-		case "auto":
-			if profile, ok := firstVisionCapableProvider(resolved, modelRegistry); ok && profile.Model != "" && profile.Model != effectiveModel {
-				if err := installVisionProvider(&resolved, profile, stderr); err != nil {
-					return writeExecProviderError(stdout, stderr, options.outputFormat, "provider_error", err.Error())
-				}
-				break
-			}
-			fallthrough
-		default: // "off" or routing failed to engage
-			if _, err := fmt.Fprintf(stderr, "Model %s does not support image input; ignoring %d image(s).\n", effectiveModel, len(images)); err != nil {
-				return exitCrash
-			}
-			images = nil
+	// Image input is best-effort: when the effective model is not vision-capable,
+	// drop the images and warn rather than failing the run.
+	if len(images) > 0 && !modelregistry.SupportsVision(modelRegistry, resolved.Provider.Model) {
+		if _, err := fmt.Fprintf(stderr, "Model %s does not support image input; ignoring %d image(s).\n", resolved.Provider.Model, len(images)); err != nil {
+			return exitCrash
 		}
+		images = nil
 	}
 	execScope, err := sandbox.NewScope(workspaceRoot, append(append([]string{}, resolved.Sandbox.AdditionalWriteRoots...), options.addDirs...))
 	if err != nil {
@@ -466,9 +385,6 @@ func runExec(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) in
 		return writeExecProviderError(stdout, stderr, options.outputFormat, "sandbox_error", err.Error())
 	}
 	runReasoningEffort := options.reasoningEffort
-	if options.useSpec && options.specReasoningEffort != "" {
-		runReasoningEffort = options.specReasoningEffort
-	}
 	// Evaluate the --reasoning-effort advisory against the EFFECTIVE resolved
 	// model (resolved.Provider.Model), not the override. Without an explicit
 	// --model the override model is empty, so checking it here would silently
@@ -563,42 +479,6 @@ func runExec(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) in
 	notify.MaybeAddWebhookSink(notifier, os.Getenv, func(format string, args ...any) {
 		fmt.Fprintf(stderr, "[notify] "+format+"\n", args...)
 	})
-	// Spec-draft runs synthesize a prompt offline and never drive a model turn, so
-	// there is no per-turn trace to emit. Reject --trace / KAJICODE_TRACE up front with
-	// a clear error rather than silently accepting and writing nothing.
-	if options.useSpec && resolveTracePath(options) != "" {
-		return writeExecFormatUsageError(stdout, stderr, options.outputFormat, "--trace / KAJICODE_TRACE are not supported for spec-draft runs")
-	}
-	if options.useSpec {
-		return runExecSpecDraft(execSpecDraftRun{
-			options:            options,
-			stdout:             stdout,
-			stderr:             stderr,
-			deps:               deps,
-			workspaceRoot:      workspaceRoot,
-			trustRoot:          trustRoot,
-			mcpSkip:            mcpSkip,
-			registry:           registry,
-			modelRegistry:      modelRegistry,
-			resolved:           resolved,
-			runMetadata:        runMetadata,
-			provider:           provider,
-			sandboxEngine:      sandboxEngine,
-			prompt:             prompt,
-			sessionTitle:       sessionTitle,
-			images:             images,
-			reasoningEffort:    forwardEffort,
-			specPermissionMode: permissionMode,
-			notifier:           notifier,
-			// The profile displaced resolved.MaxTurns above, so the spec-draft
-			// run arms the same escalation policy as the main run (in practice
-			// only the failure-streak and risky-mutation triggers can fire
-			// here: the draft runs without the completion gate or a
-			// self-corrector).
-			profilePolicy: execProfile.Policy(displacedMaxTurns,
-				specProfileEffortFilled(execProfileFilledEffort, options.specReasoningEffort)),
-		})
-	}
 
 	preparedSession := sessions.PreparedExec{}
 	agentPrompt := prompt
@@ -750,7 +630,6 @@ func runExec(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) in
 		ModelSwitcher:        modelSwitcher,
 		TurnSessionProvider:  turnSessions,
 		ModelSessionSwitcher: modelSessionSwitcher,
-		RoleRouting:          roleRouting,
 		ReasoningEffort:      forwardEffort,
 		Trace:                traceRecorder,
 		Cwd:                  workspaceRoot,
@@ -1235,37 +1114,6 @@ func resolveExecImages(paths []string, workspaceRoot string, imagesCfg config.Im
 	return images, nil
 }
 
-// firstVisionCapableProvider returns the first configured profile whose model is
-// vision-capable. Used by vision routing (images.visionRouting=auto) to pick a
-// profile that can accept the run's image attachments.
-func firstVisionCapableProvider(resolved config.ResolvedConfig, registry modelregistry.Registry) (config.ProviderProfile, bool) {
-	if len(resolved.Providers) == 0 {
-		return config.ProviderProfile{}, false
-	}
-	for _, p := range resolved.Providers {
-		if p.Model == "" {
-			continue
-		}
-		if modelregistry.SupportsVision(registry, p.Model) {
-			return p, true
-		}
-	}
-	return config.ProviderProfile{}, false
-}
-
-// installVisionProvider swaps the run's effective provider to the vision-capable
-// profile and emits a notice. Because the run provider and currentModel are built
-// LATER from resolved.Provider (buildProvider / `currentModel :=`), mutating
-// resolved.Provider here is sufficient for the whole run to use the vision profile.
-func installVisionProvider(resolved *config.ResolvedConfig, profile config.ProviderProfile, stderr io.Writer) error {
-	old := resolved.Provider.Model
-	resolved.Provider = profile
-	if _, err := fmt.Fprintf(stderr, "Vision routing: model %s does not support images; using %s for this run.\n", old, profile.Model); err != nil {
-		return err
-	}
-	return nil
-}
-
 func writeExecUsageError(stderr io.Writer, message string) int {
 	if _, err := fmt.Fprintf(stderr, "[kajicode] %s\n", message); err != nil {
 		return exitCrash
@@ -1380,18 +1228,10 @@ func applyExecProfile(options *execOptions) (execprofile.Profile, bool, error) {
 	// profiles apply), so a profile's self-correct knob is meaningless there.
 	// Project it away rather than erroring: the user asked for a thorough
 	// DRAFT, and the profile's other knobs (budget, effort) apply to it fine.
-	if profile.SelfCorrect && !options.useSpec {
+	if profile.SelfCorrect {
 		options.selfCorrect = true
 	}
 	return profile, effortFilled, nil
-}
-
-// specProfileEffortFilled reports whether the profile's effort fill actually
-// governs the spec-draft run. An explicit --spec-reasoning-effort replaces the
-// filled effort for the draft, so the escalation's effort restore must not arm
-// there: escalation must never clear an effort the user pinned by hand.
-func specProfileEffortFilled(effortFilled bool, specReasoningEffort string) bool {
-	return effortFilled && strings.TrimSpace(specReasoningEffort) == ""
 }
 
 // applyProfileTurnBudget decides the run's turn budget once config is resolved.

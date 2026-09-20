@@ -305,27 +305,6 @@ func TestLeaderHelpBindingsCoverEveryMapEntry(t *testing.T) {
 	}
 }
 
-func TestLeaderSecondKeyShiftCapital(t *testing.T) {
-	// Shift+p should map to /plan (capital P), not /provider.
-	m := newModel(context.Background(), Options{ModelName: "gpt-4o"})
-	updated, _ := m.Update(testKeyCtrl('x'))
-	m = updated.(model)
-	updated, _ = m.Update(testKeyShift('p'))
-	next := updated.(model)
-	if next.leaderPending {
-		t.Fatal("Shift+p should resolve the leader chord")
-	}
-	if next.picker != nil {
-		t.Fatal("/plan should not open a picker")
-	}
-	if !transcriptContains(next.transcript, "Plan") && !transcriptContains(next.transcript, "plan") {
-		// planText wording may vary; require some transcript growth from /plan.
-		if len(next.transcript) == 0 {
-			t.Fatal("Ctrl+X P should run /plan")
-		}
-	}
-}
-
 func TestLeaderSecondKeyFromTextCapital(t *testing.T) {
 	key, ok := leaderSecondKey(testKeyText("M"))
 	if !ok || key != 'M' {

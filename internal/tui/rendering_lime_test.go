@@ -1410,16 +1410,16 @@ func TestComposerLineTracksRunState(t *testing.T) {
 func TestComposerLineShowsRequiredCommandArgumentHint(t *testing.T) {
 	m := limeTestModel()
 	m.input.SetWidth(40)
-	m.input.SetValue("/spec")
+	m.input.SetValue("/search")
 	m.input.CursorEnd()
-	if got := plainRender(t, m.composerLine(96)); !strings.Contains(got, "/spec [task]") {
-		t.Fatalf("composer line = %q, want /spec argument hint", got)
+	if got := plainRender(t, m.composerLine(96)); !strings.Contains(got, "/search [query]") {
+		t.Fatalf("composer line = %q, want /search argument hint", got)
 	}
 
-	m.input.SetValue("/spec ")
+	m.input.SetValue("/search ")
 	m.input.CursorEnd()
-	if got := plainRender(t, m.composerLine(96)); !strings.Contains(got, "/spec [task]") || strings.Contains(got, "/spec  [task]") {
-		t.Fatalf("composer line = %q, want /spec argument hint", got)
+	if got := plainRender(t, m.composerLine(96)); !strings.Contains(got, "/search [query]") || strings.Contains(got, "/search  [query]") {
+		t.Fatalf("composer line = %q, want /search argument hint", got)
 	}
 
 	m.input.SetValue("/find ")
@@ -1428,9 +1428,9 @@ func TestComposerLineShowsRequiredCommandArgumentHint(t *testing.T) {
 		t.Fatalf("composer line = %q, want /find query hint", got)
 	}
 
-	m.input.SetValue("/spec fix this")
+	m.input.SetValue("/search fix this")
 	m.input.CursorEnd()
-	if got := plainRender(t, m.composerLine(96)); strings.Contains(got, "[task]") {
+	if got := plainRender(t, m.composerLine(96)); strings.Contains(got, "[query]") {
 		t.Fatalf("composer line = %q, should hide hint once an argument is present", got)
 	}
 
@@ -1944,18 +1944,6 @@ func TestModelPickerItemsCarryProviderTag(t *testing.T) {
 	}
 	if tagged == 0 {
 		t.Fatalf("expected catalog models to carry a provider tag, got %#v", picker.items[:minInt(3, len(picker.items))])
-	}
-}
-
-func TestSpecReviewCardShowsBadgePathAndKeys(t *testing.T) {
-	got := plainRender(t, renderFocusedSpecReviewPrompt(pendingSpecReviewPrompt{
-		SpecFilePath: "/repo/specs/kajicode-1.md",
-		RelativePath: "specs/kajicode-1.md",
-	}, 80))
-	for _, want := range []string{"SPEC REVIEW", "specs/kajicode-1.md", "[a] approve", "[r] reject", "[e] edit file", "[esc] cancel"} {
-		if !strings.Contains(got, want) {
-			t.Fatalf("spec review card = %q, missing %q", got, want)
-		}
 	}
 }
 

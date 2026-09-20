@@ -71,7 +71,6 @@ func (m model) writePendingScrollMetricFields(hash *transcriptFingerprintHash) {
 	writeFingerprintField(hash, strconv.FormatBool(m.pending))
 	writeFingerprintField(hash, strconv.FormatBool(m.pendingPermission != nil))
 	writeFingerprintField(hash, strconv.FormatBool(m.pendingAskUser != nil))
-	writeFingerprintField(hash, strconv.FormatBool(m.pendingSpecReview != nil))
 	writeFingerprintField(hash, strconv.FormatBool(m.streamingTextHasVisibleContent()))
 	writeFingerprintField(hash, strconv.FormatBool(m.streamingReasoningHasVisibleContent()))
 	writeFingerprintField(hash, strconv.FormatBool(m.sidebarActive()))
@@ -118,16 +117,6 @@ func (m model) writePendingPromptMetricFields(hash *transcriptFingerprintHash) {
 		writeFingerprintField(hash, strconv.Itoa(m.pendingAskUser.active))
 		writeFingerprintField(hash, strconv.Itoa(len(m.pendingAskUser.states)))
 	}
-	if m.pendingSpecReview == nil {
-		writeFingerprintField(hash, "")
-		return
-	}
-	review := m.pendingSpecReview
-	writeFingerprintField(hash, review.SpecID)
-	writeFingerprintField(hash, review.SpecTitle)
-	writeFingerprintField(hash, review.SpecFilePath)
-	writeFingerprintField(hash, review.RelativePath)
-	writeFingerprintField(hash, review.DraftSessionID)
 }
 
 func (m model) writePlanMetricFields(hash *transcriptFingerprintHash) {

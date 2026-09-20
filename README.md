@@ -219,7 +219,6 @@ Common slash commands:
 | Command | Purpose |
 |---|---|
 | `/model`, `/provider` | switch the active model/provider |
-| `/spec`, `/plan` | draft and review a plan before building |
 | `/image` | attach an image for vision-capable models |
 | `/resume`, `/rewind` | continue or roll back local sessions |
 | `/btw [question]` | ask in an isolated fork without adding the side conversation to the main session |
@@ -234,7 +233,6 @@ Common slash commands:
 ```bash
 kajicode exec "explain internal/agent/loop.go"
 kajicode exec --model claude-sonnet-4.5 "refactor the config loader"
-kajicode exec --use-spec "add rate limiting to the API client"
 kajicode exec --worktree "try the migration in an isolated worktree"
 kajicode exec --resume
 kajicode exec --fork <session-id> "try the other approach"

@@ -123,7 +123,6 @@ func (m model) handleBTWCommand(question string) (model, tea.Cmd) {
 	side.turnTTFTCount = 0
 	side.pendingPermission = nil
 	side.pendingAskUser = nil
-	side.pendingSpecReview = nil
 	side.queuedMessage = ""
 	side.lastPrompt = ""
 	side.lastAttachments = nil
@@ -197,13 +196,11 @@ func (m model) leaveBTW() (model, tea.Cmd) {
 func btwCommandUnavailable(command parsedCommand) bool {
 	arg := strings.ToLower(strings.TrimSpace(command.text))
 	switch command.kind {
-	case commandNew, commandResume, commandRetitle, commandSpec, commandLoop,
-		commandRewind, commandCompact, commandSTTModel, commandMCP:
+	case commandNew, commandResume, commandRetitle, commandLoop,
+		commandRewind, commandCompact, commandMCP:
 		return true
 	case commandModel:
 		return arg != "list" && arg != "ls"
-	case commandRole:
-		return arg != "" && arg != "status" && arg != "list" && arg != "ls"
 	case commandProvider:
 		return arg != "status"
 	case commandWebSearch:

@@ -7,8 +7,7 @@ import (
 
 func TestSystemPromptPartsUseNamedSections(t *testing.T) {
 	parts := buildSystemPromptParts(Options{
-		SystemPrompt:   "core instructions",
-		PermissionMode: PermissionModeSpecDraft,
+		SystemPrompt: "core instructions",
 		Skills: []SkillInfo{{
 			Name:        "repo-audit",
 			Description: "Audit repository structure.",
@@ -29,30 +28,11 @@ func TestSystemPromptPartsUseNamedSections(t *testing.T) {
 	}
 	for _, want := range []promptSectionRole{
 		promptSectionBase,
-		promptSectionModeContract,
 		promptSectionSkills,
 		promptSectionConfirmation,
 	} {
 		if !promptPartsHaveSection(parts, want) {
 			t.Fatalf("missing prompt section %q in %#v", want, parts.sections)
-		}
-	}
-}
-
-func TestSpecDraftPromptCarriesModeContract(t *testing.T) {
-	prompt := buildSystemPrompt(Options{
-		SystemPrompt:   "Draft a spec.",
-		PermissionMode: PermissionModeSpecDraft,
-	})
-
-	for _, want := range []string{
-		"<mode_contract>",
-		"Mode: spec-draft.",
-		"The only write-capable exception is submit_spec",
-		"</mode_contract>",
-	} {
-		if !strings.Contains(prompt, want) {
-			t.Fatalf("spec-draft prompt missing %q:\n%s", want, prompt)
 		}
 	}
 }

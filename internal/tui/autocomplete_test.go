@@ -158,7 +158,7 @@ func TestEnterRunsCommandSuggestion(t *testing.T) {
 
 func TestEnterPrefillsCommandSuggestionRequiringInput(t *testing.T) {
 	m := newModel(context.Background(), Options{})
-	m = typeRunes(t, m, "/sp") // selects /spec
+	m = typeRunes(t, m, "/se") // selects /search
 
 	updated, cmd := m.Update(testKey(tea.KeyEnter))
 	m = updated.(model)
@@ -166,10 +166,10 @@ func TestEnterPrefillsCommandSuggestionRequiringInput(t *testing.T) {
 	if cmd != nil {
 		t.Fatal("Enter on an argument command suggestion should not start an agent run")
 	}
-	if got := m.input.Value(); got != "/spec" {
+	if got := m.input.Value(); got != "/search" {
 		t.Fatalf("Enter should prefill command for arguments, got %q", got)
 	}
-	if got := plainRender(t, m.composerLine(96)); !strings.Contains(got, "/spec") || !strings.Contains(got, "[task]") {
+	if got := plainRender(t, m.composerLine(96)); !strings.Contains(got, "/search") || !strings.Contains(got, "[query]") {
 		t.Fatalf("prefilled command should show argument hint, got %q", got)
 	}
 
@@ -178,7 +178,7 @@ func TestEnterPrefillsCommandSuggestionRequiringInput(t *testing.T) {
 	if cmd != nil {
 		t.Fatal("typing the argument should not start an agent run")
 	}
-	if got := m.input.Value(); got != "/spec fix" {
+	if got := m.input.Value(); got != "/search fix" {
 		t.Fatalf("typing after the hint should insert one argument separator, got %q", got)
 	}
 	for range "fix" {
@@ -188,7 +188,7 @@ func TestEnterPrefillsCommandSuggestionRequiringInput(t *testing.T) {
 			t.Fatal("backspacing the argument should not start an agent run")
 		}
 	}
-	if got := plainRender(t, m.composerLine(96)); !strings.Contains(got, "/spec [task]") || strings.Contains(got, "/spec  [task]") {
+	if got := plainRender(t, m.composerLine(96)); !strings.Contains(got, "/search [query]") || strings.Contains(got, "/search  [query]") {
 		t.Fatalf("empty argument command should render one visual separator, got %q", got)
 	}
 	updated, cmd = m.Update(testKeyText("x"))
@@ -196,21 +196,21 @@ func TestEnterPrefillsCommandSuggestionRequiringInput(t *testing.T) {
 	if cmd != nil {
 		t.Fatal("typing after deleting the argument should not start an agent run")
 	}
-	if got := m.input.Value(); got != "/spec x" {
+	if got := m.input.Value(); got != "/search x" {
 		t.Fatalf("typing after deleting the argument should keep one separator, got %q", got)
 	}
 	if m.suggestionsActive() {
 		t.Fatal("prefilling a command suggestion should dismiss the overlay")
 	}
-	if transcriptContains(m.transcript, "usage: /spec") {
-		t.Fatal("prefilling /spec should not run the command without a task")
+	if transcriptContains(m.transcript, "usage: /search") {
+		t.Fatal("prefilling /search should not run the command without a query")
 	}
 }
 
 func TestCommandSuggestionFooterReflectsInsertAction(t *testing.T) {
 	m := newModel(context.Background(), Options{})
 	m.width, m.height = 96, 30
-	m = typeRunes(t, m, "/sp")
+	m = typeRunes(t, m, "/se")
 
 	plain := plainRender(t, m.View())
 	if !strings.Contains(plain, "Enter insert") {
@@ -287,21 +287,6 @@ func TestSuggestionsSuppressedDuringModals(t *testing.T) {
 	m = typeRunes(t, m, "/mo")
 	if m.suggestionsActive() {
 		t.Fatal("suggestions must stay suppressed while a questionnaire is active")
-	}
-}
-
-func TestSuggestionsSuppressedDuringSpecReview(t *testing.T) {
-	m := newModel(context.Background(), Options{})
-	m.suggestions = []commandSuggestion{{Name: "/model", Desc: "Pick a model."}}
-	m.pendingSpecReview = &pendingSpecReviewPrompt{SpecID: "spec-1", SpecFilePath: ".kajicode/specs/spec-1.md"}
-
-	if m.suggestionsActive() {
-		t.Fatal("stale suggestions must stay suppressed while spec review is active")
-	}
-
-	m = typeRunes(t, m, "/mo")
-	if m.suggestionsActive() {
-		t.Fatal("new suggestions must stay suppressed while spec review is active")
 	}
 }
 

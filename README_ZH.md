@@ -138,7 +138,6 @@ kajicode
 | 命令 | 用途 |
 |---|---|
 | `/model`、`/provider` | 切换活动模型/提供商 |
-| `/spec`、`/plan` | 在构建之前起草和审查计划 |
 | `/image` | 为视觉模型附加图片 |
 | `/resume`、`/rewind` | 继续或回滚本地会话 |
 | `/compact`、`/context` | 管理上下文使用 |
@@ -151,7 +150,6 @@ kajicode
 ```bash
 kajicode exec "解释 internal/agent/loop.go"
 kajicode exec --model claude-sonnet-4.5 "重构配置加载器"
-kajicode exec --use-spec "为 API 客户端添加速率限制"
 kajicode exec --worktree "在隔离的工作树中尝试迁移"
 kajicode exec --resume
 kajicode exec --fork <session-id> "尝试另一种方法"

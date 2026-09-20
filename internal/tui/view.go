@@ -164,12 +164,6 @@ func (m model) titleModelSegment() string {
 	default:
 		base = provider + "/" + model
 	}
-	// A role-routed model swap is only visible mid-run; surface the ACTIVE task
-	// role when one is set so the reason for a surprising model is always at a
-	// glance in the title bar.
-	if role := strings.TrimSpace(m.activeRole); role != "" {
-		return kajicodeTheme.ink.Render(base) + kajicodeTheme.muted.Render(" · role ") + kajicodeTheme.accent.Render(role)
-	}
 	return kajicodeTheme.ink.Render(base)
 }
 
@@ -216,9 +210,6 @@ func (m model) statusLine(width int) string {
 		if m.cancelConfirmActive {
 			return fitStyledLine(prefix+btwChip+kajicodeTheme.amber.Render("●")+" "+kajicodeTheme.amber.Render(escCancelConfirmText), width)
 		}
-		if dictation := m.dictationStatusChip(); dictation != "" {
-			return fitStyledLine(prefix+btwChip+dictation, width)
-		}
 		return fitStyledLine(left, width)
 	}
 
@@ -230,17 +221,7 @@ func (m model) statusLine(width int) string {
 		left = prefix + btwChip + kajicodeTheme.amber.Render("●") + " " + kajicodeTheme.amber.Render(ctrlCExitConfirmText)
 	} else if m.cancelConfirmActive {
 		left = prefix + btwChip + kajicodeTheme.amber.Render("●") + " " + kajicodeTheme.amber.Render(escCancelConfirmText)
-	} else if m.dictation.downloading && m.dictation.downloadStatus != "" {
-		// A model download in progress takes over the left chip with a live percentage.
-		left = prefix + btwChip + kajicodeTheme.accent.Render("⬇ ") + kajicodeTheme.muted.Render(m.dictation.downloadStatus)
-	} else if dictation := m.dictationStatusChip(); dictation != "" && m.dictation.active() {
-		// An active recording/transcription takes over the left chip — it is the
-		// most time-sensitive thing on screen (the mic is live).
-		left = prefix + btwChip + dictation
 	} else {
-		if voice := m.voiceModeIndicator(); voice != "" {
-			left += kajicodeTheme.muted.Render(" · ") + voice
-		}
 		if summary := m.backgroundTerminalSummary(); summary != "" {
 			left += separator + kajicodeTheme.muted.Render(summary)
 		}

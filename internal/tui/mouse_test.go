@@ -14,7 +14,7 @@ import (
 
 func TestMouseClickSelectsThenAppliesCommandSuggestionRow(t *testing.T) {
 	m := mouseTestModel()
-	m = typeRunes(t, m, "/sp")
+	m = typeRunes(t, m, "/se")
 	if len(m.suggestions) == 0 {
 		t.Fatalf("expected command suggestions, got %#v", m.suggestions)
 	}
@@ -27,8 +27,8 @@ func TestMouseClickSelectsThenAppliesCommandSuggestionRow(t *testing.T) {
 	if cmd != nil {
 		t.Fatal("first command click should not return a command")
 	}
-	if got := next.input.Value(); got != "/sp" {
-		t.Fatalf("input after first command click = %q, want /sp", got)
+	if got := next.input.Value(); got != "/se" {
+		t.Fatalf("input after first command click = %q, want /se", got)
 	}
 	if !next.suggestionsActive() {
 		t.Fatal("suggestions should stay open after first command click")
@@ -37,8 +37,8 @@ func TestMouseClickSelectsThenAppliesCommandSuggestionRow(t *testing.T) {
 	updated, cmd = next.Update(click)
 	next = updated.(model)
 	_ = cmd
-	if got := next.input.Value(); got != "/spec" {
-		t.Fatalf("input after second command click = %q, want /spec", got)
+	if got := next.input.Value(); got != "/search" {
+		t.Fatalf("input after second command click = %q, want /search", got)
 	}
 	if next.suggestionsActive() {
 		t.Fatalf("suggestions should close after second command click, got %#v", next.suggestions)
@@ -280,7 +280,7 @@ func TestComposerMouseDragSelectsCopiesAndClears(t *testing.T) {
 
 func TestComposerMouseSelectionBlockedWhileSuggestionsOpen(t *testing.T) {
 	m := mouseTestModel()
-	m = typeRunes(t, m, "/sp")
+	m = typeRunes(t, m, "/se")
 	if !m.suggestionsActive() {
 		t.Fatalf("expected suggestions to be open, got %#v", m.suggestions)
 	}

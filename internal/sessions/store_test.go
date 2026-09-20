@@ -403,8 +403,6 @@ func TestListAndLatestResumableExcludeSubRuns(t *testing.T) {
 	mk("", "conversation-1")
 	mk(SessionKindFork, "fork-1")
 	mk(SessionKindChild, "child-1")
-	mk(SessionKindSpecDraft, "spec-draft-1")
-	mk(SessionKindSpecImpl, "spec-impl-1")
 	newestResumable := mk("", "conversation-2") // newest standalone conversation
 	mk(SessionKindChild, "child-2")             // newer overall, but a sub-run
 	mk(SessionKindSide, "side-1")               // newer overall, but non-resumable
@@ -728,125 +726,6 @@ func TestPrepareExecWhitespaceResumeDoesNotFallbackToLatest(t *testing.T) {
 	}
 	if prepared.Mode != ModeNew || prepared.Session.SessionID != "new_session" {
 		t.Fatalf("expected whitespace resume to create a new session, got %#v", prepared)
-	}
-}
-
-func TestRecordSpecUpdatesMetadataAndAppendsEvents(t *testing.T) {
-	store := NewStore(StoreOptions{RootDir: t.TempDir(), Now: sequenceClock([]time.Time{
-		time.Date(2026, 6, 8, 10, 0, 0, 0, time.UTC),
-		time.Date(2026, 6, 8, 10, 0, 1, 0, time.UTC),
-		time.Date(2026, 6, 8, 10, 0, 2, 0, time.UTC),
-	})})
-	session, err := store.Create(CreateInput{
-		SessionID:          "draft",
-		SessionKind:        SessionKindSpecDraft,
-		SpecDraftModelID:   "gpt-5",
-		SpecDraftReasoning: "high",
-	})
-	if err != nil {
-		t.Fatalf("Create returned error: %v", err)
-	}
-
-	updated, event, err := store.RecordSpec(session.SessionID, RecordSpecInput{
-		SpecID:       "2026-06-08-spec-mode",
-		SpecFilePath: "/repo/.kajicode/specs/2026-06-08-spec-mode.md",
-		SpecStatus:   SpecStatusDraft,
-	})
-
-	if err != nil {
-		t.Fatalf("RecordSpec returned error: %v", err)
-	}
-	if updated.SpecID != "2026-06-08-spec-mode" || updated.SpecStatus != SpecStatusDraft || updated.LastEventType != EventSpecDraft {
-		t.Fatalf("updated metadata = %#v", updated)
-	}
-	if event.Type != EventSpecDraft {
-		t.Fatalf("event type = %s, want %s", event.Type, EventSpecDraft)
-	}
-
-	approved, event, err := store.RecordSpec(session.SessionID, RecordSpecInput{
-		SpecStatus:        SpecStatusApproved,
-		SpecUserComment:   "ship it",
-		SpecImplSessionID: "impl",
-	})
-	if err != nil {
-		t.Fatalf("RecordSpec approve returned error: %v", err)
-	}
-	if approved.SpecID != "2026-06-08-spec-mode" || approved.SpecStatus != SpecStatusApproved || approved.SpecUserComment != "ship it" || approved.SpecImplSessionID != "impl" {
-		t.Fatalf("approved metadata = %#v", approved)
-	}
-	if event.Type != EventSpecApproved {
-		t.Fatalf("event type = %s, want %s", event.Type, EventSpecApproved)
-	}
-	events, err := store.ReadEvents(session.SessionID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(events) != 2 {
-		t.Fatalf("expected two spec events, got %#v", events)
-	}
-}
-
-func TestEnsureSpecImplementationReusesExistingPromptSession(t *testing.T) {
-	store := NewStore(StoreOptions{RootDir: t.TempDir(), Now: sequenceClock([]time.Time{
-		time.Date(2026, 6, 8, 11, 0, 0, 0, time.UTC),
-		time.Date(2026, 6, 8, 11, 0, 1, 0, time.UTC),
-		time.Date(2026, 6, 8, 11, 0, 2, 0, time.UTC),
-		time.Date(2026, 6, 8, 11, 0, 3, 0, time.UTC),
-	})})
-	draft, err := store.Create(CreateInput{
-		SessionID:   "draft",
-		SessionKind: SessionKindSpecDraft,
-		Title:       "Draft spec",
-		Cwd:         "/repo",
-		ModelID:     "gpt-5",
-		Provider:    "openai",
-		SpecID:      "2026-06-08-spec",
-		SpecStatus:  SpecStatusDraft,
-	})
-	if err != nil {
-		t.Fatalf("Create draft returned error: %v", err)
-	}
-	input := EnsureSpecImplementationInput{
-		Title:               "Draft spec implementation",
-		Cwd:                 draft.Cwd,
-		ModelID:             draft.ModelID,
-		Provider:            draft.Provider,
-		SpecID:              draft.SpecID,
-		SpecFilePath:        "/repo/.kajicode/specs/2026-06-08-spec.md",
-		SpecDraftModelID:    "gpt-5",
-		SpecDraftReasoning:  "high",
-		SpecUserComment:     "ship it",
-		SpecSourceSessionID: draft.SessionID,
-		Prompt:              "Implement the approved spec.",
-	}
-
-	first, firstEvents, err := store.EnsureSpecImplementation(input)
-	if err != nil {
-		t.Fatalf("EnsureSpecImplementation first returned error: %v", err)
-	}
-	second, secondEvents, err := store.EnsureSpecImplementation(input)
-	if err != nil {
-		t.Fatalf("EnsureSpecImplementation second returned error: %v", err)
-	}
-
-	if second.SessionID != first.SessionID {
-		t.Fatalf("implementation session was not reused: first=%s second=%s", first.SessionID, second.SessionID)
-	}
-	if len(firstEvents) != 1 || len(secondEvents) != 1 || second.EventCount != 1 {
-		t.Fatalf("expected one implementation prompt event, first=%#v second=%#v metadata=%#v", firstEvents, secondEvents, second)
-	}
-	items, err := store.List()
-	if err != nil {
-		t.Fatal(err)
-	}
-	implCount := 0
-	for _, item := range items {
-		if item.SessionKind == SessionKindSpecImpl {
-			implCount++
-		}
-	}
-	if implCount != 1 {
-		t.Fatalf("implementation session count = %d, want 1", implCount)
 	}
 }
 

@@ -18,9 +18,6 @@ const leaderTimeout = 2 * time.Second
 var leaderCommandByKey = map[rune]string{
 	'm': "/model",
 	'p': "/provider",
-	'P': "/plan",
-	'M': "/stt-model",
-	'v': "/voice",
 	'c': "/clear",
 	'C': "/context",
 	's': "/stop",
@@ -95,9 +92,6 @@ func leaderHelpBindings() []keybinding {
 	return []keybinding{
 		{"Ctrl+X m", "open /model"},
 		{"Ctrl+X p", "open /provider"},
-		{"Ctrl+X P", "run /plan"},
-		{"Ctrl+X M", "open /stt-model"},
-		{"Ctrl+X v", "toggle /voice"},
 		{"Ctrl+X c", "run /clear"},
 		{"Ctrl+X C", "run /context"},
 		{"Ctrl+X s", "run /stop"},

@@ -30,7 +30,6 @@ const (
 	PermissionModeReadOnly  PermissionMode = "read-only"
 	PermissionModeReadWrite PermissionMode = "read-write"
 	PermissionModeBypassAll PermissionMode = "bypass-all"
-	PermissionModeSpecDraft PermissionMode = "spec-draft"
 	// PermissionModeMemberAuto is a headless mode for swarm/specialist MEMBERS: it
 	// advertises the in-workspace mutators a member needs to build (write/edit +
 	// shell) on top of the Auto set, while the sandbox engine still gates them at
@@ -42,11 +41,9 @@ const (
 	PermissionModeMemberAuto PermissionMode = "member-auto"
 )
 
+// StopReason is the terminal reason a run stopped when it was not a plain
+// final answer (empty for a normal completion).
 type StopReason string
-
-const (
-	StopReasonSpecReviewRequired StopReason = "spec_review_required"
-)
 
 const (
 	PermissionActionAllow  PermissionAction = "allow"
@@ -441,12 +438,6 @@ type Options struct {
 	// contract as ModelSwitcher: a returned error records a note and the run
 	// continues on the current model and session.
 	ModelSessionSwitcher func(ctx context.Context, modelID string) (kajicoderuntime.TurnSessionProvider, error)
-	// RoleRouting, when set, enables multi-model task routing: the loop queries
-	// RoleFor each turn and, when the active role's model differs from the current
-	// one, swaps the run's provider via Current. nil DISABLES routing entirely —
-	// every existing caller/test is unaffected. A routing/swap error is non-fatal:
-	// the run continues on the current provider.
-	RoleRouting *RoleRouting
 	// Profile, when set, arms the execution-profile posture controller for this
 	// run (auto-escalation to stricter knob values on failure/uncertainty/risky
 	// mutation signals). nil — the default everywhere today — leaves the loop

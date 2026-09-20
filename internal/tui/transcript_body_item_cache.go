@@ -26,7 +26,7 @@ func newTranscriptBodyItemCache() *transcriptBodyItemCache {
 }
 
 func (m model) transcriptBodyItemSet(width int, emptyOverlay string, detailed bool) transcriptBodyItemSet {
-	if m.pending || m.pendingSpecReview != nil {
+	if m.pending {
 		if set, ok := m.pendingTranscriptBodyItemSet(width, emptyOverlay, detailed); ok {
 			return set
 		}
@@ -93,7 +93,7 @@ func (m model) measureTranscriptBodyItemSet(set transcriptBodyItemSet) transcrip
 }
 
 func (m model) transcriptBodyItemCacheKey(width int, emptyOverlay string, detailed bool) (string, bool) {
-	if m.pending || m.pendingSpecReview != nil {
+	if m.pending {
 		return "", false
 	}
 	return m.transcriptBodyBaseItemCacheKey(width, emptyOverlay, detailed)

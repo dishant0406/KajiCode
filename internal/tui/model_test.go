@@ -263,7 +263,6 @@ func TestParseCommand(t *testing.T) {
 		{input: "/find needle", kind: commandSearch, text: "needle"},
 		{input: "/resume", kind: commandResume},
 		{input: "/sessions", kind: commandResume},
-		{input: "/spec add review flow", kind: commandSpec, text: "add review flow"},
 		{input: "/compact", kind: commandCompact},
 		{input: "/effort high", kind: commandEffort, text: "high"},
 		{input: "/style concise", kind: commandStyle, text: "concise"},
@@ -295,7 +294,7 @@ func TestCommandRegistryResolvesAliasesAndFormatsHelp(t *testing.T) {
 	}
 
 	help := strings.Join(formatCommandHelpLines(), "\n")
-	for _, want := range []string{"/model", "/context", "/debug", "/permissions", "/spec", "model"} {
+	for _, want := range []string{"/model", "/context", "/debug", "/permissions", "/search", "model"} {
 		assertContains(t, help, want)
 	}
 }
@@ -489,54 +488,6 @@ func TestPermissionsCommandListsPersistentSandboxGrants(t *testing.T) {
 	assertNotContains(t, text, "sk-proj-sensitive")
 	assertNotContains(t, text, "status: ok")
 	assertNotContains(t, text, "Permission mode:")
-}
-
-func TestPlanCommandShowsCurrentTodos(t *testing.T) {
-	registry := tools.NewRegistry()
-	planTool := tools.NewTodoWriteTool()
-	result := planTool.Run(context.Background(), map[string]any{
-		"todos": []any{
-			map[string]any{
-				"content": "Wire model catalog",
-				"status":  "completed",
-			},
-			map[string]any{
-				"content": "Add max turns",
-				"status":  "in_progress",
-				"notes":   "Go exec parity",
-			},
-		},
-	})
-	if result.Status != tools.StatusOK {
-		t.Fatalf("todo_write setup failed: %#v", result)
-	}
-	registry.Register(planTool)
-	m := newModel(context.Background(), Options{Registry: registry})
-	m.input.SetValue("/plan")
-
-	updated, cmd := m.Update(testKey(tea.KeyEnter))
-	next := updated.(model)
-
-	if cmd != nil {
-		t.Fatal("expected /plan to be handled without starting an agent run")
-	}
-	for _, want := range []string{"Current Plan", "Wire model catalog", "Add max turns", "in_progress", "Go exec parity"} {
-		if !transcriptContains(next.transcript, want) {
-			t.Fatalf("expected plan transcript to contain %q, got %#v", want, next.transcript)
-		}
-	}
-}
-
-func TestPlanCommandHandlesMissingPlanTool(t *testing.T) {
-	m := newModel(context.Background(), Options{Registry: tools.NewRegistry()})
-	m.input.SetValue("/plan")
-
-	updated, _ := m.Update(testKey(tea.KeyEnter))
-	next := updated.(model)
-
-	if !transcriptContains(next.transcript, "No plan is active") {
-		t.Fatalf("expected missing plan message, got %#v", next.transcript)
-	}
 }
 
 func TestContextCommandShowsSessionState(t *testing.T) {

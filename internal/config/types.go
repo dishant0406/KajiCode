@@ -172,115 +172,6 @@ type KeyBindingsConfig struct {
 	ToggleSidebar KeyBindingDef `json:"toggleSidebar,omitempty"`
 }
 
-// STTProviderKind is the batch (or streaming) transcription backend selector.
-// Validated at config load time against the known set, so a typo fails loudly
-// with the valid options rather than silently falling back to a default.
-type STTProviderKind string
-
-const (
-	STTProviderLocal    STTProviderKind = "local"
-	STTProviderGroq     STTProviderKind = "groq"
-	STTProviderOpenAI   STTProviderKind = "openai"
-	STTProviderDeepgram STTProviderKind = "deepgram"
-)
-
-// STTConfig configures speech-to-text dictation. All fields are optional; empty
-// values take the documented defaults. Booleans that need a real tri-state
-// (distinguishing "unset" from "false") use *bool, matching PreferencesConfig.Recaps.
-type STTConfig struct {
-	// Provider is the batch transcription backend: "local" (sherpa-onnx-offline,
-	// the default), "groq", or "openai". Termux and the fallback everywhere use
-	// this path.
-	Provider STTProviderKind `json:"provider,omitempty"`
-	// StreamProvider is the streaming backend on desktop: "local" (sherpa-onnx
-	// websocket server, default), "deepgram", or "openai" (Realtime).
-	StreamProvider STTProviderKind `json:"streamProvider,omitempty"`
-	// Streaming enables the live-transcript pipeline on platforms that support
-	// it (desktop). Defaults to on; set false to always use the batch pipeline.
-	Streaming *bool `json:"streaming,omitempty"`
-	// Model overrides the cloud batch model (e.g. "whisper-large-v3-turbo" for
-	// Groq, "whisper-1" for OpenAI). Empty uses the provider default.
-	Model string `json:"model,omitempty"`
-	// StreamModel overrides the cloud streaming model (Deepgram/OpenAI Realtime).
-	StreamModel string `json:"streamModel,omitempty"`
-	// LocalModelPath is the sherpa-onnx model directory for local transcription
-	// (batch and streaming). Required to use a local provider.
-	LocalModelPath string `json:"localModelPath,omitempty"`
-	// LocalBinary overrides the offline binary name/path (default
-	// "sherpa-onnx-offline"); LocalServerBinary overrides the streaming server
-	// (default "sherpa-onnx-online-websocket-server"). Both looked up on PATH.
-	LocalBinary       string `json:"localBinary,omitempty"`
-	LocalServerBinary string `json:"localServerBinary,omitempty"`
-	// LocalServerPort is the localhost port for the sherpa-onnx websocket server
-	// (default 6006).
-	LocalServerPort int `json:"localServerPort,omitempty"`
-	// EngineVersion selects the sherpa-onnx release the auto-download fetches
-	// ("" → a pinned known-good default; "latest" or any release tag also works,
-	// so a newer engine needs no KajiCode update). Verified against the release's
-	// published SHA256 digest either way.
-	EngineVersion string `json:"engineVersion,omitempty"`
-	// NumThreads sets the local engine's thread count (0 = engine default).
-	NumThreads int `json:"numThreads,omitempty"`
-	// Language optionally constrains recognition (ISO-639-1, e.g. "en"). Empty =
-	// auto-detect.
-	Language string `json:"language,omitempty"`
-	// MaxDurationSeconds is the hard runaway-recording cap on every platform
-	// (0 = default 300s).
-	MaxDurationSeconds int `json:"maxDurationSeconds,omitempty"`
-	// SilenceAutoStop ends a recording ~2s after the signal goes quiet, as a
-	// backstop for a forgotten manual stop (not VAD-triggered start). Defaults on.
-	SilenceAutoStop *bool `json:"silenceAutoStop,omitempty"`
-	// AutoSubmit fires the transcript at the agent instead of inserting it for
-	// review. Defaults OFF — insert-for-review is the safety net for a misheard
-	// prompt (§3).
-	AutoSubmit *bool `json:"autoSubmit,omitempty"`
-	// WindowsAudioDevice names the dshow capture device (auto-detected when empty).
-	WindowsAudioDevice string `json:"windowsAudioDevice,omitempty"`
-}
-
-// STTProvider returns the configured batch provider, defaulting to local.
-func (c STTConfig) STTProvider() STTProviderKind {
-	if c.Provider == "" {
-		return STTProviderLocal
-	}
-	return c.Provider
-}
-
-// STTStreamProvider returns the configured streaming provider, defaulting to local.
-func (c STTConfig) STTStreamProvider() STTProviderKind {
-	if c.StreamProvider == "" {
-		return STTProviderLocal
-	}
-	return c.StreamProvider
-}
-
-// StreamingEnabled reports whether the live pipeline is on. Unset defaults ON.
-func (c STTConfig) StreamingEnabled() bool {
-	return c.Streaming == nil || *c.Streaming
-}
-
-// SilenceAutoStopEnabled reports whether trailing-silence auto-stop is on.
-// Unset defaults ON.
-func (c STTConfig) SilenceAutoStopEnabled() bool {
-	return c.SilenceAutoStop == nil || *c.SilenceAutoStop
-}
-
-// AutoSubmitEnabled reports whether transcripts are auto-fired. Unset defaults OFF.
-func (c STTConfig) AutoSubmitEnabled() bool {
-	return c.AutoSubmit != nil && *c.AutoSubmit
-}
-
-// Empty reports whether the STT config carries no user-set values (so it can be
-// omitted from a marshaled config).
-func (c STTConfig) Empty() bool {
-	return c.Provider == "" && c.StreamProvider == "" && c.Streaming == nil &&
-		c.Model == "" && c.StreamModel == "" && c.LocalModelPath == "" &&
-		c.LocalBinary == "" && c.LocalServerBinary == "" && c.LocalServerPort == 0 &&
-		c.EngineVersion == "" && c.NumThreads == 0 && c.Language == "" &&
-		c.MaxDurationSeconds == 0 && c.SilenceAutoStop == nil && c.AutoSubmit == nil &&
-		c.WindowsAudioDevice == ""
-}
-
 // LocalControlConfig controls local browser/desktop/terminal automation helpers.
 // Helpers are discovered lazily by the tool that needs them; no setup command or
 // background probe is required during startup.
@@ -395,20 +286,9 @@ func (cfg *ToolsConfig) UnmarshalJSON(data []byte) error {
 type FileConfig struct {
 	ActiveProvider string            `json:"activeProvider,omitempty"`
 	Providers      []ProviderProfile `json:"providers,omitempty"`
-	// ModelRoles maps a task role name to a model selector ("provider:model", a
-	// registry alias, or "@role" to reference another role). Roles not present fall
-	// back to the active model / DefaultModel.
-	ModelRoles map[string]string `json:"modelRoles,omitempty"`
-	// DefaultModel, when set, is the model used when no role override applies and no
-	// active profile model is selected. Empty means "use the active profile's own
-	// Model field".
-	DefaultModel string `json:"defaultModel,omitempty"`
-	// ActiveRole is the task role in effect at startup, persisted so a role set in
-	// one session applies globally to every later session and project. Each job
-	// role routes to the model picked by MultiModel routing (modelRoles["role"] or a
-	// capability default). Empty means no explicit role — the run follows the active
-	// profile model / DefaultModel. It is global by design (not per-session).
-	ActiveRole   string             `json:"activeRole,omitempty"`
+	// DefaultModel, when set, is the model used when no active profile model is
+	// selected. Empty means "use the active profile's own Model field".
+	DefaultModel string             `json:"defaultModel,omitempty"`
 	MaxTurns     int                `json:"maxTurns,omitempty"`
 	MCP          MCPConfig          `json:"mcp,omitempty"`
 	Sandbox      SandboxConfig      `json:"sandbox,omitempty"`
@@ -421,15 +301,9 @@ type FileConfig struct {
 	KeyBindings  KeyBindingsConfig  `json:"keybindings,omitempty"`
 	LocalControl LocalControlConfig `json:"localControl,omitempty"`
 	Images       ImagesConfig       `json:"images,omitempty"`
-	STT          STTConfig          `json:"stt,omitempty"`
 }
 
 type ImagesConfig struct {
-	// VisionRouting controls how image attachments are handled when the active model
-	// is not vision-capable. "auto" routes the request to the first vision-capable
-	// available profile; "model" uses ModelRoles["vision"]; "off" keeps the legacy
-	// drop+warn behavior.
-	VisionRouting string `json:"visionRouting,omitempty"`
 	// MaxWidth/MaxHeight cap the pixel dimensions of an attached image. A larger
 	// image is downscaled (aspect ratio preserved) before it is sent, so a 4K
 	// screenshot that a provider would otherwise reject as too large still works.
@@ -446,29 +320,15 @@ type ImagesConfig struct {
 	AutoResize *bool `json:"autoResize,omitempty"`
 }
 
-// EffectiveVisionRouting returns the normalized, safe vision-routing mode. Anything
-// other than "auto" or "model" collapses to "off", preserving legacy behavior.
-func (c ImagesConfig) EffectiveVisionRouting() string {
-	switch strings.TrimSpace(c.VisionRouting) {
-	case "auto", "model":
-		return strings.TrimSpace(c.VisionRouting)
-	default:
-		return "off"
-	}
-}
-
 func (c ImagesConfig) Empty() bool {
-	return strings.TrimSpace(c.VisionRouting) == "" &&
-		c.MaxWidth == 0 && c.MaxHeight == 0 && c.MaxBytes == 0 && c.AutoResize == nil
+	return c.MaxWidth == 0 && c.MaxHeight == 0 && c.MaxBytes == 0 && c.AutoResize == nil
 }
 
 func (cfg FileConfig) MarshalJSON() ([]byte, error) {
 	type rawConfig struct {
 		ActiveProvider string              `json:"activeProvider,omitempty"`
 		Providers      []ProviderProfile   `json:"providers,omitempty"`
-		ModelRoles     map[string]string   `json:"modelRoles,omitempty"`
 		DefaultModel   string              `json:"defaultModel,omitempty"`
-		ActiveRole     string              `json:"activeRole,omitempty"`
 		MaxTurns       int                 `json:"maxTurns,omitempty"`
 		MCP            MCPConfig           `json:"mcp,omitempty"`
 		Sandbox        SandboxConfig       `json:"sandbox,omitempty"`
@@ -481,14 +341,11 @@ func (cfg FileConfig) MarshalJSON() ([]byte, error) {
 		KeyBindings    KeyBindingsConfig   `json:"keybindings,omitempty"`
 		LocalControl   *LocalControlConfig `json:"localControl,omitempty"`
 		Images         *ImagesConfig       `json:"images,omitempty"`
-		STT            *STTConfig          `json:"stt,omitempty"`
 	}
 	raw := rawConfig{
 		ActiveProvider: cfg.ActiveProvider,
 		Providers:      cfg.Providers,
-		ModelRoles:     cfg.ModelRoles,
 		DefaultModel:   cfg.DefaultModel,
-		ActiveRole:     cfg.ActiveRole,
 		MaxTurns:       cfg.MaxTurns,
 		MCP:            cfg.MCP,
 		Sandbox:        cfg.Sandbox,
@@ -510,9 +367,6 @@ func (cfg FileConfig) MarshalJSON() ([]byte, error) {
 	if !cfg.Images.Empty() {
 		raw.Images = &cfg.Images
 	}
-	if !cfg.STT.Empty() {
-		raw.STT = &cfg.STT
-	}
 	return json.Marshal(raw)
 }
 
@@ -533,9 +387,7 @@ type Overrides struct {
 	ActiveProvider string
 	Providers      []ProviderProfile
 	Provider       ProviderProfile
-	ModelRoles     map[string]string
 	DefaultModel   string
-	ActiveRole     string
 	MaxTurns       int
 	MCP            MCPConfig
 	Sandbox        SandboxConfig
@@ -546,16 +398,13 @@ type Overrides struct {
 	KeyBindings    KeyBindingsConfig
 	LocalControl   LocalControlConfig
 	Images         ImagesConfig
-	STT            STTConfig
 }
 
 type ResolvedConfig struct {
 	ActiveProvider string
 	Providers      []ProviderProfile
 	Provider       ProviderProfile
-	ModelRoles     map[string]string
 	DefaultModel   string
-	ActiveRole     string
 	MaxTurns       int
 	MCP            MCPConfig
 	Sandbox        SandboxConfig
@@ -568,7 +417,6 @@ type ResolvedConfig struct {
 	KeyBindings    KeyBindingsConfig
 	LocalControl   LocalControlConfig
 	Images         ImagesConfig
-	STT            STTConfig
 }
 
 type MCPConfig struct {
@@ -647,9 +495,7 @@ func (cfg *FileConfig) UnmarshalJSON(data []byte) error {
 	type rawConfig struct {
 		ActiveProvider  string                     `json:"activeProvider"`
 		Providers       []ProviderProfile          `json:"providers"`
-		ModelRoles      map[string]string          `json:"modelRoles"`
 		DefaultModel    string                     `json:"defaultModel"`
-		ActiveRole      string                     `json:"activeRole"`
 		Images          ImagesConfig               `json:"images"`
 		MaxTurns        int                        `json:"maxTurns"`
 		MCP             MCPConfig                  `json:"mcp"`
@@ -662,7 +508,6 @@ func (cfg *FileConfig) UnmarshalJSON(data []byte) error {
 		Preferences     PreferencesConfig          `json:"preferences"`
 		KeyBindings     KeyBindingsConfig          `json:"keybindings"`
 		LocalControl    LocalControlConfig         `json:"localControl"`
-		STT             STTConfig                  `json:"stt"`
 		MCPServers      map[string]MCPServerConfig `json:"mcpServers"`
 		MCPServersSnake map[string]MCPServerConfig `json:"mcp_servers"`
 	}
@@ -673,9 +518,7 @@ func (cfg *FileConfig) UnmarshalJSON(data []byte) error {
 	}
 	cfg.ActiveProvider = raw.ActiveProvider
 	cfg.Providers = raw.Providers
-	cfg.ModelRoles = raw.ModelRoles
 	cfg.DefaultModel = raw.DefaultModel
-	cfg.ActiveRole = raw.ActiveRole
 	cfg.Images = raw.Images
 	// A negative maxTurns is unambiguously invalid; without this it would be
 	// silently dropped by the `MaxTurns > 0` merge gates and fall back to the
@@ -696,7 +539,6 @@ func (cfg *FileConfig) UnmarshalJSON(data []byte) error {
 	cfg.Preferences = raw.Preferences
 	cfg.KeyBindings = raw.KeyBindings
 	cfg.LocalControl = raw.LocalControl
-	cfg.STT = raw.STT
 	if cfg.MCP.Servers == nil && (len(raw.MCPServers) > 0 || len(raw.MCPServersSnake) > 0) {
 		cfg.MCP.Servers = map[string]MCPServerConfig{}
 	}

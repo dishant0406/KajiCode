@@ -49,7 +49,6 @@ func TestFormatCommandHelpLinesGroupsCommandsByStableOrder(t *testing.T) {
 		"  /model [list|refresh|id] - Show, switch, or refresh the active model.",
 		"  /effort [list|low|medium|high|auto] - Show or set reasoning effort for supported models.",
 		"session:",
-		"  /plan - Show planning mode status.",
 		"runtime:",
 		"  /permissions - Show the active permission mode and sandbox grants.",
 		"  /debug (/debug-mode) - Show debug mode status.",
@@ -990,7 +989,6 @@ func TestCommandSelectionRequiresInputFromUsage(t *testing.T) {
 		name string
 		want bool
 	}{
-		{name: "/spec", want: true},
 		{name: "/search", want: true},
 		{name: "/find", want: true},
 		{name: "/image", want: true},
@@ -1010,7 +1008,6 @@ func TestCommandRequiredInputHintFromUsage(t *testing.T) {
 		name string
 		want string
 	}{
-		{name: "/spec", want: "[task]"},
 		{name: "/search", want: "[query]"},
 		{name: "/find", want: "[query]"},
 		{name: "/image", want: "[path]"},

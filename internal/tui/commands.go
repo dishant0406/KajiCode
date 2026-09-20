@@ -21,16 +21,13 @@ const (
 	commandSandboxSetup
 	commandProvider
 	commandModel
-	commandRole
 	commandContext
 	commandConfig
 	commandDebug
 	commandDoctor
-	commandPlan
 	commandSearch
 	commandResume
 	commandRetitle
-	commandSpec
 	commandInit
 	commandCompact
 	commandRewind
@@ -54,8 +51,6 @@ const (
 	commandPromptEditor
 	commandPromptInspect
 	commandLoop
-	commandVoice
-	commandSTTModel
 	commandWebSearch
 	commandUnknown
 )
@@ -99,34 +94,6 @@ var commandDefinitions = []commandDefinition{
 		group:       commandGroupModel,
 		description: "Show, switch, or refresh the active model.",
 		kind:        commandModel,
-	},
-	{
-		name:        "/role",
-		usage:       "/role [list|name|clear]",
-		group:       commandGroupModel,
-		description: "Show or set the active task role for multi-model routing.",
-		kind:        commandRole,
-	},
-	{
-		name:        "/stt-model",
-		usage:       "/stt-model",
-		group:       commandGroupModel,
-		description: "Choose the speech-to-text (dictation) model.",
-		kind:        commandSTTModel,
-	},
-	{
-		name:        "/voice",
-		usage:       "/voice",
-		group:       commandGroupRuntime,
-		description: "Toggle voice mode (hold Space to dictate).",
-		kind:        commandVoice,
-	},
-	{
-		name:        "/plan",
-		usage:       "/plan",
-		group:       commandGroupSession,
-		description: "Show planning mode status.",
-		kind:        commandPlan,
 	},
 	{
 		name:        "/permissions",
@@ -272,13 +239,6 @@ var commandDefinitions = []commandDefinition{
 		group:       commandGroupSession,
 		description: "Generate concise titles for resumable sessions.",
 		kind:        commandRetitle,
-	},
-	{
-		name:        "/spec",
-		usage:       "/spec <task>",
-		group:       commandGroupSession,
-		description: "Draft an implementation spec for review before editing.",
-		kind:        commandSpec,
 	},
 	{
 		name:        "/init",

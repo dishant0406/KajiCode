@@ -78,7 +78,6 @@ const (
 	transcriptBodyItemRow
 	transcriptBodyItemPendingPrompt
 	transcriptBodyItemPendingInterim
-	transcriptBodyItemSpecReview
 )
 
 type transcriptBodyItem struct {
@@ -429,7 +428,7 @@ func (m model) foldTranscriptRange(state transcriptFoldState, start, end int, wi
 
 func (m model) appendPendingTranscriptBodyItems(base transcriptBaseBodyItemSet, width int) []transcriptBodyItem {
 	items := base.items
-	if !m.pending && m.pendingSpecReview == nil {
+	if !m.pending {
 		return items
 	}
 	contentWidth := transcriptContentWidth(width)
@@ -482,10 +481,6 @@ func (m model) appendPendingTranscriptBodyItems(base transcriptBaseBodyItemSet, 
 				},
 			})
 		}
-	}
-	if m.pendingSpecReview != nil {
-		items = append(items, transcriptBlankBodyItem())
-		items = append(items, transcriptBlockBodyItem(transcriptBodyItemSpecReview, -1, renderFocusedSpecReviewPrompt(*m.pendingSpecReview, width)))
 	}
 	return items
 }

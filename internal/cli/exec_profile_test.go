@@ -55,23 +55,6 @@ func TestApplyExecProfileThoroughArmsSelfCorrect(t *testing.T) {
 	}
 }
 
-// The spec-draft path wires no self-corrector (explicit --self-correct
-// --use-spec is rejected at parse time, before profiles apply), so a profile's
-// self-correct knob is projected away under --use-spec instead of silently
-// arming a knob the draft runner ignores. The other knobs still apply.
-func TestApplyExecProfileSpecProjectsAwaySelfCorrect(t *testing.T) {
-	options := execOptions{execProfile: "thorough", useSpec: true}
-	if _, _, err := applyExecProfile(&options); err != nil {
-		t.Fatalf("applyExecProfile: %v", err)
-	}
-	if options.selfCorrect {
-		t.Fatal("thorough under --use-spec must not arm self-correct (the draft runner has none)")
-	}
-	if options.reasoningEffort != "high" {
-		t.Fatalf("reasoningEffort = %q, the profile's other knobs must still apply", options.reasoningEffort)
-	}
-}
-
 func TestApplyExecProfileUnknownIsUsageError(t *testing.T) {
 	options := execOptions{execProfile: "turbo"}
 	_, _, err := applyExecProfile(&options)
@@ -172,21 +155,6 @@ func TestRunExecTraceRecordsSelectedProfile(t *testing.T) {
 	}
 	if !strings.Contains(string(raw), `"profile":"fast"`) {
 		t.Fatalf("trace must record the selected profile, got %s", raw)
-	}
-}
-
-// An explicit --spec-reasoning-effort governs the spec draft's effort, so the
-// escalation effort-restore must not arm there even when the profile filled
-// the (unused) main effort.
-func TestSpecProfileEffortFilled(t *testing.T) {
-	if !specProfileEffortFilled(true, "") {
-		t.Fatal("no explicit spec effort: the profile's fill governs, restore must arm")
-	}
-	if specProfileEffortFilled(true, "high") {
-		t.Fatal("an explicit spec effort must disarm the effort restore")
-	}
-	if specProfileEffortFilled(false, "") {
-		t.Fatal("nothing filled, nothing to restore")
 	}
 }
 

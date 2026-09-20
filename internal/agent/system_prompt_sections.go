@@ -14,7 +14,6 @@ const (
 	promptSectionAgentGuidelines promptSectionRole = "agent-guidelines"
 	promptSectionProjectContext  promptSectionRole = "project-context"
 	promptSectionHarnessConfig   promptSectionRole = "harness-config"
-	promptSectionModeContract    promptSectionRole = "mode-contract"
 	promptSectionSpecialists     promptSectionRole = "specialists"
 	promptSectionMCPInstructions promptSectionRole = "mcp-instructions"
 	promptSectionSkills          promptSectionRole = "skills"
@@ -67,18 +66,4 @@ func appendDiagnosticSection(existing string, next string) string {
 		return next
 	}
 	return existing + "\n\n" + next
-}
-
-func modeContractContext(options Options) string {
-	switch options.PermissionMode {
-	case PermissionModeSpecDraft:
-		return `<mode_contract>
-Mode: spec-draft.
-This is a planning/specification pass. Use only read-only inspection tools plus ask_user when genuinely blocked.
-Do not edit files, run shell commands, spawn specialists, request extra permissions, or call todo_write.
-The only write-capable exception is submit_spec, which saves the completed draft under .kajicode/specs and stops for review.
-</mode_contract>`
-	default:
-		return ""
-	}
 }

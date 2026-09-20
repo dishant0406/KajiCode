@@ -88,6 +88,11 @@ func TestPromptInspectFullCommandPrintsRawPrompt(t *testing.T) {
 }
 
 func TestHarnessCommandPersistsAndReloadsUserConfig(t *testing.T) {
+	// /harness reloads through config.Resolve, which honors process environment.
+	// Neutralize the ambient provider selector so a developer's exported
+	// KAJICODE_PROVIDER cannot point resolution at a provider this test's seeded
+	// config does not define.
+	t.Setenv(config.ActiveProviderEnv, "")
 	configPath := filepath.Join(t.TempDir(), "config.json")
 	m := newModel(context.Background(), Options{UserConfigPath: configPath})
 
@@ -129,6 +134,10 @@ func TestHarnessCommandPersistsAndReloadsUserConfig(t *testing.T) {
 }
 
 func TestHarnessCommandReloadUsesProcessEnvironment(t *testing.T) {
+	// The reload resolves process environment for the seeded provider's API key.
+	// Clear the ambient provider selector so an exported KAJICODE_PROVIDER cannot
+	// override the seeded active provider with one the config does not define.
+	t.Setenv(config.ActiveProviderEnv, "")
 	t.Setenv("KAJICODE_TUI_HARNESS_TEST_KEY", "test-key")
 	configPath := filepath.Join(t.TempDir(), "config.json")
 	seed := config.FileConfig{

@@ -9,6 +9,15 @@ import (
 	tea "charm.land/bubbletea/v2"
 )
 
+func transcriptHasText(m model, substr string) bool {
+	for _, row := range m.transcript {
+		if strings.Contains(row.text, substr) {
+			return true
+		}
+	}
+	return false
+}
+
 func TestWebSearchCommandOpensForm(t *testing.T) {
 	m := model{}.handleWebSearchCommand("")
 	if m.webSearchForm == nil {

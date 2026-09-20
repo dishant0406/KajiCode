@@ -62,32 +62,24 @@ const dragEdgeScrollInterval = 70 * time.Millisecond
 const dragEdgeScrollStep = 1
 
 type model struct {
-	ctx                  context.Context
-	cwd                  string
-	appVersion           string
-	userCommands         []usercommands.Command // file-sourced /commands (.kajicode/commands)
-	userCommandPaths     usercommands.Paths
-	loadSkills           func() []skills.Skill // lazy installed-skills loader for /skills + /<skill-name>
-	userConfigPath       string
-	doctorUserConfigPath string
-	projectConfigPath    string
-	gitBranch            string
-	providerName         string
-	modelName            string
-	modelCatalog         modelregistry.Registry
-	providerProfile      config.ProviderProfile
-	savedProviders       []config.ProviderProfile
-	provider             kajicoderuntime.Provider
-	newProvider          func(config.ProviderProfile) (kajicoderuntime.Provider, error)
-	modelRoles           map[string]string
-	defaultModel         string
-	activeRole           string
-	visionRouting        string
-	imageLimits          imageinput.Limits // provider-safe envelope for attached images (resize/re-encode if needed)
-	// roleBindTarget is the role an open role-bound model picker is configuring.
-	// It is set when /role's stage-1 role list hands off to a model picker, and
-	// cleared once a model is chosen (or the flow is cancelled).
-	roleBindTarget              string
+	ctx                         context.Context
+	cwd                         string
+	appVersion                  string
+	userCommands                []usercommands.Command // file-sourced /commands (.kajicode/commands)
+	userCommandPaths            usercommands.Paths
+	loadSkills                  func() []skills.Skill // lazy installed-skills loader for /skills + /<skill-name>
+	userConfigPath              string
+	doctorUserConfigPath        string
+	projectConfigPath           string
+	gitBranch                   string
+	providerName                string
+	modelName                   string
+	modelCatalog                modelregistry.Registry
+	providerProfile             config.ProviderProfile
+	savedProviders              []config.ProviderProfile
+	provider                    kajicoderuntime.Provider
+	newProvider                 func(config.ProviderProfile) (kajicoderuntime.Provider, error)
+	imageLimits                 imageinput.Limits // provider-safe envelope for attached images (resize/re-encode if needed)
 	probeProviderHealth         func(context.Context, providerhealth.Options) providerhealth.Result
 	discoverProviderModels      func(context.Context, config.ProviderProfile) ([]providermodeldiscovery.Model, error)
 	discoverOllamaContextWindow func(ctx context.Context, baseURL string, model string) (int, error)
@@ -224,8 +216,6 @@ type model struct {
 	composerCursorVisible bool
 	composerPastePreviews []composerPastePreview
 	composerSelection     composerSelectionState
-	dictation             dictationController
-	sttKeyPrompt          *sttKeyPromptState
 	webSearchForm         *webSearchFormState
 	promptEditor          *promptEditorState
 	styleEditor           *styleEditorState
@@ -318,7 +308,6 @@ type model struct {
 	swarmSessionMap   map[string]string
 	pendingPermission *pendingPermissionPrompt
 	pendingAskUser    *pendingAskUserPrompt
-	pendingSpecReview *pendingSpecReviewPrompt
 	width             int
 	height            int
 	// hidePinnedPlan suppresses the pinned plan panel above the composer. Set on
@@ -620,7 +609,6 @@ type agentResponseMsg struct {
 	usageEvents   []kajicoderuntime.Usage
 	usageModelID  string
 	sessionEvents []pendingSessionEvent
-	specReview    *pendingSpecReviewPrompt
 	err           error
 	// Turn metadata for settled rows that do not otherwise carry it.
 	turnTools   int
@@ -785,19 +773,10 @@ type pendingAskUserPrompt struct {
 	states  []askUserAnswerState
 }
 
-type pendingSpecReviewPrompt struct {
-	SpecID         string
-	SpecTitle      string
-	SpecFilePath   string
-	RelativePath   string
-	DraftSessionID string
-}
-
 type tuiAgentRunOptions struct {
 	registry         *tools.Registry
 	permissionMode   agent.PermissionMode
 	systemPrompt     string
-	specDraft        bool
 	initialMessages  []kajicoderuntime.Message
 	compactionEvents []sessions.Event
 }
@@ -894,10 +873,6 @@ func newModel(ctx context.Context, options Options) model {
 		doctorUserConfigPath:        doctorUserConfigPath,
 		projectConfigPath:           options.ProjectConfigPath,
 		savedProviders:              options.SavedProviders,
-		modelRoles:                  options.ModelRoles,
-		defaultModel:                options.DefaultModel,
-		activeRole:                  options.ActiveRole,
-		visionRouting:               options.VisionRouting,
 		imageLimits:                 imageinput.LimitsOrDefault(options.ImageLimits),
 		gitBranch:                   gitBranch(cwd),
 		providerName:                options.ProviderName,
@@ -951,7 +926,6 @@ func newModel(ctx context.Context, options Options) model {
 		swarmSessionMap:             map[string]string{},
 		setup:                       newSetupState(options.Setup),
 		setupSave:                   options.Setup.Save,
-		dictation:                   newDictationController(options),
 	}
 	m.refreshComposerHistory()
 	// Apply an explicit theme immediately; auto stays on the dark default until
@@ -1100,9 +1074,9 @@ func (m *model) stopPRWatcher() {
 // shortcut may act instead of falling through to a modal's own handler. Shared
 // by every shortcut that should defer to whichever modal is focused.
 func (m model) noBlockingModal() bool {
-	return m.pendingPermission == nil && m.pendingAskUser == nil && m.pendingSpecReview == nil &&
+	return m.pendingPermission == nil && m.pendingAskUser == nil &&
 		m.providerWizard == nil && m.mcpAddWizard == nil && m.mcpManager == nil && m.picker == nil &&
-		m.sttKeyPrompt == nil && m.promptEditor == nil && m.styleEditor == nil
+		m.promptEditor == nil && m.styleEditor == nil
 }
 
 func (m model) quit() (tea.Model, tea.Cmd) {
@@ -1123,11 +1097,6 @@ func (m model) shutdownLSPManager() {
 	defer cancel()
 	if m.lspManager != nil {
 		_ = m.lspManager.Shutdown(shutdownCtx)
-	}
-	// The warm sherpa-onnx streaming server is a session-long child process too;
-	// tear it down alongside the language servers (§6a).
-	if m.dictation.shutdownServer != nil {
-		_ = m.dictation.shutdownServer(shutdownCtx)
 	}
 }
 
@@ -1338,12 +1307,6 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m.attachClipboardImage(msg.data, msg.mediaType), nil
 	case tea.PasteMsg:
-		// A paste into the cloud-STT key prompt fills the key (the common way to
-		// enter an API key), not the composer.
-		if m.sttKeyPrompt != nil {
-			m.sttKeyPrompt.input += strings.TrimSpace(msg.Content)
-			return m, nil
-		}
 		if m.webSearchForm != nil {
 			m.webSearchForm.apiKey += strings.TrimSpace(msg.Content)
 			return m, nil
@@ -1355,31 +1318,6 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.handleStyleEditorPaste(msg.Content), nil
 		}
 		return m.routePaste(msg.Content)
-	case dictationStartedMsg:
-		return m.handleDictationStarted(msg)
-	case dictationTranscribedMsg:
-		return m.handleDictationTranscribed(msg)
-	case sttPartialMsg:
-		return m.handleDictationPartial(msg), nil
-	case sttDownloadProgressMsg:
-		return m.handleDictationDownloadProgress(msg), nil
-	case dictationDownloadedMsg:
-		return m.handleDictationDownloaded(msg)
-	case sttModelsFetchedMsg:
-		return m.handleSTTModelsFetched(msg), nil
-	case recTickMsg:
-		return m.handleRecTick()
-	case sttLevelMsg:
-		return m.handleDictationLevel(msg), nil
-	case tea.KeyboardEnhancementsMsg:
-		return m.handleKeyboardEnhancements(msg), nil
-	case tea.KeyReleaseMsg:
-		// Voice mode's hold-to-record ends on Space release; every other release
-		// event is ignored (dispatch elsewhere is press-based).
-		if m.dictation.voiceModeEnabled && keyIs(msg, tea.KeySpace) {
-			return m.handleVoiceSpaceRelease()
-		}
-		return m, nil
 	case tea.KeyPressMsg:
 		// Paste-detection timing trackers. MUST run before any early return
 		// so burst counting stays accurate regardless of which branch fires.
@@ -1400,11 +1338,6 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.composerCursorVisible = true
 		if m.setup.visible {
 			return m.handleSetupKey(msg)
-		}
-		// The cloud-STT API-key prompt is modal: it owns every keystroke (masked
-		// input) until Enter saves or Esc cancels.
-		if m.sttKeyPrompt != nil {
-			return m.handleSTTKeyPromptKey(msg)
 		}
 		// The /web-search setup form is modal while open.
 		if m.webSearchForm != nil {
@@ -1517,11 +1450,6 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m.appendSystemNotice(fmt.Sprintf("Mouse released — drag to select and copy text. Press %s again to re-enable mouse interaction (clicks, right-click paste).", mouseKey)), nil
 			}
 			return m.appendSystemNotice("Mouse interaction re-enabled."), nil
-		case m.dictation.voiceModeEnabled && !m.transcriptDetailed && keyIs(msg, tea.KeySpace) && !keyHasMod(msg, tea.ModCtrl) && !keyAlt(msg) && m.noBlockingModal():
-			// Voice mode (/voice) repurposes Space into the record gesture — the only
-			// dictation trigger — so it must not also type a space. Turn voice mode
-			// off (/voice) to type normally.
-			return m.handleVoiceSpacePress(msg)
 		case keyIs(msg, tea.KeyEsc):
 			// Esc is heavily overloaded below (subchat exit, MCP cancel, ask-user,
 			// permission deny, wizard/picker/suggestions dismiss, ...) before ever
@@ -1532,15 +1460,6 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// armed for some later, unrelated Esc to silently act on.
 			wasConfirmingCancel := m.pending && m.cancelConfirmActive
 			m = m.disarmCancelConfirmation()
-			// An active dictation recording cancels on Esc (releases the mic, drops
-			// the audio) — but only if this Esc isn't a confirming run-cancel
-			// press. Without this guard, a user mid-recording who double-Esc's
-			// to kill the run finds the first Esc swallowed by dictation and
-			// the run still going. The pending run cancel happens further
-			// down at the bottom of the Esc branch.
-			if m.dictation.active() && !wasConfirmingCancel {
-				return m.cancelDictation()
-			}
 			// Subchat view exits on Esc (returns to main chat).
 			if m.subchat.active {
 				m.chatScrollOffset = m.subchat.exit()
@@ -1576,10 +1495,6 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.pendingAskUser != nil {
 				return m.escapeAskUser()
 			}
-			if m.pendingSpecReview != nil {
-				m.burstCount = 0
-				return m.cancelSpecReview()
-			}
 			if m.pendingPermission != nil && m.pendingPermission.request.ToolName == tools.RequestPermissionsToolName {
 				return m.resolvePermission(permissionDecisionDeny)
 			}
@@ -1600,9 +1515,6 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// An open picker cancels first; then an active suggestion overlay is
 			// dismissed. Neither cancels the run or clears the input.
 			if m.picker != nil {
-				// Closing a role-bound model picker abandons the bind in progress so a
-				// later plain /model picker isn't misrouted into role binding.
-				m.roleBindTarget = ""
 				if m.picker.kind == pickerModel {
 					m.clearModelPickerLoadState()
 				}
@@ -1663,10 +1575,6 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.pendingAskUser != nil {
 				m.burstCount = 0
 				return m.confirmAskUser()
-			}
-			if m.pendingSpecReview != nil {
-				m.burstCount = 0
-				return m, nil
 			}
 			if m.providerWizard != nil {
 				m.burstCount = 0
@@ -1916,7 +1824,7 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			// A queued message takes ↑ priority over history recall: pop it back
 			// into the composer for editing before it sends on the next turn.
-			if m.hasQueuedMessage() && m.pendingSpecReview == nil {
+			if m.hasQueuedMessage() {
 				return m.popQueuedMessageForEdit(), nil
 			}
 			if m.historyRecallActive() {
@@ -1935,7 +1843,7 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.pendingAskUser != nil {
 				return m.moveAskUserCursor(-1), nil
 			}
-			if m.providerWizard != nil || m.mcpAddWizard != nil || m.mcpManager != nil || m.picker != nil || m.pendingSpecReview != nil {
+			if m.providerWizard != nil || m.mcpAddWizard != nil || m.mcpManager != nil || m.picker != nil {
 				break
 			}
 			if m.composerValue() != "" {
@@ -1956,7 +1864,7 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.pendingAskUser != nil {
 				return m.moveAskUserCursor(1), nil
 			}
-			if m.providerWizard != nil || m.mcpAddWizard != nil || m.mcpManager != nil || m.picker != nil || m.pendingSpecReview != nil {
+			if m.providerWizard != nil || m.mcpAddWizard != nil || m.mcpManager != nil || m.picker != nil {
 				break
 			}
 			if m.composerValue() != "" {
@@ -1986,10 +1894,6 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, cmd
 			}
 			return m, nil // picker mode: non-navigation keys do nothing
-		}
-		if m.pendingSpecReview != nil {
-			m.burstCount = 0
-			return m.handleSpecReviewKey(msg)
 		}
 		if m.pendingPermission != nil {
 			m.burstCount = 0
@@ -2389,7 +2293,7 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// reconcile it to complete here. Read pendingAskUser/pendingPermission
 		// BEFORE the reset below clears them, and skip spec-draft reviews — those
 		// are legitimate mid-plan err==nil yields where the plan is NOT done.
-		if msg.err == nil && msg.specReview == nil &&
+		if msg.err == nil &&
 			m.pendingAskUser == nil && m.pendingPermission == nil {
 			m.plan.completeRemaining(m.now())
 		}
@@ -2460,9 +2364,6 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.ttft > 0 {
 			m.turnTTFTSum += msg.ttft
 			m.turnTTFTCount++
-		}
-		if msg.specReview != nil {
-			m = m.activateSpecReview(*msg.specReview)
 		}
 		if m.notifier != nil {
 			m.notifier.Notify(notify.Completion, notify.DefaultMessage(notify.Completion))
@@ -2767,10 +2668,6 @@ func (m model) View() tea.View {
 	// regardless of notification config. A standard, widely supported DEC
 	// private mode (CSI ?1004h) that unsupported terminals silently ignore.
 	view.ReportFocus = true
-	// Voice mode's Space-hold gesture needs key-release events (Kitty protocol).
-	// Request them only while voice mode is on — the renderer re-sends the request
-	// only when the value changes, so gating this costs nothing (§10).
-	view.KeyboardEnhancements.ReportEventTypes = m.dictation.voiceModeEnabled
 	if m.wantsMouseCapture() {
 		if isRunningUnderPRoot() {
 			// Under PRoot the AllMotion (1003) sequence doesn't work
@@ -2811,7 +2708,7 @@ func (m model) homePresentationActive() bool {
 	return m.transcriptEmpty() && !m.pending && m.pendingAskUser == nil &&
 		!m.helpOverlay && !m.leaderHelpOverlay && m.providerWizard == nil &&
 		m.mcpAddWizard == nil && m.mcpManager == nil && m.picker == nil &&
-		m.sttKeyPrompt == nil && m.promptEditor == nil && m.styleEditor == nil && !m.suggestionsActive() && !m.transcriptDetailed
+		m.promptEditor == nil && m.styleEditor == nil && !m.suggestionsActive() && !m.transcriptDetailed
 }
 
 // transcriptView renders the visible chat surface: in inline mode this is the
@@ -2859,7 +2756,6 @@ func (m model) transcriptView() string {
 	mcpAddOverlay := m.mcpAddWizardOverlay(width)
 	mcpOverlay := m.mcpManagerOverlay(width)
 	pickerOverlay := m.pickerOverlay(width)
-	sttKeyOverlay := m.sttKeyPromptOverlay(width)
 	webSearchOverlay := m.webSearchFormOverlay(width)
 	promptEditorOverlay := m.promptEditorOverlay(width, overlayMaxHeight)
 	styleOverlay := m.styleEditorOverlay(width, overlayMaxHeight)
@@ -2869,8 +2765,6 @@ func (m model) transcriptView() string {
 		viewportOverlay = promptEditorOverlay
 	case styleOverlay != "":
 		viewportOverlay = styleOverlay
-	case sttKeyOverlay != "":
-		viewportOverlay = sttKeyOverlay
 	case webSearchOverlay != "":
 		viewportOverlay = webSearchOverlay
 	case helpOverlayContent != "":
@@ -4414,13 +4308,6 @@ func (m model) choosePicker() (tea.Model, tea.Cmd) {
 			m.picker = nil
 			return m.refreshModelPicker()
 		}
-		// A role-bound model picker (opened from the interactive /role flow) binds
-		// the chosen model to the role instead of switching the active provider.
-		if role := strings.TrimSpace(m.roleBindTarget); role != "" {
-			m.roleBindTarget = ""
-			m = m.bindRoleToModel(role, item.Value)
-			return m, nil
-		}
 		text := ""
 		owner := strings.TrimSpace(item.OwnerProvider)
 		_, ownerIsSavedProvider := m.savedProviderByName(owner)
@@ -4449,28 +4336,10 @@ func (m model) choosePicker() (tea.Model, tea.Cmd) {
 		// submitting (a bare second Enter runs it without one); names the slash
 		// path cannot reach run immediately instead.
 		m, cmd = m.chooseSkillFromPicker(item)
-	case pickerSTTModel:
-		// Selecting the local engine with no model (and auto-download available)
-		// chains into the variant-download picker instead of finalizing.
-		if next, fetchCmd, opened := m.maybeOpenSTTDownloadPicker(item.Value); opened {
-			return next, fetchCmd
-		}
-		text := ""
-		m, text = m.handleSTTModelSelection(item.Value)
-		if text != "" { // empty when a key prompt opened instead of finalizing
-			m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: text})
-		}
-	case pickerSTTDownload:
-		return m.handleSTTDownloadSelection(item.Value)
 	case pickerPermissions:
 		text := ""
 		m, text = m.choosePermissionProfile(item.Value)
 		m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: text})
-	case pickerRole:
-		// Stage-1 /role list: a role row advances to the bound model picker; the
-		// control rows act immediately. The resulting model (possibly opening a new
-		// picker) is returned directly.
-		return m.handleRolePickerChoice(item)
 	case pickerTheme:
 		// The hovered palette is already live from the preview; handleThemeCommand
 		// records the choice (m.themeMode) and re-applies it, and reports the switch.
@@ -4741,50 +4610,6 @@ func (m model) dispatchCommand(command parsedCommand) (tea.Model, tea.Cmd) {
 		m, text = m.handleModelCommand(command.text)
 		m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: text})
 		return m, nil
-	case commandRole:
-		arg := strings.TrimSpace(command.text)
-		if arg == "" {
-			if m.pending {
-				m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: pickerBusyText(command.name)})
-				return m, nil
-			}
-			next, cmd, text := m.openRolePicker()
-			if text != "" {
-				m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: text})
-			}
-			if next.picker != nil || next.roleBindTarget != "" {
-				return next, cmd
-			}
-		}
-		// /role add <name> jumps straight into the bound model picker for a fresh
-		// role (an interactive way to create a role without typing a selector).
-		if strings.HasPrefix(strings.ToLower(arg), "add ") || strings.EqualFold(arg, "add") {
-			if m.pending {
-				m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: pickerBusyText(command.name)})
-				return m, nil
-			}
-			name := strings.TrimSpace(strings.TrimPrefix(arg, "add "))
-			name = strings.TrimSpace(strings.TrimPrefix(name, " "))
-			name = strings.TrimSpace(strings.TrimPrefix(name, "add"))
-			if name == "" {
-				m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: "Role\nUse /role add <name> then pick a model for the new role."})
-				return m, nil
-			}
-			next, cmd := m.openRoleModelPicker(name)
-			return next, cmd
-		}
-		text := ""
-		m, text = m.handleRoleCommand(command.text)
-		m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: text})
-		return m, nil
-	case commandSTTModel:
-		if m.pending {
-			m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: pickerBusyText(command.name)})
-			return m, nil
-		}
-		return m.openSTTModelPicker()
-	case commandVoice:
-		return m.toggleVoiceMode()
 	case commandWebSearch:
 		return m.handleWebSearchCommand(command.text), nil
 	case commandContext:
@@ -4801,9 +4626,6 @@ func (m model) dispatchCommand(command parsedCommand) (tea.Model, tea.Cmd) {
 		return m, nil
 	case commandDebug:
 		m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: m.debugText()})
-		return m, nil
-	case commandPlan:
-		m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: m.planText()})
 		return m, nil
 	case commandDoctor:
 		return m.startDoctorCommand(command.text)
@@ -4855,8 +4677,6 @@ func (m model) dispatchCommand(command parsedCommand) (tea.Model, tea.Cmd) {
 			m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: text})
 		}
 		return m, retitleCmd
-	case commandSpec:
-		return m.handleSpecCommand(command.text)
 	case commandInit:
 		return m.handleInitCommand()
 	case commandCompact:
@@ -5158,7 +4978,7 @@ func (m model) launchPrompt(prompt string) (model, tea.Cmd) {
 	// exec's drop+warn wording) rather than sending them to a model that
 	// rejects them. Pending state is cleared either way below.
 	turnImages := ctx.images
-	if len(turnImages) > 0 && !m.modelSupportsVisionTUI() && !m.canRouteVisionImages(m.roleRouter()) {
+	if len(turnImages) > 0 && !m.modelSupportsVisionTUI() {
 		name := m.effectiveModelName()
 		if name == "" {
 			name = "the active model"
@@ -5234,7 +5054,7 @@ func (m *model) ensureSpinnerTick() tea.Cmd {
 }
 
 func (m model) launchQueuedMessageIfReady() (model, tea.Cmd) {
-	if !m.hasQueuedMessage() || m.pending || m.exiting || m.pendingPermission != nil || m.pendingAskUser != nil || m.pendingSpecReview != nil {
+	if !m.hasQueuedMessage() || m.pending || m.exiting || m.pendingPermission != nil || m.pendingAskUser != nil {
 		return m, nil
 	}
 	prompt := m.queuedMessage
@@ -5246,7 +5066,7 @@ func (m model) launchQueuedMessageIfReady() (model, tea.Cmd) {
 // inputs: history exists and no modal surface owns the arrow keys.
 func (m model) historyRecallActive() bool {
 	return len(m.inputHistory) > 0 &&
-		m.pendingAskUser == nil && m.pendingPermission == nil && m.pendingSpecReview == nil
+		m.pendingAskUser == nil && m.pendingPermission == nil
 }
 
 func (m *model) cancelRun() {
@@ -5348,7 +5168,6 @@ func (m model) runAgentWithOptions(runID int, runCtx context.Context, prompt str
 		usageEvents := []kajicoderuntime.Usage{}
 		sessionEvents := []pendingSessionEvent{}
 		usageModelID := m.modelName
-		var specReview *pendingSpecReviewPrompt
 		options := m.agentOptions
 		options.Registry = m.registry
 		if runOptions.registry != nil {
@@ -5364,11 +5183,6 @@ func (m model) runAgentWithOptions(runID int, runCtx context.Context, prompt str
 		options.SessionID = m.activeSession.SessionID
 		options.ProviderName = m.providerName
 		options.Model = m.modelName
-		// Multi-model task routing: the explicit /role the operator set in this TUI
-		// session (or --role at launch) drives per-turn model routing through the
-		// loop's role-swap seam. Nil when no role is set / none configured — the loop
-		// is then byte-identical.
-		options.RoleRouting = m.roleRoutingOptions(m.newProvider)
 		options.ReasoningEffort = string(m.reasoningEffort)
 		options.ResponseStyle = m.responseStyle
 		options.Cwd = m.cwd
@@ -5390,10 +5204,9 @@ func (m model) runAgentWithOptions(runID int, runCtx context.Context, prompt str
 		// (`go test ./...`, whole-repo) is NOT run per edit by default — that would
 		// add the full suite's latency to every turn and let a pre-existing failure
 		// hijack the agent — so the test half is opt-in via `/selfcorrect on`
-		// (m.selfCorrectTests). The spec-draft (planning) path never wires it,
-		// matching exec; the per-turn lsp.Manager is torn down when this run
+		// (m.selfCorrectTests). The per-turn lsp.Manager is torn down when this run
 		// returns; auto-fix vs report-only follows the active permission mode.
-		if !runOptions.specDraft && options.Cwd != "" {
+		if options.Cwd != "" {
 			// Prefer the session-long manager (kept warm across prompts). Only when it
 			// is absent — e.g. cwd was unknown at construction, or a test built the
 			// model directly — fall back to a per-run manager that is shut down here.
@@ -5650,11 +5463,6 @@ func (m model) runAgentWithOptions(runID int, runCtx context.Context, prompt str
 
 		onToolResult := options.OnToolResult
 		options.OnToolResult = func(result agent.ToolResult) {
-			if runOptions.specDraft {
-				if info, ok := tuiSpecReviewFromToolResult(result, m.activeSession.SessionID); ok {
-					specReview = &info
-				}
-			}
 			row := transcriptRow{
 				kind:         rowToolResult,
 				id:           effectiveToolRowID(result.ToolCallID, callSeq[result.ToolCallID]),
@@ -5808,19 +5616,6 @@ func (m model) runAgentWithOptions(runID int, runCtx context.Context, prompt str
 				Payload: map[string]any{"message": err.Error()},
 			})
 			return agentResponseMsg{runID: runID, rows: rows, usageEvents: usageEvents, usageModelID: usageModelID, sessionEvents: sessionEvents, err: err, turnTools: toolCalls, turnElapsed: m.now().Sub(started)}
-		}
-		if runOptions.specDraft {
-			if result.StopReason != agent.StopReasonSpecReviewRequired || specReview == nil || specReview.SpecID == "" || specReview.SpecFilePath == "" {
-				err := fmt.Errorf("spec draft ended without submit_spec")
-				flushReasoning(m.now())
-				sessionEvents = append(sessionEvents, pendingSessionEvent{
-					Type:    sessions.EventError,
-					Payload: map[string]any{"message": err.Error()},
-				})
-				return agentResponseMsg{runID: runID, rows: rows, usageEvents: usageEvents, usageModelID: usageModelID, sessionEvents: sessionEvents, err: err, turnTools: toolCalls, turnElapsed: m.now().Sub(started)}
-			}
-			flushReasoning(m.now())
-			return agentResponseMsg{runID: runID, rows: rows, usageEvents: usageEvents, usageModelID: usageModelID, sessionEvents: sessionEvents, specReview: specReview, turnTools: toolCalls, turnElapsed: m.now().Sub(started)}
 		}
 		flushReasoning(m.now())
 		elapsed := m.now().Sub(started)

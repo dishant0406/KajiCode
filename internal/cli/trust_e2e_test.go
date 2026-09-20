@@ -239,38 +239,6 @@ func TestExecSurfacesMCPTrustNotice(t *testing.T) {
 	}
 }
 
-// TestExecSpecSurfacesMCPTrustNotice is the --use-spec analogue of the test above:
-// the spec-draft path (exec_spec.go) must also thread the MCP skip into its notice.
-// The fake provider never submits a spec, so the run exits non-zero; that is
-// orthogonal to trust, so we assert only the notice, not the exit code.
-func TestExecSpecSurfacesMCPTrustNotice(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("exec fake-provider harness assumes a POSIX process environment")
-	}
-	setTrustConfigRoot(t)
-	repo := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(repo, ".kajicode"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	body := `{"mcp":{"servers":{"proj":{"type":"stdio","command":"proj-cmd"}}}}`
-	if err := os.WriteFile(filepath.Join(repo, ".kajicode", "config.json"), []byte(body), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	var out, errBuf bytes.Buffer
-	_ = runWithDeps([]string{"exec", "--use-spec", "--skip-permissions-unsafe", "--max-turns", "3", "go"}, &out, &errBuf, appDeps{
-		getwd:         func() (string, error) { return repo, nil },
-		resolveConfig: func(string, config.Overrides) (config.ResolvedConfig, error) { return execResolvedConfig(), nil },
-		newProvider: func(config.ProviderProfile) (kajicoderuntime.Provider, error) {
-			return toolThenTextProvider{toolName: "glob"}, nil
-		},
-		resolveMCPConfig: func(string, bool) (config.MCPConfig, error) { return config.MCPConfig{}, nil },
-	})
-	if !strings.Contains(errBuf.String(), "MCP servers") || !strings.Contains(errBuf.String(), "kajicode trust") {
-		t.Fatalf("untrusted --use-spec exec must surface the MCP trust notice, stderr=%q", errBuf.String())
-	}
-}
-
 // runExecTrust drives the full exec entry point with a fake worktree and a
 // tool-calling provider, returning the exit code. The provider calls the core
 // "glob" tool so dispatchBeforeTool fires inside the real exec-built registry.
@@ -325,39 +293,5 @@ func TestExecWorktreeInheritsTrustEndToEnd(t *testing.T) {
 	}
 	if _, err := os.Stat(marker); err != nil {
 		t.Fatalf("TRUSTED worktree: project hook did NOT run (marker absent) -- worktree trust inheritance broken: %v", err)
-	}
-}
-
-// TestExecSpecWorktreeInheritsTrustEndToEnd closes gap #1 for the spec-draft path
-// (the exact --use-spec --worktree combination the review fix addressed): the
-// spec-draft chokepoint must also key trust on the original launch dir.
-func TestExecSpecWorktreeInheritsTrustEndToEnd(t *testing.T) {
-	setTrustConfigRoot(t)
-	repo := t.TempDir()
-	worktree := t.TempDir()
-	marker := filepath.Join(t.TempDir(), "marker")
-	writeMarkerHook(t, worktree, marker)
-
-	// The spec-draft flow itself exits non-zero here (the fake provider does not
-	// submit a real spec), which is orthogonal to trust: the hook dispatcher is
-	// built (keyed on run.trustRoot) before the agent runs, and glob (a read-only
-	// allow tool) is advertised in spec-draft, so beforeTool still fires. We assert
-	// only the marker, the trust behavior, not the spec-flow exit code.
-
-	// Untrusted: spec-draft in a worktree of an untrusted repo runs no project hook.
-	_ = os.Remove(marker)
-	_ = runExecTrust(t, []string{"--use-spec"}, repo, worktree)
-	if _, err := os.Stat(marker); err == nil {
-		t.Fatal("UNTRUSTED spec-draft worktree: project hook ran -- spec-draft keyed trust on the worktree path")
-	}
-
-	// Trusted: the spec-draft path inherits the source repo's trust.
-	if err := workspacetrust.Trust(repo); err != nil {
-		t.Fatal(err)
-	}
-	_ = os.Remove(marker)
-	_ = runExecTrust(t, []string{"--use-spec"}, repo, worktree)
-	if _, err := os.Stat(marker); err != nil {
-		t.Fatalf("TRUSTED spec-draft worktree: project hook did NOT run -- spec-draft trust inheritance broken: %v", err)
 	}
 }

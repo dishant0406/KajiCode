@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/dishant0406/KajiCode/internal/sessions"
-	"github.com/dishant0406/KajiCode/internal/specialist"
 )
 
 func parseExecArgs(args []string) (execOptions, bool, error) {
@@ -163,19 +162,6 @@ func parseExecArgs(args []string) (execOptions, bool, error) {
 			index = next
 		case strings.HasPrefix(arg, "--model="):
 			options.model = strings.TrimSpace(strings.TrimPrefix(arg, "--model="))
-		case arg == "--role":
-			value, next, err := nextFlagValue(args, index, arg)
-			if err != nil {
-				return options, false, err
-			}
-			options.role = strings.TrimSpace(value)
-			index = next
-		case strings.HasPrefix(arg, "--role="):
-			value, err := requiredInlineFlagValue(arg, "--role")
-			if err != nil {
-				return options, false, err
-			}
-			options.role = strings.TrimSpace(value)
 		case arg == "--profile":
 			value, next, err := nextFlagValue(args, index, arg)
 			if err != nil {
@@ -207,34 +193,6 @@ func parseExecArgs(args []string) (execOptions, bool, error) {
 			index = next
 		case strings.HasPrefix(arg, "--reasoning-effort="):
 			options.reasoningEffort = strings.TrimSpace(strings.TrimPrefix(arg, "--reasoning-effort="))
-		case arg == "--use-spec":
-			options.useSpec = true
-		case arg == "--spec-model":
-			value, next, err := nextFlagValue(args, index, arg)
-			if err != nil {
-				return options, false, err
-			}
-			options.specModel = strings.TrimSpace(value)
-			index = next
-		case strings.HasPrefix(arg, "--spec-model="):
-			value, err := requiredInlineFlagValue(arg, "--spec-model")
-			if err != nil {
-				return options, false, err
-			}
-			options.specModel = value
-		case arg == "--spec-reasoning-effort":
-			value, next, err := nextFlagValue(args, index, arg)
-			if err != nil {
-				return options, false, err
-			}
-			options.specReasoningEffort = strings.TrimSpace(value)
-			index = next
-		case strings.HasPrefix(arg, "--spec-reasoning-effort="):
-			value, err := requiredInlineFlagValue(arg, "--spec-reasoning-effort")
-			if err != nil {
-				return options, false, err
-			}
-			options.specReasoningEffort = value
 		case arg == "--max-turns":
 			value, next, err := nextFlagValue(args, index, arg)
 			if err != nil {
@@ -452,29 +410,6 @@ func parseExecArgs(args []string) (execOptions, bool, error) {
 	if (options.resume != "" || options.resumeLatest) && options.fork != "" {
 		return options, false, execUsageError{"Use either --resume or --fork, not both."}
 	}
-	if options.useSpec && (options.resume != "" || options.resumeLatest || options.fork != "") {
-		return options, false, execUsageError{"--use-spec cannot be combined with --resume or --fork."}
-	}
-	if options.useSpec && strings.EqualFold(strings.TrimSpace(options.tag), specialist.SessionTagSpecialist) {
-		return options, false, execUsageError{"--use-spec cannot be used inside a specialist child session."}
-	}
-	if options.useSpec && options.selfCorrect {
-		// The spec-draft (planning) path never wires the post-edit self-correct loop,
-		// so accepting the flag here would silently ignore it. Reject the combination
-		// rather than pretend it took effect.
-		return options, false, execUsageError{"--self-correct cannot be combined with --use-spec."}
-	}
-	if options.useSpec && options.noCompletionGate {
-		// Same reasoning as --self-correct above: the spec-draft path never consults
-		// the completion gate, so the flag would be silently ignored.
-		return options, false, execUsageError{"--no-completion-gate cannot be combined with --use-spec."}
-	}
-	if !options.useSpec && options.specModel != "" {
-		return options, false, execUsageError{"--spec-model requires --use-spec."}
-	}
-	if !options.useSpec && options.specReasoningEffort != "" {
-		return options, false, execUsageError{"--spec-reasoning-effort requires --use-spec."}
-	}
 	if options.initSessionID != "" && (options.resume != "" || options.resumeLatest) {
 		return options, false, execUsageError{"Use --init-session-id only when creating or forking a session."}
 	}
@@ -555,7 +490,7 @@ func nextFlagValue(args []string, index int, flag string) (string, int, error) {
 		default:
 			return "", index, execUsageError{fmt.Sprintf("Invalid input format %q. Expected text or stream-json.", next)}
 		}
-	case "--reasoning-effort", "--spec-reasoning-effort":
+	case "--reasoning-effort":
 		switch strings.ToLower(next) {
 		case "low", "medium", "high":
 		default:

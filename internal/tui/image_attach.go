@@ -85,21 +85,9 @@ func stripMatchingQuotes(s string) (string, bool) {
 	return s, false
 }
 
-// effectiveModelName returns the model that will actually serve the current
-// turn's request. With an explicit active role that resolves to a provider +
-// model, that role-routed model wins (the loop swaps the provider to it per
-// turn). Otherwise the session default (m.modelName) is used. This matters for
-// capability gates like the vision check: attaching an image while the "vision"
-// role routes to a vision-capable model must not be refused based on the
-// default (non-vision) model.
+// effectiveModelName returns the model that will serve the current turn's
+// request — the session default.
 func (m model) effectiveModelName() string {
-	if role := strings.TrimSpace(m.activeRole); role != "" {
-		if router := m.roleRouter(); router != nil {
-			if profile, ok := router.ProfileFor(role); ok && strings.TrimSpace(profile.Model) != "" {
-				return strings.TrimSpace(profile.Model)
-			}
-		}
-	}
 	return strings.TrimSpace(m.modelName)
 }
 

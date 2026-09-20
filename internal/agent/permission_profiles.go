@@ -18,7 +18,7 @@ func NormalizePermissionMode(mode PermissionMode) PermissionMode {
 	switch mode {
 	case PermissionModeAuto, PermissionModeAsk, PermissionModeUnsafe,
 		PermissionModeAskAll, PermissionModeReadOnly, PermissionModeReadWrite,
-		PermissionModeBypassAll, PermissionModeSpecDraft, PermissionModeMemberAuto:
+		PermissionModeBypassAll, PermissionModeMemberAuto:
 		return mode
 	default:
 		return PermissionModeAskAll

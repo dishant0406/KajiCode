@@ -37,8 +37,6 @@ const maxTurnsFinalAnswerPrompt = "You have reached the tool-turn limit. Do not 
 const maxStreamStallRetries = 1
 
 const (
-	toolResultMetaControl       = "control"
-	toolResultControlSpecReview = "spec_review_required"
 	// toolImageTurnNotice is the text prefacing a synthetic user turn that carries
 	// images a tool returned (read_file on an image). Providers accept image parts
 	// only on a user role, so the loop injects them after the tool batch.
@@ -47,14 +45,9 @@ const (
 
 var errPermissionApprovalCanceled = errors.New("permission approval cancelled")
 
-// imageRejectHint returns the routing-aware suffix for the image-rejection error
-// message. When role routing (and thus a vision-capable role profile) is wired, point
-// the model at the vision route; otherwise suggest a known vision-capable model.
-// routing may be nil.
-func imageRejectHint(routing *RoleRouting) string {
-	if routing != nil {
-		return " — the run is role-routed; ensure the active role's model is vision-capable, or set images.visionRouting to auto/model (kajicode) to route images to a vision-capable profile."
-	}
+// imageRejectHint returns the suffix for the image-rejection error message,
+// suggesting a known vision-capable model.
+func imageRejectHint() string {
 	return " — try switching to a vision-capable model (claude, gpt-4o, gemini)"
 }
 
@@ -302,105 +295,6 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 	// opt into the one permitted task-grounded semantic check.
 	completionPolicy := newCompletionPolicy(options.SelfCorrect != nil)
 
-	// Multi-model task routing (opt-in via Options.RoleRouting; nil leaves the loop
-	// byte-identical). The loop tracks the IN-FORCE role and, when RoleFor picks a
-	// different role for a turn, swaps the run's provider to that role's profile —
-	// mirroring the mid-run escalation swap (build a new session, close the old,
-	// update options.Model). messages are preserved: a role switch is a temporary
-	// model swap, never a conversation reset. A routing/swap error is non-fatal:
-	// record a note and stay on the current provider.
-	currentRole := ""
-	defaultModel := options.Model
-	baseContextWindow := options.ContextWindow
-	baseSessions := turnSessions
-	roleSwapFailureNotice := func(prev, req string, err error) kajicoderuntime.Message {
-		return kajicoderuntime.Message{
-			Role:    kajicoderuntime.MessageRoleUser,
-			Content: "Note: could not switch to the role \"" + req + "\" model: " + err.Error() + ". Continuing on " + options.Model + ".",
-		}
-	}
-	// applyRoleRouting recomputes the active role for the current turn and performs a
-	// provider swap if it changed. Returns true if the role/model actually switched.
-	//
-	// Role-driven routing is per-turn and reversible: a turn whose RoleFor returns
-	// "" (or the "default" role) swaps BACK to the run's starting provider/model —
-	// the per-message vision seam relies on this to return to the default model
-	// after an image turn. currentRole tracks the role IN FORCE so "" default turns
-	// are only reached when a prior turn actually routed away.
-	applyRoleRouting := func(ctx context.Context, ctxSig RoleContext) bool {
-		if options.RoleRouting == nil {
-			return false
-		}
-		role := strings.TrimSpace(options.RoleRouting.RoleFor(ctxSig))
-		isDefault := role == "" || role == "default"
-		// Only act when the intended role differs from the in-force role.
-		if (isDefault && currentRole == "") || (!isDefault && role == currentRole) {
-			return false
-		}
-		if isDefault {
-			// Swap back to the run's default provider/model. Close the routed session
-			// and reopen the base one we captured before the first role swap, so the
-			// default provider's optimized session (if any) is restored, not just the
-			// provider. A reopen failure is non-fatal: keep the routed session and note
-			// it, mirroring the role-swap failure handling.
-			base, reopenErr := baseSessions.OpenTurnSession(ctx)
-			if reopenErr != nil || base == nil {
-				// Best-effort: the default provider would not reopen. Stay on the routed
-				// session but restore the default model/context-window labels; record a
-				// non-fatal note.
-				options.Model = defaultModel
-				if baseContextWindow > 0 {
-					options.ContextWindow = baseContextWindow
-				}
-				currentRole = ""
-				if reopenErr != nil {
-					messages = append(messages, roleSwapFailureNotice("", defaultModel, fmt.Errorf("could not reopen the default session: %w", reopenErr)))
-				}
-				return true
-			}
-			_ = session.Close()
-			session = base
-			_ = session.Prewarm(ctx)
-			provider = sessionProvider{session: session}
-			options.Model = defaultModel
-			if baseContextWindow > 0 {
-				options.ContextWindow = baseContextWindow
-			}
-			currentRole = ""
-			return true
-		}
-		newProvider, profile, ok := options.RoleRouting.Current(ctx, role)
-		if !ok || newProvider == nil {
-			messages = append(messages, roleSwapFailureNotice(currentRole, role, fmt.Errorf("no provider available for role %q", role)))
-			currentRole = role
-			return false
-		}
-		// Build a turn session for the role's provider (same seam as escalation), then
-		// swap session/provider for the rest of the run.
-		newSessions := kajicoderuntime.NewProviderTurnSessionProvider(newProvider, kajicoderuntime.ProviderCapabilities{})
-		newSession, openErr := newSessions.OpenTurnSession(ctx)
-		if openErr != nil {
-			messages = append(messages, roleSwapFailureNotice(currentRole, role, openErr))
-			currentRole = role
-			return false
-		}
-		_ = session.Close()
-		session = newSession
-		_ = session.Prewarm(ctx)
-		provider = sessionProvider{session: session}
-		options.Model = profile.Model
-		// Recompute the compactor's context-window budget from the new profile when the
-		// router can report it; otherwise keep the prior budget (identified limitation).
-		if options.RoleRouting.ContextWindowFor != nil {
-			if cw := options.RoleRouting.ContextWindowFor(profile); cw > 0 {
-				options.ContextWindow = cw
-			}
-		}
-		options.Trace.Counter(trace.CounterModelSwitches, 1)
-		currentRole = role
-		return true
-	}
-
 	// toolDefCache memoizes each tool's rendered JSON-schema definition across
 	// turns (a tool's advertised schema is stable for the run), so partitionTools
 	// doesn't re-run the recursive schema→map conversion for every tool every turn.
@@ -510,15 +404,6 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 			})
 		}
 
-		// Multi-model task routing: pick the active role for this turn and swap the
-		// provider when the role's model differs from the one in force. Best-effort —
-		// a swap failure keeps the current provider (a note is recorded). Performed
-		// before compaction so compaction's summarizer already uses the routed model.
-		// HasImages is true only for the initial user turn, which is the only turn
-		// that carries the seeded image attachments — per-message vision routing uses
-		// it to route exactly that message and swap back to the default model.
-		applyRoleRouting(ctx, RoleContext{NumTurns: turn, HasImages: turn == 0 && len(options.Images) > 0})
-
 		// PROACTIVE compaction: if the history is approaching the model's
 		// context window, summarize the oldest middle before building the
 		// request. A no-op when ContextWindow == 0 (compaction disabled).
@@ -576,7 +461,7 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 			hb.Stop()
 			if isImageRejectionError(err) {
 				result.Messages = copyMessages(messages)
-				return result, fmt.Errorf("model %s rejected the image: %s. The model may not support image input%s", options.Model, err.Error(), imageRejectHint(options.RoleRouting))
+				return result, fmt.Errorf("model %s rejected the image: %s. The model may not support image input%s", options.Model, err.Error(), imageRejectHint())
 			}
 			// REACTIVE compaction: a context-limit failure on the call itself
 			// can be recovered by compacting once and retrying the same turn.
@@ -670,7 +555,7 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 		// collected and a non-nil stop error when the run must end now.
 		recoverStreamError := func(collected kajicoderuntime.CollectedStream) (kajicoderuntime.CollectedStream, error) {
 			if isImageRejectionError(errors.New(collected.Error)) {
-				return collected, fmt.Errorf("model %s rejected the image: %s. The model may not support image input%s", options.Model, collected.Error, imageRejectHint(options.RoleRouting))
+				return collected, fmt.Errorf("model %s rejected the image: %s. The model may not support image input%s", options.Model, collected.Error, imageRejectHint())
 			}
 			// REACTIVE compaction: the streamed error may also be a context limit
 			// (some providers surface it mid-stream). Compact and retry once.
@@ -1038,14 +923,6 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 				result.Messages = copyMessages(messages)
 				return result, abortErr
 			}
-			if stopReason := stopReasonFromToolResult(toolResult); stopReason != "" {
-				messages = appendAbortedToolResults(messages, collected.ToolCalls[index+1:])
-				result.FinalAnswer = toolResult.Output
-				result.StopReason = stopReason
-				result.Messages = copyMessages(messages)
-				return result, nil
-			}
-
 			// Repeated-failure guard: if a tool keeps failing the same way, hint
 			// once (with its schema) then halt — so no model loops on a bad call.
 			// Only RETRIABLE failures (bad arguments / execution errors) drive it:
@@ -1455,15 +1332,7 @@ func executeToolCall(ctx context.Context, registry *tools.Registry, call ToolCal
 		}, nil
 	}
 	tool, toolFound := registry.Get(call.Name)
-	if permissionMode == PermissionModeSpecDraft && toolFound && !ToolAdvertised(tool, permissionMode) {
-		return ToolResult{
-			ToolCallID:   call.ID,
-			Name:         call.Name,
-			Status:       tools.StatusError,
-			Output:       `Error: Tool "` + call.Name + `" is not available in spec-draft mode.`,
-			DenialReason: DenialFiltered,
-		}, nil
-	}
+	_ = toolFound
 	if toolFound {
 		if rejecter, ok := tool.(tools.PrePermissionRejecter); ok {
 			if result, rejected := rejecter.RejectBeforePermission(args); rejected {
@@ -3378,9 +3247,6 @@ func ToolAdvertised(tool tools.Tool, permissionMode PermissionMode) bool {
 	if tool.Safety().Permission == tools.PermissionDeny {
 		return false
 	}
-	if permissionMode == PermissionModeSpecDraft {
-		return toolAdvertisedInSpecDraft(tool)
-	}
 	if permissionMode == PermissionModeAuto {
 		return tool.Safety().Permission == tools.PermissionAllow || tool.Safety().AdvertiseInAuto
 	}
@@ -3400,27 +3266,6 @@ func ToolAdvertised(tool tools.Tool, permissionMode PermissionMode) bool {
 		return false
 	}
 	return true
-}
-
-func toolAdvertisedInSpecDraft(tool tools.Tool) bool {
-	switch tool.Name() {
-	case "ask_user", "submit_spec":
-		return true
-	case "todo_write":
-		return false
-	}
-	safety := tool.Safety()
-	return safety.SideEffect == tools.SideEffectRead && safety.Permission == tools.PermissionAllow
-}
-
-func stopReasonFromToolResult(result ToolResult) StopReason {
-	if result.Meta == nil {
-		return ""
-	}
-	if result.Meta[toolResultMetaControl] == toolResultControlSpecReview {
-		return StopReasonSpecReviewRequired
-	}
-	return ""
 }
 
 // loadedToolsFromResult extracts the deferred-tool names a tool (tool_search)

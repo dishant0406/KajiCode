@@ -818,7 +818,6 @@ func TestResumeLoadingBlocksCommandsThatCouldRaceHydration(t *testing.T) {
 	for _, command := range []parsedCommand{
 		{kind: commandPrompt, text: "new prompt"},
 		{kind: commandRetry},
-		{kind: commandSpec, text: "new spec"},
 		{kind: commandBTW, text: "side question"},
 		{kind: commandHelp},
 	} {
@@ -844,8 +843,6 @@ func commandInput(command parsedCommand) string {
 		return command.text
 	case commandRetry:
 		return "/retry"
-	case commandSpec:
-		return "/spec " + command.text
 	case commandBTW:
 		return "/btw " + command.text
 	case commandHelp:
@@ -973,13 +970,10 @@ func TestResumePickerExcludesSubRunSessions(t *testing.T) {
 	if _, err := store.Create(sessions.CreateInput{Title: "Real Conversation"}); err != nil {
 		t.Fatalf("Create conversation: %v", err)
 	}
-	// A specialist/sub-agent run and a spec draft both create sessions; neither is
-	// a standalone conversation and must not flood the /resume picker.
+	// A specialist/sub-agent run creates a session that is not a standalone
+	// conversation and must not flood the /resume picker.
 	if _, err := store.Create(sessions.CreateInput{Title: "Specialist Run", SessionKind: sessions.SessionKindChild}); err != nil {
 		t.Fatalf("Create child: %v", err)
-	}
-	if _, err := store.Create(sessions.CreateInput{Title: "Spec Draft", SessionKind: sessions.SessionKindSpecDraft}); err != nil {
-		t.Fatalf("Create spec draft: %v", err)
 	}
 
 	out := newModel(context.Background(), Options{SessionStore: store}).resumeText()
@@ -987,7 +981,7 @@ func TestResumePickerExcludesSubRunSessions(t *testing.T) {
 	if !strings.Contains(out, "Real Conversation") {
 		t.Fatalf("resume picker should list the real conversation:\n%s", out)
 	}
-	if strings.Contains(out, "Specialist Run") || strings.Contains(out, "Spec Draft") {
+	if strings.Contains(out, "Specialist Run") {
 		t.Fatalf("resume picker must exclude child/spec sub-runs:\n%s", out)
 	}
 }

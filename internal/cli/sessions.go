@@ -216,10 +216,10 @@ func parseNonEmptySessionsFlag(flag string, value string) (string, error) {
 func parseSessionKindFlag(value string) (sessions.SessionKind, error) {
 	kind := sessions.SessionKind(strings.ToLower(strings.TrimSpace(value)))
 	switch kind {
-	case sessions.SessionKindFork, sessions.SessionKindChild, sessions.SessionKindSide, sessions.SessionKindSpecDraft, sessions.SessionKindSpecImpl:
+	case sessions.SessionKindFork, sessions.SessionKindChild, sessions.SessionKindSide:
 		return kind, nil
 	default:
-		return "", execUsageError{fmt.Sprintf("invalid --kind %q. Expected fork, child, side, spec-draft, or spec-impl.", value)}
+		return "", execUsageError{fmt.Sprintf("invalid --kind %q. Expected fork, child, or side.", value)}
 	}
 }
 
@@ -492,12 +492,6 @@ func formatSessionSnapshotLine(session kajicodecommands.SessionSnapshot) string 
 	if session.TaskID != "" {
 		details = append(details, "task="+redact(session.TaskID))
 	}
-	if session.SpecStatus != "" {
-		details = append(details, "spec="+redact(session.SpecStatus))
-	}
-	if session.SpecID != "" {
-		details = append(details, "spec_id="+redact(session.SpecID))
-	}
 	if session.Tag != "" {
 		details = append(details, "tag="+redact(session.Tag))
 	}
@@ -535,7 +529,7 @@ Commands:
 
 Flags:
       --json            Print JSON output
-      --kind <kind>     Filter list by fork, child, side, spec-draft, or spec-impl
+      --kind <kind>     Filter list by fork, child, or side
       --sequence <n>    Rewind target sequence (rewind-plan, rewind)
       --event <id>      Rewind target event id (rewind-plan, rewind)
       --exclude-target  Drop the target event (rewind-plan, rewind)

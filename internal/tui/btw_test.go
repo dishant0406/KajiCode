@@ -192,7 +192,6 @@ func TestBTWBlocksPersistentConfigurationCommands(t *testing.T) {
 		"/profile fast",
 		"/theme dark",
 		"/config recaps off",
-		"/stt-model",
 		"/mcp",
 		"/rewind",
 		"/compact",

@@ -432,8 +432,6 @@ func runWithDeps(args []string, stdout io.Writer, stderr io.Writer, deps appDeps
 		return runSearch(args[1:], stdout, stderr, deps)
 	case "sessions", "session":
 		return runSessions(args[1:], stdout, stderr, deps)
-	case "spec":
-		return runSpec(args[1:], stdout, stderr, deps)
 	case "init":
 		return runInit(args[1:], stdout, stderr, deps)
 	case "specialists", "specialist":
@@ -829,16 +827,6 @@ func runInteractiveTUIWithSetup(stderr io.Writer, deps appDeps, permissionMode a
 	lastKnownMCPConfig := mcpConfig
 	fileTracker := tools.NewFileTracker()
 	var scratchBaseline scratchFileBaseline
-	sttServerManager := newDictationServerManager(resolved.STT)
-	// Keep STT downloads in the SAME config tree the rest of the TUI uses. Deriving
-	// from userConfigPath (rather than config.UserConfigDir()) matters when the config
-	// root is overridden — e.g. in tests or a custom KAJICODE config dir — so the two
-	// don't diverge. userConfigPath points at .../kajicode/config.json, so its dir is the
-	// kajicode config dir.
-	sttDownloadRoot := ""
-	if userConfigPath != "" {
-		sttDownloadRoot = filepath.Join(filepath.Dir(userConfigPath), "stt")
-	}
 	// Build the hooks dispatcher out of the AgentOptions literal so its trust skip
 	// report can be combined with the plugin activation's, and emit at most one
 	// notice when project hooks/plugins were dropped for an untrusted workspace.
@@ -865,10 +853,6 @@ func runInteractiveTUIWithSetup(stderr io.Writer, deps appDeps, permissionMode a
 		ModelName:            resolved.Provider.Model,
 		ProviderProfile:      resolved.Provider,
 		SavedProviders:       usableSavedProviders(resolved.Providers),
-		ModelRoles:           resolved.ModelRoles,
-		DefaultModel:         resolved.DefaultModel,
-		ActiveRole:           resolved.ActiveRole,
-		VisionRouting:        resolved.Images.EffectiveVisionRouting(),
 		ImageLimits:          imageLimits(resolved.Images),
 		FavoriteModels:       resolved.Preferences.FavoriteModels,
 		RecentModels:         resolved.Preferences.RecentModels,
@@ -939,14 +923,8 @@ func runInteractiveTUIWithSetup(stderr io.Writer, deps appDeps, permissionMode a
 			_, err := config.SetPermissionProfile(userConfigPath, string(mode))
 			return err
 		},
-		Notify:                    resolved.Notify,
-		KeyBindings:               resolved.KeyBindings,
-		STT:                       resolved.STT,
-		BuildDictationTranscriber: newDictationTranscriberFactory(resolved, userConfigPath, sttServerManager),
-		ShutdownDictationServer:   sttServerManager.Shutdown,
-		STTDownloadRoot:           sttDownloadRoot,
-		STTKeyStatus:              newSTTKeyStatus(resolved, userConfigPath),
-		SaveSTTKey:                newSaveSTTKey(userConfigPath),
+		Notify:      resolved.Notify,
+		KeyBindings: resolved.KeyBindings,
 		Setup: tui.SetupOptions{
 			Visible:    setupVisible,
 			Required:   needsSetup,
@@ -1180,9 +1158,6 @@ func specialistSummaries(paths specialist.Paths) []agent.SpecialistInfo {
 }
 
 func shouldRegisterExecSpecialistTools(options execOptions) bool {
-	if options.useSpec {
-		return false
-	}
 	if strings.EqualFold(strings.TrimSpace(options.tag), specialist.SessionTagSpecialist) {
 		return false
 	}
@@ -1481,13 +1456,7 @@ Flags:
       --image <path>                 Attach a local image (repeatable; vision models only)
       --add-dir <path>               Allow writes in an extra directory (repeatable)
       --mode <name>                  Apply a preset (smart, deep, fast, large, precise); explicit flags override it
-  -m, --model <model>                Select the model for provider setup
-      --role <name>                  Route the run to a task role (e.g. design, implement)
-                                     via ModelRoles; selects that role's model for the run
-      --use-spec                     Draft a spec first and stop for review
-      --spec-model <model>           Override the draft model when --use-spec is set
-      --spec-reasoning-effort <effort>
-                                    Override draft reasoning effort when --use-spec is set
+-m, --model <model>                Select the model for provider setup
       --max-turns <number>           Override the maximum agent loop turns
       --exec-profile <name>          Apply an execution profile (balanced, fast, thorough): loop
                                     posture only (turn budget, effort, self-correction, escalation);
