@@ -96,6 +96,10 @@ func RunChildAgent(ctx context.Context, request ChildRequest) (ChildResult, erro
 	if err != nil {
 		status = statusError
 	}
+	// Persist any assistant prose streamed after the last tool boundary before
+	// the terminal specialist_stop event. Falls back to the run's final answer so
+	// a provider that never streamed text still records its result.
+	recorder.flushFinalText(result.FinalAnswer)
 	childResult := ChildResult{
 		AgentName: request.Agent.Name,
 		SessionID: sessionID,

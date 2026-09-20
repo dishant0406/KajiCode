@@ -488,7 +488,18 @@ func transcriptRowsFromSessionEvents(events []sessions.Event) []transcriptRow {
 			}
 		}
 	}
+	// Older child sessions persisted one assistant EventMessage PER streamed
+	// delta, which rendered as one word per line on subchat drill-in. Merging each
+	// assistant message into the row produced by the IMMEDIATELY PRECEDING EVENT
+	// repairs those already-recorded sessions. Keying on the previous EVENT — not
+	// the previous rendered row — is deliberate: events that produce no row
+	// (empty-content messages, suppressed permission events) must never bridge two
+	// distinct segments. prevAssistant is snapshot then cleared at the top of each
+	// iteration, so only the assistant branch leaves it true for the next event.
+	prevAssistant := false
 	for _, event := range events {
+		wasAssistant := prevAssistant
+		prevAssistant = false
 		payload := sessionPayload(event)
 		switch event.Type {
 		case sessions.EventMessage:
@@ -511,9 +522,17 @@ func transcriptRowsFromSessionEvents(events []sessions.Event) []transcriptRow {
 			case "user":
 				rows = append(rows, transcriptRow{kind: rowUser, text: content, thumbs: thumbsFromPayload(payload)})
 			case "assistant":
-				// A persisted assistant message was a turn's final answer. Tool/timing
-				// counters were not recorded; the completion line omits those segments.
-				rows = append(rows, transcriptRow{kind: rowAssistant, text: content, final: true})
+				// A persisted assistant message was a turn's final answer (or a
+				// prose segment between tool calls). Tool/timing counters were not
+				// recorded; the completion line omits those segments. Merge into the
+				// previous event's assistant row when this event directly follows one
+				// (legacy per-delta writes); otherwise start a new row.
+				if wasAssistant {
+					rows[len(rows)-1].text += content
+				} else {
+					rows = append(rows, transcriptRow{kind: rowAssistant, text: content, final: true})
+				}
+				prevAssistant = true
 			default:
 				rows = append(rows, transcriptRow{kind: rowSystem, text: content})
 			}

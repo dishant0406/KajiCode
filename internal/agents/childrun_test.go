@@ -35,6 +35,62 @@ func (echoProvider) StreamCompletion(ctx context.Context, request kajicoderuntim
 	return ch, nil
 }
 
+// streamedEchoProvider emits its reply as MULTIPLE text deltas, mimicking a real
+// streaming provider, so the child run's persisted assistant messages can be
+// asserted for coalescing.
+type streamedEchoProvider struct{ deltas []string }
+
+func (p streamedEchoProvider) StreamCompletion(ctx context.Context, request kajicoderuntime.CompletionRequest) (<-chan kajicoderuntime.StreamEvent, error) {
+	ch := make(chan kajicoderuntime.StreamEvent, len(p.deltas)+2)
+	for _, delta := range p.deltas {
+		select {
+		case <-ctx.Done():
+			close(ch)
+			return ch, ctx.Err()
+		case ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventText, Content: delta}:
+		}
+	}
+	ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventDone}
+	close(ch)
+	return ch, nil
+}
+
+// TestChildRunCoalescesStreamedText is the end-to-end guard for the subchat
+// one-word-per-line bug: a child provider that streams its answer in fragments
+// must persist exactly ONE assistant EventMessage for the run.
+func TestChildRunCoalescesStreamedText(t *testing.T) {
+	store := sessions.NewStore(sessions.StoreOptions{RootDir: t.TempDir()})
+	parent, _ := store.Create(sessions.CreateInput{SessionID: "parent_session", Title: "parent"})
+	runner := NewRunner(Paths{}, DefaultMaxDepth)
+	explorer, err := runner.Resolve("explorer")
+	if err != nil {
+		t.Fatalf("resolve explorer: %v", err)
+	}
+
+	result, err := RunChildAgent(context.Background(), ChildRequest{
+		Agent:  explorer,
+		Prompt: "inspect the parser",
+		Context: ChildRunContext{
+			Registry:        tools.NewRegistry(),
+			Provider:        streamedEchoProvider{deltas: []string{"Found ", "the ", "parser ", "in ", "parse.go."}},
+			Store:           store,
+			ParentSessionID: parent.SessionID,
+			Cwd:             t.TempDir(),
+		},
+	})
+	if err != nil {
+		t.Fatalf("RunChildAgent: %v", err)
+	}
+
+	assistant := assistantMessages(t, store, result.SessionID)
+	if len(assistant) != 1 {
+		t.Fatalf("streamed child run persisted %d assistant messages (%q), want 1", len(assistant), assistant)
+	}
+	if assistant[0] != "Found the parser in parse.go." {
+		t.Fatalf("coalesced assistant message = %q", assistant[0])
+	}
+}
+
 // TestRunChildAgentInProcess is the end-to-end contract for the rewrite: a Task
 // child runs IN-PROCESS through the real agent loop, with its own parent-linked
 // child session, and the parent sees the child's final answer.

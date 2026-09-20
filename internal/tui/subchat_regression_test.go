@@ -1,11 +1,13 @@
 package tui
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/dishant0406/KajiCode/internal/sessions"
 	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
@@ -246,6 +248,60 @@ func TestDetailedSubchatToggleTargetsParentRows(t *testing.T) {
 	}
 	if rowExpandedByID(next.subchat.childRows, "child") {
 		t.Fatal("detailed view must not toggle the hidden child rows")
+	}
+}
+
+// TestSubchatRehydrationCoalescesLegacyPerDeltaMessages guards already-recorded
+// child sessions: older builds persisted one assistant EventMessage per streamed
+// delta, which replayed as one word per line on drill-in. Consecutive assistant
+// messages must rehydrate into a single row.
+func TestSubchatRehydrationCoalescesLegacyPerDeltaMessages(t *testing.T) {
+	ev := func(payload string) sessions.Event {
+		return sessions.Event{Type: sessions.EventMessage, Payload: json.RawMessage(payload)}
+	}
+	rows := transcriptRowsFromSessionEvents([]sessions.Event{
+		ev(`{"role":"assistant","content":"The "}`),
+		ev(`{"role":"assistant","content":"parser "}`),
+		ev(`{"role":"assistant","content":"lives in parse.go"}`),
+	})
+	if len(rows) != 1 {
+		t.Fatalf("per-delta assistant messages must coalesce to one row, got %d: %#v", len(rows), rows)
+	}
+	if rows[0].text != "The parser lives in parse.go" {
+		t.Fatalf("coalesced text = %q", rows[0].text)
+	}
+}
+
+// TestSubchatRehydrationKeepsDistinctAssistantMessages guards the other side of
+// the coalescing rule: assistant messages separated by a tool event must NOT be
+// merged, and a row-less event (empty-content message) must not bridge two
+// distinct segments.
+func TestSubchatRehydrationKeepsDistinctAssistantMessages(t *testing.T) {
+	ev := func(payload string) sessions.Event {
+		return sessions.Event{Type: sessions.EventMessage, Payload: json.RawMessage(payload)}
+	}
+	tool := sessions.Event{
+		Type:    sessions.EventToolCall,
+		Payload: json.RawMessage(`{"name":"read_file","id":"c1","arguments":"{}"}`),
+	}
+
+	rows := transcriptRowsFromSessionEvents([]sessions.Event{
+		ev(`{"role":"assistant","content":"before the tool"}`),
+		tool,
+		ev(`{"role":"assistant","content":"after the tool"}`),
+	})
+	if len(rows) != 3 {
+		t.Fatalf("assistant messages separated by a tool must stay distinct, got %d rows: %#v", len(rows), rows)
+	}
+
+	// A row-less event between two assistant messages must also keep them apart.
+	rows = transcriptRowsFromSessionEvents([]sessions.Event{
+		ev(`{"role":"assistant","content":"first"}`),
+		ev(`{"role":"assistant","content":""}`),
+		ev(`{"role":"assistant","content":"second"}`),
+	})
+	if len(rows) != 2 {
+		t.Fatalf("a row-less event must not bridge two assistant segments, got %d rows: %#v", len(rows), rows)
 	}
 }
 
