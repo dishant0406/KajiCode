@@ -1,5 +1,5 @@
 // Package lockutil provides the platform-specific file primitives behind the
-// O_EXCL lock files in cron, daemon, hooks, oauth, and swarm: a no-overwrite
+// O_EXCL lock files in cron, daemon, hooks, and oauth: a no-overwrite
 // restore for locks that were sidelined during a stale-reclaim attempt, and a
 // lock file remover with one cross-platform contract (missing files are a
 // no-op; Windows retries transient sharing violations).

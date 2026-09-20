@@ -139,7 +139,7 @@ func TestParseExecSpecialistMetadataFlags(t *testing.T) {
 	options, help, err := parseExecArgs([]string{
 		"--calling-session-id", "parent_session",
 		"--calling-tool-use-id=toolu_123",
-		"--tag", "specialist",
+		"--tag", "agent",
 		"--depth=2",
 		"--session-title", "Explorer child",
 		"--init-session-id", "child_session",
@@ -154,7 +154,7 @@ func TestParseExecSpecialistMetadataFlags(t *testing.T) {
 	}
 	if options.callingSessionID != "parent_session" ||
 		options.callingToolUseID != "toolu_123" ||
-		options.tag != "specialist" ||
+		options.tag != "agent" ||
 		options.depth != 2 ||
 		options.sessionTitle != "Explorer child" ||
 		options.initSessionID != "child_session" {
@@ -198,7 +198,7 @@ func TestRunExecRegistersTaskOnlyForUnsafeTopLevelRuns(t *testing.T) {
 	}{
 		{name: "default headless", args: []string{"exec", "--list-tools"}, wantTask: false},
 		{name: "unsafe headless", args: []string{"exec", "--auto", "high", "--list-tools"}, wantTask: true},
-		{name: "specialist child", args: []string{"exec", "--auto", "high", "--tag", "specialist", "--list-tools"}, wantTask: false},
+		{name: "agent child", args: []string{"exec", "--auto", "high", "--tag", "agent", "--list-tools"}, wantTask: false},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -212,7 +212,7 @@ func TestRunExecRegistersTaskOnlyForUnsafeTopLevelRuns(t *testing.T) {
 			if exitCode != exitSuccess {
 				t.Fatalf("exitCode = %d stdout=%s stderr=%s", exitCode, stdout.String(), stderr.String())
 			}
-			for _, toolName := range []string{"Task", "TaskOutput", "TaskStop", "GenerateSpecialist"} {
+			for _, toolName := range []string{"Task", "TaskOutput", "TaskStop", "GenerateAgent"} {
 				hasTool := strings.Contains(stdout.String(), "  "+toolName+" ")
 				if hasTool != tc.wantTask {
 					t.Fatalf("%s visibility = %v, want %v; output:\n%s", toolName, hasTool, tc.wantTask, stdout.String())
@@ -231,9 +231,9 @@ func TestRunExecUsesInitSessionIDAndSessionTitle(t *testing.T) {
 	var stderr bytes.Buffer
 	exitCode := runWithDeps([]string{
 		"exec",
-		"--init-session-id", "specialist_child",
+		"--init-session-id", "child_run",
 		"--session-title", "Explorer child",
-		"--tag", "specialist",
+		"--tag", "agent",
 		"--depth", "1",
 		"hello",
 	}, &stdout, &stderr, appDeps{
@@ -252,14 +252,14 @@ func TestRunExecUsesInitSessionIDAndSessionTitle(t *testing.T) {
 	}
 
 	store := sessions.NewStore(sessions.StoreOptions{RootDir: filepath.Join(dataHome, "kajicode", "sessions")})
-	session, err := store.Get("specialist_child")
+	session, err := store.Get("child_run")
 	if err != nil {
 		t.Fatalf("Get session returned error: %v", err)
 	}
 	if session == nil {
-		t.Fatal("expected initialized session specialist_child")
+		t.Fatal("expected initialized session child_run")
 	}
-	if session.Title != "Explorer child" || session.Tag != "specialist" || session.Depth != 1 {
+	if session.Title != "Explorer child" || session.Tag != "agent" || session.Depth != 1 {
 		t.Fatalf("session metadata = %#v, want title/tag/depth", session)
 	}
 	if session.Cwd != cwd {
@@ -283,7 +283,7 @@ func TestRunExecPersistsCallingSessionChildMetadata(t *testing.T) {
 		"--output-format", "stream-json",
 		"--init-session-id", "child_session",
 		"--session-title", "worker: Auth check",
-		"--tag", "specialist",
+		"--tag", "agent",
 		"--depth", "1",
 		"--calling-session-id", parent.SessionID,
 		"--calling-tool-use-id", "toolu_123",
@@ -316,7 +316,7 @@ func TestRunExecPersistsCallingSessionChildMetadata(t *testing.T) {
 		child.AgentName != "worker" ||
 		child.TaskID != "child_session" ||
 		child.SpawnedFromEventID != "toolu_123" ||
-		child.Tag != "specialist" ||
+		child.Tag != "agent" ||
 		child.Depth != 1 {
 		t.Fatalf("unexpected child metadata: %#v", child)
 	}

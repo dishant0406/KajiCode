@@ -8,7 +8,7 @@ import (
 )
 
 func TestExpandSpecialistMention(t *testing.T) {
-	specs := []agent.SpecialistInfo{
+	specs := []agent.AgentInfo{
 		{Name: "explorer", WhenToUse: "Explore."},
 		{Name: "worker", WhenToUse: "Work."},
 	}
@@ -47,7 +47,7 @@ func TestExpandSpecialistMention(t *testing.T) {
 }
 
 func TestLeadingSpecialistSuggestions(t *testing.T) {
-	m := model{agentOptions: agent.Options{Specialists: []agent.SpecialistInfo{
+	m := model{agentOptions: agent.Options{Agents: []agent.AgentInfo{
 		{Name: "explorer", WhenToUse: "Explore."},
 		{Name: "worker", WhenToUse: "Work."},
 	}}}

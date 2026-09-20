@@ -11,8 +11,6 @@ package tui
 
 import (
 	"fmt"
-	"image/color"
-	"regexp"
 	"strings"
 	"time"
 
@@ -119,11 +117,11 @@ func (m model) sidebarAvailable() bool {
 }
 
 // sidebarHasContent reports whether the context sidebar has anything worth a
-// column: at least one agent (a specialist delegation or a swarm member) or a
-// non-empty plan. Used to auto-hide the panel — and reclaim its width for the
-// chat — during plain idle stretches with neither.
+// column: at least one agent (a sub-agent delegation) or a non-empty plan. Used
+// to auto-hide the panel — and reclaim its width for the chat — during plain idle
+// stretches with neither.
 func (m model) sidebarHasContent() bool {
-	if len(m.sidebarSpecialists()) > 0 || len(m.swarmSpawnedAgents()) > 0 {
+	if len(m.sidebarSpecialists()) > 0 {
 		return true
 	}
 	if len(m.touchedFiles()) > 0 || m.liveEditingPath() != "" {
@@ -173,12 +171,11 @@ func (m model) sidebarWidthForLayout() int {
 	return sidebarWidth(m.width)
 }
 
-// sidebarSpecialists returns the specialist delegations worth surfacing in the
-// AGENTS panel, EXCLUDING failed tool-misroutes: when a model calls a swarm (or
-// any other) tool name as if it were a specialist, the lookup fails with
-// "specialist <name> not found". That was never a real sub-agent, so it would
-// otherwise pile up bogus "× swarm_send" rows. Real specialists (e.g. "worker")
-// and genuine run failures still show.
+// sidebarSpecialists returns the sub-agent delegations worth surfacing in the
+// AGENTS panel, EXCLUDING failed tool-misroutes: when a model calls a tool name
+// as if it were an agent, the lookup fails with "agent <name> not found". That
+// was never a real sub-agent, so it would otherwise pile up bogus "×" rows. Real
+// agents (e.g. "worker") and genuine run failures still show.
 func (m model) sidebarSpecialists() []specialistInfo {
 	all := m.specialists.all()
 	out := all[:0:0]
@@ -198,177 +195,30 @@ func (m model) sidebarSpecialists() []specialistInfo {
 }
 
 // sidebarHasAgents reports whether the two-column sidebar is active AND has at
-// least one agent line to animate (a specialist delegation or a swarm member).
-// The spinner tick keeps firing while this holds so the cool swarm ripple on
-// member names stays alive even when no run is in flight; gating it on the
-// sidebar+agent presence means a plain idle session schedules no timer.
+// least one agent line to animate. The spinner tick keeps firing while this holds
+// so a running agent's spinner stays alive even when no run is in flight; gating
+// it on the sidebar+agent presence means a plain idle session schedules no timer.
 func (m model) sidebarHasAgents() bool {
 	if !m.sidebarActive() {
 		return false
 	}
-	return len(m.sidebarSpecialists())+len(m.swarmSpawnedAgents()) > 0
+	return len(m.sidebarSpecialists()) > 0
 }
 
 // sidebarAgentHeader renders the AGENTS section header with the total count of
-// active agents — specialist delegations plus swarm/team members.
+// active sub-agent delegations.
 func (m model) sidebarAgentHeader(width int) string {
-	n := len(m.sidebarSpecialists()) + len(m.swarmSpawnedAgents())
+	n := len(m.sidebarSpecialists())
 	if n == 0 {
 		return sidebarHeader("AGENTS", width)
 	}
 	return sidebarHeaderWithCount("AGENTS", fmt.Sprintf("%d", n), kajicodeTheme.muted, width)
 }
 
-// swarmSpawnRe extracts a member id from a swarm_spawn tool result, whose text
-// is "Spawned <type> as task <id> on team <team>." (internal/swarm/tools.go).
-var swarmSpawnRe = regexp.MustCompile(`as task (\S+) on team`)
-
-// swarmAgent is one spawned swarm/team member surfaced in the sidebar: the
-// stable id recovered from the spawn result, plus a human display name derived
-// from the spawn call's task briefing (falling back to the id).
-type swarmAgent struct {
-	id         string    // e.g. "subagent-1" — the dedup key and fallback name
-	name       string    // the task briefing (argHint of the call row), or id when empty
-	state      string    // latest reported state (running/done/failed/…), "" until a report lands
-	sessionID  string    // member's durable child session id (from swarm_collect), "" until known
-	finishing  bool      // done/failed but still lingering before removal (smooth exit)
-	finishedAt time.Time // when first seen finished (zero until the spinner tick stamps it)
-}
-
-// swarmSpawnedAgents derives the swarm/team members from the transcript's
-// swarm_spawn rows — the swarm roster lives in the CLI runtime, not the TUI
-// model, so members are recovered from the tool stream. Each member pairs a
-// swarm_spawn CALL row (whose detail = the task briefing, via argHint) with the
-// next swarm_spawn RESULT row (whose text yields the id, via swarmSpawnRe), so
-// the sidebar can name the agent by what it was asked to do rather than an
-// opaque "subagent-N". Only spawns that produced a result row (success) are
-// returned, and the list is deduped by id.
-func (m model) swarmSpawnedAgents() []swarmAgent {
-	seen := map[string]bool{}
-	var agents []swarmAgent
-	// pendingTask holds the task from the most recent unmatched swarm_spawn call
-	// row, to be paired with the next swarm_spawn result row.
-	pendingTask := ""
-	havePending := false
-	for _, row := range m.transcript {
-		// Scope to the current run's spawns so finished members from an earlier
-		// turn don't reappear when a later run keeps members visible (below).
-		if row.tool != "swarm_spawn" || row.runID != m.activeRunID {
-			continue
-		}
-		switch row.kind {
-		case rowToolCall:
-			pendingTask = strings.TrimSpace(row.detail)
-			havePending = true
-		case rowToolResult:
-			match := swarmSpawnRe.FindStringSubmatch(row.detail)
-			if match == nil {
-				continue
-			}
-			id := match[1]
-			task := ""
-			if havePending {
-				task = pendingTask
-			}
-			pendingTask = ""
-			havePending = false
-			if seen[id] {
-				continue
-			}
-			seen[id] = true
-			name := shortTaskName(task)
-			if name == "" {
-				name = id
-			}
-			agents = append(agents, swarmAgent{id: id, name: name, sessionID: m.swarmSessionMap[id]})
-		}
-	}
-	// Finished members stay in the panel (✓, still clickable) while the run is in
-	// flight, so the user can drill into what each subagent did even after it
-	// completes mid-turn. Only once the turn ends do they LINGER briefly with a
-	// fading ✓ then drop — a smooth exit, not an abrupt pop. Members not yet in a
-	// status report (just spawned) stay live. The done-time is stamped by the
-	// spinner tick (stampSwarmDone) for the post-turn fade.
-	if status := m.swarmMemberStatus(); len(status) > 0 {
-		live := agents[:0:0]
-		for _, a := range agents {
-			a.state = status[a.id]
-			switch a.state {
-			case "done", "failed", "completed", "cancelled":
-				a.finishing = true
-				// A member drops once ITS OWN task completes — not when the whole turn
-				// ends: fade out over the linger window from when it was first seen
-				// finished (stamped each tick by stampSwarmDone), then remove. This
-				// holds whether or not the overall run is still in flight, mirroring
-				// how finished specialists drop (sidebarSpecialists).
-				doneAt, stamped := m.swarmDoneAt[a.id]
-				if stamped && m.now().Sub(doneAt) >= sidebarAgentLinger {
-					continue // past the linger window — remove
-				}
-				a.finishedAt = doneAt
-				live = append(live, a)
-			default:
-				live = append(live, a)
-			}
-		}
-		agents = live
-	}
-	return agents
-}
-
-// swarmStatusRe matches one member line of a swarm_status result, e.g.
-// "– teammate-1 [done] (cyan) <task>" → captures the id and the status word.
-var swarmStatusRe = regexp.MustCompile(`(?m)^\s*[-–—]?\s*(\S+)\s+\[([a-zA-Z]+)\]`)
-
-// swarmMemberStatus parses the LATEST swarm roster report in the transcript into
-// id → status (lowercased). Both swarm_status and swarm_collect results list
-// every member with its "[state]", so either one refreshes the live roster; the
-// last report in transcript order wins. Empty when no report has run yet. This
-// is what lets a swarm_collect that runs while members are still working keep the
-// AGENTS panel populated instead of clearing it.
-//
-// Scoped to the active run, exactly like the spawn rows in swarmSpawnedAgents: a
-// prior run's status/collect (whose task ids can repeat) must not mark a current
-// member done/failed and drop or fade it.
-func (m model) swarmMemberStatus() map[string]string {
-	status := map[string]string{}
-	for _, row := range m.transcript {
-		if row.kind != rowToolResult || row.runID != m.activeRunID {
-			continue
-		}
-		if row.tool != "swarm_status" && row.tool != "swarm_collect" {
-			continue
-		}
-		latest := map[string]string{}
-		for _, mt := range swarmStatusRe.FindAllStringSubmatch(row.detail, -1) {
-			latest[mt[1]] = strings.ToLower(mt[2])
-		}
-		if len(latest) > 0 {
-			status = latest
-		}
-	}
-	return status
-}
-
-// sidebarAgentLinger is how long a finished agent (specialist or swarm member)
-// stays in the AGENTS panel with a fading ✓ before it's removed, so the exit
-// reads as "done" rather than an abrupt pop.
+// sidebarAgentLinger is how long a finished agent stays in the AGENTS panel with
+// a fading ✓ before it's removed, so the exit reads as "done" rather than an
+// abrupt pop.
 const sidebarAgentLinger = 1500 * time.Millisecond
-
-// stampSwarmDone records the first time each swarm member is seen finished, so
-// swarmSpawnedAgents can linger it for sidebarAgentLinger before dropping it. It
-// only adds entries (never clears) and is called from the spinner tick while the
-// sidebar holds agents. Mutates the (always-initialised) swarmDoneAt map.
-func (m *model) stampSwarmDone() {
-	for id, s := range m.swarmMemberStatus() {
-		switch s {
-		case "done", "failed", "completed", "cancelled":
-			if _, seen := m.swarmDoneAt[id]; !seen {
-				m.swarmDoneAt[id] = m.now()
-			}
-		}
-	}
-}
 
 // sidebarAgentHit marks a rendered agent line (by its index within the agent
 // lines block) that is clickable, carrying the member session to drill into.
@@ -378,9 +228,8 @@ type sidebarAgentHit struct {
 	title      string
 }
 
-// sidebarAgentLines renders one line per active agent. Specialist delegations
-// show a live status glyph (• running, ✓ done, ✗ error) plus a "↳ <tool>" working
-// line; swarm/team members (from swarm_spawn) show a ready dot and their id.
+// sidebarAgentLines renders one line per active agent. Sub-agent delegations show
+// a live status glyph (• running, ✓ done, ✗ error) plus a "↳ <tool>" working line.
 // Returns nil when there are none (the caller shows a placeholder).
 func (m model) sidebarAgentLines(width int) []string {
 	lines, _ := m.sidebarAgentRows(width)
@@ -388,19 +237,22 @@ func (m model) sidebarAgentLines(width int) []string {
 }
 
 // sidebarAgentRows renders the agent lines and, alongside, records which lines
-// are clickable swarm members (those whose member session is known), so a click
-// in the sidebar can drill into the member's subchat. lineOffset indexes the
-// returned lines slice.
+// are clickable (those whose child session is known), so a click in the sidebar
+// can drill into the child's subchat. lineOffset indexes the returned lines slice.
 func (m model) sidebarAgentRows(width int) ([]string, []sidebarAgentHit) {
 	specialists := m.sidebarSpecialists()
-	swarm := m.swarmSpawnedAgents()
-	if len(specialists) == 0 && len(swarm) == 0 {
+	if len(specialists) == 0 {
 		return nil, nil
 	}
 	room := maxInt(4, width-3)
 	var lines []string
 	var hits []sidebarAgentHit
 	for _, a := range specialists {
+		// A sub-agent with a known child session is clickable: record the hit at
+		// the index this line will occupy before appending it.
+		if a.childSessionID != "" {
+			hits = append(hits, sidebarAgentHit{lineOffset: len(lines), sessionID: a.childSessionID, title: a.name})
+		}
 		var icon string
 		switch a.status {
 		case specialistRunning:
@@ -449,41 +301,10 @@ func (m model) sidebarAgentRows(width int) ([]string, []sidebarAgentHit) {
 			lines = append(lines, "   "+kajicodeTheme.faint.Render("↳ "+truncateStep(detail, maxInt(2, room-2))))
 		}
 	}
-	// Swarm/team members: a live member's whole task-name carries a mild, slow cool
-	// pulse (NOT a per-letter ripple). A finished member instead shows a green ✓
-	// that dims toward faint over its linger — a smooth exit before removal.
-	style := m.swarmNameStyle()
-	for _, a := range swarm {
-		// A member with a known session is clickable: record the hit at the index
-		// this line will occupy before appending it.
-		if a.sessionID != "" {
-			hits = append(hits, sidebarAgentHit{lineOffset: len(lines), sessionID: a.sessionID, title: a.name})
-		}
-		if a.finishing {
-			icon := kajicodeTheme.green.Render("✓")
-			nameStyle := kajicodeTheme.muted
-			if m.agentExitFading(a.finishedAt) {
-				icon = kajicodeTheme.faint.Render("✓")
-				nameStyle = kajicodeTheme.faint
-			}
-			lines = append(lines, " "+icon+" "+nameStyle.Render(truncateStep(a.name, room)))
-			continue
-		}
-		// A non-running state (pending/handoff/…) is shown faintly after the task
-		// so the panel reports the member's actual status; running is left implied
-		// by the live pulse to keep the common case clean.
-		nameRoom := room
-		suffix := ""
-		if st := strings.TrimSpace(a.state); st != "" && st != "running" {
-			suffix = " " + kajicodeTheme.faint.Render(st)
-			nameRoom = maxInt(4, room-len(st)-1)
-		}
-		lines = append(lines, " "+kajicodeTheme.accent.Render("•")+" "+style.Render(truncateStep(a.name, nameRoom))+suffix)
-	}
 	return lines, hits
 }
 
-// sidebarAgentSelectables returns the clickable swarm-member lines with their
+// sidebarAgentSelectables returns the clickable agent lines with their
 // ABSOLUTE index inside the rendered sidebar (the AGENTS header occupies index 0,
 // so agent rows start at index 1). Recomputed on demand by the mouse hit-test —
 // View cannot persist a registry on the value-receiver model — mirroring
@@ -501,91 +322,6 @@ func (m model) sidebarAgentSelectables(width int) []sidebarAgentHit {
 // it's removed. A zero finishedAt (not yet stamped) is not fading.
 func (m model) agentExitFading(finishedAt time.Time) bool {
 	return !finishedAt.IsZero() && m.now().Sub(finishedAt) >= sidebarAgentLinger/2
-}
-
-// swarmNameStyle returns a gentle, whole-line cool tint for a live swarm member
-// name: mostly a calm blue, easing through a dimmer shade on a slow cycle — a
-// mild breathe, not a flashing per-letter ripple. Static blue under reduced
-// motion (or when the animation clock isn't advancing).
-func (m model) swarmNameStyle() lipgloss.Style {
-	if m.reducedMotion {
-		return kajicodeTheme.blue
-	}
-	styles := swarmPulseStyles()
-	if len(styles) == 0 {
-		return kajicodeTheme.blue
-	}
-	// Slow ping-pong through the subtle ramp for a smooth, slight breathe: the
-	// index eases up then back down so the colour never jumps (no flicker).
-	n := len(styles)
-	period := 2 * (n - 1)
-	if period <= 0 {
-		return styles[0]
-	}
-	p := (m.spinnerPhase / 5) % period
-	idx := p
-	if idx >= n {
-		idx = period - p
-	}
-	return styles[idx]
-}
-
-// swarmPulseStyles is a short, SUBTLE ramp from the cool blue toward a slightly
-// dimmer shade — only the bright portion of a blue→muted blend, so the dim end
-// stays bluish (a slight shift, not a blue→grey swing). Smooth gradient = no
-// flicker. Returns nil when the theme has no parseable colours (static fallback).
-func swarmPulseStyles() []lipgloss.Style {
-	fg := kajicodeTheme.blue.GetForeground()
-	dim := kajicodeTheme.muted.GetForeground()
-	if fg == nil || dim == nil {
-		return nil
-	}
-	blend := lipgloss.Blend1D(12, fg, dim)
-	if len(blend) > 5 {
-		blend = blend[:5] // brightest portion: blue → slightly dimmed blue
-	}
-	out := make([]lipgloss.Style, len(blend))
-	for i, c := range blend {
-		r, g, b, a := c.RGBA()
-		out[i] = lipgloss.NewStyle().Foreground(color.RGBA{R: uint8(r >> 8), G: uint8(g >> 8), B: uint8(b >> 8), A: uint8(a >> 8)})
-	}
-	return out
-}
-
-// shortTaskName condenses a task briefing into a 1-2 word agent name: the first
-// significant word (usually the verb) plus the next non-filler word, so a member
-// reads as e.g. "Explore repository" instead of the full one-line briefing.
-func shortTaskName(task string) string {
-	task = strings.TrimSpace(task)
-	if task == "" {
-		return ""
-	}
-	picked := make([]string, 0, 2)
-	for _, w := range strings.Fields(task) {
-		clean := strings.Trim(w, ".,:;!?\"'`()[]{}")
-		if clean == "" {
-			continue
-		}
-		if len(picked) > 0 && nameFillerWords[strings.ToLower(clean)] {
-			continue
-		}
-		picked = append(picked, clean)
-		if len(picked) == 2 {
-			break
-		}
-	}
-	if len(picked) == 0 {
-		return task
-	}
-	return strings.Join(picked, " ")
-}
-
-// nameFillerWords are skipped (after the first word) when condensing a task into
-// a short agent name, so "Review the current branch" → "Review current".
-var nameFillerWords = map[string]bool{
-	"the": true, "a": true, "an": true, "to": true, "of": true, "for": true,
-	"and": true, "or": true, "on": true, "in": true, "with": true, "any": true,
-	"all": true, "its": true, "this": true, "that": true, "into": true, "from": true,
 }
 
 // renderContextSidebar builds the sidebar block: exactly height lines, each

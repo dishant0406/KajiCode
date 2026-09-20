@@ -60,7 +60,7 @@ func TestToolCardSuppressedInTranscript(t *testing.T) {
 			t.Errorf("%q should be suppressed from the transcript (shown by a dedicated UI)", name)
 		}
 	}
-	for _, name := range []string{"read_file", "write_file", "edit_file", "bash", "swarm_spawn"} {
+	for _, name := range []string{"read_file", "write_file", "edit_file", "bash", "custom_tool"} {
 		if toolCardSuppressedInTranscript(name) {
 			t.Errorf("%q must still show its transcript card", name)
 		}

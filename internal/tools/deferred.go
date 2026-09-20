@@ -183,7 +183,7 @@ func DeferredLine(t Tool) string {
 
 // DeferredSource reports the compact source label used in tool_search's dynamic
 // description. MCP tools use their configured server name; other deferred tools
-// fall back to the first name segment so families such as swarm_* are grouped.
+// fall back to the first name segment so tool families are grouped.
 func DeferredSource(t Tool) string {
 	if t == nil {
 		return ""

@@ -1180,7 +1180,7 @@ func splitPlainAtDisplayWidth(text string, width int) (string, string) {
 // of the parent transcript) — and drops the sidebar-reserved width, since subchat
 // is always single-column. Hit-testing against the wrong source is why mouse
 // selection previously resolved against transcript rows that weren't even
-// visible while viewing a subagent/swarm child session.
+// visible while viewing a sub-agent child session.
 func (m model) transcriptHitTestSource() (header string, items []transcriptBodyItem, width int) {
 	header, set, width := m.transcriptHitTestItemSet()
 	return header, set.items, width
@@ -1441,7 +1441,7 @@ func transcriptSelectionPointForMouse(line transcriptSelectableLine, x int) tran
 func (m model) handleTranscriptSelectionMouse(msg tea.MouseMsg) (model, tea.Cmd, bool) {
 	switch {
 	case mouseLeftPress(msg):
-		// A click on a clickable AGENTS sidebar row drills into that swarm member's
+		// A click on a clickable AGENTS sidebar row drills into that sub-agent's
 		// session, reusing the specialist-card subchat path. Checked before the
 		// transcript hit-test since the sidebar is outside the chat column.
 		if hit, ok := m.sidebarLineAtMouse(msg); ok {

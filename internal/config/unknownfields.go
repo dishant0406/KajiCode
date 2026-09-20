@@ -14,9 +14,10 @@ import (
 // their full path instead of being silently dropped by json.Unmarshal.
 //
 // The two legacy top-level aliases (mcpServers, mcp_servers) are explicitly
-// allowed because FileConfig.UnmarshalJSON still reads them. "modelOverrides" is
-// also allowed: it was a per-model transport override that catalog-derived
-// routing replaced, so an existing config that still carries it must keep loading
+// allowed because FileConfig.UnmarshalJSON still reads them. "modelOverrides" and
+// "swarm" are also allowed: modelOverrides was a per-model transport override that
+// catalog-derived routing replaced, and swarm was the multi-agent block renamed to
+// agents, so an existing config that still carries either must keep loading
 // cleanly (the key is ignored) instead of tripping a false "unknown field" issue.
 // Nothing else is grandfathered, so a typo in a current or future field name is
 // reported.
@@ -27,7 +28,7 @@ import (
 // surface the unknown keys as issues rather than rejecting the file.
 func unknownFieldIssues(data []byte) []Issue {
 	var issues []Issue
-	collectUnknownFields(reflect.TypeOf(FileConfig{}), data, "", []string{"mcpServers", "mcp_servers", "modelOverrides"}, &issues)
+	collectUnknownFields(reflect.TypeOf(FileConfig{}), data, "", []string{"mcpServers", "mcp_servers", "modelOverrides", "swarm"}, &issues)
 	return issues
 }
 

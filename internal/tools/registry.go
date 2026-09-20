@@ -132,8 +132,8 @@ func IsDeferred(t Tool) bool {
 
 // deferralEligibleTool lets a tool keep counting toward the deferral threshold
 // even when it is dynamically exposed eagerly (Deferred()==false). A tool whose
-// Deferred() flips false at runtime — e.g. the swarm coordination tools once a
-// swarm is active — would otherwise lower the global eligible count and risk
+// Deferred() flips false at runtime — e.g. a tool un-deferred once a condition
+// holds — would otherwise lower the global eligible count and risk
 // dropping it below DeferThreshold, which would deactivate deferral for ALL
 // tools (force-exposing every MCP schema). Implementing this keeps the count
 // stable so un-deferring one tool can never force-expose others.

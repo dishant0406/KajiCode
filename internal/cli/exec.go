@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/dishant0406/KajiCode/internal/agent"
+	"github.com/dishant0406/KajiCode/internal/agents"
 	"github.com/dishant0406/KajiCode/internal/config"
 	"github.com/dishant0406/KajiCode/internal/errhint"
 	"github.com/dishant0406/KajiCode/internal/execprofile"
@@ -220,24 +221,22 @@ func runExec(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) in
 	if options.allowEscalation {
 		registry.Register(tools.NewEscalateModelTool())
 	}
-	var specialistRuntime *agentToolRuntime
-	if shouldRegisterExecSpecialistTools(options) {
-		// Specialist tools register before the full config resolve below (so
-		// --list-tools stays offline). swarm.maxTeamSize is not affected by
-		// overrides, so an empty-overrides resolve yields the same value; a resolve
-		// error falls back to the swarm's built-in default (0 => 8).
-		maxTeamSize := 0
-		specialistDepth := 0
-		if swarmCfg, cfgErr := deps.resolveConfig(workspaceRoot, config.Overrides{}); cfgErr == nil {
-			maxTeamSize = swarmCfg.Swarm.MaxTeamSize
-			specialistDepth = swarmCfg.Swarm.SpecialistDepth
+	// Agent tools register before the full config resolve below so --list-tools
+	// stays offline. agents.depth is not affected by overrides, so an
+	// empty-overrides resolve yields the same value; a resolve error falls back
+	// to the runner's built-in default.
+	var agentRuntime *agentToolRuntime
+	if shouldRegisterExecAgentTools(options) {
+		agentDepth := 0
+		if agentsCfg, cfgErr := deps.resolveConfig(workspaceRoot, config.Overrides{}); cfgErr == nil {
+			agentDepth = agentsCfg.Agents.Depth
 		}
 		var err error
-		specialistRuntime, err = registerSpecialistTools(registry, workspaceRoot, maxTeamSize, specialistDepth)
+		agentRuntime, err = registerAgents(registry, workspaceRoot, agentDepth)
 		if err != nil {
-			return writeExecProviderError(stdout, stderr, options.outputFormat, "specialist_error", err.Error())
+			return writeExecProviderError(stdout, stderr, options.outputFormat, "agent_error", err.Error())
 		}
-		defer closeSpecialistRuntime(stderr, specialistRuntime)
+		defer closeAgentRuntime(stderr, agentRuntime)
 	}
 	permissionMode, err := resolveExecPermissionMode(options)
 	if err != nil {
@@ -600,6 +599,26 @@ func runExec(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) in
 	// project hooks/plugins were dropped for an untrusted workspace.
 	hookDispatcher, hookSkip := newHookDispatcherWithExtra(workspaceRoot, pluginActivation.hooks, trustRoot)
 	emitTrustNotice(stderr, hookSkip, pluginActivation.trustSkip, mcpSkip)
+	// Hydrate the agent runtime once the provider, sandbox, hooks, and session
+	// exist, so Task children run in-process on this run's registry (the ceiling),
+	// provider, sandbox, and permission mode.
+	if agentRuntime != nil {
+		agentRuntime.setBase(agents.ChildRunContext{
+			Registry:       registry,
+			Provider:       provider,
+			ResolveModel:   execModelResolver(resolved, deps),
+			PermissionMode: permissionMode,
+			Autonomy:       options.autonomy,
+			Cwd:            workspaceRoot,
+			Sandbox:        sandboxEngine,
+			FileTracker:    fileTracker,
+			Store:          preparedSession.Store,
+			Hooks:          hookDispatcher,
+			MaxTurns:       resolved.MaxTurns,
+			ContextWindow:  resolveAgentContextWindow(runCtx, modelRegistry, resolved.Provider),
+			Model:          resolved.Provider.Model,
+		})
+	}
 	// Self-learning: the project store backs the engine (lessons scoped to this
 	// repository), and a per-session store backs it when a real exec session is
 	// present. Enabled via the resolved learning config; nil disables learning
@@ -616,7 +635,7 @@ func runExec(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) in
 		MaxTurns:             resolved.MaxTurns,
 		ContextWindow:        resolveAgentContextWindow(runCtx, modelRegistry, resolved.Provider),
 		DeferThreshold:       effectiveDeferThreshold,
-		Specialists:          specialistRuntime.specialistInfos(),
+		Agents:               agentRuntime.agentInfos(),
 		MCPInstructions:      mcpInstructionInfos(mcpRuntime),
 		Skills:               pluginActivation.skillInfos(deps.skillsDir(), workspaceRoot),
 		SessionID:            preparedSession.Session.SessionID,
@@ -866,7 +885,7 @@ func deferredEligibleCount(registry *tools.Registry, permissionMode agent.Permis
 	for _, tool := range registry.All() {
 		// Count by deferral-eligibility (not current deferred state) to match
 		// partitionTools' active-gate: a tool that un-defers at runtime still
-		// participates in the threshold. At registration time the swarm is empty
+		// participates in the threshold. At registration time the registry is complete
 		// so this equals IsDeferred, but it keeps the two count sites consistent.
 		if !tools.IsDeferralEligible(tool) {
 			continue

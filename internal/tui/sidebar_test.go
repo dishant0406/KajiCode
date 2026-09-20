@@ -52,50 +52,51 @@ func TestSidebarActivityLines(t *testing.T) {
 	}
 }
 
-func swarmSidebarTestModel(t *testing.T, sessionIDs map[string]string) model {
+// agentSidebarTestModel builds a sidebar with two running sub-agent
+// delegations, the first with a known child session so it is clickable.
+func agentSidebarTestModel(t *testing.T, firstSessionID string) model {
 	t.Helper()
 	m := sidebarTestModel()
-	m.swarmSessionMap = sessionIDs
-	m.transcript = append(m.transcript,
-		transcriptRow{kind: rowToolCall, tool: "swarm_spawn", detail: "build the homepage"},
-		transcriptRow{kind: rowToolResult, tool: "swarm_spawn", detail: "Spawned subagent as task subagent-1 on team default."},
-		transcriptRow{kind: rowToolCall, tool: "swarm_spawn", detail: "build the stylesheet"},
-		transcriptRow{kind: rowToolResult, tool: "swarm_spawn", detail: "Spawned subagent as task subagent-2 on team default."},
-	)
+	now := time.Now()
+	if firstSessionID == "" {
+		firstSessionID = "child-1"
+	}
+	m.specialists.start("worker", "build the homepage", firstSessionID, now)
+	m.specialists.start("explorer", "build the stylesheet", "child-2", now)
 	return m
 }
 
-func TestSwarmMemberRowCarriesSessionID(t *testing.T) {
-	m := swarmSidebarTestModel(t, map[string]string{"subagent-1": "sess-1"})
-	agents := m.swarmSpawnedAgents()
+func TestAgentRowCarriesSessionID(t *testing.T) {
+	m := agentSidebarTestModel(t, "sess-1")
+	agents := m.sidebarSpecialists()
 	if len(agents) != 2 {
 		t.Fatalf("expected 2 members, got %d", len(agents))
 	}
-	if agents[0].sessionID != "sess-1" {
-		t.Fatalf("member 1 should carry its session id, got %q", agents[0].sessionID)
+	if agents[0].childSessionID != "sess-1" {
+		t.Fatalf("agent 1 should carry its session id, got %q", agents[0].childSessionID)
 	}
-	if agents[1].sessionID != "" {
-		t.Fatalf("member 2 has no mapped session yet, got %q", agents[1].sessionID)
+	if agents[1].childSessionID != "child-2" {
+		t.Fatalf("agent 2 should carry its session id, got %q", agents[1].childSessionID)
 	}
 }
 
 func TestSidebarAgentSelectablesMapToScreenRows(t *testing.T) {
-	m := swarmSidebarTestModel(t, map[string]string{"subagent-1": "sess-1", "subagent-2": "sess-2"})
+	m := agentSidebarTestModel(t, "sess-1")
 	sel := m.sidebarAgentSelectables(sidebarWidth(m.width))
 	if len(sel) != 2 {
-		t.Fatalf("expected 2 selectable member rows, got %d: %+v", len(sel), sel)
+		t.Fatalf("expected 2 selectable agent rows, got %d: %+v", len(sel), sel)
 	}
-	// AGENTS header occupies sidebar index 0, so the two members are at 1 and 2.
+	// AGENTS header occupies sidebar index 0, so the two agents are at 1 and 2.
 	if sel[0].lineOffset != 1 || sel[1].lineOffset != 2 {
 		t.Fatalf("selectable offsets = %d,%d, want 1,2", sel[0].lineOffset, sel[1].lineOffset)
 	}
-	if sel[0].sessionID != "sess-1" || sel[1].sessionID != "sess-2" {
+	if sel[0].sessionID != "sess-1" || sel[1].sessionID != "child-2" {
 		t.Fatalf("selectable session ids = %q,%q", sel[0].sessionID, sel[1].sessionID)
 	}
 }
 
 func TestSidebarLineAtMouseHitsMemberRow(t *testing.T) {
-	m := swarmSidebarTestModel(t, map[string]string{"subagent-1": "sess-1"})
+	m := agentSidebarTestModel(t, "sess-1")
 	// Sidebar starts at screen X = chatColumnWidth + 3 (the " │ " divider); the
 	// first member row is at sidebar line 1 → screen Y 1.
 	x := m.chatColumnWidth() + 3 + 2
@@ -111,9 +112,9 @@ func TestSidebarLineAtMouseHitsMemberRow(t *testing.T) {
 	if _, ok := m.sidebarLineAtMouse(testMouseClick(tea.MouseLeft, x, 0)); ok {
 		t.Fatal("the AGENTS header row should not be clickable")
 	}
-	// A member with no known session (subagent-2 at Y 2) is not clickable.
-	if _, ok := m.sidebarLineAtMouse(testMouseClick(tea.MouseLeft, x, 2)); ok {
-		t.Fatal("a member without a session id should not be clickable")
+	// The second agent below it is also clickable (Y 2).
+	if _, ok := m.sidebarLineAtMouse(testMouseClick(tea.MouseLeft, x, 2)); !ok {
+		t.Fatal("the second agent row with a session id should be clickable")
 	}
 }
 
@@ -131,7 +132,7 @@ func TestSidebarMemberClickRoutesToSubchatDrillIn(t *testing.T) {
 		t.Fatalf("append event: %v", err)
 	}
 
-	m := swarmSidebarTestModel(t, map[string]string{"subagent-1": session.SessionID})
+	m := agentSidebarTestModel(t, session.SessionID)
 	m.sessionStore = store
 	x := m.chatColumnWidth() + 3 + 2
 	next, cmd, handled := m.handleTranscriptSelectionMouse(testMouseClick(tea.MouseLeft, x, 1))
@@ -146,23 +147,6 @@ func TestSidebarMemberClickRoutesToSubchatDrillIn(t *testing.T) {
 	next = loaded.(model)
 	if next.subchat.loading || !transcriptContains(next.subchat.childRows, "member work output") {
 		t.Fatalf("member session should hydrate asynchronously, got %#v", next.subchat.childRows)
-	}
-}
-
-func TestSwarmSessionsMsgPopulatesMap(t *testing.T) {
-	m := newModel(context.Background(), Options{})
-	updated, _ := m.Update(swarmSessionsMsg{sessions: map[string]string{
-		"subagent-1": "sess-1", "": "skip", "subagent-2": "",
-	}})
-	next := updated.(model)
-	if next.swarmSessionMap["subagent-1"] != "sess-1" {
-		t.Fatalf("expected sess-1, got %q", next.swarmSessionMap["subagent-1"])
-	}
-	if _, ok := next.swarmSessionMap[""]; ok {
-		t.Fatal("an empty task id must be skipped")
-	}
-	if _, ok := next.swarmSessionMap["subagent-2"]; ok {
-		t.Fatal("an empty session id must be skipped")
 	}
 }
 
@@ -355,225 +339,22 @@ func TestSidebarShowsSpawnedAgents(t *testing.T) {
 	}
 }
 
-func TestSidebarShowsSwarmSpawnedAgents(t *testing.T) {
-	m := sidebarTestModel()
-	// Each swarm member is a CALL row (detail = the task briefing, as argHint
-	// would produce it) paired with its following RESULT row (yielding the id).
-	// The sidebar names the agent by the task, not the opaque "subagent-N".
-	m.transcript = append(m.transcript,
-		transcriptRow{kind: rowToolCall, tool: "swarm_spawn", detail: "audit the auth flow"},
-		transcriptRow{kind: rowToolResult, tool: "swarm_spawn", detail: "Spawned subagent as task subagent-1 on team default."},
-		transcriptRow{kind: rowToolCall, tool: "swarm_spawn", detail: "write integration tests"},
-		transcriptRow{kind: rowToolResult, tool: "swarm_spawn", detail: "Spawned subagent as task subagent-2 on team default."},
-		// Duplicate id (a re-report): deduped, keeps the first member's name.
-		transcriptRow{kind: rowToolCall, tool: "swarm_spawn", detail: "audit the auth flow"},
-		transcriptRow{kind: rowToolResult, tool: "swarm_spawn", detail: "Spawned subagent as task subagent-1 on team default."},
-	)
-	agents := m.swarmSpawnedAgents()
-	if len(agents) != 2 {
-		t.Fatalf("expected 2 unique swarm members, got %v", agents)
-	}
-	if agents[0].id != "subagent-1" || agents[0].name != "audit auth" {
-		t.Fatalf("member 0 = %+v, want id subagent-1 named 'audit auth' (short task name)", agents[0])
-	}
-	if agents[1].id != "subagent-2" || agents[1].name != "write integration" {
-		t.Fatalf("member 1 = %+v, want id subagent-2 named 'write integration' (short task name)", agents[1])
-	}
-	width := sidebarWidth(m.width)
-	plain := stripSidebar(m.sidebarAgentLines(width))
-	// The sidebar shows the short task-derived names, not the raw ids or full task.
-	if !strings.Contains(plain, "audit auth") || !strings.Contains(plain, "write integration") {
-		t.Fatalf("swarm member short task names missing from sidebar:\n%s", plain)
-	}
-	hdr := stripSidebar([]string{m.sidebarAgentHeader(width)})
-	if !strings.Contains(hdr, "AGENTS") || !strings.Contains(hdr, "2") {
-		t.Fatalf("header should show AGENTS 2, got: %s", hdr)
-	}
-}
-
-// TestSwarmSpawnedAgentFallsBackToID covers a result row with no preceding call
-// row (e.g. a resumed transcript that dropped the call): the member is still
-// A finished member stays visible (and clickable) while the run is still in
-// flight, so the user can inspect it; only once the turn ends does it drop.
-func TestSwarmAgentDropsOnOwnCompletionEvenMidRun(t *testing.T) {
-	base := time.Date(2026, 6, 24, 12, 0, 0, 0, time.UTC)
-	m := sidebarTestModel()
-	m.now = func() time.Time { return base }
-	m.pending = true  // run STILL going — a member must still drop on its OWN completion
-	m.activeRunID = 7 // exercise the run-scoped filter with a non-zero id
-	m.transcript = append(m.transcript,
-		transcriptRow{kind: rowToolCall, tool: "swarm_spawn", detail: "build homepage", runID: 7},
-		transcriptRow{kind: rowToolResult, tool: "swarm_spawn", detail: "Spawned subagent as task subagent-1 on team default.", runID: 7},
-		transcriptRow{kind: rowToolResult, tool: "swarm_collect", detail: "Results: 1 task(s)\n- subagent-1 [done] build homepage", runID: 7},
-	)
-	// Just finished, still within the linger window: shows briefly with a fading ✓.
-	m.swarmDoneAt = map[string]time.Time{"subagent-1": base.Add(-sidebarAgentLinger / 2)}
-	agents := m.swarmSpawnedAgents()
-	if len(agents) != 1 {
-		t.Fatalf("within the linger window a finished member should still show (fading), got %d: %+v", len(agents), agents)
-	}
-	if !agents[0].finishing {
-		t.Fatalf("a finished member should render done (✓), got %+v", agents[0])
-	}
-
-	// Past the linger window: it drops — even though the overall run is still in
-	// flight (previously a finished member lingered until the whole turn ended).
-	m.swarmDoneAt = map[string]time.Time{"subagent-1": base.Add(-2 * sidebarAgentLinger)}
-	if got := len(m.swarmSpawnedAgents()); got != 0 {
-		t.Fatalf("a member past its linger window must drop on its own completion mid-run, got %d", got)
-	}
-}
-
-// Members AND statuses from a previous run must not bleed into a later run, even
-// when task ids repeat — both the spawn rows and the swarm_status/collect rows
-// are scoped to the active run.
-func TestSwarmAgentsScopedToActiveRun(t *testing.T) {
-	m := sidebarTestModel()
-	m.pending = true
-	m.activeRunID = 2
-	m.transcript = append(m.transcript,
-		// Old run (runID 1): the SAME task id, and a stale "done" status for it.
-		transcriptRow{kind: rowToolCall, tool: "swarm_spawn", detail: "old task", runID: 1},
-		transcriptRow{kind: rowToolResult, tool: "swarm_spawn", detail: "Spawned subagent as task subagent-1 on team default.", runID: 1},
-		transcriptRow{kind: rowToolResult, tool: "swarm_status", detail: "- subagent-1 [done] old task", runID: 1},
-		// Current run (runID 2): the same id is reused and is still running.
-		transcriptRow{kind: rowToolCall, tool: "swarm_spawn", detail: "new task", runID: 2},
-		transcriptRow{kind: rowToolResult, tool: "swarm_spawn", detail: "Spawned subagent as task subagent-1 on team default.", runID: 2},
-	)
-	agents := m.swarmSpawnedAgents()
-	if len(agents) != 1 || agents[0].id != "subagent-1" {
-		t.Fatalf("only the current run's member should show, got %+v", agents)
-	}
-	// The stale prior-run "done" status must NOT mark the current member finished.
-	if agents[0].finishing || agents[0].state == "done" {
-		t.Fatalf("stale prior-run status must not affect the current member: %+v", agents[0])
-	}
-}
-
-// shown, named by its id.
-func TestSwarmSpawnedAgentFallsBackToID(t *testing.T) {
-	m := sidebarTestModel()
-	m.transcript = append(m.transcript,
-		transcriptRow{kind: rowToolResult, tool: "swarm_spawn", detail: "Spawned subagent as task subagent-9 on team default."},
-	)
-	agents := m.swarmSpawnedAgents()
-	if len(agents) != 1 || agents[0].id != "subagent-9" || agents[0].name != "subagent-9" {
-		t.Fatalf("expected one member named by id, got %+v", agents)
-	}
-}
-
-func TestShortTaskName(t *testing.T) {
-	cases := map[string]string{
-		"Explore the repository structure and summarize": "Explore repository",
-		"Review the current git branch":                  "Review current",
-		"Check for any TODOs, FIXMEs":                    "Check TODOs",
-		"Provide a high-level overview":                  "Provide high-level",
-		"single":                                         "single",
-		"":                                               "",
-	}
-	for task, want := range cases {
-		if got := shortTaskName(task); got != want {
-			t.Errorf("shortTaskName(%q) = %q, want %q", task, got, want)
-		}
-	}
-}
-
-func TestSwarmAgentsLingerThenDisappearWhenDone(t *testing.T) {
-	base := time.Date(2026, 6, 22, 12, 0, 0, 0, time.UTC)
-	m := sidebarTestModel()
-	m.now = func() time.Time { return base }
-	m.transcript = append(m.transcript,
-		transcriptRow{kind: rowToolCall, tool: "swarm_spawn", detail: "explore repo"},
-		transcriptRow{kind: rowToolResult, tool: "swarm_spawn", detail: "Spawned teammate as task teammate-1 on team default."},
-		transcriptRow{kind: rowToolCall, tool: "swarm_spawn", detail: "review branch"},
-		transcriptRow{kind: rowToolResult, tool: "swarm_spawn", detail: "Spawned teammate as task teammate-2 on team default."},
-	)
-	if got := len(m.swarmSpawnedAgents()); got != 2 {
-		t.Fatalf("expected 2 live members before any status report, got %d", got)
-	}
-	// teammate-1 reported done, teammate-2 still running.
-	m.transcript = append(m.transcript, transcriptRow{
-		kind: rowToolResult, tool: "swarm_status",
-		detail: "Swarm status (team default): 2 task(s)\n– teammate-1 [done] (cyan) explore repo\n– teammate-2 [running] (blue) review branch",
-	})
-	// Freshly done (not yet stamped by the tick): teammate-1 LINGERS (finishing).
-	agents := m.swarmSpawnedAgents()
-	if len(agents) != 2 {
-		t.Fatalf("a freshly-done member should linger, got %d: %+v", len(agents), agents)
-	}
-	var done *swarmAgent
-	for i := range agents {
-		if agents[i].id == "teammate-1" {
-			done = &agents[i]
-		}
-	}
-	if done == nil || !done.finishing {
-		t.Fatalf("teammate-1 should be finishing (lingering), got %+v", agents)
-	}
-
-	// The spinner tick stamps the done time; once the linger window elapses the
-	// member is removed.
-	m.stampSwarmDone()
-	if _, ok := m.swarmDoneAt["teammate-1"]; !ok {
-		t.Fatal("stampSwarmDone should record the finished member")
-	}
-	m.swarmDoneAt["teammate-1"] = base.Add(-2 * sidebarAgentLinger) // past the window
-	agents = m.swarmSpawnedAgents()
-	if len(agents) != 1 || agents[0].id != "teammate-2" {
-		t.Fatalf("after the linger the done member should be gone; got %+v", agents)
-	}
-}
-
-// Regression: a swarm_collect that runs WHILE members are still working must not
-// clear the AGENTS panel. Previously any swarm_collect result wiped the roster,
-// so the sidebar showed "no agents spawned" mid-run even with 4 subagents live.
-func TestSwarmAgentsStayVisibleWhileCollectRunsMidFlight(t *testing.T) {
-	m := sidebarTestModel()
-	m.transcript = append(m.transcript,
-		transcriptRow{kind: rowToolCall, tool: "swarm_spawn", detail: "build the homepage"},
-		transcriptRow{kind: rowToolResult, tool: "swarm_spawn", detail: "Spawned subagent as task subagent-1 on team default."},
-		transcriptRow{kind: rowToolCall, tool: "swarm_spawn", detail: "build the stylesheet"},
-		transcriptRow{kind: rowToolResult, tool: "swarm_spawn", detail: "Spawned subagent as task subagent-2 on team default."},
-		// A collect mid-flight, both members still running.
-		transcriptRow{kind: rowToolResult, tool: "swarm_collect",
-			detail: "Results for team default: 2 task(s)\n- subagent-1 [running] build the homepage\n- subagent-2 [running] build the stylesheet"},
-	)
-
-	agents := m.swarmSpawnedAgents()
-	if len(agents) != 2 {
-		t.Fatalf("running members must survive a mid-flight swarm_collect, got %d: %+v", len(agents), agents)
-	}
-	for _, a := range agents {
-		if a.finishing {
-			t.Fatalf("a running member must not be marked finishing: %+v", a)
-		}
-		if a.state != "running" {
-			t.Fatalf("swarm_collect should set member state to running, got %q for %s", a.state, a.id)
-		}
-	}
-
-	plain := stripSidebar(m.sidebarAgentLines(sidebarWidth(m.width)))
-	if !strings.Contains(plain, "homepage") || !strings.Contains(plain, "stylesheet") {
-		t.Fatalf("sidebar should list the running members and their tasks:\n%s", plain)
-	}
-}
-
 func TestSidebarHidesNotFoundSpecialistMisroutes(t *testing.T) {
 	m := sidebarTestModel()
 	now := time.Now()
-	// A real running specialist + a failed tool-misroute (a swarm tool name called
-	// as a specialist → "specialist not found"), which should be filtered out.
+	// A real running agent + a failed tool-misroute (a made-up tool name called
+	// as an agent → "agent not found"), which should be filtered out.
 	m.specialists.start("worker", "build frontend", "sess-real", now)
-	m.specialists.start("swarm_send", "coordinate", "sess-bogus", now)
-	m.specialists.complete("sess-bogus", specialistError, 0, `specialist "swarm_send" not found`, now)
+	m.specialists.start("bogus_tool", "coordinate", "sess-bogus", now)
+	m.specialists.complete("sess-bogus", specialistError, 0, `agent "bogus_tool" not found`, now)
 
 	got := m.sidebarSpecialists()
 	if len(got) != 1 || got[0].name != "worker" {
 		t.Fatalf("not-found misroute should be filtered; want only worker, got %+v", got)
 	}
 	plain := stripSidebar(m.sidebarAgentLines(sidebarWidth(m.width)))
-	if strings.Contains(plain, "swarm_send") {
-		t.Fatalf("bogus swarm_send specialist should not appear:\n%s", plain)
+	if strings.Contains(plain, "bogus_tool") {
+		t.Fatalf("bogus misroute agent should not appear:\n%s", plain)
 	}
 	if !strings.Contains(plain, "worker") {
 		t.Fatalf("real worker specialist should still appear:\n%s", plain)

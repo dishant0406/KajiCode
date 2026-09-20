@@ -38,7 +38,7 @@ kajicode exec --output-format stream-json < turns.jsonl
 - **Keeps context local.** Sessions are stored on disk, searchable, resumable,
   and never uploaded as telemetry by KajiCode.
 - **Extensible when you need it.** Use MCP servers, skills, plugins, hooks, and
-  specialist subagents from the same CLI.
+  agent subagents from the same CLI.
 
 ## Install
 
@@ -304,7 +304,7 @@ kajicode repo-info        local repository summary
 kajicode search | find    search local session history
 kajicode sessions         inspect, resume, fork, and rewind sessions
 kajicode spec             manage spec-mode drafts
-kajicode specialist       manage specialist subagents
+kajicode agent            manage agent subagents
 kajicode skills           manage markdown instruction skills
 kajicode plugins          manage plugins
 kajicode hooks            manage lifecycle hooks
@@ -412,7 +412,7 @@ go run ./cmd/kajicode-release build --goos windows --goarch amd64 --output dist/
 - [Update flow](docs/UPDATE.md)
 - [Themes](docs/THEMES.md)
 - [Stream-JSON protocol](docs/STREAM_JSON_PROTOCOL.md)
-- [Specialists](docs/SPECIALISTS.md)
+- [Agents](docs/AGENTS.md)
 - [GitHub Action](docs/GITHUB_ACTION.md)
 - [Benchmarks](docs/BENCHMARK.md)
 - [Performance](docs/PERFORMANCE.md)

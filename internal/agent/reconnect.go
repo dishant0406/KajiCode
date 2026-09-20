@@ -13,7 +13,7 @@ import (
 	"github.com/dishant0406/KajiCode/internal/trace"
 )
 
-// Provider reconnect: a long autonomous task (a big refactor, a swarm member,
+// Provider reconnect: a long autonomous task (a big refactor, a sub-agent,
 // a headless/cron run) should survive transient upstream/API hiccups instead of
 // dying and re-burning every token on a manual restart. Retrying is restricted
 // to pre-content failures: either StreamCompletion fails before returning a
@@ -180,7 +180,7 @@ func backoffFor(attempt int) time.Duration {
 }
 
 // jitteredBackoff adds up to 50% random jitter on top of backoffFor so concurrent
-// runs (swarm members, a cron fleet) that all trip on the same outage don't
+// runs (sub-agents, a cron fleet) that all trip on the same outage don't
 // reconnect in lockstep and hammer a recovering endpoint. Never shorter than the
 // deterministic base, so backoff still grows attempt over attempt.
 func jitteredBackoff(attempt int) time.Duration {

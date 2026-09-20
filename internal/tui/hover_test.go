@@ -79,13 +79,12 @@ func TestUpdateHoverTargetOnPlainTextIsNone(t *testing.T) {
 }
 
 func TestUpdateHoverTargetOnSidebarAgentRow(t *testing.T) {
-	// Only a SWARM member row (a session mapped via swarmSessionMap) is clickable
-	// in the sidebar — a Task-delegation specialist row is not (sidebarAgentRows
-	// only records hits from the swarm loop). swarmSidebarTestModel builds exactly
-	// that: real conversation + a mapped swarm member session.
-	m := swarmSidebarTestModel(t, map[string]string{"subagent-1": "sess-1"})
+	// Only a sub-agent row with a known child session is clickable in the
+	// sidebar. agentSidebarTestModel builds exactly that: real conversation + a
+	// running delegation with a reconciled child session.
+	m := agentSidebarTestModel(t, "sess-1")
 	if !m.sidebarActive() {
-		t.Fatal("sanity check failed: sidebar should be active with a swarm member present on a 100-col terminal")
+		t.Fatal("sanity check failed: sidebar should be active with an agent present on a 100-col terminal")
 	}
 	hits := m.sidebarAgentSelectables(sidebarWidth(m.width))
 	if len(hits) == 0 {
@@ -208,7 +207,7 @@ func TestHoverChangesTranscriptRenderOutput(t *testing.T) {
 }
 
 func TestHoverChangesSidebarRenderOutput(t *testing.T) {
-	m := swarmSidebarTestModel(t, map[string]string{"subagent-1": "sess-1"})
+	m := agentSidebarTestModel(t, "sess-1")
 	width := m.chatColumnWidth()
 	height := m.height
 	without := strings.Join(m.renderContextSidebar(sidebarWidth(m.width), height), "\n")
@@ -261,21 +260,21 @@ func TestHoverClearsOnSubchatExit(t *testing.T) {
 }
 
 // A sidebar row can disappear between when it was hovered and the next render
-// (a swarm member's linger window elapsing) with no mouse motion in between to
+// (an agent's linger window elapsing) with no mouse motion in between to
 // re-target the hover. hoveredSidebarLineOffset must not paint a highlight on
 // whatever unrelated row now occupies that identity's old slot — it must find
 // nothing and skip painting entirely.
 func TestHoveredSidebarLineOffsetSelfHealsWhenRowDisappears(t *testing.T) {
-	m := swarmSidebarTestModel(t, map[string]string{"subagent-1": "sess-1"})
+	m := agentSidebarTestModel(t, "sess-1")
 	hits := m.sidebarAgentSelectables(sidebarWidth(m.width))
 	if len(hits) == 0 {
 		t.Fatal("expected at least one clickable sidebar agent row")
 	}
 	m.hover = hoverTarget{kind: hoverSidebarAgent, sessionID: hits[0].sessionID}
 
-	// Simulate the member disappearing (a fresh model with no swarm member at all,
-	// same identity no longer present) without any mouse motion clearing m.hover.
-	m2 := swarmSidebarTestModel(t, nil)
+	// Simulate the agent disappearing (a fresh model with no agent at all, same
+	// identity no longer present) without any mouse motion clearing m.hover.
+	m2 := sidebarTestModel()
 	m2.hover = m.hover
 
 	if _, ok := m2.hoveredSidebarLineOffset(sidebarWidth(m2.width)); ok {

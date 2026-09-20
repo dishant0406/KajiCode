@@ -41,7 +41,7 @@ flowchart TD
     Agent --> Registry[Tool registry<br/>internal/tools.Registry]
     Registry --> CoreTools[Core tools<br/>read/edit/shell/search/plan]
     Registry --> MCP[MCP tools<br/>internal/mcp]
-    Registry --> Specialists[Specialist tools<br/>internal/specialist]
+    Registry --> Agents[Agent tools<br/>internal/agents]
     Registry --> Plugins[Plugin tools<br/>internal/plugins]
     Registry --> LocalControl[Browser / terminal / desktop helpers]
 
@@ -80,7 +80,7 @@ flowchart LR
     Events --> Sessions[Session log<br/>resume, fork, rewind, history]
 
     Config[Config / guidelines / skills] --> Run
-    Extensions[MCP / specialists / plugins / hooks] --> Capabilities
+    Extensions[MCP / agents / plugins / hooks] --> Capabilities
 ```
 
 The **TUI + agent loop** is the main story because it explains the normal user
@@ -91,7 +91,7 @@ most of them attach to the same spine:
 | Mechanism | Where it attaches | What it changes |
 | --- | --- | --- |
 | Config, provider profiles, model registry | Before a run starts | Which provider/model is used and what defaults apply. |
-| Project/user guidelines, skills, specialists context | Prompt construction | What instructions and available capabilities the model sees. |
+| Project/user guidelines, skills, agents context | Prompt construction | What instructions and available capabilities the model sees. |
 | Tool registry, MCP, plugins, local-control helpers | Capability layer | Which actions the model may request. |
 | Permission policy, sandbox, command-prefix grants | Tool execution | Whether a requested action can run, needs approval, or is denied. |
 | Hooks | Tool lifecycle | Optional before/after observers or blockers around tool calls. |
@@ -133,7 +133,7 @@ reading the deeper flows below.
 | `internal/config` | User/project config resolution, active provider, preferences, sandbox/tool settings. |
 | `internal/mcp` | MCP server config, client runtime, permission store, MCP tool registration, and the MCP OAuth login flow. |
 | `internal/oauth` | Reusable OAuth 2.0 engine: PKCE, RFC 8414 authorization-server discovery, RFC 9728 protected-resource discovery, WWW-Authenticate challenge parsing, device flow, and the token store. |
-| `internal/specialist` / `internal/swarm` | Sub-agent manifests and team/member orchestration exposed as tools. |
+| `internal/agents` | Sub-agent definitions and in-process delegation exposed as tools. |
 | `internal/localcontrol` / `internal/browser` | Runtime helpers used by config-gated local-control tool wrappers. |
 | `internal/plugins` / `internal/skills` / `internal/hooks` | Extension surfaces loaded into the agent context, tool registry, or tool lifecycle. |
 | `internal/streamjson` | Machine-readable protocol for `kajicode exec --input-format/--output-format stream-json`. |
@@ -154,7 +154,7 @@ sequenceDiagram
     CLI->>Config: resolve config for workspace
     CLI->>CLI: build provider
     CLI->>CLI: build tool registry
-    CLI->>CLI: register core, config-gated local-control, specialists, MCP, plugins
+    CLI->>CLI: register core, config-gated local-control, agents, MCP, plugins
     CLI->>CLI: create sandbox engine + session store
     CLI->>TUI: run Bubble Tea with Options
     TUI->>TUI: Init / Update / View event loop
@@ -215,7 +215,7 @@ Key responsibilities of the loop:
 
 1. **Build prompt state** — combines the system prompt, provider/model harness
    profile, project/user guidelines, configured harness prompt addenda, loaded
-   skills/specialist instructions, the current user prompt, and images. The
+   skills/agent instructions, the current user prompt, and images. The
    harness profile is selected by provider/model family and carries the
    model-facing planning, tool-use, context, validation, and final-response
    posture for OpenAI/Codex, Gemini, Claude, open-weight, or generic compatible
@@ -363,7 +363,7 @@ Conceptually, one requested tool goes through these phases:
    asks the sandbox engine about path, network, shell, or command-prefix
    constraints, and may invoke permission callbacks.
 3. **Execute** — the selected registry entry runs locally, through MCP, as a
-   specialist/sub-agent, or through a plugin/local-control helper. Hooks can run
+   sub-agent, or through a plugin/local-control helper. Hooks can run
    before or after this step.
 4. **Normalize result** — KajiCode turns the outcome into an agent `ToolResult`: a
    success, failure, denial, cancellation, timeout, or validation error with
@@ -575,8 +575,8 @@ In the TUI path, the same event can have three representations:
 | --- | --- | --- | --- |
 | Assistant text | streamed provider text forwarded through `OnText` | incremental assistant row text | assistant message event |
 | Reasoning preview | `OnReasoning` callback | collapsible/preview reasoning row | usually not the same as final assistant text |
-| Tool call | `agent.ToolCall` from collected provider stream | tool card, specialist card, or plan panel update | `EventToolCall` |
-| Tool result | `agent.ToolResult` | result card/status, changed files, plan/specialist updates | `EventToolResult` |
+| Tool call | `agent.ToolCall` from collected provider stream | tool card, sub-agent card, or plan panel update | `EventToolCall` |
+| Tool result | `agent.ToolResult` | result card/status, changed files, plan/sub-agent updates | `EventToolResult` |
 | Permission prompt/audit | `PermissionRequest` / `PermissionEvent` | modal prompt or permission row | permission request/decision events |
 | Usage/context | provider usage + measured context | context gauge / usage metadata | usage event |
 
@@ -596,7 +596,7 @@ For a normal prompt in the interactive TUI:
    - `OnText` sends incremental assistant text into the TUI message sink.
    - `OnToolCallStart` / `OnToolCallDelta` show live tool-argument streaming.
    - `OnToolCall` creates visible tool rows and appends session events.
-   - `OnToolResult` creates result rows, updates plan/specialist side panels, and
+   - `OnToolResult` creates result rows, updates plan/sub-agent side panels, and
      records changed files.
    - `OnPermissionRequest` sends a prompt to the TUI and blocks the agent loop
      until the user answers or the run context is cancelled.
@@ -631,7 +631,7 @@ flowchart TD
     ToolCall -- No --> Final[Final response]
     ToolCall -- Yes --> ToolGate[Tool gate<br/>filters, permissions, sandbox]
     ToolGate --> HooksBefore[beforeTool hooks]
-    HooksBefore --> Execute[Tool / MCP / specialist / plugin]
+    HooksBefore --> Execute[Tool / MCP / sub-agent / plugin]
     Execute --> HooksAfter[afterTool hooks]
     HooksAfter --> ToolResult[Tool result message]
     ToolResult --> Persist[Session events]
@@ -651,12 +651,12 @@ architectures:
   the agent blocks on `OnPermissionRequest`, the TUI surfaces a modal and sends
   the decision back through a channel, and the session log records the
   request/decision events.
-- **Plans, specialists/sub-agents, and ask-user prompts** all follow the same
+- **Plans, sub-agents, and ask-user prompts** all follow the same
   runtime pattern: the model requests a capability, the agent records the
   call/result in its conversation, and the TUI mirrors the visible state as plan
-  panels, specialist cards, or question forms. Specialist session metadata can
+  panels, sub-agent cards, or question forms. Agent session metadata can
   carry parent/root and sub-agent fields, with richer linkage depending on the
-  specialist or swarm path.
+  agent path.
 - **Streaming tool writes** start as provider tool-call deltas before execution;
   the TUI shows the arguments live, then replaces/augments them with the actual
   `ToolResult` after the tool runs.
@@ -734,7 +734,7 @@ Core tool groups include:
 - **Local-control tools**: config-gated wrappers for browser, terminal, desktop,
   and artifact helpers backed by packages such as `internal/localcontrol` and
   `internal/browser`.
-- **Extension tools**: MCP tools, specialists/sub-agents, swarm tools, plugins.
+- **Extension tools**: MCP tools, sub-agents, plugins.
 
 Tool definitions include safety metadata: side-effect class, permission level,
 reason, and whether prompt-gated tools are advertised in auto-like modes. The
@@ -844,13 +844,13 @@ flowchart TD
     Config[Config resolution] --> Registry[Tool registry]
     Registry --> Core[Core tools]
     Registry --> MCP[MCP server tools]
-    Registry --> Specialist[Specialist / Task tools]
+    Registry --> Agents[Agent / Task tools]
     Registry --> Plugin[Plugin tools]
 
     Config --> Prompt[System prompt context]
     Prompt --> Guidelines[AGENTS.md / KAJICODE.md]
     Prompt --> Skills[Skills list]
-    Prompt --> SpecialistContext[Specialist descriptions]
+    Prompt --> AgentContext[Agent descriptions]
 
     ToolLifecycle[Tool lifecycle] --> Hooks[beforeTool / afterTool hooks]
 ```
@@ -862,7 +862,7 @@ flowchart TD
   match an observed path, a lowest-precedence built-in `customize-kajicode` is always
   discoverable, and per-skill `permission:` (allow|prompt|deny) gating is enforced by the
   `skill` tool and surfaced as `[prompt]`/`[deny]` catalog markers.
-- **Specialists** are sub-agents callable through the `Task` tool.
+- **Agents** are sub-agents callable through the `Task` tool.
 - **MCP servers** contribute external tools. A server that returns `initialize`
   instructions contributes them to the system prompt (`<mcp_instructions>`), one
   that advertises resources or prompts contributes the capability-gated catalog

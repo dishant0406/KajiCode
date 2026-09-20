@@ -238,7 +238,7 @@ func (m model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	}
 }
 
-// sidebarLineAtMouse maps a left-click in the AGENTS sidebar column to the swarm
+// sidebarLineAtMouse maps a left-click in the AGENTS sidebar column to the agent
 // member whose row was clicked, when that member's session is known. Geometry:
 // twoColumnTranscriptView is the full screen (sidebarActive ⇒ alt-screen), and
 // joinColumns lays out [chat(chatColumnWidth)][" │ " 3-cell divider][sidebar],

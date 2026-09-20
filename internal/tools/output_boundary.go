@@ -129,7 +129,7 @@ func resolveOutputCategory(tool Tool, toolName string, args map[string]any) outp
 		}
 	}
 	switch toolName {
-	case "Task", "swarm_collect":
+	case "Task":
 		return outputCategoryWorker
 	case "apply_patch":
 		return outputCategoryDiff

@@ -300,12 +300,7 @@ type model struct {
 	// compactions counts how many times the agent auto-compacted the active
 	// conversation this session (incremented in the OnCompaction wrapper). It
 	// feeds the "♻ compacted N×" sidebar/status counter. Reset per session.
-	compactions int
-	// swarmSessionMap maps a swarm task id to its member's durable child session
-	// id (carried up by swarm_collect's Meta), so the AGENTS sidebar rows can drill
-	// into a member's conversation. Persists across turns; only completed members
-	// have an entry.
-	swarmSessionMap   map[string]string
+	compactions       int
 	pendingPermission *pendingPermissionPrompt
 	pendingAskUser    *pendingAskUserPrompt
 	width             int
@@ -334,13 +329,8 @@ type model struct {
 	gitTouched          []gitSweepFile
 	gitSweepInFlight    bool
 	gitSweepUnavailable bool
-	// swarmDoneAt records when each swarm member was first seen finished (done/
-	// failed) in a swarm_status report, so the sidebar can linger it briefly with a
-	// fading ✓ before dropping it (a smooth exit, not an abrupt pop). Stamped in the
-	// spinner tick; keyed by member id. Always non-nil (initialised in newModel).
-	swarmDoneAt      map[string]time.Time
-	now              func() time.Time
-	chatScrollOffset int
+	now                 func() time.Time
+	chatScrollOffset    int
 	// chatBodyLines is the live body's line count at the last update; used to pin
 	// the viewport (hold the read position) when content streams in while the user
 	// has scrolled up. 0 means "at the bottom / not pinned".
@@ -665,14 +655,6 @@ type specialistCompleteMsg struct {
 	errorMsg       string
 }
 
-// swarmSessionsMsg carries swarm task_id -> member session_id pairs (from
-// swarm_collect's Meta) so the AGENTS sidebar rows can drill into a member's
-// session like a specialist card.
-type swarmSessionsMsg struct {
-	runID    int
-	sessions map[string]string
-}
-
 // specialistProgressMsg carries a live tool-call progress update from the
 // specialist child process, sent via OnToolProgress → runtimeMessageSink.
 type specialistProgressMsg struct {
@@ -863,7 +845,6 @@ func newModel(ctx context.Context, options Options) model {
 		ctx:                         ctx,
 		cwd:                         cwd,
 		appVersion:                  strings.TrimSpace(options.Version),
-		swarmDoneAt:                 map[string]time.Time{},
 		userCommands:                loadedUserCommands,
 		userCommandPaths:            userCommandPaths,
 		loadSkills:                  options.LoadSkills,
@@ -923,7 +904,6 @@ func newModel(ctx context.Context, options Options) model {
 		notifier:                    notifier,
 		altScreen:                   options.AltScreen,
 		liveUsageCounts:             map[int]int{},
-		swarmSessionMap:             map[string]string{},
 		setup:                       newSetupState(options.Setup),
 		setupSave:                   options.Setup.Save,
 	}
@@ -2051,10 +2031,6 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m.requestStreamRender(m.chatColumnWidth())
 	case spinner.TickMsg:
-		// Record when swarm members first finish so the sidebar can linger them
-		// with a fading ✓ before removal. Cheap (the tick only fires while a run is
-		// in flight or the sidebar holds agents — exactly when this can change).
-		m.stampSwarmDone()
 		// Not forwarding the tick while idle stops the spinner's self-scheduling,
 		// so no timer fires between runs. The one exception is an active sidebar
 		// holding agents: their cool ripple animation needs the phase to keep
@@ -2551,9 +2527,6 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// preview so it doesn't linger or duplicate beneath the card.
 			m.clearStreamingToolCall()
 		}
-		// Collapse a repeated swarm status/collect card so re-checks don't flood
-		// the chat with identical blocks.
-		m.transcript = collapseRepeatedStatusCard(m.transcript, msg.row)
 		m.transcript = appendTranscriptRow(m.transcript, msg.row)
 		m = m.captureStepWork(msg.row)
 		// A finished command tool may have mutated files git can see but no
@@ -2563,19 +2536,6 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 			var sweep tea.Cmd
 			m, sweep = m.maybeGitSweep()
 			return m, sweep
-		}
-		return m, nil
-	case swarmSessionsMsg:
-		// Merge completed swarm members' session ids so their AGENTS sidebar rows
-		// become drill-in clickable. Session ids are durable facts, so this is not
-		// gated on the active run.
-		if m.swarmSessionMap == nil {
-			m.swarmSessionMap = map[string]string{}
-		}
-		for taskID, sessionID := range msg.sessions {
-			if taskID != "" && sessionID != "" {
-				m.swarmSessionMap[taskID] = sessionID
-			}
 		}
 		return m, nil
 	case doctorCommandResultMsg:
@@ -2877,7 +2837,7 @@ func (m model) footerView(width int) string {
 	// the plan off-screen). Budgeted to at most a third of the screen height; a
 	// taller plan collapses to a one-line summary so the composer always stays
 	// on screen. Skipped in the subchat drill-in: m.plan belongs to the PARENT
-	// run, not the subagent/swarm child session being viewed there, so pinning it
+	// run, not the sub-agent child session being viewed there, so pinning it
 	// above that composer would show unrelated state.
 	if !m.subchat.active {
 		if plan := m.renderPinnedPlanPanel(width, m.pinnedPlanMaxHeight()); plan != "" {
@@ -4930,7 +4890,7 @@ func (m model) launchPrompt(prompt string) (model, tea.Cmd) {
 	// A leading "@specialist <task>" is expanded into an explicit Task-delegation
 	// directive for the agent only; the transcript above keeps the user's verbatim
 	// "@mention". Non-mentions and mid-message "@file" references are unchanged.
-	if expanded, ok := expandSpecialistMention(prompt, m.agentOptions.Specialists); ok {
+	if expanded, ok := expandSpecialistMention(prompt, m.agentOptions.Agents); ok {
 		prompt = expanded
 	}
 	// Mid-message "@skill-slug" mentions expand into skill-load directives for
@@ -5038,7 +4998,7 @@ func (m model) beginRun(cancel context.CancelFunc) model {
 
 // ensureSpinnerTick returns the spinner.Tick cmd to (re)start the self-scheduling
 // tick loop when an active sidebar holds agents to animate but the loop is not
-// already running (e.g. a resumed session whose swarm members exist before any
+// already running (e.g. a resumed session whose sub-agents exist before any
 // run started this process). It returns nil — issuing no second timer — when the
 // loop is already alive, when reduced motion is set, or when there is nothing to
 // animate, so an idle plain session schedules no timer.
@@ -5527,12 +5487,6 @@ func (m model) runAgentWithOptions(runID int, runCtx context.Context, prompt str
 						errorMsg:       result.Output,
 					})
 				}
-			}
-			// swarm_collect carries task_id -> session_id for completed members, so
-			// the AGENTS sidebar rows can drill into a member's session like a
-			// specialist card.
-			if result.Name == "swarm_collect" && len(result.Meta) > 0 && m.runtimeMessageSink != nil {
-				m.runtimeMessageSink(swarmSessionsMsg{runID: runID, sessions: result.Meta})
 			}
 			if onToolResult != nil {
 				onToolResult(result)

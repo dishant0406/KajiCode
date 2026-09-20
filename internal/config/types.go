@@ -223,17 +223,11 @@ func (cfg LocalControlDriverConfig) Empty() bool {
 		cfg.Driver == ""
 }
 
-// SwarmConfig tunes the multi-agent swarm. MaxTeamSize caps how many members run
-// concurrently per team; 0 uses the built-in default (8). Spawns past the cap
-// queue and launch as slots free, so lowering it bounds parallelism (and provider
-// load / rate-limit pressure) without dropping work.
-type SwarmConfig struct {
-	MaxTeamSize int `json:"maxTeamSize,omitempty"`
-	// SpecialistDepth caps how deeply specialists may nest via the Task tool:
-	// a specialist spawning a specialist counts as one level. 0 uses the built-in
-	// default (8). Lower it to bound runaway delegation chains; raising it is
-	// allowed but each level costs a full child process.
-	SpecialistDepth int `json:"specialistDepth,omitempty"`
+// AgentsConfig tunes sub-agent delegation. Depth caps how deeply agents may
+// nest via the Task tool: an agent spawning an agent counts as one level. 0
+// uses the built-in default (4). Lower it to bound runaway delegation chains.
+type AgentsConfig struct {
+	Depth int `json:"depth,omitempty"`
 }
 
 type HarnessConfig struct {
@@ -294,7 +288,7 @@ type FileConfig struct {
 	Sandbox      SandboxConfig      `json:"sandbox,omitempty"`
 	Notify       NotifyConfig       `json:"notify,omitempty"`
 	Tools        ToolsConfig        `json:"tools,omitempty"`
-	Swarm        SwarmConfig        `json:"swarm,omitempty"`
+	Agents       AgentsConfig       `json:"agents,omitempty"`
 	Harness      HarnessConfig      `json:"harness,omitempty"`
 	Learning     LearningConfig     `json:"learning,omitempty"`
 	Preferences  PreferencesConfig  `json:"preferences,omitempty"`
@@ -334,7 +328,7 @@ func (cfg FileConfig) MarshalJSON() ([]byte, error) {
 		Sandbox        SandboxConfig       `json:"sandbox,omitempty"`
 		Notify         NotifyConfig        `json:"notify,omitempty"`
 		Tools          ToolsConfig         `json:"tools,omitempty"`
-		Swarm          SwarmConfig         `json:"swarm,omitempty"`
+		Agents         AgentsConfig        `json:"agents,omitempty"`
 		Harness        *HarnessConfig      `json:"harness,omitempty"`
 		Learning       *LearningConfig     `json:"learning,omitempty"`
 		Preferences    PreferencesConfig   `json:"preferences,omitempty"`
@@ -351,7 +345,7 @@ func (cfg FileConfig) MarshalJSON() ([]byte, error) {
 		Sandbox:        cfg.Sandbox,
 		Notify:         cfg.Notify,
 		Tools:          cfg.Tools,
-		Swarm:          cfg.Swarm,
+		Agents:         cfg.Agents,
 		Preferences:    cfg.Preferences,
 		KeyBindings:    cfg.KeyBindings,
 	}
@@ -410,7 +404,7 @@ type ResolvedConfig struct {
 	Sandbox        SandboxConfig
 	Notify         NotifyConfig
 	Tools          ToolsConfig
-	Swarm          SwarmConfig
+	Agents         AgentsConfig
 	Harness        HarnessConfig
 	Learning       LearningConfig
 	Preferences    PreferencesConfig
@@ -502,7 +496,7 @@ func (cfg *FileConfig) UnmarshalJSON(data []byte) error {
 		Sandbox         SandboxConfig              `json:"sandbox"`
 		Notify          NotifyConfig               `json:"notify"`
 		Tools           ToolsConfig                `json:"tools"`
-		Swarm           SwarmConfig                `json:"swarm"`
+		Agents          AgentsConfig               `json:"agents"`
 		Harness         HarnessConfig              `json:"harness"`
 		Learning        LearningConfig             `json:"learning"`
 		Preferences     PreferencesConfig          `json:"preferences"`
@@ -510,6 +504,14 @@ func (cfg *FileConfig) UnmarshalJSON(data []byte) error {
 		LocalControl    LocalControlConfig         `json:"localControl"`
 		MCPServers      map[string]MCPServerConfig `json:"mcpServers"`
 		MCPServersSnake map[string]MCPServerConfig `json:"mcp_servers"`
+		// Swarm is the legacy multi-agent block, renamed to Agents. It carries
+		// specialistDepth (now agents.depth) and maxTeamSize (removed). It is
+		// decoded and ignored so a config written before the agent runtime was
+		// unified keeps loading without a false "unknown field" issue.
+		Swarm struct {
+			SpecialistDepth int `json:"specialistDepth"`
+			MaxTeamSize     int `json:"maxTeamSize"`
+		} `json:"swarm"`
 	}
 
 	var raw rawConfig
@@ -533,7 +535,7 @@ func (cfg *FileConfig) UnmarshalJSON(data []byte) error {
 	cfg.Sandbox = raw.Sandbox
 	cfg.Notify = raw.Notify
 	cfg.Tools = raw.Tools
-	cfg.Swarm = raw.Swarm
+	cfg.Agents = raw.Agents
 	cfg.Harness = raw.Harness
 	cfg.Learning = raw.Learning
 	cfg.Preferences = raw.Preferences

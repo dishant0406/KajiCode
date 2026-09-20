@@ -5,7 +5,7 @@ KajiCode is an open-source terminal coding agent. Out of the box it does the obv
 If you only want to *use* KajiCode, the [README](../README.md) is enough. This page is for the other three jobs:
 
 1. Tell the agent about *your* project (drop an `AGENTS.md` in your repo).
-2. Add new specialist sub-agents.
+2. Add new agent sub-agents.
 3. Wire KajiCode into the rest of your toolchain (MCP, skills, hooks, plugins).
 
 ## 1. Drop a project `AGENTS.md`
@@ -43,23 +43,23 @@ Tips:
 
 ### Personal guidelines, across every project
 
-For preferences that follow *you*, not a specific repo (tone, tooling habits, workflow), drop a `KAJICODE.md` in your user config directory: `~/.config/kajicode/KAJICODE.md` on Linux/macOS, `%AppData%\kajicode\KAJICODE.md` on Windows — the same directory as `config.json` and your personal specialists. Same format and 8 KiB cap as the project files above, and the same case-insensitive basename match.
+For preferences that follow *you*, not a specific repo (tone, tooling habits, workflow), drop a `KAJICODE.md` in your user config directory: `~/.config/kajicode/KAJICODE.md` on Linux/macOS, `%AppData%\kajicode\KAJICODE.md` on Windows — the same directory as `config.json` and your personal agents. Same format and 8 KiB cap as the project files above, and the same case-insensitive basename match.
 
 This file is injected as its own `## User guidelines` section, before the project's `AGENTS.md`/`KAJICODE.md`, and is labeled as personal preference in the prompt: project guidelines are the later, more specific instruction and take precedence over it when the two conflict.
 
-## 2. Custom specialists
+## 2. Custom agents
 
-Specialists are KajiCode's sub-agents. Three scopes, in priority order:
+Agents are KajiCode's sub-agents. Three scopes, in priority order:
 
 | Scope | Path | Shared? |
 | --- | --- | --- |
 | Built-in | compiled into KajiCode | yes — `worker`, `explorer`, `code-review` |
-| User | `~/.config/kajicode/specialists/*.md` | no — your machine only |
-| Project | `./.kajicode/specialists/*.md` | yes — the repo team |
+| User | `~/.config/kajicode/agents/*.md` | no — your machine only |
+| Project | `./.kajicode/agents/*.md` | yes — the repo team |
 
 Project overrides user overrides built-in when names collide.
 
-A specialist is a markdown manifest with frontmatter and a system prompt:
+An agent is a markdown file with frontmatter and a system prompt:
 
 ```markdown
 ---
@@ -82,21 +82,21 @@ Reply with one JSON object per finding: `{"file", "line", "severity", "message",
 CLI management (the prompt is passed inline via `--prompt`):
 
 ```bash
-kajicode specialist list
-kajicode specialist show api-reviewer
-kajicode specialist create api-reviewer \
+kajicode agent list
+kajicode agent show api-reviewer
+kajicode agent create api-reviewer \
     --project \
     --description "Reviews API changes" \
     --tools read-only,plan \
     --prompt "$(cat api-reviewer.md)"
-kajicode specialist edit api-reviewer --project
-kajicode specialist delete api-reviewer --project
-kajicode specialist path                       # prints the resolved specialists directory
+kajicode agent edit api-reviewer --project
+kajicode agent delete api-reviewer --project
+kajicode agent path                            # prints the resolved agents directory
 ```
 
-The full format spec (frontmatter fields, tool scopes, prompt conventions) is in [`docs/SPECIALISTS.md`](SPECIALISTS.md).
+The full format spec (frontmatter fields, tool scopes, prompt conventions) is in [`docs/AGENTS.md`](AGENTS.md).
 
-> **Roadmap.** An in-UI specialist manager (create / edit / delete / preview) is on the backlog. Today you use the `kajicode specialist` CLI subcommands above.
+> **Roadmap.** An in-UI agent manager (create / edit / delete / preview) is on the backlog. Today you use the `kajicode agent` CLI subcommands above.
 
 ## 3. Skills
 
@@ -189,8 +189,8 @@ Events the agent emits (in dispatch order):
 | `afterTool` | A tool just returned | yes (tool name) |
 | `sessionStart` | A session begins | no |
 | `sessionEnd` | A session ends | no |
-| `specialistStart` | A sub-agent is spawned | yes (specialist name) |
-| `specialistStop` | A sub-agent ends | yes (specialist name) |
+| `specialistStart` | A sub-agent is spawned | yes (agent name) |
+| `specialistStop` | A sub-agent ends | yes (agent name) |
 
 A hook's exit code decides what happens next: `0` continues, non-zero blocks the tool call (`beforeTool`) or surfaces an error (`afterTool`). Hook execution is recorded in the audit log; the audit is reachable from the agent's view of past actions, not from a dedicated `kajicode doctor` check.
 
@@ -466,7 +466,7 @@ A team that wants every contributor's KajiCode to behave the same way commits:
 
 - `AGENTS.md` — project conventions, build commands, do-not-edit lists.
 - `.kajicode/config.json` — provider catalog, default model, allowed tools.
-- `.kajicode/specialists/api-reviewer.md` — the team's PR-review specialist.
+- `.kajicode/agents/api-reviewer.md` — the team's PR-review agent.
 - `.kajicode/hooks.json` — block `rm -rf` on `beforeTool`.
 - `.kajicode/plugins/internal-tooling/` — a plugin that adds the team's internal CLI tools to the agent's toolset.
 
@@ -481,6 +481,6 @@ That's it. Run `kajicode` from the repo root and the agent has the team's full i
 ## 9. Reference
 
 - [README](../README.md) — install, quickstart, command reference.
-- [docs/SPECIALISTS.md](SPECIALISTS.md) — full specialist manifest spec.
+- [docs/AGENTS.md](AGENTS.md) — full agent definition spec.
 - [docs/STREAM_JSON_PROTOCOL.md](STREAM_JSON_PROTOCOL.md) — `kajicode exec` I/O contract.
 - [docs/INSTALL.md](INSTALL.md) — install from source or release.

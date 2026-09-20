@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -170,11 +171,7 @@ func TestSubchatEntryClosesFileView(t *testing.T) {
 	}
 	m := filesPanelTestModel()
 	m.sessionStore = store
-	m.swarmSessionMap = map[string]string{"subagent-1": "sess-1"}
-	m.transcript = append(m.transcript,
-		transcriptRow{kind: rowToolCall, tool: "swarm_spawn", detail: "build it", runID: 1},
-		transcriptRow{kind: rowToolResult, tool: "swarm_spawn", detail: "Spawned subagent as task subagent-1 on team default.", runID: 1},
-	)
+	m.specialists.start("worker", "build it", "sess-1", time.Now())
 	m.activeRunID = 1
 	m = m.openFileView("web/app.js")
 

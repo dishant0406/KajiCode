@@ -14,7 +14,6 @@ const (
 	promptSectionAgentGuidelines promptSectionRole = "agent-guidelines"
 	promptSectionProjectContext  promptSectionRole = "project-context"
 	promptSectionHarnessConfig   promptSectionRole = "harness-config"
-	promptSectionSpecialists     promptSectionRole = "specialists"
 	promptSectionMCPInstructions promptSectionRole = "mcp-instructions"
 	promptSectionSkills          promptSectionRole = "skills"
 	promptSectionLearning        promptSectionRole = "learning"

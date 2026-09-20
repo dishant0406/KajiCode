@@ -30,7 +30,7 @@ const (
 	PermissionModeReadOnly  PermissionMode = "read-only"
 	PermissionModeReadWrite PermissionMode = "read-write"
 	PermissionModeBypassAll PermissionMode = "bypass-all"
-	// PermissionModeMemberAuto is a headless mode for swarm/specialist MEMBERS: it
+	// PermissionModeMemberAuto is a headless mode for sub-agent MEMBERS: it
 	// advertises the in-workspace mutators a member needs to build (write/edit +
 	// shell) on top of the Auto set, while the sandbox engine still gates them at
 	// call time — in-workspace writes and sandbox-backed shell auto-allow, but
@@ -231,11 +231,11 @@ type AskUserResponse struct {
 	Answers []string `json:"answers"`
 }
 
-// SpecialistInfo is a one-line summary of a delegatable sub-agent (its name and
+// AgentInfo is a one-line summary of a delegatable sub-agent (its name and
 // when-to-use description) surfaced to the orchestrator's system prompt so it can
-// route work to the right specialist. It is plain data so the agent package needs
-// no dependency on internal/specialist.
-type SpecialistInfo struct {
+// route work to the right agent. It is plain data so the agent package needs no
+// dependency on internal/agents.
+type AgentInfo struct {
 	Name      string
 	WhenToUse string
 }
@@ -259,7 +259,7 @@ type TaskCompletionSource interface {
 // SkillInfo is a one-line summary of a reusable, on-demand skill (its name and
 // frontmatter description) surfaced to the system prompt so the model can invoke
 // the right skill with the skill tool on the first try instead of guessing a name
-// and reading the failure. Like SpecialistInfo it is plain data, so the agent
+// and reading the failure. Like AgentInfo it is plain data, so the agent
 // package needs no dependency on internal/skills.
 type SkillInfo struct {
 	Name        string
@@ -298,13 +298,12 @@ type Options struct {
 	// 0 (or below the eligible count) keeps every tool eager — byte-identical to
 	// the pre-deferral behavior.
 	DeferThreshold int
-	// Specialists lists the sub-agents the orchestrator may delegate to via the
-	// Task tool; when non-empty the system prompt gains a delegation section that
-	// names them and nudges the model to offload read-heavy work (search,
-	// exploration) so verbose tool output stays out of the main context. It is
-	// populated only where the Task tool is actually registered, so an empty slice
-	// (the default) reproduces the previous prompt byte-for-byte.
-	Specialists []SpecialistInfo
+	// Agents lists the sub-agents the orchestrator may delegate to via the Task
+	// tool. It is the source for the TUI's @-mention autocomplete and is populated
+	// only where the Task tool is registered. The model-facing agent directory is
+	// rendered in the Task tool's own description, not the system prompt, so this
+	// field never changes the prompt text.
+	Agents []AgentInfo
 	// MCPInstructions carries the human-readable instructions each connected MCP
 	// server returned from `initialize`, keyed by server name. When non-empty the
 	// system prompt gains an <mcp_instructions> block so the model follows the

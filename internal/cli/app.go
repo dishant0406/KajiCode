@@ -17,6 +17,7 @@ import (
 
 	"github.com/charmbracelet/x/term"
 	"github.com/dishant0406/KajiCode/internal/agent"
+	"github.com/dishant0406/KajiCode/internal/agents"
 	"github.com/dishant0406/KajiCode/internal/config"
 	"github.com/dishant0406/KajiCode/internal/harness"
 	"github.com/dishant0406/KajiCode/internal/hooks"
@@ -37,8 +38,6 @@ import (
 	"github.com/dishant0406/KajiCode/internal/selfverify"
 	"github.com/dishant0406/KajiCode/internal/sessions"
 	"github.com/dishant0406/KajiCode/internal/skills"
-	"github.com/dishant0406/KajiCode/internal/specialist"
-	"github.com/dishant0406/KajiCode/internal/swarm"
 	"github.com/dishant0406/KajiCode/internal/tools"
 	"github.com/dishant0406/KajiCode/internal/tui"
 	"github.com/dishant0406/KajiCode/internal/update"
@@ -434,8 +433,8 @@ func runWithDeps(args []string, stdout io.Writer, stderr io.Writer, deps appDeps
 		return runSessions(args[1:], stdout, stderr, deps)
 	case "init":
 		return runInit(args[1:], stdout, stderr, deps)
-	case "specialists", "specialist":
-		return runSpecialists(args[1:], stdout, stderr, deps)
+	case "agents", "agent":
+		return runAgents(args[1:], stdout, stderr, deps)
 	case "plugins", "plugin":
 		return runPlugins(args[1:], stdout, stderr, deps)
 	case "backends", "backend":
@@ -721,11 +720,11 @@ func runInteractiveTUIWithSetup(stderr io.Writer, deps appDeps, permissionMode a
 
 	registry := newCoreRegistryScoped(workspaceRoot, scope)
 	registerLocalControlTools(registry, workspaceRoot, resolved.LocalControl)
-	specialistRuntime, err := registerSpecialistTools(registry, workspaceRoot, resolved.Swarm.MaxTeamSize, resolved.Swarm.SpecialistDepth)
+	agentRuntime, err := registerAgents(registry, workspaceRoot, resolved.Agents.Depth)
 	if err != nil {
-		return writeAppError(stderr, "failed to initialize specialist tools: "+err.Error(), 1)
+		return writeAppError(stderr, "failed to initialize agent tools: "+err.Error(), 1)
 	}
-	defer closeSpecialistRuntime(stderr, specialistRuntime)
+	defer closeAgentRuntime(stderr, agentRuntime)
 	// The TUI has no --worktree reassignment, so trustRoot == workspaceRoot here.
 	// Gate the project MCP layer behind the workspace-trust check (fail-closed): an
 	// untrusted workspace must not spawn its ./.kajicode/config.json stdio MCP servers.
@@ -784,7 +783,7 @@ func runInteractiveTUIWithSetup(stderr io.Writer, deps appDeps, permissionMode a
 	}
 	// Make local plugins live: register their declared tools into the registry and
 	// collect their hooks + skill roots for the dispatcher and skill tool below.
-	// Done after specialist + MCP registration so plugin tools are part of the
+	// Done after agent + MCP registration so plugin tools are part of the
 	// deferral count, and it fails OPEN — a malformed plugin is warned and skipped.
 	// The interactive TUI is not worktree-reassigned, so the trust root is the
 	// launch directory itself.
@@ -805,7 +804,7 @@ func runInteractiveTUIWithSetup(stderr io.Writer, deps appDeps, permissionMode a
 	}
 	// Activate deferred MCP-tool loading for the interactive run only when the
 	// VISIBLE deferred-eligible count meets the resolved threshold, matching exec.
-	// The registry is complete (core + specialist + MCP + plugins) here, so the
+	// The registry is complete (core + agent + MCP + plugins) here, so the
 	// count is accurate; below threshold this is a no-op and the surface is
 	// unchanged. The interactive surface applies no operator tool filters, so
 	// enabled/disabled are nil — matching the AgentOptions below.
@@ -832,6 +831,24 @@ func runInteractiveTUIWithSetup(stderr io.Writer, deps appDeps, permissionMode a
 	// notice when project hooks/plugins were dropped for an untrusted workspace.
 	hookDispatcher, hookSkip := newHookDispatcherWithExtra(workspaceRoot, pluginActivation.hooks, trustRoot)
 	emitTrustNotice(stderr, hookSkip, pluginActivation.trustSkip, mcpSkip)
+	// Hydrate the agent runtime now that the provider, sandbox, hooks, and session
+	// store exist. Children run in-process on this run's registry (the ceiling),
+	// provider, sandbox, and permission mode.
+	agentRuntime.setBase(agents.ChildRunContext{
+		Registry:           registry,
+		Provider:           provider,
+		ResolveModel:       execModelResolver(resolved, deps),
+		PermissionMode:     permissionMode,
+		Autonomy:           "low",
+		Cwd:                workspaceRoot,
+		Sandbox:            sandboxEngine,
+		FileTracker:        fileTracker,
+		Store:              deps.newSessionStore(),
+		Hooks:              hookDispatcher,
+		MaxTurns:           resolved.MaxTurns,
+		Model:              resolved.Provider.Model,
+		SystemPromptPrefix: "",
+	})
 	// Self-learning engine for the TUI run. It is backed by the project store
 	// (<workspace>/.kajicode/learning), matching the learn/recipe tools at
 	// registration, because a per-session root is negotiated inside the TUI run;
@@ -903,12 +920,12 @@ func runInteractiveTUIWithSetup(stderr io.Writer, deps appDeps, permissionMode a
 			FileTracker:     fileTracker,
 			Hooks:           hookDispatcher,
 			DeferThreshold:  resolved.Tools.DeferThreshold,
-			Specialists:     specialistRuntime.specialists,
+			Agents:          agentRuntime.agentInfos(),
 			MCPInstructions: mcpInstructionInfos(mcpRuntime),
 			Skills:          pluginActivation.skillInfos(deps.skillsDir(), workspaceRoot),
 			// Background sub-agent completion push: the interactive run learns a
 			// finished task's result on its next turn instead of polling TaskOutput.
-			TaskCompletions: specialistRuntime.specialist,
+			TaskCompletions: agentRuntime.completions(),
 		},
 		// LoadSkills backs /skills and direct /<skill-name> invocation in the TUI.
 		// It resolves against the same merged set (default dir + plugin skill
@@ -965,7 +982,7 @@ func buildProvider(resolved config.ResolvedConfig, deps appDeps) (kajicoderuntim
 	if err != nil {
 		return nil, err
 	}
-	// Pin spawned children (sub-agents / swarm members inherit the environment) to
+	// Pin spawned children (sub-agents inherit the environment) to
 	// THIS run's provider from launch, not only after an in-session switch. Without
 	// the launch-time export a child re-resolves config.json at spawn time, so a
 	// provider switch persisted by ANOTHER KajiCode process mid-session would silently
@@ -1077,97 +1094,60 @@ func localArtifactsDirFromConfig(workspaceRoot string, cfg config.LocalControlCo
 	return filepath.Join(workspaceRoot, dir)
 }
 
-// agentToolRuntime bundles the specialist runtime with the swarm it backs so
-// their lifetimes (and shutdown) stay paired: registerSpecialistTools brings up
-// both, closeSpecialistRuntime tears down both.
+// agentToolRuntime owns the agent supervisor registered into a run's tool
+// registry. It is the single lifetime owner of the Task tooling: registerAgents
+// constructs it, and closeAgentRuntime is nil-safe on every exit path.
 type agentToolRuntime struct {
-	specialist *specialist.Runtime
-	swarm      *swarm.Swarm
-	// specialists summarizes the registered specialists (name + description) for
-	// the orchestrator's system-prompt delegation section. Populated alongside the
-	// tools, so it is present exactly when the Task tool is.
-	specialists []agent.SpecialistInfo
+	supervisor *agents.Supervisor
 }
 
-// specialistInfos returns the runtime's specialist summaries, nil-safe so the
-// exec path can call it whether or not specialist tools were registered.
-func (r *agentToolRuntime) specialistInfos() []agent.SpecialistInfo {
+// registerAgents wires the agent tools (Task, TaskOutput, TaskStop, GenerateAgent)
+// into the run's registry and returns the runtime that owns them. The base
+// context is intentionally empty here: the Task tools must exist before the full
+// config resolve so --list-tools and tool-filter validation see them, and the
+// runtime handles (provider, sandbox, ...) do not exist yet. Call SetBase once
+// they do; until then a Task call fails cleanly with a "not available" result.
+func registerAgents(registry *tools.Registry, workspaceRoot string, depth int) (*agentToolRuntime, error) {
+	paths, err := agents.DefaultPaths(workspaceRoot)
+	if err != nil {
+		return nil, err
+	}
+	runner := agents.NewRunner(paths, depth)
+	supervisor := agents.Register(registry, runner, agents.ChildRunContext{})
+	// Interactive surfaces deliver finished background-task results to the run;
+	// the headless exec path leaves this off and uses TaskOutput polling.
+	supervisor.NotifyCompletions(true)
+	return &agentToolRuntime{supervisor: supervisor}, nil
+}
+
+// setBase hydrates the supervisor with the parent run's runtime handles once the
+// CLI has resolved them. It zeroes the supervisor's own registry slot so the
+// registered registry (passed here) is used as the child's tool ceiling.
+func (r *agentToolRuntime) setBase(base agents.ChildRunContext) {
+	if r == nil || r.supervisor == nil {
+		return
+	}
+	base.Registry = nil
+	r.supervisor.SetBase(base)
+}
+
+// agentInfos returns the delegatable-agent summaries for the orchestrator's
+// system-prompt delegation section, nil-safe when agent tools were not
+// registered.
+func (r *agentToolRuntime) agentInfos() []agent.AgentInfo {
 	if r == nil {
 		return nil
 	}
-	return r.specialists
+	return agents.Infos(r.supervisor)
 }
 
-func registerSpecialistTools(registry *tools.Registry, workspaceRoot string, maxTeamSize int, specialistDepth int) (*agentToolRuntime, error) {
-	paths, err := specialist.DefaultPaths(workspaceRoot)
-	if err != nil {
-		return nil, err
-	}
-	executor := specialist.Executor{Paths: paths, MaxDepth: specialistDepth}
-	runtime, err := specialist.RegisterTools(registry, executor)
-	if err != nil {
-		return nil, err
-	}
-	// Interactive surfaces deliver finished background-task results to the run;
-	// the headless exec path constructs its own runtime and stays poll-only.
-	runtime.NotifyCompletions(true)
-	// The swarm reuses the same specialist executor to launch each member, so
-	// every member runs under the orchestrator's sandbox + policy. Mailbox state
-	// lives under the workspace so its files fall within the sandbox write rules.
-	// MaxTeamSize (0 => the swarm's default of 8) caps concurrent members per team.
-	sw, err := swarm.New(swarm.Options{
-		BaseDir:     filepath.Join(workspaceRoot, ".kajicode", "swarm"),
-		Launcher:    swarm.NewSpecialistLauncher(executor),
-		MaxTeamSize: maxTeamSize,
-	})
-	if err != nil {
-		runtime.Close()
-		return nil, err
-	}
-	swarm.RegisterTools(registry, sw)
-	return &agentToolRuntime{specialist: runtime, swarm: sw, specialists: specialistSummaries(paths)}, nil
-}
-
-// specialistSummaries loads the available specialists (built-ins + user/project
-// profiles) and returns their name + description for the orchestrator's
-// delegation prompt. A load error yields no summaries (the prompt simply omits
-// the delegation section) rather than failing the run.
-func specialistSummaries(paths specialist.Paths) []agent.SpecialistInfo {
-	result, err := specialist.Load(specialist.LoadOptions{Paths: paths})
-	if err != nil {
+// completions returns the supervisor's completion source for the agent loop's
+// background-task nudge delivery.
+func (r *agentToolRuntime) completions() agent.TaskCompletionSource {
+	if r == nil || r.supervisor == nil {
 		return nil
 	}
-	summaries := make([]agent.SpecialistInfo, 0, len(result.Specialists))
-	for _, manifest := range result.Specialists {
-		name := strings.TrimSpace(manifest.Metadata.Name)
-		if name == "" {
-			continue
-		}
-		// Hidden specialists (and primary-mode reservations) stay spawnable via
-		// Task but stay out of the delegation menu, so utility agents don't tempt
-		// the orchestrator.
-		if manifest.Metadata.Hidden || specialist.NormalizeMode(manifest.Metadata.Mode) == specialist.ModePrimary {
-			continue
-		}
-		summaries = append(summaries, agent.SpecialistInfo{
-			Name:      name,
-			WhenToUse: strings.TrimSpace(manifest.Metadata.Description),
-		})
-	}
-	return summaries
-}
-
-func shouldRegisterExecSpecialistTools(options execOptions) bool {
-	if strings.EqualFold(strings.TrimSpace(options.tag), specialist.SessionTagSpecialist) {
-		return false
-	}
-	// Register at medium/high (and unsafe). The Task tool's permission gate
-	// auto-approves only read-only specialist spawns and prompts for write-capable
-	// ones, so a non-trivial exec can auto-delegate exploration safely (a headless
-	// write spawn still gets denied at the prompt). Default "low" stays clean — no
-	// specialist tooling or swarm runtime for trivial/CI one-shots.
-	autonomy := strings.ToLower(strings.TrimSpace(options.autonomy))
-	return options.skipPermissionsUnsafe || autonomy == "high" || autonomy == "medium"
+	return r.supervisor
 }
 
 func closeMCPRuntime(stderr io.Writer, runtime mcpToolRuntime) {
@@ -1197,18 +1177,31 @@ func mcpInstructionInfos(runtime mcpToolRuntime) []agent.MCPInstructions {
 	return infos
 }
 
-func closeSpecialistRuntime(stderr io.Writer, runtime *agentToolRuntime) {
-	if runtime == nil {
-		return
+// execModelResolver builds the child-model resolver for a run: a model override
+// resolves against the run's provider profile with the stored key applied.
+func execModelResolver(resolved config.ResolvedConfig, deps appDeps) func(context.Context, string) (agent.Provider, error) {
+	return func(_ context.Context, model string) (agent.Provider, error) {
+		profile := resolved.Provider
+		profile.Model = model
+		return deps.newProvider(profile)
 	}
-	if runtime.swarm != nil {
-		runtime.swarm.Close()
+}
+
+func closeAgentRuntime(stderr io.Writer, runtime *agentToolRuntime) {
+	// The in-process agent runtime owns no processes: background children run as
+	// goroutines in the parent process and are canceled with the run's context.
+	_ = stderr
+}
+
+// shouldRegisterExecAgentTools reports whether this headless run gets the agent
+// tooling. It is skipped for child agent runs (which are tagged) so a child does
+// not advertise a Task it may not use, and for trivial low-autonomy one-shots.
+func shouldRegisterExecAgentTools(options execOptions) bool {
+	if strings.EqualFold(strings.TrimSpace(options.tag), "agent") {
+		return false
 	}
-	if runtime.specialist != nil {
-		if err := runtime.specialist.Close(); err != nil {
-			_, _ = fmt.Fprintf(stderr, "[kajicode] specialist_cleanup_error: %s\n", err)
-		}
-	}
+	autonomy := strings.ToLower(strings.TrimSpace(options.autonomy))
+	return options.skipPermissionsUnsafe || autonomy == "high" || autonomy == "medium"
 }
 
 // stdoutIsTerminal reports whether w is an interactive terminal. Tests pass
@@ -1256,7 +1249,7 @@ Commands:
   find       Alias for search
   sessions   Inspect local KajiCode session lineage
   spec       Review and approve saved spec-mode drafts
-  specialist Manage local KajiCode specialist profiles
+  agent      Manage local KajiCode agent definitions
   plugins    Inspect, install, and remove local KajiCode plugins
   backends   Inspect MCP, hook, and plugin backend lifecycle state
   skills     Inspect, install, and remove local KajiCode skills
@@ -1479,10 +1472,10 @@ Flags:
       --prompt <prompt>              Provide prompt text as a flag
       --resume [id]                  Resume a session; omit id to use the latest
       --fork <id>                    Fork an existing session into a new session
-      --calling-session-id <id>      Parent session id for specialist child runs
-      --calling-tool-use-id <id>     Parent tool-call id for specialist child runs
+      --calling-session-id <id>      Parent session id for agent child runs
+      --calling-tool-use-id <id>     Parent tool-call id for agent child runs
       --tag <tag>                    Attach runtime tag metadata to the exec run
-      --depth <number>               Set specialist nesting depth metadata
+      --depth <number>               Set agent nesting depth metadata
       --session-title <text>         Set the created session title
       --init-session-id <id>         Create a new exec session with this id
       --skip-permissions-unsafe      Allow prompt-gated tools without approval

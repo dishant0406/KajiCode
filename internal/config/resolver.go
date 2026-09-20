@@ -105,11 +105,8 @@ func Resolve(options ResolveOptions) (ResolvedConfig, error) {
 		return ResolvedConfig{}, fmt.Errorf("invalid tools.deferThreshold %d: must be >= 0", cfg.Tools.DeferThreshold)
 	}
 
-	if cfg.Swarm.MaxTeamSize < 0 {
-		return ResolvedConfig{}, fmt.Errorf("invalid swarm.maxTeamSize %d: must be >= 0 (0 uses the default)", cfg.Swarm.MaxTeamSize)
-	}
-	if cfg.Swarm.SpecialistDepth < 0 {
-		return ResolvedConfig{}, fmt.Errorf("invalid swarm.specialistDepth %d: must be >= 0 (0 uses the default)", cfg.Swarm.SpecialistDepth)
+	if cfg.Agents.Depth < 0 {
+		return ResolvedConfig{}, fmt.Errorf("invalid agents.depth %d: must be >= 0 (0 uses the default)", cfg.Agents.Depth)
 	}
 
 	if network := strings.TrimSpace(cfg.Sandbox.Network); network != "" {
@@ -166,7 +163,7 @@ func Resolve(options ResolveOptions) (ResolvedConfig, error) {
 		Sandbox:        cfg.Sandbox,
 		Notify:         cfg.Notify,
 		Tools:          cfg.Tools,
-		Swarm:          cfg.Swarm,
+		Agents:         cfg.Agents,
 		Harness:        cfg.Harness,
 		Learning:       cfg.Learning.Effective(),
 		Preferences:    cfg.Preferences,
@@ -252,11 +249,8 @@ func mergeConfig(dst *FileConfig, src FileConfig) {
 		dst.Tools.DeferThreshold = src.Tools.DeferThreshold
 		dst.Tools.deferThresholdSet = true
 	}
-	if src.Swarm.MaxTeamSize != 0 {
-		dst.Swarm.MaxTeamSize = src.Swarm.MaxTeamSize
-	}
-	if src.Swarm.SpecialistDepth != 0 {
-		dst.Swarm.SpecialistDepth = src.Swarm.SpecialistDepth
+	if src.Agents.Depth != 0 {
+		dst.Agents.Depth = src.Agents.Depth
 	}
 	mergeHarnessConfig(&dst.Harness, src.Harness)
 	mergeLearningConfig(&dst.Learning, src.Learning)
@@ -332,11 +326,8 @@ func mergeProjectConfig(dst *FileConfig, src FileConfig) error {
 		dst.Tools.DeferThreshold = src.Tools.DeferThreshold
 		dst.Tools.deferThresholdSet = true
 	}
-	if src.Swarm.MaxTeamSize != 0 {
-		dst.Swarm.MaxTeamSize = src.Swarm.MaxTeamSize
-	}
-	if src.Swarm.SpecialistDepth != 0 {
-		dst.Swarm.SpecialistDepth = src.Swarm.SpecialistDepth
+	if src.Agents.Depth != 0 {
+		dst.Agents.Depth = src.Agents.Depth
 	}
 	if err := mergeProjectHarnessConfig(&dst.Harness, src.Harness); err != nil {
 		return err
@@ -594,7 +585,7 @@ func SetActiveProviderEnv(name string) {
 const MaxTurnsEnv = "KAJICODE_MAX_TURNS"
 
 // SetMaxTurnsEnv exports the per-run tool-turn budget to the process environment so
-// a spawned child (sub-agent / swarm member, which inherits the environment) runs
+// a spawned child (sub-agent, which inherits the environment) runs
 // with the SAME budget the user set via /turns. Without it a child re-resolves
 // config.json's default and a large delegated task can exhaust its turns mid-run
 // (exit 4 / max-turns). No-op for n <= 0.

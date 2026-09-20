@@ -29,7 +29,7 @@ func BuiltinCustomizeKajicode() Skill {
 		Scope:       "Use ONLY when editing KajiCode's own config, extensions, or packaging",
 		// Match the extension/question surfaces plus release packaging, relative
 		// to the repo root (these paths exist in the KajiCode source tree).
-		WhenToUse:  []string{"internal/plugins/**", "internal/skills/**", "internal/hooks/**", "internal/specialist/**", "internal/mcp/**"},
+		WhenToUse:  []string{"internal/plugins/**", "internal/skills/**", "internal/hooks/**", "internal/agents/**", "internal/mcp/**"},
 		Permission: PermissionAllow,
 		Path:       "builtin",
 		Content:    "<INSTRUCTIONS>\nEditing KajiCode's own internals? Follow the repository's rules in AGENTS.md first (build/validation, architecture ownership, code rules). Keep config and extension changes in the package that owns the concern (see docs/architecture.md); do not add hardcoded checks in unrelated layers when a registry/interface exists. Validate with go test ./... and the documented release smoke before shipping.\n</INSTRUCTIONS>",

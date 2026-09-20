@@ -47,7 +47,7 @@ func TestHiddenPlumbingToolsSkippedFromTranscript(t *testing.T) {
 		{kind: rowToolCall, tool: "todo_write", id: "c1", runID: 1},
 		{kind: rowToolResult, tool: "todo_write", id: "c1", runID: 1, text: "10 steps · 2 done"},
 		{kind: rowToolCall, tool: "tool_search", id: "c2", runID: 1},
-		{kind: rowToolResult, tool: "tool_search", id: "c2", runID: 1, text: "select:swarm_spawn,…"},
+		{kind: rowToolResult, tool: "tool_search", id: "c2", runID: 1, text: "select:custom_tool,…"},
 		{kind: rowToolResult, tool: "bash", id: "c3", runID: 1, text: "ok"},
 	}
 	rc := buildRowContext(rows)

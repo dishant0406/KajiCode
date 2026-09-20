@@ -15,7 +15,7 @@ KajiCode.
 
 - [Stream-JSON protocol](STREAM_JSON_PROTOCOL.md)
 - [GitHub Action](GITHUB_ACTION.md)
-- [Specialists](SPECIALISTS.md)
+- [Agents](AGENTS.md)
 
 ## Maintainer Docs
 

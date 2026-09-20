@@ -424,7 +424,7 @@ func (m model) handleTurnsCommand(args string) (model, string) {
 		n = maxTurnsCeiling
 	}
 	m.agentOptions.MaxTurns = n
-	// Propagate the budget to spawned sub-agents / swarm members (which inherit the
+	// Propagate the budget to spawned sub-agents (which inherit the
 	// environment) so a delegated task gets the same budget, not config.json's default.
 	config.SetMaxTurnsEnv(n)
 	// An explicit /turns while a profile is active is a pinned budget: mirror
@@ -575,7 +575,7 @@ func (m model) turnsText() string {
 			Title: "State",
 			Lines: []string{fmt.Sprintf("max tool-turns per run: %d", m.agentOptions.MaxTurns)},
 		}},
-		Hints: []string{fmt.Sprintf("/turns <n> sets this session's tool-turn budget (max %d); raise it for long multi-step tasks like delegation/swarm runs", maxTurnsCeiling)},
+		Hints: []string{fmt.Sprintf("/turns <n> sets this session's tool-turn budget (max %d); raise it for long multi-step tasks like delegation runs", maxTurnsCeiling)},
 	})
 }
 

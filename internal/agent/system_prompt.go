@@ -142,9 +142,6 @@ func buildSystemPromptParts(options Options) systemPromptParts {
 	if harness := harnessConfigContext(options.Harness); harness != "" {
 		builder.add(promptSectionHarnessConfig, harness)
 	}
-	if delegation := specialistDelegationContext(options); delegation != "" {
-		builder.add(promptSectionSpecialists, delegation)
-	}
 	if mcp := mcpInstructionsContext(options); mcp != "" {
 		builder.add(promptSectionMCPInstructions, mcp)
 	}
@@ -260,37 +257,6 @@ func approvedCommandPrefixContext(options Options) string {
 		return ""
 	}
 	return "## Approved Command Prefixes\n\nThe following command prefixes have already been approved and do not need another permission prompt:\n" + strings.Join(lines, "\n")
-}
-
-// specialistDelegationContext nudges the orchestrator to offload read-heavy or
-// parallelizable work to a specialist sub-agent via the Task tool, keeping large
-// tool outputs out of the main context. It renders only when specialists are
-// known (which is only where the Task tool is actually registered), so a run with
-// no delegatable specialists produces the previous prompt unchanged.
-func specialistDelegationContext(options Options) string {
-	if len(options.Specialists) == 0 {
-		return ""
-	}
-	var b strings.Builder
-	b.WriteString("<specialists>\n")
-	b.WriteString("Delegate focused or read-heavy work to a specialist sub-agent with the Task tool instead of doing it inline. ")
-	b.WriteString("When a request matches a specialist's purpose, delegate to it proactively — you do not need the user to ask first. ")
-	b.WriteString("This keeps large tool outputs — searches, file dumps, multi-step exploration — out of your own context, so you stay fast and token-efficient. ")
-	b.WriteString("Prefer delegating codebase search and exploration; for independent subtasks, launch several specialists in parallel. Handle small, direct edits yourself.\n")
-	b.WriteString("Available specialists (call Task with the matching name when the task fits its purpose):\n")
-	for _, info := range options.Specialists {
-		name := strings.TrimSpace(info.Name)
-		if name == "" {
-			continue
-		}
-		if desc := strings.TrimSpace(info.WhenToUse); desc != "" {
-			b.WriteString("- " + name + ": " + desc + "\n")
-		} else {
-			b.WriteString("- " + name + "\n")
-		}
-	}
-	b.WriteString("</specialists>")
-	return b.String()
 }
 
 // mcpInstructionsContext renders each connected MCP server's own initialize

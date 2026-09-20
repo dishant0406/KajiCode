@@ -46,7 +46,7 @@ the next model turn.
 | Tools | `internal/tools` | Tool interface, registry, built-in tools, redaction, output budgets, display metadata, and mutation tracking. |
 | Sandbox/permissions | `internal/sandbox` | Path scope, network policy, command risk, grants, permission decisions, and platform isolation backends. |
 | Sessions | `internal/sessions` | Local metadata, append-only event logs, replay, checkpoint, rewind, fork, and lineage. |
-| Extensions | `internal/mcp`, `internal/plugins`, `internal/skills`, `internal/specialist`, `internal/swarm`, `internal/hooks` | External tools, plugin activation, skill discovery, sub-agents, teams, and lifecycle hooks. |
+| Extensions | `internal/mcp`, `internal/plugins`, `internal/skills`, `internal/agents`, `internal/hooks` | External tools, plugin activation, skill discovery, sub-agents, and lifecycle hooks. |
 | Local control | `internal/localcontrol`, `internal/browser`, `internal/background`, `internal/daemon` | Optional browser, terminal, desktop, and daemon-backed helpers. |
 | Release | `cmd/kajicode-release`, `internal/release`, `scripts/install.*`, `scripts/npm/*`, `.github/workflows/publish-npm.yml` | Binary archives, checksums, installers, npm wrapper/platform packages, tags, and GitHub releases. |
 
@@ -58,7 +58,7 @@ the next model turn.
 2. Resolves workspace and user config through `internal/config`.
 3. Creates the provider from the active provider profile.
 4. Builds the tool registry.
-5. Loads specialists, MCP tools, plugins, skills, hooks, and user commands.
+5. Loads agents, MCP tools, plugins, skills, hooks, and user commands.
 6. Creates sandbox and session stores.
 7. Binds the resolved model to `internal/modelsource` (the models.dev snapshot)
    and refreshes that snapshot in the background when stale. `/model refresh`
@@ -361,14 +361,14 @@ Extension loading happens before `agent.Run`:
   discoverable and auto-loads when editing KajiCode's own internals. The `skill`
   tool resolves loadable skills across the boot roots plus the run's discovered
   project roots.
-- Specialists and swarm members expose sub-agent tools through
-  `internal/specialist` and `internal/swarm`. Fresh Task calls to read-only
-  specialists join the parallel read batch (args-aware capabilities, capped at
-  4 concurrent children); finished background tasks are pushed back into the
-  parent run as `<task_result>` nudges instead of being polled; manifest
-  metadata supports mode/hidden/temperature/topP/steps/disable; the nesting cap
-  is configurable via `swarm.specialistDepth`; and the read-only tool set is
-  derived from one category source so it cannot drift.
+- Agents expose sub-agent tools through `internal/agents`. A Task call runs the
+  child in-process on the parent's registry, provider, sandbox, and permission
+  mode, with the child's registry filtered to the tools its own ruleset allows
+  (so children can use the same MCP/plugin/skill tools the parent has, and can
+  never reach one the parent lacks). Finished background tasks are pushed back
+  into the parent run as `<task_result>` nudges instead of being polled; the
+  definition supports mode/hidden/aliases/model/thinking/temperature/topP/steps/
+  disable; and the nesting cap is configurable via `agents.depth`.
 - User commands are file-backed commands surfaced by CLI/TUI command layers.
 
 New extension types should attach through the existing registry/prompt/hook

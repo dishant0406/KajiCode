@@ -228,14 +228,14 @@ func TestBuildToolSearchDescription(t *testing.T) {
 				baseTool: baseTool{name: "mcp_git_hub_create_issue", description: "Create an issue.", parameters: Schema{Type: "object"}},
 				server:   "git hub",
 			},
-			fakeDeferredTool{baseTool: baseTool{name: "swarm_spawn", description: "Spawn a worker.", parameters: Schema{Type: "object"}}, deferred: true},
+			fakeDeferredTool{baseTool: baseTool{name: "spawn_worker", description: "Spawn a worker.", parameters: Schema{Type: "object"}}, deferred: true},
 		}
 		got := BuildToolSearchDescription(tools)
 
 		for _, want := range []string{
 			"# Tool discovery",
 			"- mcp_git_hub_create_issue — git hub",
-			"- swarm_spawn — swarm",
+			"- spawn_worker — spawn",
 			"select:Name1,Name2",
 		} {
 			if !strings.Contains(got, want) {

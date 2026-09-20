@@ -26,7 +26,7 @@ const (
 //
 // The sidebar fields deliberately store a STABLE IDENTITY (sessionID, stepIndex),
 // not a raw line offset: the AGENTS/PLAN section sizes can change between when a
-// hover is detected and when the sidebar next renders (a swarm member's linger
+// hover is detected and when the sidebar next renders (an agent's linger
 // window elapsing, a plan step completing) with no mouse motion in between to
 // re-resolve it. A cached raw offset would then silently point at whatever
 // unrelated row now occupies that slot. hoveredSidebarLineOffset (sidebar.go)

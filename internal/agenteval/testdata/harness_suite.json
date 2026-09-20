@@ -1,7 +1,7 @@
 {
   "id": "kajicode-harness-behavior",
   "name": "kajicode-harness-behavior",
-  "description": "Local fixture suite for prompt, mode, specialist, and verification harness behavior.",
+  "description": "Local fixture suite for prompt, mode, agent, and verification harness behavior.",
   "tasks": [
     {
       "id": "lock-spec-draft-readonly-contract",
@@ -26,24 +26,24 @@
       ]
     },
     {
-      "id": "strengthen-specialist-role-catalog",
-      "name": "Strengthen specialist role catalog",
-      "description": "Regression task for built-in specialist role metadata and read-only navigation tools.",
-      "tags": ["specialists", "subagents", "tools"],
+      "id": "strengthen-agent-role-catalog",
+      "name": "Strengthen agent role catalog",
+      "description": "Regression task for built-in agent role metadata and read-only navigation tools.",
+      "tags": ["agents", "subagents", "tools"],
       "difficulty": "medium",
-      "prompt": "Add built-in specialist role coverage for planner, explorer, verifier, worker, and code-review. Ensure read-only specialists can use code-navigation and skill-loading tools without gaining write or shell authority.",
+      "prompt": "Add built-in agent role coverage for planner, explorer, verifier, worker, and code-review. Ensure read-only agents can use code-navigation and skill-loading tools without gaining write or shell authority.",
       "workspaceFixture": "fixtures/kajicode-mini",
-      "expectedChangedFiles": ["docs/SPECIALISTS.md", "internal/specialist/builtin.go", "internal/specialist/builtin_test.go"],
+      "expectedChangedFiles": ["docs/AGENTS.md", "internal/agents/builtin.go", "internal/agents/builtin_test.go"],
       "forbiddenChangedFiles": ["go.mod", "package.json"],
       "requiredTraceEvents": ["tool:read_file", "tool:apply_patch"],
       "contextChecks": {
-        "requiredFiles": ["docs/SPECIALISTS.md", "internal/specialist/builtin.go"]
+        "requiredFiles": ["docs/AGENTS.md", "internal/agents/builtin.go"]
       },
       "verificationCommands": [
         {
-          "id": "specialist-tests",
-          "name": "Specialist fixture tests",
-          "command": ["go", "test", "./internal/specialist"]
+          "id": "agent-tests",
+          "name": "Agent fixture tests",
+          "command": ["go", "test", "./internal/agents"]
         }
       ]
     },

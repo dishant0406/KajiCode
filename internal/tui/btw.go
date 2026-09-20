@@ -307,8 +307,6 @@ func btwMessageRunID(msg tea.Msg) (int, bool) {
 		return typed.runID, true
 	case specialistProgressMsg:
 		return typed.runID, true
-	case swarmSessionsMsg:
-		return typed.runID, true
 	case permissionRequestMsg:
 		return typed.runID, true
 	case askUserRequestMsg:

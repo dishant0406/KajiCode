@@ -58,7 +58,7 @@ dependency, sandbox, provider, installer, and security-sensitive work.
     platform sandbox backends.
   - `internal/sessions` owns durable local session metadata and event replay.
   - `internal/mcp`, `internal/plugins`, `internal/skills`,
-    `internal/specialist`, `internal/swarm`, and `internal/hooks` own extension
+    `internal/agents`, and `internal/hooks` own extension
     surfaces.
   - `cmd/kajicode-release`, `internal/release`, `scripts/install.*`,
     `scripts/npm/*`, `package.json`, and `.github/workflows/publish-npm.yml`
@@ -94,7 +94,7 @@ dependency, sandbox, provider, installer, and security-sensitive work.
 - Agent-loop changes belong in `internal/agent` and must include regression tests
   for turn progression, tool pairing, retries, compaction, permissions, or
   completion semantics touched by the change.
-- Tool changes belong in `internal/tools` unless they are MCP/plugin/specialist
+- Tool changes belong in `internal/tools` unless they are MCP/plugin/agent
   tools. Include permission metadata, output-budget behavior, redaction behavior,
   and sandbox expectations in tests.
 - Sandbox changes belong in `internal/sandbox`; test path scope, network,

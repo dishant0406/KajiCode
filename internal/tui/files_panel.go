@@ -1,7 +1,7 @@
 // files_panel.go renders the FILES section of the right context sidebar: the
 // workspace files this session has touched, newest first, with an A/M badge and
 // a +added/−removed diffstat per file, plus a pulsing row for the file whose
-// write is streaming right now. Like the swarm roster (sidebar.go), the touched
+// write is streaming right now. Like the AGENTS panel (sidebar.go), the touched
 // set is not separate model state — it is recovered on demand from the
 // transcript's tool-result rows (their changedFiles), so it survives resume for
 // free and can never drift from what the chat shows.

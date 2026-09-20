@@ -448,7 +448,7 @@ func replaceTrailingAtToken(value, path string) string {
 // there. Rows reuse commandSuggestion: Name is the "@name" insert text, Desc the
 // specialist's description.
 func (m model) leadingSpecialistSuggestions(value string, query *pathQuery) []commandSuggestion {
-	if query == nil || len(m.agentOptions.Specialists) == 0 {
+	if query == nil || len(m.agentOptions.Agents) == 0 {
 		return nil
 	}
 	runes := []rune(value)
@@ -459,8 +459,8 @@ func (m model) leadingSpecialistSuggestions(value string, query *pathQuery) []co
 		return nil // "@" is not the first word: treat as a file reference
 	}
 	prefix := strings.ToLower(strings.TrimSpace(query.Query))
-	out := make([]commandSuggestion, 0, len(m.agentOptions.Specialists))
-	for _, spec := range m.agentOptions.Specialists {
+	out := make([]commandSuggestion, 0, len(m.agentOptions.Agents))
+	for _, spec := range m.agentOptions.Agents {
 		name := strings.TrimSpace(spec.Name)
 		if name == "" {
 			continue
@@ -496,7 +496,7 @@ func (m model) completeSpecialistSuggestion(chosen string) model {
 // prompts and mid-message "@file" references are untouched. Callers keep the
 // user's verbatim "@mention" in the transcript and expand only the agent-facing
 // text.
-func expandSpecialistMention(prompt string, specialists []agent.SpecialistInfo) (string, bool) {
+func expandSpecialistMention(prompt string, specialists []agent.AgentInfo) (string, bool) {
 	trimmed := strings.TrimLeft(prompt, " \t")
 	if !strings.HasPrefix(trimmed, "@") {
 		return "", false
