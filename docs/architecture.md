@@ -365,10 +365,13 @@ Extension loading happens before `agent.Run`:
   child in-process on the parent's registry, provider, sandbox, and permission
   mode, with the child's registry filtered to the tools its own ruleset allows
   (so children can use the same MCP/plugin/skill tools the parent has, and can
-  never reach one the parent lacks). Finished background tasks are pushed back
-  into the parent run as `<task_result>` nudges instead of being polled; the
-  definition supports mode/hidden/aliases/model/thinking/temperature/topP/steps/
-  disable; and the nesting cap is configurable via `agents.depth`.
+  never reach one the parent lacks). Task is capability-classified by its target
+  agent's effect (`TaskTool.CapabilitiesForArgs`), so several fresh delegations
+  to read-only agents in one turn run concurrently while write-capable ones stay
+  sequential. Finished background tasks are pushed back into the parent run as
+  `<task_result>` nudges instead of being polled; the definition supports
+  mode/hidden/aliases/model/thinking/temperature/topP/steps/disable; and the
+  nesting cap is configurable via `agents.depth`.
 - User commands are file-backed commands surfaced by CLI/TUI command layers.
 
 New extension types should attach through the existing registry/prompt/hook

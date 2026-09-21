@@ -108,3 +108,88 @@ func (s stubTool) Safety() tools.Safety {
 func (s stubTool) Run(context.Context, map[string]any) tools.Result {
 	return tools.Result{Status: tools.StatusOK}
 }
+
+// effectStubTool is a stub whose declared effect drives the read-only gate.
+type effectStubTool struct {
+	name   string
+	effect tools.EffectClass
+}
+
+func (s effectStubTool) Name() string             { return s.name }
+func (s effectStubTool) Description() string      { return "stub" }
+func (s effectStubTool) Parameters() tools.Schema { return tools.Schema{Type: "object"} }
+func (s effectStubTool) Safety() tools.Safety {
+	return tools.Safety{SideEffect: tools.SideEffectRead, Permission: tools.PermissionAllow}
+}
+func (s effectStubTool) Capabilities() tools.ToolCapabilities {
+	return tools.ToolCapabilities{Effect: s.effect}
+}
+func (s effectStubTool) Run(context.Context, map[string]any) tools.Result {
+	return tools.Result{Status: tools.StatusOK}
+}
+
+// parentRegistry registers the read and mutating tools a parent run actually
+// exposes, so the gate has to classify the agent's allowed toolset rather than
+// the whole registry.
+func parentRegistry() *tools.Registry {
+	registry := tools.NewRegistry()
+	registry.Register(effectStubTool{name: "read_file", effect: tools.EffectReadOnly})
+	registry.Register(effectStubTool{name: "write_file", effect: tools.EffectWorkspaceWrite})
+	registry.Register(effectStubTool{name: "exec_command", effect: tools.EffectWorkspaceWrite})
+	return registry
+}
+
+func taskCaps(t *testing.T, tool *TaskTool, args map[string]any) tools.ToolCapabilities {
+	t.Helper()
+	return tools.CapabilitiesForArgsOf(tool, args)
+}
+
+// TestTaskToolReadOnlyAgentIsParallelSafe is the regression guard for the
+// defect where Task delegations were never batch-eligible: the tool must
+// classify a read-only agent as EffectReadOnly + ThreadSafe so the loop's
+// parallel batcher runs several delegations at once.
+func TestTaskToolReadOnlyAgentIsParallelSafe(t *testing.T) {
+	supervisor := NewSupervisor(fakeRunner(), ChildRunContext{Registry: parentRegistry()})
+	tool := NewTaskTool(supervisor)
+
+	caps := taskCaps(t, tool, map[string]any{"agent": "explorer", "prompt": "x"})
+	if caps.Effect != tools.EffectReadOnly || !caps.ThreadSafe {
+		t.Fatalf("read-only explorer must be parallel-safe, got %+v", caps)
+	}
+	if keys := caps.ResourceKeys(map[string]any{"agent": "explorer"}); len(keys) != 1 || keys[0] != "agent:explorer" {
+		t.Fatalf("expected per-agent conflict key, got %v", keys)
+	}
+}
+
+// A write-capable agent must stay sequential, and fail-closed paths (unknown
+// agent, background, missing arg) must never be batch-eligible.
+func TestTaskToolNonReadOnlyAndFailClosed(t *testing.T) {
+	supervisor := NewSupervisor(fakeRunner(), ChildRunContext{Registry: parentRegistry()})
+	tool := NewTaskTool(supervisor)
+
+	cases := []struct {
+		name string
+		args map[string]any
+	}{
+		{"write-capable worker", map[string]any{"agent": "worker", "prompt": "x"}},
+		{"verifier runs commands", map[string]any{"agent": "verifier", "prompt": "x"}},
+		{"unknown agent", map[string]any{"agent": "nope", "prompt": "x"}},
+		{"background", map[string]any{"agent": "explorer", "prompt": "x", "run_in_background": true}},
+		{"missing agent", map[string]any{"prompt": "x"}},
+	}
+	for _, testCase := range cases {
+		if caps := taskCaps(t, tool, testCase.args); caps.Effect == tools.EffectReadOnly && caps.ThreadSafe {
+			t.Fatalf("%s must not be parallel-safe, got %+v", testCase.name, caps)
+		}
+	}
+}
+
+// A read-only agent is only safe relative to what the parent registry can
+// actually see; without a registry the gate fails closed.
+func TestTaskToolFailsClosedWithoutRegistry(t *testing.T) {
+	supervisor := NewSupervisor(fakeRunner(), ChildRunContext{})
+	tool := NewTaskTool(supervisor)
+	if caps := taskCaps(t, tool, map[string]any{"agent": "explorer", "prompt": "x"}); caps.Effect == tools.EffectReadOnly {
+		t.Fatal("no parent registry must fail closed")
+	}
+}

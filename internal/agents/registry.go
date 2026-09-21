@@ -22,6 +22,27 @@ func FilterRegistry(base *tools.Registry, rules Ruleset) *tools.Registry {
 	return filtered
 }
 
+// delegationIsReadOnly reports whether an agent restricted to rules can only
+// read the workspace: every tool rules allows is a pure read-only effect in the
+// parent registry. It is the safety gate the agent loop's parallel batcher
+// consults before running several delegations at once, so it fails closed — an
+// unknown, mutating, interactive, or process-reading tool in the allowed set
+// makes the delegation sequential.
+func delegationIsReadOnly(registry *tools.Registry, rules Ruleset) bool {
+	if registry == nil {
+		return false
+	}
+	for _, tool := range registry.All() {
+		if Evaluate(tool.Name(), rules) != ActionAllow {
+			continue
+		}
+		if tools.CapabilitiesOf(tool).Effect != tools.EffectReadOnly {
+			return false
+		}
+	}
+	return true
+}
+
 // Spawnable returns the agents a Task caller may invoke: subagent/all mode and
 // not hidden. Primary-mode agents are reserved for top-level selection and
 // never appear as delegation targets.

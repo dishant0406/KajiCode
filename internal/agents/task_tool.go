@@ -95,6 +95,47 @@ func (tool *TaskTool) Safety() tools.Safety {
 	}
 }
 
+// CapabilitiesForArgs implements tools.ArgsCapabilityProvider so the agent
+// loop's parallel batcher classifies THIS call by the target agent's effect
+// instead of the tool's static shell classification. A fresh delegation to a
+// read-only agent (explorer, code-review) is a pure workspace read, so several
+// of them in one turn run concurrently; a write-capable agent (worker,
+// verifier) stays sequential because it mutates the workspace.
+//
+// Resume re-enters an existing session whose current toolset may differ from
+// the definition, and background launches are already detached, so both fail
+// closed to the sequential path. Unknown args and an unresolvable agent name
+// also fail closed.
+func (tool *TaskTool) CapabilitiesForArgs(args map[string]any) tools.ToolCapabilities {
+	if tool.supervisor == nil || tool.supervisor.Base.Registry == nil {
+		return tools.UnknownCapabilities()
+	}
+	agentName, err := stringArg(args, "agent")
+	if err != nil || agentName == "" {
+		return tools.UnknownCapabilities()
+	}
+	if background, err := boolArg(args, "run_in_background"); err != nil || background {
+		return tools.UnknownCapabilities()
+	}
+	resolved, err := tool.supervisor.Runner.Resolve(agentName)
+	if err != nil {
+		return tools.UnknownCapabilities()
+	}
+	if !delegationIsReadOnly(tool.supervisor.Base.Registry, Rules(resolved.Tools, resolved.ExcludeTools)) {
+		return tools.UnknownCapabilities()
+	}
+	return tools.ToolCapabilities{
+		Effect:     tools.EffectReadOnly,
+		ThreadSafe: true,
+		ResourceKeys: func(map[string]any) []string {
+			// One conflict key per agent name: two concurrent delegations to the
+			// same read-only agent still serialize (they duplicate work on
+			// identical context), while distinct agents run side by side.
+			return []string{"agent:" + resolved.Name}
+		},
+	}
+}
+
 func (tool *TaskTool) Run(ctx context.Context, args map[string]any) tools.Result {
 	return tool.RunWithOptions(ctx, args, tools.RunOptions{})
 }
