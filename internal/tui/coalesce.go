@@ -21,8 +21,10 @@ const streamCoalesceInterval = 16 * time.Millisecond
 // a tea.Cmd return, not a sink message), but the model drops deltas whose runID
 // is no longer active, so a flush that races just past end-of-turn is harmless.
 //
-// Sink messages originate from the single agent goroutine and so arrive
-// serially; the only concurrent caller is the flush timer. The mutex guards the
+// Sink messages mostly originate from the single agent goroutine and arrive
+// serially; concurrent callers are the flush timer and parallel tool-batch
+// goroutines (concurrent Task delegations emit progress from their own
+// goroutines). The mutex guards the
 // buffer/timer AND is held across the downstream forward, so a timer-fired stream
 // flush can never overtake a concurrent non-stream message: whoever holds the lock
 // drains and forwards atomically, and the other caller blocks until it is done.

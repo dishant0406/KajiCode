@@ -448,7 +448,8 @@ func (m model) handleModelCommand(args string) (model, string) {
 	m.providerProfile = nextProfile
 	m.provider = nextProvider
 	m.providerName = displayValue(nextProfile.Name, string(metadata.ProviderKind))
-	// Keep sub-agent child processes on the same provider we just switched to.
+	// Keep spawned KajiCode child processes (hooks, nested CLI runs) on the same
+	// provider we just switched to.
 	config.SetActiveProviderEnv(nextProfile.Name)
 	m.modelSourceRebind(target.modelID)
 	m.modelName = target.modelID
@@ -572,7 +573,8 @@ func (m model) switchProviderModel(providerName, modelID string) (model, string,
 		config.RecentModelEntry{Provider: previousProviderName, Model: previousModel},
 		config.RecentModelEntry{Provider: target.Name, Model: target.Model},
 	)
-	// Keep sub-agent child processes on the same provider we just switched to.
+	// Keep spawned KajiCode child processes (hooks, nested CLI runs) on the same
+	// provider we just switched to.
 	config.SetActiveProviderEnv(target.Name)
 	if strings.TrimSpace(m.userConfigPath) != "" {
 		_, _ = config.SetActiveProvider(m.userConfigPath, target.Name)

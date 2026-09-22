@@ -656,12 +656,32 @@ type specialistCompleteMsg struct {
 }
 
 // specialistProgressMsg carries a live tool-call progress update from the
-// specialist child process, sent via OnToolProgress → runtimeMessageSink.
+// running sub-agent, sent via OnToolProgress → runtimeMessageSink.
 type specialistProgressMsg struct {
 	runID      int
 	toolCallID string
 	toolName   string
 	detail     string
+}
+
+// specialistSessionMsg carries the child session id the sub-agent reports on its
+// first progress event (the stream-json run_start), so a running card can be
+// drilled into before the delegation completes. name is the child agent's name,
+// used when this arrives before the delegation's start (a concurrently-batched
+// Task runs before its OnToolCall fires).
+type specialistSessionMsg struct {
+	runID          int
+	toolCallID     string
+	childSessionID string
+	name           string
+}
+
+// specialistUsageMsg carries token usage the sub-agent reports, so a running
+// card shows a live token count instead of a permanent 0.
+type specialistUsageMsg struct {
+	runID      int
+	toolCallID string
+	tokens     int
 }
 
 type mcpCommandOrigin int
@@ -2461,43 +2481,45 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.runID != m.activeRunID {
 			return m, nil
 		}
-		m.specialists.start(msg.name, msg.description, msg.childSessionID, m.now())
+		// childSessionID here is the parent tool-call id: it is the delegation's
+		// stable identity until the child reports its real session id.
+		m.specialists.start(msg.childSessionID, msg.name, msg.description, m.now())
+		m = m.upsertSpecialistRow(msg.runID, msg.childSessionID)
+		return m, nil
+	case specialistSessionMsg:
+		if msg.runID != m.activeRunID {
+			return m, nil
+		}
+		m.specialists.setChildSessionID(msg.toolCallID, msg.childSessionID, msg.name, "", m.now())
+		m = m.upsertSpecialistRow(msg.runID, msg.toolCallID)
+		return m, nil
+	case specialistUsageMsg:
+		if msg.runID != m.activeRunID {
+			return m, nil
+		}
+		m.specialists.addTokens(msg.toolCallID, msg.tokens)
+		m = m.upsertSpecialistRow(msg.runID, msg.toolCallID)
 		return m, nil
 	case specialistCompleteMsg:
 		if msg.runID != m.activeRunID {
 			return m, nil
 		}
-		// The specialist was started with the tool call ID as a temporary key
-		// (the real session ID isn't known until the child process creates it).
-		// Reconcile: complete by the tool call ID, then rewrite the tracker
-		// entry's childSessionID to the real session ID so subchat.enter can
-		// find the child session's events in the store.
+		// Record the real child session id (so the card stays drillable) and the
+		// terminal status, both keyed by the stable tool-call id, then refresh the
+		// card in place — the running card that start already appended.
+		m.specialists.setChildSessionID(msg.toolCallID, msg.childSessionID, "", "", m.now())
 		m.specialists.complete(msg.toolCallID, msg.status, 0, msg.errorMsg, m.now())
-		if msg.childSessionID != "" && msg.childSessionID != msg.toolCallID {
-			m.specialists.reconcileSessionID(msg.toolCallID, msg.childSessionID)
-		}
-		if info, ok := m.specialists.getBySessionID(msg.childSessionID); ok {
-			if info.childSessionID == "" {
-				info.childSessionID = msg.toolCallID
-			}
-			cardRow := transcriptRow{
-				kind:           rowSpecialist,
-				runID:          msg.runID,
-				specialistInfo: &info,
-			}
-			m.transcript = appendTranscriptRow(m.transcript, cardRow)
-		}
+		m = m.upsertSpecialistRow(msg.runID, msg.toolCallID)
 		return m, nil
 	case specialistProgressMsg:
 		if msg.runID != m.activeRunID {
 			return m, nil
 		}
-		// Each progress message is one specialist tool call (OnToolProgress fires only
-		// for EventToolCall); bump the card's tool-call counter so it stops showing a
-		// permanent "0 tool calls" (M18). The tracker is still keyed by the tool-call
-		// id at this point (reconciled to the session id only on completion).
+		// Each progress message is one sub-agent tool call: bump the card's
+		// tool-call counter and record the tool it is running now.
 		m.specialists.incrementToolCount(msg.toolCallID)
 		m.specialists.setCurrentTool(msg.toolCallID, msg.toolName, msg.detail)
+		m = m.upsertSpecialistRow(msg.runID, msg.toolCallID)
 		return m, nil
 	case agentRowMsg:
 		if msg.runID != m.activeRunID {
@@ -5361,10 +5383,9 @@ func (m model) runAgentWithOptions(runID int, runCtx context.Context, prompt str
 				m.sendAgentRow(runID, row)
 			}
 			// Track specialist delegation: when the Task tool is called, register
-			// the specialist start so the specialist card + task table can show
-			// live status. The child session ID is not known yet (it's created
-			// inside the executor), so we use the tool call ID as a temporary
-			// key and reconcile on the result.
+			// the specialist start so the specialist card can show live status. The
+			// tool call ID is the delegation's stable key; the child session ID is
+			// recorded separately when the child reports it (specialistSessionMsg).
 			if call.Name == "Task" {
 				name, desc := parseTaskCallArgs(call.Arguments)
 				if m.runtimeMessageSink != nil {
@@ -5411,13 +5432,36 @@ func (m model) runAgentWithOptions(runID int, runCtx context.Context, prompt str
 		}
 
 		options.OnToolProgress = func(toolCallID string, event streamjson.Event) {
-			if event.Type == streamjson.EventToolCall && m.runtimeMessageSink != nil {
+			if m.runtimeMessageSink == nil {
+				return
+			}
+			switch event.Type {
+			case streamjson.EventRunStart:
+				// The child reports its real session id here (once, at child start)
+				// so a running card becomes drillable before completion.
+				if event.SessionID != "" {
+					m.runtimeMessageSink(specialistSessionMsg{
+						runID:          runID,
+						toolCallID:     toolCallID,
+						childSessionID: event.SessionID,
+						name:           event.Name,
+					})
+				}
+			case streamjson.EventToolCall:
 				m.runtimeMessageSink(specialistProgressMsg{
 					runID:      runID,
 					toolCallID: toolCallID,
 					toolName:   event.Name,
 					detail:     toolCallSummary(event),
 				})
+			case streamjson.EventUsage:
+				if event.TotalTokens != nil {
+					m.runtimeMessageSink(specialistUsageMsg{
+						runID:      runID,
+						toolCallID: toolCallID,
+						tokens:     *event.TotalTokens,
+					})
+				}
 			}
 		}
 
@@ -5468,16 +5512,15 @@ func (m model) runAgentWithOptions(runID int, runCtx context.Context, prompt str
 				Type:    sessions.EventToolResult,
 				Payload: toolPayload,
 			})
-			// Complete specialist tracking when the Task tool returns.
+			// Complete specialist tracking when the Task tool returns. childSessionID
+			// is the real child session id from the result meta (empty when the run
+			// had no durable child); the tracker is already keyed by result.ToolCallID.
 			if result.Name == "Task" {
 				status := specialistCompleted
 				if result.Status == tools.StatusError {
 					status = specialistError
 				}
-				childSessionID := result.ToolCallID
-				if sid, ok := result.Meta["session_id"]; ok && sid != "" {
-					childSessionID = sid
-				}
+				childSessionID := result.Meta["session_id"]
 				if m.runtimeMessageSink != nil {
 					m.runtimeMessageSink(specialistCompleteMsg{
 						runID:          runID,

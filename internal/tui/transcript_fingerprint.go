@@ -75,6 +75,7 @@ func writeSpecialistFingerprintFields(hash *transcriptFingerprintHash, info *spe
 		writeFingerprintField(hash, "")
 		return
 	}
+	writeFingerprintField(hash, info.toolCallID)
 	writeFingerprintField(hash, info.name)
 	writeFingerprintField(hash, info.description)
 	writeFingerprintField(hash, info.childSessionID)

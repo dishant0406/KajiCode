@@ -398,9 +398,10 @@ type Options struct {
 	OnAskUser           func(context.Context, AskUserRequest) (AskUserResponse, error)
 	OnToolResult        func(ToolResult)
 	OnUsage             func(Usage)
-	// OnToolProgress, when set, is called with each stream-json event a
-	// specialist child process emits while running. The toolCallID identifies
-	// which Task tool call the progress belongs to. nil is a no-op.
+	// OnToolProgress, when set, is called with each stream-json event a Task
+	// delegation's child agent emits while running (run_start, tool_call, usage).
+	// The toolCallID identifies which Task tool call the progress belongs to, and
+	// event.SessionID carries the child's session id. nil is a no-op.
 	OnToolProgress func(toolCallID string, event streamjson.Event)
 	// OnContext, when set, is called once per turn with the per-category context
 	// budget of the request about to be sent, so a surface (TUI/CLI) can show

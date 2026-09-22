@@ -61,8 +61,8 @@ func agentSidebarTestModel(t *testing.T, firstSessionID string) model {
 	if firstSessionID == "" {
 		firstSessionID = "child-1"
 	}
-	m.specialists.start("worker", "build the homepage", firstSessionID, now)
-	m.specialists.start("explorer", "build the stylesheet", "child-2", now)
+	startSpecialist(&m.specialists, "call-worker", "worker", "build the homepage", firstSessionID, now)
+	startSpecialist(&m.specialists, "call-explorer", "explorer", "build the stylesheet", "child-2", now)
 	return m
 }
 
@@ -304,7 +304,7 @@ func TestSidebarAutoHidesWhenEmpty(t *testing.T) {
 	}
 
 	// A spawned agent brings the panel back.
-	m.specialists.start("explorer", "look around", "sess-x", time.Now())
+	startSpecialist(&m.specialists, "call-1", "explorer", "look around", "sess-x", time.Now())
 	if !m.sidebarHasContent() || !m.sidebarActive() {
 		t.Error("sidebar should return once an agent spawns")
 	}
@@ -314,11 +314,11 @@ func TestSidebarShowsSpawnedAgents(t *testing.T) {
 	m := sidebarTestModel()
 	now := time.Now()
 	// One running subagent with live tool activity, one completed.
-	m.specialists.start("explorer", "map the codebase", "sess-1", now)
-	m.specialists.setCurrentTool("sess-1", "grep", "auth")
-	m.specialists.incrementToolCount("sess-1")
-	m.specialists.start("reviewer", "review diff", "sess-2", now)
-	m.specialists.complete("sess-2", specialistCompleted, 0, "", now)
+	startSpecialist(&m.specialists, "call-1", "explorer", "map the codebase", "sess-1", now)
+	m.specialists.setCurrentTool("call-1", "grep", "auth")
+	m.specialists.incrementToolCount("call-1")
+	startSpecialist(&m.specialists, "call-2", "reviewer", "review diff", "sess-2", now)
+	m.specialists.complete("call-2", specialistCompleted, 0, "", now)
 
 	width := sidebarWidth(m.width)
 	plain := stripSidebar(m.sidebarAgentLines(width))
@@ -344,9 +344,9 @@ func TestSidebarHidesNotFoundSpecialistMisroutes(t *testing.T) {
 	now := time.Now()
 	// A real running agent + a failed tool-misroute (a made-up tool name called
 	// as an agent → "agent not found"), which should be filtered out.
-	m.specialists.start("worker", "build frontend", "sess-real", now)
-	m.specialists.start("bogus_tool", "coordinate", "sess-bogus", now)
-	m.specialists.complete("sess-bogus", specialistError, 0, `agent "bogus_tool" not found`, now)
+	startSpecialist(&m.specialists, "call-real", "worker", "build frontend", "sess-real", now)
+	startSpecialist(&m.specialists, "call-bogus", "bogus_tool", "coordinate", "sess-bogus", now)
+	m.specialists.complete("call-bogus", specialistError, 0, `agent "bogus_tool" not found`, now)
 
 	got := m.sidebarSpecialists()
 	if len(got) != 1 || got[0].name != "worker" {

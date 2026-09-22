@@ -171,7 +171,7 @@ func TestSubchatEntryClosesFileView(t *testing.T) {
 	}
 	m := filesPanelTestModel()
 	m.sessionStore = store
-	m.specialists.start("worker", "build it", "sess-1", time.Now())
+	startSpecialist(&m.specialists, "call-1", "worker", "build it", "sess-1", time.Now())
 	m.activeRunID = 1
 	m = m.openFileView("web/app.js")
 

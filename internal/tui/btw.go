@@ -303,6 +303,10 @@ func btwMessageRunID(msg tea.Msg) (int, bool) {
 		return typed.runID, true
 	case specialistStartMsg:
 		return typed.runID, true
+	case specialistSessionMsg:
+		return typed.runID, true
+	case specialistUsageMsg:
+		return typed.runID, true
 	case specialistCompleteMsg:
 		return typed.runID, true
 	case specialistProgressMsg:

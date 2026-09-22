@@ -1285,11 +1285,11 @@ func (m model) applyProviderWizard() (model, tea.Cmd) {
 	// Keep the in-memory saved list in sync so the provider manager and /model
 	// picker show the new profile without a restart.
 	m.savedProviders = upsertSavedProviderProfile(m.savedProviders, profile)
-	// Keep sub-agent child processes on the same provider we just switched to —
-	// same as the /model and /provider switch paths (command_center.go). Without
-	// this, a KAJICODE_PROVIDER exported by an earlier switch stays pointing at the
-	// OLD provider and wins over config in every spawned child (applyEnv), so
-	// sub-agents run on the wrong provider's credentials.
+	// Keep spawned KajiCode child processes on the same provider we just switched
+	// to — same as the /model and /provider switch paths (command_center.go).
+	// Without this, a KAJICODE_PROVIDER exported by an earlier switch stays
+	// pointing at the OLD provider and wins over config in every spawned child
+	// (applyEnv), so child processes run on the wrong provider's credentials.
 	config.SetActiveProviderEnv(profile.Name)
 	m.providerWizard = nil
 	return m, nil

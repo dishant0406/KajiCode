@@ -10,7 +10,7 @@ func TestSpecialistTrackerStartAndComplete(t *testing.T) {
 	var tracker specialistTracker
 	now := time.Date(2026, 6, 18, 12, 0, 0, 0, time.UTC)
 
-	tracker.start("worker", "fix oauth tests", "session-123", now)
+	tracker.start("call-1", "worker", "fix oauth tests", now)
 
 	all := tracker.all()
 	if len(all) != 1 {
@@ -22,21 +22,60 @@ func TestSpecialistTrackerStartAndComplete(t *testing.T) {
 	if all[0].status != specialistRunning {
 		t.Errorf("status = %v, want specialistRunning", all[0].status)
 	}
-	if !tracker.hasRunning() {
-		t.Error("tracker should have running specialist")
-	}
 
-	tracker.complete("session-123", specialistCompleted, 0, "", now.Add(45*time.Second))
+	tracker.complete("call-1", specialistCompleted, 0, "", now.Add(45*time.Second))
 
-	info, ok := tracker.getBySessionID("session-123")
-	if !ok {
-		t.Fatal("specialist not found after complete")
-	}
+	info := tracker.all()[0]
 	if info.status != specialistCompleted {
 		t.Errorf("status = %v, want specialistCompleted", info.status)
 	}
-	if tracker.hasRunning() {
-		t.Error("tracker should not have running specialist after completion")
+}
+
+// TestSpecialistTrackerChildSessionIDReconcile proves the drill-in id and the
+// stable key are tracked independently: a card started by tool-call id can be
+// given the real child session id before completion, and completion by tool-call
+// id still updates that same entry.
+func TestSpecialistTrackerChildSessionIDReconcile(t *testing.T) {
+	var tracker specialistTracker
+	now := time.Now()
+
+	tracker.start("call-1", "worker", "task", now)
+	tracker.setChildSessionID("call-1", "sess-9", "", "", now)
+
+	info, ok := tracker.all()[0], true
+	if !ok || info.childSessionID != "sess-9" {
+		t.Fatalf("childSessionID = %q (found=%v), want sess-9", info.childSessionID, ok)
+	}
+	if info.toolCallID != "call-1" {
+		t.Fatalf("toolCallID = %q, want call-1", info.toolCallID)
+	}
+
+	tracker.complete("call-1", specialistCompleted, 0, "", now.Add(time.Second))
+	if got := tracker.all()[0]; got.status != specialistCompleted {
+		t.Fatalf("completion by tool-call id did not update the entry: %+v", got)
+	}
+}
+
+// TestSpecialistTrackerChildSessionIDBeforeStart covers a concurrently-batched
+// delegation: the child's first progress event (carrying the session id) can
+// arrive before OnToolCall's start, so setChildSessionID must create the entry
+// and the later start must fill in its name/description without duplicating it.
+func TestSpecialistTrackerChildSessionIDBeforeStart(t *testing.T) {
+	var tracker specialistTracker
+	now := time.Now()
+
+	tracker.setChildSessionID("call-1", "sess-9", "", "", now)
+	tracker.start("call-1", "worker", "task", now)
+
+	all := tracker.all()
+	if len(all) != 1 {
+		t.Fatalf("expected 1 specialist, got %d: %+v", len(all), all)
+	}
+	if all[0].name != "worker" || all[0].description != "task" {
+		t.Errorf("start after session id should fill name/description, got %+v", all[0])
+	}
+	if all[0].childSessionID != "sess-9" {
+		t.Errorf("childSessionID = %q, want sess-9", all[0].childSessionID)
 	}
 }
 
@@ -44,12 +83,12 @@ func TestSpecialistTrackerIncrementToolCount(t *testing.T) {
 	var tracker specialistTracker
 	now := time.Now()
 
-	tracker.start("worker", "task", "s1", now)
-	tracker.incrementToolCount("s1")
-	tracker.incrementToolCount("s1")
-	tracker.incrementToolCount("s1")
+	tracker.start("call-1", "worker", "task", now)
+	tracker.incrementToolCount("call-1")
+	tracker.incrementToolCount("call-1")
+	tracker.incrementToolCount("call-1")
 
-	info, _ := tracker.getBySessionID("s1")
+	info := tracker.all()[0]
 	if info.toolCount != 3 {
 		t.Errorf("toolCount = %d, want 3", info.toolCount)
 	}
@@ -59,11 +98,11 @@ func TestSpecialistTrackerAddTokens(t *testing.T) {
 	var tracker specialistTracker
 	now := time.Now()
 
-	tracker.start("worker", "task", "s1", now)
-	tracker.addTokens("s1", 1000)
-	tracker.addTokens("s1", 500)
+	tracker.start("call-1", "worker", "task", now)
+	tracker.addTokens("call-1", 1000)
+	tracker.addTokens("call-1", 500)
 
-	info, _ := tracker.getBySessionID("s1")
+	info := tracker.all()[0]
 	if info.tokenCount != 1500 {
 		t.Errorf("tokenCount = %d, want 1500", info.tokenCount)
 	}
@@ -71,7 +110,7 @@ func TestSpecialistTrackerAddTokens(t *testing.T) {
 
 func TestSpecialistTrackerClear(t *testing.T) {
 	var tracker specialistTracker
-	tracker.start("worker", "task", "s1", time.Now())
+	tracker.start("call-1", "worker", "task", time.Now())
 	tracker.clear()
 
 	if len(tracker.all()) != 0 {
@@ -83,8 +122,8 @@ func TestSpecialistTrackerDuplicateStart(t *testing.T) {
 	var tracker specialistTracker
 	now := time.Now()
 
-	tracker.start("worker", "task1", "s1", now)
-	tracker.start("worker", "task2", "s1", now.Add(5*time.Second))
+	tracker.start("call-1", "worker", "task1", now)
+	tracker.start("call-1", "worker", "task2", now.Add(5*time.Second))
 
 	all := tracker.all()
 	if len(all) != 1 {
@@ -93,6 +132,13 @@ func TestSpecialistTrackerDuplicateStart(t *testing.T) {
 	if all[0].description != "task2" {
 		t.Errorf("description = %q, want task2", all[0].description)
 	}
+}
+
+// startSpecialist is a test helper for the common "start with a distinct
+// tool-call key and a drill-in session id" setup.
+func startSpecialist(tracker *specialistTracker, toolCallID, name, description, sessionID string, now time.Time) {
+	tracker.start(toolCallID, name, description, now)
+	tracker.setChildSessionID(toolCallID, sessionID, name, description, now)
 }
 
 func TestSpecialistStatusString(t *testing.T) {
@@ -236,21 +282,22 @@ func TestRenderSpecialistCardOmitsZeroTokens(t *testing.T) {
 	}
 }
 
+// TestSpecialistTrackerIncrementToolCountByCallID guards the live-progress path:
+// while the delegation is running it is keyed by the tool-call id, so a progress
+// bump must land on that entry.
 func TestSpecialistTrackerIncrementToolCountByCallID(t *testing.T) {
-	// The progress handler increments by the tool-call id while the entry is still
-	// keyed by it (before completion reconciles it to the session id) (M18).
 	var tracker specialistTracker
-	tracker.start("worker", "desc", "call-1", time.Now())
+	tracker.start("call-1", "worker", "desc", time.Now())
 	tracker.incrementToolCount("call-1")
 	tracker.incrementToolCount("call-1")
-	info, ok := tracker.getBySessionID("call-1")
-	if !ok || info.toolCount != 2 {
-		t.Fatalf("toolCount via call id = %d (found=%v), want 2", info.toolCount, ok)
+	info := tracker.all()[0]
+	if info.toolCount != 2 {
+		t.Fatalf("toolCount via call id = %d, want 2", info.toolCount)
 	}
 }
 
 func TestParseTaskCallArgs(t *testing.T) {
-	name, desc := parseTaskCallArgs(`{"name":"worker","description":"fix tests"}`)
+	name, desc := parseTaskCallArgs(`{"agent":"worker","prompt":"fix tests","description":"fix tests"}`)
 	if name != "worker" {
 		t.Errorf("name = %q, want worker", name)
 	}
@@ -258,13 +305,19 @@ func TestParseTaskCallArgs(t *testing.T) {
 		t.Errorf("description = %q, want 'fix tests'", desc)
 	}
 
-	// Fall back to prompt when description is missing
-	name2, desc2 := parseTaskCallArgs(`{"name":"explorer","prompt":"map the codebase"}`)
+	// The real Task schema keys the target "agent"; prompt is the description fallback.
+	name2, desc2 := parseTaskCallArgs(`{"agent":"explorer","prompt":"map the codebase"}`)
 	if name2 != "explorer" {
 		t.Errorf("name = %q, want explorer", name2)
 	}
 	if desc2 != "map the codebase" {
 		t.Errorf("description = %q, want 'map the codebase'", desc2)
+	}
+
+	// Legacy alias: older call shapes keyed the target "name".
+	name3, _ := parseTaskCallArgs(`{"name":"worker","description":"fix tests"}`)
+	if name3 != "worker" {
+		t.Errorf("legacy name = %q, want worker", name3)
 	}
 }
 

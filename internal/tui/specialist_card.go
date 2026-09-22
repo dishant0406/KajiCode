@@ -2,9 +2,11 @@
 //
 // A specialist card summarises one spawned sub-agent (worker, explorer, code
 // review, ...): its name, task description, elapsed time, tool-call count, and
-// token usage. The SpecialistTracker holds the live state that the transcript
-// view consults each render; the session store feeds it via start/complete/
-// incrementToolCount/addTokens as specialist events arrive.
+// token usage. The specialistTracker holds the live state that the transcript
+// view consults each render. Each delegation is keyed by its parent tool-call id
+// (stable across the whole run); the model feeds the tracker start/complete/
+// incrementToolCount/addTokens/setCurrentTool/setChildSessionID as the runtime
+// messages arrive.
 package tui
 
 import (
@@ -29,6 +31,12 @@ const (
 
 // specialistInfo is the rendered view of one specialist invocation.
 type specialistInfo struct {
+	// toolCallID is the parent's Task tool-call id. It is the entry's STABLE
+	// identity for the whole run: the child session id only becomes known once
+	// the child reports its first progress/session event, and the completion
+	// result arrives with yet another id. Every live update is keyed by this so
+	// one delegation maps to exactly one card.
+	toolCallID     string
 	name           string
 	description    string
 	childSessionID string
@@ -44,27 +52,104 @@ type specialistInfo struct {
 }
 
 // specialistTracker holds the live state for every specialist the parent agent
-// has spawned in the current turn. Lookups are by childSessionID.
+// has spawned in the current turn. Lookups are by toolCallID (the stable key).
 type specialistTracker struct {
 	specialists []specialistInfo
 }
 
-// start adds a new specialist entry. If childSessionID already exists the
-// existing entry is updated in place (so a duplicate start event is idempotent).
-func (t *specialistTracker) start(name, description, childSessionID string, now time.Time) {
-	for index := range t.specialists {
-		if t.specialists[index].childSessionID == childSessionID {
-			t.specialists[index].name = name
-			t.specialists[index].description = description
-			t.specialists[index].status = specialistRunning
-			t.specialists[index].startedAt = now
-			t.specialists[index].completedAt = time.Time{}
-			t.specialists[index].exitCode = 0
-			t.specialists[index].errorMsg = ""
-			return
+// start adds a new specialist entry, or updates the existing entry with the same
+// tool-call id in place (so a duplicate start, or a start arriving after the
+// child's first progress event, never creates a second entry).
+func (t *specialistTracker) start(toolCallID, name, description string, now time.Time) {
+	if index, ok := t.indexByToolCallID(toolCallID); ok {
+		entry := &t.specialists[index]
+		// Keep an already-known name/description: a start arriving after the
+		// child's session event carries "" for name and must not downgrade the
+		// real agent name the child reported.
+		if name = strings.TrimSpace(name); name != "" {
+			entry.name = name
 		}
+		if description = strings.TrimSpace(description); description != "" {
+			entry.description = description
+		}
+		entry.status = specialistRunning
+		entry.startedAt = now
+		entry.completedAt = time.Time{}
+		entry.exitCode = 0
+		entry.errorMsg = ""
+		return
 	}
 	t.specialists = append(t.specialists, specialistInfo{
+		toolCallID:  toolCallID,
+		name:        name,
+		description: description,
+		status:      specialistRunning,
+		startedAt:   now,
+	})
+}
+
+// indexByToolCallID returns the slice index of the entry with toolCallID.
+func (t *specialistTracker) indexByToolCallID(toolCallID string) (int, bool) {
+	for index := range t.specialists {
+		if t.specialists[index].toolCallID == toolCallID {
+			return index, true
+		}
+	}
+	return 0, false
+}
+
+// complete marks the specialist with toolCallID as finished, recording the
+// terminal status, exit code, and any error message. Specialists that are not
+// tracked are ignored.
+func (t *specialistTracker) complete(toolCallID string, status specialistStatus, exitCode int, errorMsg string, now time.Time) {
+	if index, ok := t.indexByToolCallID(toolCallID); ok {
+		t.specialists[index].status = status
+		t.specialists[index].exitCode = exitCode
+		t.specialists[index].errorMsg = errorMsg
+		t.specialists[index].completedAt = now
+	}
+}
+
+// incrementToolCount bumps the tool-call counter for the specialist with
+// toolCallID. Unknown specialists are ignored.
+func (t *specialistTracker) incrementToolCount(toolCallID string) {
+	if index, ok := t.indexByToolCallID(toolCallID); ok {
+		t.specialists[index].toolCount++
+	}
+}
+
+// addTokens adds tokens to the running total for the specialist with toolCallID.
+// Unknown specialists are ignored.
+func (t *specialistTracker) addTokens(toolCallID string, tokens int) {
+	if index, ok := t.indexByToolCallID(toolCallID); ok {
+		t.specialists[index].tokenCount += tokens
+	}
+}
+
+// setCurrentTool updates the live tool-call progress for the specialist with
+// toolCallID. Used by specialistProgressMsg to show ↳ toolName detail.
+func (t *specialistTracker) setCurrentTool(toolCallID, toolName, detail string) {
+	if index, ok := t.indexByToolCallID(toolCallID); ok {
+		t.specialists[index].currentTool = toolName
+		t.specialists[index].currentDetail = detail
+	}
+}
+
+// setChildSessionID records the real child session id once the child reports it,
+// so a running card can be drilled into before the delegation completes. No-op
+// (creating a placeholder entry) when the start has not arrived yet — for a
+// concurrently-batched delegation the child's first progress event can land
+// BEFORE OnToolCall fires, and the following start fills in the name/description.
+func (t *specialistTracker) setChildSessionID(toolCallID, childSessionID, name, description string, now time.Time) {
+	if childSessionID == "" {
+		return
+	}
+	if index, ok := t.indexByToolCallID(toolCallID); ok {
+		t.specialists[index].childSessionID = childSessionID
+		return
+	}
+	t.specialists = append(t.specialists, specialistInfo{
+		toolCallID:     toolCallID,
 		name:           name,
 		description:    description,
 		childSessionID: childSessionID,
@@ -73,81 +158,9 @@ func (t *specialistTracker) start(name, description, childSessionID string, now 
 	})
 }
 
-// complete marks the specialist with childSessionID as finished, recording the
-// terminal status, exit code, and any error message. Specialists that are not
-// tracked are ignored.
-func (t *specialistTracker) complete(childSessionID string, status specialistStatus, exitCode int, errorMsg string, now time.Time) {
-	for index := range t.specialists {
-		if t.specialists[index].childSessionID == childSessionID {
-			t.specialists[index].status = status
-			t.specialists[index].exitCode = exitCode
-			t.specialists[index].errorMsg = errorMsg
-			t.specialists[index].completedAt = now
-			return
-		}
-	}
-}
-
-// incrementToolCount bumps the tool-call counter for the specialist with
-// childSessionID. Unknown specialists are ignored.
-func (t *specialistTracker) incrementToolCount(childSessionID string) {
-	for index := range t.specialists {
-		if t.specialists[index].childSessionID == childSessionID {
-			t.specialists[index].toolCount++
-			return
-		}
-	}
-}
-
-// addTokens adds tokens to the running total for the specialist with
-// childSessionID. Unknown specialists are ignored.
-func (t *specialistTracker) addTokens(childSessionID string, tokens int) {
-	for index := range t.specialists {
-		if t.specialists[index].childSessionID == childSessionID {
-			t.specialists[index].tokenCount += tokens
-			return
-		}
-	}
-}
-
-// setCurrentTool updates the live tool-call progress for the specialist with
-// childSessionID. Used by specialistProgressMsg to show ↳ toolName detail.
-func (t *specialistTracker) setCurrentTool(childSessionID, toolName, detail string) {
-	for index := range t.specialists {
-		if t.specialists[index].childSessionID == childSessionID {
-			t.specialists[index].currentTool = toolName
-			t.specialists[index].currentDetail = detail
-			return
-		}
-	}
-}
-
 // clear resets the tracker to an empty state.
 func (t *specialistTracker) clear() {
 	t.specialists = nil
-}
-
-// reconcileSessionID rewrites the childSessionID of the entry currently keyed
-// by oldID to newID. This bridges the tool-call-ID (used as a temporary key at
-// specialist start time) to the real session ID (known only when the child
-// process reports it on completion). No-op if oldID is not found.
-func (t *specialistTracker) reconcileSessionID(oldID, newID string) {
-	for index := range t.specialists {
-		if t.specialists[index].childSessionID == oldID {
-			t.specialists[index].childSessionID = newID
-			return
-		}
-	}
-}
-
-// getBySessionID returns the info for childSessionID and whether it was found.
-func (t *specialistTracker) getBySessionID(childSessionID string) (specialistInfo, bool) {
-	for index := range t.specialists {
-		if t.specialists[index].childSessionID == childSessionID {
-			return t.specialists[index], true
-		}
-	}
-	return specialistInfo{}, false
 }
 
 // all returns a copy of the specialists slice so callers may iterate without
@@ -159,16 +172,6 @@ func (t *specialistTracker) all() []specialistInfo {
 	out := make([]specialistInfo, len(t.specialists))
 	copy(out, t.specialists)
 	return out
-}
-
-// hasRunning reports whether any tracked specialist is still running.
-func (t *specialistTracker) hasRunning() bool {
-	for index := range t.specialists {
-		if t.specialists[index].status == specialistRunning {
-			return true
-		}
-	}
-	return false
 }
 
 // specialistStatusString returns the lowercase human label for a status.
@@ -199,11 +202,13 @@ func parseSpecialistStatus(s string) specialistStatus {
 	}
 }
 
-// parseTaskCallArgs extracts the specialist name and description from a Task
-// tool call's JSON arguments. The name comes from the "name" field and the
-// description from the "description" field (falling back to "prompt").
+// parseTaskCallArgs extracts the agent name and description from a Task tool
+// call's JSON arguments. The Task schema names the target "agent" (required)
+// with an optional "description" (falling back to "prompt"); "name" is accepted
+// as a legacy alias. Both fallbacks matter: a missing name renders the card with
+// an empty agent name.
 func parseTaskCallArgs(rawArgs string) (name, description string) {
-	name = firstArgValue(rawArgs, []string{"name"})
+	name = firstArgValue(rawArgs, []string{"agent", "name"})
 	description = firstArgValue(rawArgs, []string{"description", "prompt"})
 	return name, description
 }
@@ -307,7 +312,9 @@ func (m model) renderSpecialistCard(info specialistInfo, width int) string {
 	// Body line: "  status · N tool calls · M,NNN tokens".
 	toolLabel := "tool calls"
 	statusLabel := specialistStatusString(info.status)
-	if info.status == specialistError {
+	// Only show an exit code when one was actually reported — Task results carry
+	// none, and "error (exit code 0)" would read as a real, misleading code.
+	if info.status == specialistError && info.exitCode != 0 {
 		statusLabel = fmt.Sprintf("error (exit code %d)", info.exitCode)
 	}
 	// The token total is only populated when usage was bridged from the child; omit
@@ -367,14 +374,48 @@ func specialistBorderStyle(status specialistStatus) lipgloss.Style {
 	}
 }
 
+// upsertSpecialistRow refreshes the specialist card row for toolCallID, or
+// appends one if none exists. The row is keyed by the delegation's stable id, so
+// the same card is updated in place as start, session, progress, usage, and
+// completion messages arrive — exactly one card per delegation, visible from the
+// moment the delegation starts.
+func (m model) upsertSpecialistRow(runID int, toolCallID string) model {
+	index, ok := m.specialists.indexByToolCallID(toolCallID)
+	if !ok {
+		return m
+	}
+	rowID := "specialist:" + toolCallID
+	for i := range m.transcript {
+		if m.transcript[i].kind == rowSpecialist && m.transcript[i].runID == runID && m.transcript[i].id == rowID {
+			info := m.specialists.specialists[index]
+			m.transcript[i].specialistInfo = &info
+			// The fingerprint is computed once at append time and every render/
+			// height/scroll cache key derives from it, so an in-place update that
+			// left it stale would render the old card body (same reason as
+			// toggledTranscriptRow).
+			m.transcript[i].renderFingerprint = transcriptRowFingerprint(m.transcript[i])
+			return m
+		}
+	}
+	info := m.specialists.specialists[index]
+	m.transcript = appendTranscriptRow(m.transcript, transcriptRow{
+		kind:           rowSpecialist,
+		id:             rowID,
+		runID:          runID,
+		specialistInfo: &info,
+	})
+	return m
+}
+
 // specialistTitleFor returns the display title (name + " · " + description) for
-// the specialist with the given childSessionID, for the subchat nav bar. Returns
-// "" when the specialist is not found in the tracker. Falls back to the
-// specialist info carried by transcript rows when the tracker has been cleared.
+// the specialist whose child session is childSessionID, for the subchat nav bar.
+// Returns "" when not found. Falls back to the specialist info carried by
+// transcript rows when the tracker has been cleared.
 func (m model) specialistTitleFor(childSessionID string) string {
-	info, ok := m.specialists.getBySessionID(childSessionID)
-	if ok {
-		return info.name + " · " + info.description
+	for _, info := range m.specialists.all() {
+		if info.childSessionID == childSessionID {
+			return info.name + " · " + info.description
+		}
 	}
 	for _, row := range m.transcript {
 		if row.kind == rowSpecialist && row.specialistInfo != nil && row.specialistInfo.childSessionID == childSessionID {
