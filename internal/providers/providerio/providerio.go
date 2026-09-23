@@ -33,13 +33,25 @@ var ErrStreamIdle = errors.New("idle timeout (upstream stopped sending data)")
 // models — would hang the agent indefinitely.
 var ErrStreamStalled = errors.New("stream stalled (upstream kept the connection alive but produced no output)")
 
-// StreamTimeoutMessage returns the human-readable detail for a stream-timeout
-// error (ErrStreamIdle or ErrStreamStalled), given the configured idle timeout.
-// Callers prepend their own "provider stream error: " prefix. A stalled stream
-// gets a distinct, actionable message — it did NOT stop sending data (keep-alives
-// kept arriving); it just produced no output, which usually means the model is
-// stuck or very slow.
-func StreamTimeoutMessage(err error, idleTimeout time.Duration) string {
+// ErrStreamNoFirstToken reports that a stream connected but produced NO real
+// output (only keep-alives, or total silence) within FirstTokenTimeout. The
+// pre-first-token window is safe to re-issue: nothing has been streamed to the
+// user yet, so the caller's stall-retry can cancel and resend without
+// duplicating visible text. This bounds the common "connected, then sat silent
+// for minutes" hang instead of waiting out the much longer idle watchdog.
+var ErrStreamNoFirstToken = errors.New("no first token (the model accepted the request but produced no output)")
+
+// StreamTimeoutMessageWithFirstToken returns the human-readable detail for a
+// stream-timeout error (ErrStreamIdle, ErrStreamStalled, or
+// ErrStreamNoFirstToken), given the configured idle and first-token timeouts.
+// Callers prepend their own "provider stream error: " prefix. Each cause gets a
+// distinct, actionable message — a stalled stream did NOT stop sending data
+// (keep-alives kept arriving); it just produced no output. A non-positive
+// firstTokenTimeout simply never matches the first-token cause.
+func StreamTimeoutMessageWithFirstToken(err error, idleTimeout, firstTokenTimeout time.Duration) string {
+	if errors.Is(err, ErrStreamNoFirstToken) {
+		return fmt.Sprintf("no first token within %s (the request was accepted but the model produced no output; cancelling and retrying)", firstTokenTimeout)
+	}
 	if errors.Is(err, ErrStreamStalled) {
 		return fmt.Sprintf("no output for %s (the model kept the connection alive but produced nothing — it may be stuck; try a faster model or lower reasoning effort)", ContentStallTimeout(idleTimeout))
 	}
@@ -89,6 +101,41 @@ func ContentStallTimeout(idleTimeout time.Duration) time.Duration {
 // entirely (streams may then hang until the HTTP/transport layer gives up).
 const streamIdleTimeoutEnv = "KAJICODE_STREAM_IDLE_TIMEOUT"
 
+// DefaultFirstTokenTimeout bounds the pre-first-token window: a stream that
+// connects but emits NO real output within this long is aborted and (because
+// nothing was streamed yet) safely re-issued. Without it a request that is
+// accepted and then sits silent waits out the full idle watchdog (minutes). 30s
+// is generous next to the 1-5s a healthy first token takes, while still
+// catching a hung gateway quickly. Override with KAJICODE_FIRST_TOKEN_TIMEOUT.
+const DefaultFirstTokenTimeout = 30 * time.Second
+
+// firstTokenTimeoutEnv is the global override for the first-token timeout. Same
+// grammar as streamIdleTimeoutEnv: a Go duration, a bare seconds count, or a
+// disable word ("0"/"off"/"none"/"disabled").
+const firstTokenTimeoutEnv = "KAJICODE_FIRST_TOKEN_TIMEOUT"
+
+// durationEnv parses a duration override from name into (value, ok). ok is
+// false when the variable is unset or unparseable, so callers fall through to
+// their default rather than silently disabling a watchdog on a typo. Disable
+// words yield (0, true).
+func durationEnv(name string) (time.Duration, bool) {
+	raw := strings.TrimSpace(os.Getenv(name))
+	if raw == "" {
+		return 0, false
+	}
+	switch strings.ToLower(raw) {
+	case "0", "off", "none", "disabled":
+		return 0, true
+	}
+	if d, err := time.ParseDuration(raw); err == nil && d > 0 {
+		return d, true
+	}
+	if secs, err := strconv.Atoi(raw); err == nil && secs > 0 {
+		return time.Duration(secs) * time.Second, true
+	}
+	return 0, false
+}
+
 // ResolveStreamIdleTimeout selects the effective stream idle timeout. Precedence:
 // an explicit positive option (e.g. set by a test) wins; otherwise the
 // KAJICODE_STREAM_IDLE_TIMEOUT env override if set and valid; otherwise
@@ -97,21 +144,24 @@ func ResolveStreamIdleTimeout(option time.Duration) time.Duration {
 	if option > 0 {
 		return option
 	}
-	if raw := strings.TrimSpace(os.Getenv(streamIdleTimeoutEnv)); raw != "" {
-		switch strings.ToLower(raw) {
-		case "0", "off", "none", "disabled":
-			return 0
-		}
-		if d, err := time.ParseDuration(raw); err == nil && d > 0 {
-			return d
-		}
-		if secs, err := strconv.Atoi(raw); err == nil && secs > 0 {
-			return time.Duration(secs) * time.Second
-		}
-		// Unparseable / non-positive: fall through to the default rather than
-		// silently disabling the watchdog on a typo.
+	if d, ok := durationEnv(streamIdleTimeoutEnv); ok {
+		return d
 	}
 	return DefaultStreamIdleTimeout
+}
+
+// ResolveFirstTokenTimeout selects the effective first-token timeout. Precedence
+// mirrors ResolveStreamIdleTimeout: an explicit positive option wins, then
+// KAJICODE_FIRST_TOKEN_TIMEOUT, then DefaultFirstTokenTimeout. A returned value
+// <= 0 disables the first-token watchdog.
+func ResolveFirstTokenTimeout(option time.Duration) time.Duration {
+	if option > 0 {
+		return option
+	}
+	if d, ok := durationEnv(firstTokenTimeoutEnv); ok {
+		return d
+	}
+	return DefaultFirstTokenTimeout
 }
 
 // NormalizeBaseURL trims trailing slashes and validates an HTTP API base URL.
@@ -248,17 +298,22 @@ func scanSSEPayloads(scanner *bufio.Scanner, handle func(data string) bool, onCo
 }
 
 // ScanSSEDataWithContext parses SSE data payloads while enforcing an idle
-// timeout and honoring ctx cancellation. The blocking scan runs on a goroutine
-// that forwards each completed payload over a buffered channel; this consumer
-// selects on ctx.Done, the idle timer, and incoming payloads. When the upstream
-// goes silent for idleTimeout, cancel is invoked to abort the in-flight request
-// (unblocking the reader) and ErrStreamIdle is returned. On ctx cancellation
-// ctx.Err() is returned. A non-positive idleTimeout disables the watchdog.
+// timeout, an optional first-token deadline, and honoring ctx cancellation. The
+// blocking scan runs on a goroutine that forwards each completed payload over a
+// buffered channel; this consumer selects on ctx.Done, the idle/content/first-
+// token timers, and incoming payloads. When the upstream goes silent for
+// idleTimeout, cancel is invoked to abort the in-flight request (unblocking the
+// reader) and ErrStreamIdle is returned. When no real output arrives within
+// firstTokenTimeout (keep-alives do not count), ErrStreamNoFirstToken is
+// returned so the caller can safely re-issue the pre-content request. On ctx
+// cancellation ctx.Err() is returned. Non-positive timeouts disable their
+// respective watchdog; firstTokenTimeout <= 0 disables only the first-token cap.
 func ScanSSEDataWithContext(
 	ctx context.Context,
 	cancel context.CancelFunc,
 	reader io.Reader,
 	idleTimeout time.Duration,
+	firstTokenTimeout time.Duration,
 	handle func(data string) bool,
 ) error {
 	scanner := bufio.NewScanner(reader)
@@ -330,6 +385,19 @@ func ScanSSEDataWithContext(
 		resetContent = reset(content, contentTimeout)
 	}
 
+	// First-token watchdog: armed until the FIRST real data line arrives. It is a
+	// one-shot cap on the pre-content window — once any output lands it is
+	// stopped forever, so a slow-but-producing generation is never affected.
+	// Keep-alives do NOT disarm it (a heartbeating-but-silent stream is exactly
+	// the hang this catches).
+	var firstToken *time.Timer
+	var firstTokenC <-chan time.Time
+	if firstTokenTimeout > 0 {
+		firstToken = time.NewTimer(firstTokenTimeout)
+		defer firstToken.Stop()
+		firstTokenC = firstToken.C
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -338,6 +406,11 @@ func ScanSSEDataWithContext(
 			// that only the request-context cancel can interrupt).
 			cancel()
 			return ctx.Err()
+		case <-firstTokenC:
+			// Nothing real arrived within the first-token window. Abort and let the
+			// caller re-issue the pre-content request safely (no output committed).
+			cancel()
+			return ErrStreamNoFirstToken
 		case <-idleC:
 			// Upstream went silent without closing. Abort the read and surface
 			// a timeout instead of blocking the agent forever.
@@ -364,10 +437,17 @@ func ScanSSEDataWithContext(
 			resetIdle()
 			if item.keepAlive {
 				// A heartbeat keeps the connection "alive" (idle watchdog) but is
-				// NOT output, so it must not reset the content watchdog.
+				// NOT output, so it must not reset the content watchdog or disarm
+				// the first-token watchdog.
 				continue
 			}
 			resetContent()
+			// First real output: the pre-content window is over, so the
+			// first-token watchdog never fires again for this stream.
+			if firstToken != nil {
+				firstToken.Stop()
+				firstTokenC = nil
+			}
 			if !handle(item.data) {
 				// The provider asked to stop (e.g. it already emitted an error
 				// for this payload). Abort the read and end like ScanSSEData:

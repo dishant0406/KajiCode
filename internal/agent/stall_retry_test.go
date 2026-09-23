@@ -24,6 +24,10 @@ type stallProvider struct {
 	partialText     string
 	reasoningText   string
 	partialToolCall string
+	// stallError overrides the emitted error message; empty uses the legacy
+	// "no output for 6m" shape. Lets a test drive a specific timeout cause
+	// (e.g. the first-token cap) through the same retry path.
+	stallError string
 }
 
 func (p *stallProvider) StreamCompletion(_ context.Context, _ kajicoderuntime.CompletionRequest) (<-chan kajicoderuntime.StreamEvent, error) {
@@ -43,9 +47,13 @@ func (p *stallProvider) StreamCompletion(_ context.Context, _ kajicoderuntime.Co
 			ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventToolCallStart, ToolCallID: "tc_1", ToolName: p.partialToolCall}
 			ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventToolCallDelta, ToolCallID: "tc_1", ArgumentsFragment: `{"path":"x.html","content":"<!doctype`}
 		}
+		errText := p.stallError
+		if errText == "" {
+			errText = "provider stream error: no output for 6m (the model produced nothing)"
+		}
 		ch <- kajicoderuntime.StreamEvent{
 			Type:  kajicoderuntime.StreamEventError,
-			Error: "provider stream error: no output for 6m (the model produced nothing)",
+			Error: errText,
 		}
 		close(ch)
 		return ch, nil
@@ -153,6 +161,7 @@ func TestIsStreamTimeoutError(t *testing.T) {
 		"provider stream error: no output for 10m (the model produced nothing)",
 		"provider stream error: idle timeout after 5m0s (upstream stopped sending data)",
 		"stream stalled (upstream kept the connection alive but produced no output)",
+		"provider stream error: no first token within 30s (the request was accepted but the model produced no output; cancelling and retrying)",
 	}
 	for _, m := range timeouts {
 		if !isStreamTimeoutError(m) {
@@ -164,5 +173,25 @@ func TestIsStreamTimeoutError(t *testing.T) {
 		if isStreamTimeoutError(m) {
 			t.Fatalf("must NOT classify as timeout: %q", m)
 		}
+	}
+}
+
+// A no-first-token abort (the new fast pre-content cap) is re-issued like any
+// other stream timeout: it produced no visible output, so the retry is safe and
+// recovers. This is the exact error the providerio first-token watchdog emits.
+func TestRunRetriesNoFirstTokenThenSucceeds(t *testing.T) {
+	p := &stallProvider{
+		stallBefore: 1,
+		stallError:  "provider stream error: no first token within 30s (the request was accepted but the model produced no output; cancelling and retrying)",
+	}
+	result, err := Run(context.Background(), "go", p, Options{Registry: tools.NewRegistry()})
+	if err != nil {
+		t.Fatalf("a no-first-token abort should retry to success, got %v", err)
+	}
+	if result.FinalAnswer != "done" {
+		t.Fatalf("final answer = %q, want %q", result.FinalAnswer, "done")
+	}
+	if got := atomic.LoadInt32(&p.calls); got != 2 {
+		t.Fatalf("want 2 calls (1 no-first-token + 1 retry), got %d", got)
 	}
 }

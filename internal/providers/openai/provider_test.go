@@ -639,6 +639,7 @@ func newTestProviderWithOptions(t *testing.T, options Options, handler http.Hand
 		UserAgent:         options.UserAgent,
 		MaxTokens:         options.MaxTokens,
 		StreamIdleTimeout: options.StreamIdleTimeout,
+		FirstTokenTimeout: options.FirstTokenTimeout,
 		ParseThinkTags:    options.ParseThinkTags,
 		SetRequestExtra:   options.SetRequestExtra,
 	})
@@ -1433,4 +1434,63 @@ func TestOpenAIRequestPreservesCacheablePrefixAcrossTurns(t *testing.T) {
 	if first["prompt_cache_key"] != second["prompt_cache_key"] || first["prompt_cache_key"] != "session-stable-prefix" {
 		t.Fatalf("wire prompt cache key must remain stable: first=%#v second=%#v", first["prompt_cache_key"], second["prompt_cache_key"])
 	}
+}
+
+// End-to-end proof through the real provider + scanner: a server that returns
+// 200 and then only emits SSE keep-alive comments (never a data token) must be
+// aborted by the FIRST-TOKEN watchdog — well before the idle watchdog — with a
+// "no first token" error the agent loop treats as safely retryable.
+func TestStreamCompletionAbortsOnNoFirstToken(t *testing.T) {
+	release := make(chan struct{})
+	provider := newTestProviderWithOptions(t, Options{
+		APIKey:            "sk-test",
+		StreamIdleTimeout: time.Hour,             // io timeout must NOT be the cause
+		FirstTokenTimeout: 60 * time.Millisecond, // fires fast
+	}, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		flusher, _ := w.(http.Flusher)
+		// Keep-alives only: proves a heartbeating-but-silent stream is caught.
+		for {
+			select {
+			case <-release:
+				return
+			default:
+			}
+			_, _ = w.Write([]byte(": keep-alive\n\n"))
+			if flusher != nil {
+				flusher.Flush()
+			}
+			time.Sleep(15 * time.Millisecond)
+		}
+	})
+	t.Cleanup(func() { close(release) })
+
+	done := make(chan []kajicoderuntime.StreamEvent, 1)
+	go func() { done <- collectProviderEventsNoFatal(provider) }()
+
+	select {
+	case events := <-done:
+		var msg string
+		for _, e := range events {
+			if e.Type == kajicoderuntime.StreamEventError {
+				msg = e.Error
+			}
+		}
+		if !strings.Contains(msg, "no first token within 60ms") {
+			t.Fatalf("error = %q, want a first-token timeout", msg)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("provider hung instead of aborting on no first token")
+	}
+}
+
+// collectProviderEventsNoFatal is collectProviderEvents without t.Fatalf, safe
+// to call from a goroutine the test may abandon on timeout.
+func collectProviderEventsNoFatal(provider *Provider) []kajicoderuntime.StreamEvent {
+	stream, err := provider.StreamCompletion(context.Background(), kajicoderuntime.CompletionRequest{})
+	if err != nil {
+		return nil
+	}
+	return readAll(stream)
 }

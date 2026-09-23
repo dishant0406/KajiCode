@@ -497,17 +497,18 @@ func isContextLimitError(message string) bool {
 }
 
 // isStreamTimeoutError reports whether a streamed error is a provider stream
-// idle/stall timeout (providerio surfaces these as "idle timeout after …" /
-// "no output for …" / "stream stalled"). Such a turn produced nothing, so when
-// no content was forwarded yet it can be safely re-issued on a fresh connection
-// (see the stall-retry in the agent loop). Substring + case-insensitive to
-// tolerate the prefixed "provider stream error: …" wrapping.
+// idle/stall/first-token timeout (providerio surfaces these as "idle timeout
+// after …" / "no output for …" / "stream stalled" / "no first token within …").
+// Such a turn produced nothing, so when no content was forwarded yet it can be
+// safely re-issued on a fresh connection (see the stall-retry in the agent
+// loop). Substring + case-insensitive to tolerate the prefixed "provider stream
+// error: …" wrapping.
 func isStreamTimeoutError(message string) bool {
 	lowered := strings.ToLower(strings.TrimSpace(message))
 	if lowered == "" {
 		return false
 	}
-	for _, needle := range []string{"idle timeout after", "no output for", "stream stalled"} {
+	for _, needle := range []string{"idle timeout after", "no output for", "stream stalled", "no first token within"} {
 		if strings.Contains(lowered, needle) {
 			return true
 		}

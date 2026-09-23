@@ -48,6 +48,11 @@ type Options struct {
 	// When unset, KajiCode uses providerio.ResolveStreamIdleTimeout — the
 	// KAJICODE_STREAM_IDLE_TIMEOUT override or providerio.DefaultStreamIdleTimeout.
 	StreamIdleTimeout time.Duration
+	// FirstTokenTimeout aborts a stream that produces no real output within this
+	// long (keep-alives do not count). When unset, KajiCode uses
+	// providerio.ResolveFirstTokenTimeout — the KAJICODE_FIRST_TOKEN_TIMEOUT
+	// override or providerio.DefaultFirstTokenTimeout.
+	FirstTokenTimeout time.Duration
 	// ParseThinkTags converts streamed <think>...</think> content into reasoning
 	// events for OpenAI-compatible models known to emit that legacy format.
 	ParseThinkTags bool
@@ -82,6 +87,7 @@ type Provider struct {
 	httpClient            *http.Client
 	userAgent             string
 	streamIdleTimeout     time.Duration
+	firstTokenTimeout     time.Duration
 	parseThinkTags        bool
 	setRequestExtra       func(*http.Request)
 	disablePromptCacheKey bool
@@ -137,6 +143,7 @@ func New(options Options) (*Provider, error) {
 		httpClient:            httpClient,
 		userAgent:             options.UserAgent,
 		streamIdleTimeout:     providerio.ResolveStreamIdleTimeout(options.StreamIdleTimeout),
+		firstTokenTimeout:     providerio.ResolveFirstTokenTimeout(options.FirstTokenTimeout),
 		parseThinkTags:        options.ParseThinkTags,
 		setRequestExtra:       options.SetRequestExtra,
 		disablePromptCacheKey: options.DisablePromptCacheKey,
@@ -227,15 +234,15 @@ func (provider *Provider) stream(ctx context.Context, body []byte, events chan<-
 	// Use the shared SSE reader (also used by the Anthropic/Gemini providers) so
 	// multi-line "data:" continuation fields are joined into one payload, and the
 	// idle watchdog / context cancellation are handled uniformly.
-	err = providerio.ScanSSEDataWithContext(streamCtx, cancelStream, response.Body, provider.streamIdleTimeout, func(data string) bool {
+	err = providerio.ScanSSEDataWithContext(streamCtx, cancelStream, response.Body, provider.streamIdleTimeout, provider.firstTokenTimeout, func(data string) bool {
 		return provider.emitPayload(ctx, data, state, events)
 	})
-	if errors.Is(err, providerio.ErrStreamIdle) || errors.Is(err, providerio.ErrStreamStalled) {
+	if errors.Is(err, providerio.ErrStreamIdle) || errors.Is(err, providerio.ErrStreamStalled) || errors.Is(err, providerio.ErrStreamNoFirstToken) {
 		state.flushBufferedContent(events)
 		state.closeBufferedOpen(events)
 		sendEvent(ctx, events, kajicoderuntime.StreamEvent{
 			Type:  kajicoderuntime.StreamEventError,
-			Error: provider.redact("provider stream error: " + providerio.StreamTimeoutMessage(err, provider.streamIdleTimeout)),
+			Error: provider.redact("provider stream error: " + providerio.StreamTimeoutMessageWithFirstToken(err, provider.streamIdleTimeout, provider.firstTokenTimeout)),
 		})
 		return
 	}

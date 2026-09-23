@@ -29,7 +29,7 @@ func TestScanSSEDataWithContextAbortsOnIdle(t *testing.T) {
 	var got []string
 	done := make(chan error, 1)
 	go func() {
-		done <- ScanSSEDataWithContext(context.Background(), cancel, pr, 60*time.Millisecond, func(data string) bool {
+		done <- ScanSSEDataWithContext(context.Background(), cancel, pr, 60*time.Millisecond, 0, func(data string) bool {
 			got = append(got, data)
 			return true
 		})
@@ -60,7 +60,7 @@ func TestScanSSEDataWithContextHonorsContextCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		done <- ScanSSEDataWithContext(ctx, cancel, pr, time.Hour, func(string) bool { return true })
+		done <- ScanSSEDataWithContext(ctx, cancel, pr, time.Hour, 0, func(string) bool { return true })
 	}()
 
 	cancel()
@@ -87,7 +87,7 @@ func TestScanSSEDataWithContextHonorsCancelWhenIdleDisabled(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		// idleTimeout == 0 disables the watchdog; only ctx cancel can return.
-		done <- ScanSSEDataWithContext(ctx, cancel, pr, 0, func(string) bool { return true })
+		done <- ScanSSEDataWithContext(ctx, cancel, pr, 0, 0, func(string) bool { return true })
 	}()
 
 	// Cancel shortly after the call has parked in a blocking read with no data.
@@ -111,7 +111,7 @@ func TestScanSSEDataWithContextHonorsCancelWhenIdleDisabled(t *testing.T) {
 func TestScanSSEDataWithContextDeliversThenEOF(t *testing.T) {
 	body := "data: line-a\ndata: line-b\n\ndata: [DONE]\n\n"
 	var got []string
-	err := ScanSSEDataWithContext(context.Background(), func() {}, strings.NewReader(body), time.Hour, func(data string) bool {
+	err := ScanSSEDataWithContext(context.Background(), func() {}, strings.NewReader(body), time.Hour, 0, func(data string) bool {
 		got = append(got, data)
 		return true
 	})
@@ -264,7 +264,7 @@ func TestScanSSEDataWithContextAbortsOnContentStall(t *testing.T) {
 	go func() {
 		// idle 100ms → content stall at 120ms (ContentStallTimeout = idle*1.2).
 		// Keep-alives reset idle but not content.
-		done <- ScanSSEDataWithContext(context.Background(), cancel, pr, 100*time.Millisecond, func(string) bool { return true })
+		done <- ScanSSEDataWithContext(context.Background(), cancel, pr, 100*time.Millisecond, 0, func(string) bool { return true })
 	}()
 
 	select {
@@ -301,7 +301,7 @@ func TestScanSSEDataWithContextContentResetsOnData(t *testing.T) {
 	n := 0
 	done := make(chan error, 1)
 	go func() {
-		done <- ScanSSEDataWithContext(context.Background(), func() {}, pr, 100*time.Millisecond, func(string) bool { n++; return true })
+		done <- ScanSSEDataWithContext(context.Background(), func() {}, pr, 100*time.Millisecond, 0, func(string) bool { n++; return true })
 	}()
 
 	select {
@@ -322,10 +322,10 @@ func TestScanSSEDataWithContextContentResetsOnData(t *testing.T) {
 // upstream "stopped sending data" (keep-alives were still arriving).
 func TestStreamTimeoutMessage(t *testing.T) {
 	idle := 5 * time.Minute
-	if msg := StreamTimeoutMessage(ErrStreamIdle, idle); !strings.Contains(msg, "idle timeout after 5m") {
+	if msg := StreamTimeoutMessageWithFirstToken(ErrStreamIdle, idle, 0); !strings.Contains(msg, "idle timeout after 5m") {
 		t.Fatalf("idle message = %q, want it to mention the 5m idle timeout", msg)
 	}
-	stalled := StreamTimeoutMessage(ErrStreamStalled, idle)
+	stalled := StreamTimeoutMessageWithFirstToken(ErrStreamStalled, idle, 0)
 	if !strings.Contains(stalled, "no output for 6m") {
 		t.Fatalf("stalled message = %q, want it to report the 6m content window (idle 5m × 1.2)", stalled)
 	}
@@ -369,5 +369,169 @@ func TestHTTPClientReturnsStallHardenedSharedClient(t *testing.T) {
 	custom := &http.Client{}
 	if HTTPClient(custom) != custom {
 		t.Fatal("an explicit client must be returned unchanged")
+	}
+}
+
+// A stream that connects but emits no real output within the first-token window
+// must abort with ErrStreamNoFirstToken (so a pre-content caller can safely
+// re-issue it) rather than waiting out the much longer idle watchdog.
+func TestScanSSEDataWithContextAbortsOnNoFirstToken(t *testing.T) {
+	pr, pw := io.Pipe()
+	defer func() { _ = pw.Close() }()
+
+	cancelled := false
+	cancel := func() { cancelled = true }
+
+	done := make(chan error, 1)
+	go func() {
+		// idle timeout is long (time.Hour) so only the first-token timer can fire.
+		done <- ScanSSEDataWithContext(context.Background(), cancel, pr, time.Hour, 60*time.Millisecond, func(string) bool { return true })
+	}()
+
+	select {
+	case err := <-done:
+		if !errors.Is(err, ErrStreamNoFirstToken) {
+			t.Fatalf("err = %v, want ErrStreamNoFirstToken", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("ScanSSEDataWithContext hung when no first token arrived")
+	}
+	if !cancelled {
+		t.Fatal("no-first-token abort did not cancel the request context")
+	}
+}
+
+// Keep-alives must NOT disarm the first-token watchdog: a heartbeating-but-silent
+// stream is exactly the hang the first-token cap exists to catch.
+func TestScanSSEDataWithContextFirstTokenNotDisarmedByKeepAlives(t *testing.T) {
+	pr, pw := io.Pipe()
+	defer func() { _ = pw.Close() }()
+
+	stop := make(chan struct{})
+	defer close(stop)
+	go func() {
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			if _, err := io.WriteString(pw, ": keep-alive\n\n"); err != nil {
+				return
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+	}()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- ScanSSEDataWithContext(context.Background(), func() {}, pr, time.Hour, 80*time.Millisecond, func(string) bool { return true })
+	}()
+
+	select {
+	case err := <-done:
+		if !errors.Is(err, ErrStreamNoFirstToken) {
+			t.Fatalf("err = %v, want ErrStreamNoFirstToken", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("first-token watchdog was disarmed by keep-alives")
+	}
+}
+
+// A first data line before the window must disarm the first-token watchdog
+// permanently, so a long slow-but-producing stream is never aborted by it.
+func TestScanSSEDataWithContextFirstTokenDisarmedByData(t *testing.T) {
+	pr, pw := io.Pipe()
+
+	go func() {
+		// First data line promptly, then keep producing well past the first-token
+		// window, then close cleanly.
+		for i := 0; i < 10; i++ {
+			if _, err := io.WriteString(pw, "data: chunk\n\n"); err != nil {
+				return
+			}
+			time.Sleep(30 * time.Millisecond)
+		}
+		_ = pw.Close()
+	}()
+
+	n := 0
+	done := make(chan error, 1)
+	go func() {
+		done <- ScanSSEDataWithContext(context.Background(), func() {}, pr, time.Hour, 50*time.Millisecond, func(string) bool { n++; return true })
+	}()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("err = %v, want nil (data disarmed the first-token watchdog)", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("first-token watchdog fired despite prompt data")
+	}
+	if n != 10 {
+		t.Fatalf("handled %d data lines, want 10", n)
+	}
+}
+
+// A disabled first-token watchdog (<= 0) must not fire: silence then a late data
+// line completes normally.
+func TestScanSSEDataWithContextFirstTokenDisabled(t *testing.T) {
+	pr, pw := io.Pipe()
+	go func() {
+		time.Sleep(150 * time.Millisecond)
+		_, _ = io.WriteString(pw, "data: late\n\n")
+		_ = pw.Close()
+	}()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- ScanSSEDataWithContext(context.Background(), func() {}, pr, time.Hour, 0, func(string) bool { return true })
+	}()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("err = %v, want nil (first-token disabled)", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("disabled first-token watchdog still fired")
+	}
+}
+
+func TestResolveFirstTokenTimeout(t *testing.T) {
+	if got := ResolveFirstTokenTimeout(2 * time.Second); got != 2*time.Second {
+		t.Fatalf("explicit option: got %v, want 2s", got)
+	}
+	t.Setenv("KAJICODE_FIRST_TOKEN_TIMEOUT", "")
+	if got := ResolveFirstTokenTimeout(0); got != DefaultFirstTokenTimeout {
+		t.Fatalf("default: got %v, want %v", got, DefaultFirstTokenTimeout)
+	}
+	t.Setenv("KAJICODE_FIRST_TOKEN_TIMEOUT", "45s")
+	if got := ResolveFirstTokenTimeout(0); got != 45*time.Second {
+		t.Fatalf("env duration: got %v, want 45s", got)
+	}
+	t.Setenv("KAJICODE_FIRST_TOKEN_TIMEOUT", "12")
+	if got := ResolveFirstTokenTimeout(0); got != 12*time.Second {
+		t.Fatalf("env seconds: got %v, want 12s", got)
+	}
+	t.Setenv("KAJICODE_FIRST_TOKEN_TIMEOUT", "off")
+	if got := ResolveFirstTokenTimeout(0); got != 0 {
+		t.Fatalf("env off: got %v, want 0 (disabled)", got)
+	}
+	t.Setenv("KAJICODE_FIRST_TOKEN_TIMEOUT", "banana")
+	if got := ResolveFirstTokenTimeout(0); got != DefaultFirstTokenTimeout {
+		t.Fatalf("typo: got %v, want default %v (must not silently disable)", got, DefaultFirstTokenTimeout)
+	}
+}
+
+func TestStreamTimeoutMessageWithFirstToken(t *testing.T) {
+	msg := StreamTimeoutMessageWithFirstToken(ErrStreamNoFirstToken, time.Minute, 30*time.Second)
+	if !strings.Contains(msg, "no first token within 30s") {
+		t.Fatalf("first-token message = %q", msg)
+	}
+	// The other two causes must still classify correctly.
+	if got := StreamTimeoutMessageWithFirstToken(ErrStreamIdle, time.Minute, 0); !strings.Contains(got, "idle timeout after") {
+		t.Fatalf("idle message = %q", got)
 	}
 }
