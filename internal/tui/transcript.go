@@ -29,15 +29,19 @@ const (
 )
 
 type transcriptRow struct {
-	kind       rowKind
-	id         string
-	text       string
-	tool       string       // tool name, for tool call/result rows
-	status     tools.Status // result status, for tool result rows
-	detail     string       // raw multi-line output (e.g. a diff to render as a card)
-	hint       string       // one-line actionable hint, rendered faintly below error rows
-	arg        string       // secondary argument hint (pattern/command), for tool call rows
-	runID      int          // owning run, for tool call rows (0 = rehydrated/unknown)
+	kind   rowKind
+	id     string
+	text   string
+	tool   string       // tool name, for tool call/result rows
+	status tools.Status // result status, for tool result rows
+	detail string       // raw multi-line output (e.g. a diff to render as a card)
+	hint   string       // one-line actionable hint, rendered faintly below error rows
+	arg    string       // secondary argument hint (pattern/command), for tool call rows
+	runID  int          // owning run, for tool call rows (0 = rehydrated/unknown)
+	// seq is the session event sequence a user message row was recorded at. It
+	// lets /thread revert the conversation to that exact message (ApplyRewind to
+	// seq-1). 0 for assistant rows and for rows with no recorded sequence.
+	seq        int
 	permission *agent.PermissionEvent
 	askUser    *agent.AskUserRequest
 	expanded   bool // collapsible transcript rows, e.g. provider thoughts

@@ -540,7 +540,7 @@ func (store *Store) appendPreparedEventsLocked(sessionID string, inputs []prepar
 	// The events log is the source of truth for sequencing. metadata.EventCount is
 	// persisted separately (after the event line below), so a crash between the two
 	// can leave it behind the log; deriving from the log's last sequence then avoids
-	// reusing a number (a duplicate that would mis-target /rewind). Best-effort: a
+	// reusing a number (a duplicate that would mis-target a revert). Best-effort: a
 	// log read error falls back to the metadata count. Only triggers on a real
 	// desync (log at/ahead of the metadata-derived sequence).
 	if logSeq, err := store.lastEventSequence(sessionID); err == nil && logSeq >= sequence {
@@ -578,7 +578,7 @@ func (store *Store) appendPreparedEventsLocked(sessionID string, inputs []prepar
 	// fsync'd (writeMetadata), so without this a crash after the metadata flush
 	// but before the events.jsonl page reaches disk leaves EventCount ahead of the
 	// durable log — silently losing just-appended events (incl. checkpoints
-	// that /rewind targets). Make the log at least as durable as its metadata. (AUDIT-M12)
+	// that a revert targets). Make the log at least as durable as its metadata. (AUDIT-M12)
 	if err := file.Sync(); err != nil {
 		_ = file.Close()
 		return nil, fmt.Errorf("sync kajicode session event: %w", err)

@@ -23,7 +23,7 @@ func appendN(t *testing.T, store *Store, sid string, n int) {
 
 // The reported repro: a crash between the event append and the metadata write
 // leaves EventCount BEHIND the log; the next append must derive the sequence from
-// the log and NOT reuse a number (which would mis-target /rewind).
+// the log and NOT reuse a number (which would mis-target a revert).
 func TestAppendDerivesSequenceFromLogAfterStaleMetadata(t *testing.T) {
 	store := seqTestStore(t)
 	s, err := store.Create(CreateInput{SessionID: "zero_seq_1", Title: "t", Cwd: "/repo", ModelID: "m", Provider: "p"})

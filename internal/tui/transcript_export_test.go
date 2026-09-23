@@ -9,32 +9,6 @@ import (
 	"time"
 )
 
-func TestLastAssistantAnswerPrefersFinal(t *testing.T) {
-	m := model{transcript: []transcriptRow{
-		{kind: rowUser, text: "hi"},
-		{kind: rowAssistant, text: "interim narration"},
-		{kind: rowAssistant, text: "the final answer", final: true},
-		{kind: rowSystem, text: "worked for 3s"},
-	}}
-	if got := m.lastAssistantAnswer(); got != "the final answer" {
-		t.Fatalf("lastAssistantAnswer = %q, want the final answer", got)
-	}
-
-	// With no final row, falls back to the most recent assistant row.
-	m2 := model{transcript: []transcriptRow{
-		{kind: rowAssistant, text: "first"},
-		{kind: rowAssistant, text: "second"},
-	}}
-	if got := m2.lastAssistantAnswer(); got != "second" {
-		t.Fatalf("fallback lastAssistantAnswer = %q, want second", got)
-	}
-
-	// Empty when there's no assistant text.
-	if got := (model{transcript: []transcriptRow{{kind: rowUser, text: "hi"}}}).lastAssistantAnswer(); got != "" {
-		t.Fatalf("expected empty answer, got %q", got)
-	}
-}
-
 func TestPlainTranscriptTextSkipsNoise(t *testing.T) {
 	m := model{transcript: []transcriptRow{
 		{kind: rowUser, text: "add a flag"},

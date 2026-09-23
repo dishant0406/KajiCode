@@ -66,7 +66,7 @@ func TestMutationTargetsRejectsEscapingPaths(t *testing.T) {
 
 // Finding 3: with cwd != ".", apply_patch's MutationTargets must return
 // WORKSPACE-relative paths (cwd-prefixed), not paths relative to the patch cwd —
-// otherwise /rewind snapshots the wrong (workspace-root-relative) path.
+// otherwise a revert snapshots the wrong (workspace-root-relative) path.
 func TestMutationTargetsApplyPatchPrefixesCwd(t *testing.T) {
 	root := t.TempDir()
 	// cwd must exist for the patch to be applicable; MutationTargets resolves it

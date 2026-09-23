@@ -288,7 +288,7 @@ type model struct {
 	// each mutating tool) in a final agentResponseMsg. activeRunID is already
 	// zeroed by then, so without this the message would be dropped and the
 	// checkpoint blobs already written to disk would be orphaned (breaking
-	// /rewind). It is a MAP (not a single id) so a second cancel before the
+	// a /thread revert). It is a MAP (not a single id) so a second cancel before the
 	// first goroutine returns doesn't overwrite/lose the first run's pending
 	// flush; the recorded session id keeps the late flush out of whatever
 	// session is active by then (e.g. after /resume), which would otherwise
@@ -350,7 +350,7 @@ type model struct {
 
 	// Composer input history (shell-style ↑/↓ recall of submitted inputs).
 	// lastPrompt is the verbatim text of the most recent submitted prompt, so
-	// /retry can resend it and /edit can recall it into the composer.
+	// /retry can resend it and composer history can recall it.
 	lastPrompt string
 	// promptEchoOverride, when non-empty, is echoed to the transcript INSTEAD of
 	// the expanded prompt for the next launchPrompt call. Skill/user-command
@@ -1120,7 +1120,7 @@ func (m model) handleCtrlC() (tea.Model, tea.Cmd) {
 		m.cancelRun()
 		m.exiting = true
 		// A cancelled run may still need to flush checkpoint/session events; quit
-		// only after agentResponseMsg drains flushRunIDs so /rewind stays valid.
+		// only after agentResponseMsg drains flushRunIDs so a /thread revert stays valid.
 		if len(m.flushRunIDs) > 0 {
 			return m, nil
 		}
@@ -2216,7 +2216,7 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// A run cancelled while in flight still finishes in its goroutine and
 			// returns its accumulated session events here. Persist ONLY those events
 			// (notably the EventSessionCheckpoint payloads captured before each
-			// mutating tool) so the checkpoint blobs stay referenced and /rewind
+			// mutating tool) so the checkpoint blobs stay referenced and a /thread revert
 			// works; the cancel path already wrote the "Run cancelled." marker, so
 			// skip transcript rows, the trailing cancellation error, and any pending
 			// state changes.
@@ -2241,7 +2241,7 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// and writing there would contaminate its log with checkpoint payloads
 				// whose blobs live under the original session. appendSessionEvents*
 				// only returns rows for persist FAILURES; surface them so a failed
-				// checkpoint/tool flush (which would silently degrade /rewind) is
+				// checkpoint/tool flush (which would silently degrade a /thread revert) is
 				// visible rather than swallowed.
 				var flushRows []transcriptRow
 				events := flushableSessionEvents(msg.sessionEvents)
@@ -4264,6 +4264,17 @@ func (m model) choosePicker() (tea.Model, tea.Cmd) {
 	if m.modelPickerIsLoading() {
 		return m, nil
 	}
+	// The thread picker is two-step: Enter on a message opens its action list
+	// (replacing the open picker), and Enter on an action runs it. Handled before
+	// the generic path below, which clears m.picker.
+	if m.picker != nil {
+		switch m.picker.kind {
+		case pickerThread:
+			return m.applyThreadSelection()
+		case pickerThreadAction:
+			return m.applyThreadAction()
+		}
+	}
 	picker := m.picker
 	if picker != nil && picker.kind == pickerModel {
 		m.clearModelPickerLoadState()
@@ -4497,7 +4508,7 @@ func (m model) dispatchCommand(command parsedCommand) (tea.Model, tea.Cmd) {
 		m.loopLeavePrompt = commandEmpty
 		// /exit gets the same protection as Ctrl+C: cancel any in-flight run and
 		// defer the quit until its checkpoint session events flush — quitting
-		// immediately would orphan the blobs and break /rewind.
+		// immediately would orphan the blobs and break a /thread revert.
 		m.cancelRun()
 		m.exiting = true
 		if len(m.flushRunIDs) > 0 {
@@ -4669,11 +4680,8 @@ func (m model) dispatchCommand(command parsedCommand) (tea.Model, tea.Cmd) {
 		return m, compactCmd
 	case commandTranscript:
 		return m.toggleDetailedTranscript(), nil
-	case commandRewind:
-		text := ""
-		m, text = m.handleRewindCommand(command.text)
-		m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: text})
-		return m, nil
+	case commandThread:
+		return m.openThreadPicker()
 	case commandEffort:
 		if strings.TrimSpace(command.text) == "" {
 			if m.pending {
@@ -4814,30 +4822,6 @@ func (m model) dispatchCommand(command parsedCommand) (tea.Model, tea.Cmd) {
 		// silently dropping the image/PDF context and answering a different task.
 		m.pendingAttachments = m.lastAttachments
 		return m.launchPrompt(m.lastPrompt)
-	case commandEdit:
-		if strings.TrimSpace(m.lastPrompt) == "" {
-			m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: "Edit\nno previous prompt to recall."})
-			return m, nil
-		}
-		// Re-stage the remembered attachments alongside the recalled text so an
-		// edited resend carries the same image/PDF context — the reappearing
-		// [Image #N] token is the visible confirmation. Without this, editing a
-		// vision- or document-backed prompt would silently submit a text-only
-		// version and answer a different task (the same gap /retry guards against).
-		m.pendingAttachments = m.lastAttachments
-		m.setComposerState(composerState{text: m.lastPrompt, cursor: len([]rune(m.lastPrompt))})
-		// Re-derive the token previews from the recalled text so the tokens are
-		// atomic/deletable again and stay in lockstep with the attachments as the
-		// user edits.
-		m.rebuildAttachmentTokensFromText()
-		return m, nil
-	case commandCopy:
-		text := m.lastAssistantAnswer()
-		if strings.TrimSpace(text) == "" {
-			m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: "Copy\nno answer to copy yet."})
-			return m, nil
-		}
-		return m, copyTranscriptSelectionCmd(text)
 	case commandExport:
 		m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: m.handleExportCommand(command.text)})
 		return m, nil
@@ -4880,7 +4864,7 @@ func (m model) launchPrompt(prompt string) (model, tea.Cmd) {
 	live := attachmentsForPrompt(prompt, m.pendingAttachments)
 	ctx := attachmentContextFor(live)
 	// Remember the verbatim prompt (before specialist/document expansion) so /retry
-	// and /edit can act on exactly what the user submitted. Snapshot the staged
+	// can act on exactly what the user submitted. Snapshot the staged
 	// attachments too: launchPrompt clears the pending queues below, so /retry
 	// re-stages these to resend an identical vision/PDF-backed request rather than
 	// a degraded text-only one.
@@ -4952,6 +4936,11 @@ func (m model) launchPrompt(prompt string) (model, tea.Cmd) {
 			{Type: sessions.EventMessage, Payload: userMessageSessionPayload(prompt, previewThumbEncodings(live))},
 		})
 		m.transcript = appendTranscriptRowsDedup(m.transcript, sessionRows)
+		// Link the just-echoed user row to its recorded sequence so /thread's
+		// Revert targets this exact message. Runs AFTER the append above so this
+		// turn's user event is already in m.sessionEvents (reading it earlier gave
+		// the previous turn's sequence, or 0 on the first turn).
+		m.setLastUserRowSeq(m.lastUserMessageSeq())
 	}
 	// Re-check vision support against the CURRENT effective model at submit
 	// time, not just at /image attach time: the user may have attached on a
@@ -5074,7 +5063,7 @@ func (m *model) cancelRun() {
 	// Remember the in-flight run — and the session it was recording into — so
 	// its final agentResponseMsg is still drained for session-event persistence
 	// after activeRunID is cleared. Otherwise the checkpoint blobs it captured
-	// before each mutating tool are orphaned on disk and /rewind can't reference
+	// before each mutating tool are orphaned on disk and a /thread revert can't reference
 	// them; without the session id, a /resume before the flush lands would
 	// append the old run's events into the newly active session.
 	if m.pending && m.activeRunID != 0 {

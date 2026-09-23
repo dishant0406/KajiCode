@@ -9,7 +9,7 @@ func MutationTargets(workspaceRoot string, name string, args map[string]any) []s
 	case "write_file", "edit_file":
 		// Resolve the path via the SAME alias key list write_file/edit_file use,
 		// so a checkpoint is captured even when the model writes via an alias key
-		// (e.g. {"file": ...}); otherwise /rewind could not undo the write.
+		// (e.g. {"file": ...}); otherwise /thread revert could not undo the write.
 		path, err := aliasedStringArg(args, []string{"path", "file", "file_path", "filename"}, "", true, false)
 		if err != nil {
 			return nil

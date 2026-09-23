@@ -149,6 +149,39 @@ func (m model) appendSessionEvents(events []pendingSessionEvent) (model, []trans
 	return m, rows
 }
 
+// lastUserMessageSeq returns the sequence of the most recent user EventMessage in
+// the rehydrated/recorded session events, so the transcript row just appended for
+// it can carry that sequence (used by /thread to revert to that message).
+func (m model) lastUserMessageSeq() int {
+	for i := len(m.sessionEvents) - 1; i >= 0; i-- {
+		event := m.sessionEvents[i]
+		if event.Type != sessions.EventMessage {
+			continue
+		}
+		if strings.EqualFold(payloadString(sessionPayload(event), "role"), "user") {
+			return event.Sequence
+		}
+	}
+	return 0
+}
+
+// setLastUserRowSeq stamps the most recent user transcript row with the session
+// sequence it was recorded at and refreshes its render fingerprint (seq is part of
+// the fingerprint, so a stale one would desync every render/height/scroll cache).
+func (m *model) setLastUserRowSeq(seq int) {
+	if seq <= 0 {
+		return
+	}
+	for i := len(m.transcript) - 1; i >= 0; i-- {
+		if m.transcript[i].kind != rowUser {
+			continue
+		}
+		m.transcript[i].seq = seq
+		m.transcript[i].renderFingerprint = transcriptRowFingerprint(m.transcript[i])
+		return
+	}
+}
+
 // appendSessionEventsTo persists events into a specific (non-active) session —
 // the late flush of a run cancelled before a /resume switched sessions. The
 // active session's in-memory metadata is deliberately untouched.
@@ -172,7 +205,7 @@ func (m model) appendSessionEventsTo(sessionID string, events []pendingSessionEv
 // error, so the goroutine's trailing EventError (the ctx-cancellation error) is
 // dropped to avoid a duplicate; everything else it accumulated before the cancel
 // — tool calls/results, permission events, usage, and the EventSessionCheckpoint
-// blobs that /rewind depends on — is kept.
+// blobs that a /thread revert depends on — is kept.
 func flushableSessionEvents(events []pendingSessionEvent) []pendingSessionEvent {
 	flushable := make([]pendingSessionEvent, 0, len(events))
 	for _, event := range events {
@@ -520,7 +553,7 @@ func transcriptRowsFromSessionEvents(events []sessions.Event) []transcriptRow {
 			}
 			switch role {
 			case "user":
-				rows = append(rows, transcriptRow{kind: rowUser, text: content, thumbs: thumbsFromPayload(payload)})
+				rows = append(rows, transcriptRow{kind: rowUser, text: content, seq: event.Sequence, thumbs: thumbsFromPayload(payload)})
 			case "assistant":
 				// A persisted assistant message was a turn's final answer (or a
 				// prose segment between tool calls). Tool/timing counters were not

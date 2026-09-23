@@ -25,19 +25,13 @@ const (
 	pickerSession
 	pickerTheme
 	pickerSkill
-	pickerSTTModel
-	pickerSTTDownload
 	pickerPermissions
-	pickerRole
-)
-
-// Sentinel values for pickerRole rows (stage-1 role list). They are distinct
-// printable strings so they can never collide with a real role name or an
-// active-role value; the flow switches on them after a selection.
-const (
-	rolePickerAddNew  = "\x00role:new"
-	rolePickerClear   = "\x00role:clear"
-	rolePickerDefault = "\x00role:default"
+	// pickerThread lists the conversation's user/assistant messages so a message
+	// can be copied, edited, or reverted to.
+	pickerThread
+	// pickerThreadAction lists the actions for a chosen thread message (copy,
+	// edit, revert). It carries the target message in commandPicker.threadRow.
+	pickerThreadAction
 )
 
 // modelPickerRefreshValue is the sentinel value of the "Refresh models" row pinned
@@ -78,6 +72,11 @@ type commandPicker struct {
 	// loading marks a picker still fetching its rows (e.g. the STT model list from
 	// GitHub): the overlay shows a "fetching…" line instead of "no matching items".
 	loading bool
+	// threadKind/threadRow carry the chosen /thread message (its transcript row
+	// kind and absolute index) into the action picker opened on Enter, so the
+	// copy/edit/revert action knows which message it targets.
+	threadKind rowKind
+	threadRow  int
 }
 
 func (p *commandPicker) move(delta int) {

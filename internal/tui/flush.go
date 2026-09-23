@@ -85,7 +85,7 @@ func (m model) settleTranscript() (model, tea.Cmd) {
 		return m, nil
 	}
 	if m.flushed > len(m.transcript) {
-		// The transcript was rebuilt shorter (/clear, /resume, /rewind reset the
+		// The transcript was rebuilt shorter (/clear, /resume, a /thread revert reset the
 		// frontier themselves; this is a safety net).
 		m.flushed = len(m.transcript)
 	}
@@ -138,12 +138,12 @@ func (m model) drainFlushQueue() (model, tea.Cmd) {
 }
 
 // resetFlushFrontier rewinds the frontier after the transcript is rebuilt
-// (/clear, /resume, /rewind). Scrollback cannot be un-printed, so the rebuilt
+// (/clear, /resume, a /thread revert). Scrollback cannot be un-printed, so the rebuilt
 // transcript flushes fresh below a faint divider that marks where the previous
 // surface ended.
 func (m *model) resetFlushFrontier(divider string) {
 	m.flushed = 0
-	// Renumbers every row's bodyY from the top (used by /clear, /resume, /rewind,
+	// Renumbers every row's bodyY from the top (used by /clear, /resume, a /thread revert,
 	// /compact); a transcript-hover target's bodyY would otherwise risk
 	// coincidentally matching an unrelated row in the rebuilt transcript.
 	m.hover = hoverTarget{}

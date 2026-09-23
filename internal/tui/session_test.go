@@ -891,17 +891,17 @@ func TestClearCancelsPendingResumePages(t *testing.T) {
 	}
 }
 
-// Regression: after /rewind the in-memory session state must be reloaded so the
-// rewound-away events don't linger in the transcript or get re-sent to the agent
-// as ContextEvents on the next prompt.
-func TestRewindRefreshesInMemorySessionState(t *testing.T) {
+// Regression: after /thread reverts to a message the in-memory session state must
+// be reloaded so the reverted-away events don't linger in the transcript or get
+// re-sent to the agent as ContextEvents on the next prompt.
+func TestThreadRevertRefreshesInMemorySessionState(t *testing.T) {
 	store := testSessionStore(t)
-	session, err := store.Create(sessions.CreateInput{Title: "Rewind me", Cwd: t.TempDir(), ModelID: "gpt-4.1", Provider: "openai"})
+	session, err := store.Create(sessions.CreateInput{Title: "Revert me", Cwd: t.TempDir(), ModelID: "gpt-4.1", Provider: "openai"})
 	if err != nil {
 		t.Fatalf("Create returned error: %v", err)
 	}
 	appendTestEvent(t, store, session.SessionID, sessions.EventMessage, map[string]any{"role": "user", "content": "first request"})
-	// A checkpoint to rewind back through, then events that must be dropped.
+	// A checkpoint to revert back through, then events that must be dropped.
 	appendTestEvent(t, store, session.SessionID, sessions.EventSessionCheckpoint, map[string]any{"tool": "write_file", "files": []any{}})
 	appendTestEvent(t, store, session.SessionID, sessions.EventMessage, map[string]any{"role": "assistant", "content": "DROPPED-AFTER-CHECKPOINT"})
 
@@ -914,25 +914,34 @@ func TestRewindRefreshesInMemorySessionState(t *testing.T) {
 	}
 	eventsBefore := len(m.sessionEvents)
 
-	m, out := m.handleRewindCommand("latest")
-	if !strings.Contains(out, "Rewound") {
-		t.Fatalf("expected a rewind summary, got %q", out)
+	target := threadMessage{}
+	for _, message := range m.threadMessages() {
+		if message.text == "first request" {
+			target = message
+		}
 	}
-
+	if target.text == "" {
+		t.Fatal("setup: expected the user message in the thread")
+	}
+	next, out := m.revertToMessage(target)
+	if !strings.Contains(out, "Reverted") {
+		t.Fatalf("expected a revert summary, got %q", out)
+	}
+	m = next
 	if len(m.sessionEvents) >= eventsBefore {
-		t.Fatalf("expected sessionEvents to shrink after rewind, before=%d after=%d", eventsBefore, len(m.sessionEvents))
+		t.Fatalf("expected sessionEvents to shrink after revert, before=%d after=%d", eventsBefore, len(m.sessionEvents))
 	}
 	for _, ev := range m.sessionEvents {
 		if ev.Type == sessions.EventSessionCheckpoint {
-			t.Fatalf("rewound-away checkpoint still in m.sessionEvents: %#v", m.sessionEvents)
+			t.Fatalf("reverted-away checkpoint still in m.sessionEvents: %#v", m.sessionEvents)
 		}
 	}
 	if transcriptContains(m.transcript, "DROPPED-AFTER-CHECKPOINT") {
-		t.Fatalf("rewound-away message still visible in transcript: %#v", m.transcript)
+		t.Fatalf("reverted-away message still visible in transcript: %#v", m.transcript)
 	}
-	// The crux: the next prompt must NOT re-send the rewound-away content.
+	// The crux: the next prompt must NOT re-send the reverted-away content.
 	if prompt := m.sessionPrompt("next request"); strings.Contains(prompt, "DROPPED-AFTER-CHECKPOINT") {
-		t.Fatalf("rewound-away content leaked into the next prompt: %q", prompt)
+		t.Fatalf("reverted-away content leaked into the next prompt: %q", prompt)
 	}
 }
 

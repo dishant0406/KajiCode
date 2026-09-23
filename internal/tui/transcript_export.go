@@ -7,26 +7,6 @@ import (
 	"strings"
 )
 
-// lastAssistantAnswer returns the text of the most recent assistant row — the
-// last final answer if one exists, else the last assistant row of any kind. Empty
-// when the conversation has no assistant text yet.
-func (m model) lastAssistantAnswer() string {
-	lastAny := ""
-	for i := len(m.transcript) - 1; i >= 0; i-- {
-		row := m.transcript[i]
-		if row.kind != rowAssistant {
-			continue
-		}
-		if row.final {
-			return row.text
-		}
-		if lastAny == "" {
-			lastAny = row.text
-		}
-	}
-	return lastAny
-}
-
 // plainTranscriptText renders the conversation as a plain, role-prefixed text
 // document for /export — the readable content (user prompts, assistant answers,
 // system notes, errors), skipping tool-call/permission UI noise.

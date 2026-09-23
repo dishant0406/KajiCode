@@ -2872,7 +2872,7 @@ func TestCommandArgumentHintFollowsCursorVisibility(t *testing.T) {
 	// The argument-hint composer line is an alternate render path that used to
 	// paint its caret cell unconditionally, ignoring focus and blink state.
 	input := textinput.New()
-	input.SetValue("/rewind ")
+	input.SetValue("/thread ")
 
 	visible := commandArgumentHintComposerLine(input, "hint", true)
 	hidden := commandArgumentHintComposerLine(input, "hint", false)

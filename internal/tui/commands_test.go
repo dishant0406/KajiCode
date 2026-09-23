@@ -992,7 +992,7 @@ func TestCommandSelectionRequiresInputFromUsage(t *testing.T) {
 		{name: "/search", want: true},
 		{name: "/find", want: true},
 		{name: "/image", want: true},
-		{name: "/rewind", want: false},
+		{name: "/thread", want: false},
 		{name: "/model", want: false},
 		{name: "/help", want: false},
 	}

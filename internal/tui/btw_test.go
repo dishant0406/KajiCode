@@ -193,7 +193,7 @@ func TestBTWBlocksPersistentConfigurationCommands(t *testing.T) {
 		"/theme dark",
 		"/config recaps off",
 		"/mcp",
-		"/rewind",
+		"/thread",
 		"/compact",
 	} {
 		t.Run(input, func(t *testing.T) {

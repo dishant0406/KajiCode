@@ -22,7 +22,7 @@ import (
 
 // attachmentTokenPattern matches a token this feature inserts, capturing the
 // kind (Image/Doc) and the number. It is also used to recover tokens when the
-// composer previews are unavailable (e.g. after /edit restores a previous prompt
+// composer previews are unavailable (e.g. after /thread edit restores a previous prompt
 // into the composer).
 var attachmentTokenPattern = regexp.MustCompile(`\[(Image|Doc) #(\d+)\]`)
 
@@ -232,7 +232,7 @@ func (m *model) syncAttachmentTokens() {
 		}
 	}
 	if !hasToken {
-		// No tracked tokens (e.g. a prompt restored by /edit, or text left after a
+		// No tracked tokens (e.g. a prompt restored by /thread edit, or text left after a
 		// delete that removed the last token): prune from the text itself.
 		m.pendingAttachments = pruneAttachmentsToText(state.text, m.pendingAttachments)
 		return
@@ -314,7 +314,7 @@ func renumberAttachmentTokens(text string, previews []composerPastePreview, curs
 
 // rebuildAttachmentTokensFromText re-derives the attachment token previews from
 // the composer text and links them, in order, to the staged attachments. Used
-// when a prompt carrying tokens is restored into the composer (e.g. /edit or a
+// when a prompt carrying tokens is restored into the composer (e.g. /thread edit or a
 // popped queued message), so the tokens become atomic and backspace-deletable
 // again and later edits keep the attachments in lockstep. Tokens are matched to
 // staged attachments of the same kind, in order; extra attachments with no token
@@ -379,7 +379,7 @@ func (m *model) rebuildAttachmentTokensFromText() {
 // staged image and `[Doc #N]` the N-th staged document; an attachment with no
 // matching token is dropped rather than silently sent. Used when the composer
 // previews are gone and the text is the only evidence of which attachments
-// survive (submit of a queued/`/retry` prompt, or a restored `/edit` draft).
+// survive (submit of a queued/`/retry` prompt, or a restored `/thread` edit draft).
 func pruneAttachmentsToText(text string, pending []stagedAttachment) []stagedAttachment {
 	if len(pending) == 0 {
 		return pending

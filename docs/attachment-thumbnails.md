@@ -93,7 +93,7 @@ disagree about what is staged. A PDF with rasterized pages contributes one image
 attachment per page plus one document attachment, all in one ordered slice.
 
 `m.pendingAttachments` is the staging queue; `m.lastAttachments` is the
-`/retry` + `/edit` snapshot.
+`/retry` snapshot and the `/thread` edit recall.
 
 ## 4. Rendering
 
@@ -129,7 +129,7 @@ Inline tokens (`attachment_token.go`): `[Image #1]` / `[Doc #1]`. Images and
 documents are numbered independently, and the number is the attachment's position
 among staged attachments of its kind, in text order. The token is literal text in
 the prompt, so it survives submit into the model-facing prompt and is restored as
-editable text by `/edit` and a popped queued message (`rebuildAttachmentTokensFromText`).
+editable text by `/thread` edit and a popped queued message (`rebuildAttachmentTokensFromText`).
 
 ## 5. Geometry: one source of truth
 
@@ -189,7 +189,7 @@ staged images, and the many-image budget cap.
   renumbering on delete, text-order recovery (`rebuildAttachmentTokensFromText`),
   and pruning from the text when the previews are gone.
 - `internal/tui/image_attach_test.go` and friends — token emission, attachment
-  expansion at submit, `/image clear`, backspace-remove, `/retry`, `/edit`,
+  expansion at submit, `/image clear`, backspace-remove, `/retry`, `/thread` edit,
   vision gate and routing, and the new-session reset, all against the unified
   model.
 

@@ -197,7 +197,7 @@ func btwCommandUnavailable(command parsedCommand) bool {
 	arg := strings.ToLower(strings.TrimSpace(command.text))
 	switch command.kind {
 	case commandNew, commandResume, commandRetitle, commandLoop,
-		commandRewind, commandCompact, commandMCP:
+		commandCompact, commandMCP, commandThread:
 		return true
 	case commandModel:
 		return arg != "list" && arg != "ls"

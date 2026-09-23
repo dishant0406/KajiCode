@@ -30,7 +30,7 @@ const (
 	commandRetitle
 	commandInit
 	commandCompact
-	commandRewind
+	commandThread
 	commandEffort
 	commandStyle
 	commandTheme
@@ -42,8 +42,6 @@ const (
 	commandTurns
 	commandProfile
 	commandRetry
-	commandEdit
-	commandCopy
 	commandExport
 	commandNew
 	commandBTW
@@ -262,11 +260,11 @@ var commandDefinitions = []commandDefinition{
 		kind:        commandTranscript,
 	},
 	{
-		name:        "/rewind",
-		usage:       "/rewind [latest|<sequence>]",
+		name:        "/thread",
+		usage:       "/thread",
 		group:       commandGroupSession,
-		description: "Restore workspace files to a checkpoint and truncate the session.",
-		kind:        commandRewind,
+		description: "Browse the conversation: copy an answer, or edit/revert to a message.",
+		kind:        commandThread,
 	},
 	{
 		name:        "/effort",
@@ -310,22 +308,7 @@ var commandDefinitions = []commandDefinition{
 		group:       commandGroupSession,
 		description: "Resend your last prompt.",
 		kind:        commandRetry,
-	},
-	{
-		name:        "/edit",
-		usage:       "/edit",
-		group:       commandGroupSession,
-		description: "Recall your last prompt into the composer to edit and resend.",
-		kind:        commandEdit,
-	},
-	{
-		name:        "/copy",
-		usage:       "/copy",
-		group:       commandGroupSession,
-		description: "Copy the last answer to the clipboard.",
-		kind:        commandCopy,
-	},
-	{
+	}, {
 		name:        "/export",
 		usage:       "/export [path]",
 		group:       commandGroupSession,

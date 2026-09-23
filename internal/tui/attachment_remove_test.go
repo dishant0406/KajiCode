@@ -227,7 +227,7 @@ func TestAttachStagedDedupMovesTokenToCaret(t *testing.T) {
 	}
 }
 
-// Rebuilding from text that references a later attachment (e.g. /edit of a prompt
+// Rebuilding from text that references a later attachment (e.g. /thread edit of a prompt
 // where an earlier attachment's token was deleted) must keep the referenced one.
 // Regression: the rebuild pruned pendingAttachments before sync, so the preview
 // index (into the pre-prune list) no longer matched and the attachment was dropped

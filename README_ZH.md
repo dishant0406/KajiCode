@@ -139,7 +139,7 @@ kajicode
 |---|---|
 | `/model`、`/provider` | 切换活动模型/提供商 |
 | `/image` | 为视觉模型附加图片 |
-| `/resume`、`/rewind` | 继续或回滚本地会话 |
+| `/resume`、`/thread` | 继续会话，或浏览/复制/编辑/回退消息 |
 | `/compact`、`/context` | 管理上下文使用 |
 | `/permissions`、`/tools` | 检查可用工具和策略 |
 | `/add-dir` | 为此会话授予额外的写入目录 |

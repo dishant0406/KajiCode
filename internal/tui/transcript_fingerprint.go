@@ -54,6 +54,7 @@ func transcriptRowFingerprint(row transcriptRow) string {
 	writeFingerprintField(&hash, row.hint)
 	writeFingerprintField(&hash, row.arg)
 	writeFingerprintField(&hash, strconv.Itoa(row.runID))
+	writeFingerprintField(&hash, strconv.Itoa(row.seq))
 	writeFingerprintField(&hash, strconv.FormatBool(row.expanded))
 	writeFingerprintField(&hash, strconv.FormatBool(row.final))
 	writeFingerprintField(&hash, strconv.Itoa(row.turnTools))
