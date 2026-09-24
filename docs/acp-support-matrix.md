@@ -400,7 +400,7 @@ Source: `internal/tui/commands.go:81-370`. "Mechanism" = simplest correct exposu
 | `/image` | text | attach image | native prompt `image` ContentBlock | `[x]` |
 | `/search`, `/find` | text | search events | command `/search` (hint: query) | `[x]` |
 | `/mcp`, `/mcp-status` | modal | MCP config | command `/mcp` (status); manager is a modal | `[=]` |
-| `/skills` | picker | list/run skills | command `/skills`; picker is TUI-only | `[=]` |
+| `/skills` | picker | list/invoke skills | command `/skills` (and `/skills list`) lists the session's merged set (global + project + plugin), matching the model catalog; each installed skill is also advertised as `/name` and expands to its body + request; picker is TUI-only | `[x]` |
 | `/tools` | text | list tools | command `/tools` | `[=]` |
 | `/harness` | text | prompt addenda/rules | command `/harness` (CLI mutates; text summaries over ACP) | `[=]` |
 | `/prompt` | modal | create snippet | form elicitation → `usercommands.Save`; snippet then appears in `available_commands_update` | `[x]` |

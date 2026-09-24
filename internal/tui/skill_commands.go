@@ -47,27 +47,7 @@ func (m model) handleSkillCommand(raw string) (model, tea.Cmd, bool) {
 		echo += " " + strings.TrimSpace(args)
 	}
 	m.promptEchoOverride = echo
-	return m.launchOrDeferExpandedPrompt(raw, skillInvocationPrompt(body, args))
-}
-
-// bareSkillInvocationNote is appended when a skill is invoked with no request.
-// The body alone is instructions with no target ("review the PR" — which PR?),
-// and without this note the model improvises one instead of asking. The wording
-// is conditional so self-contained skills (no target needed) still just run.
-const bareSkillInvocationNote = "The user invoked this skill directly without providing a request. " +
-	"If these instructions need a target or details that are not already clear from the conversation " +
-	"(which pull request, file, branch, topic, …), ask for them first — do not guess or pick one yourself. " +
-	"If the instructions are self-contained, proceed."
-
-// skillInvocationPrompt builds the agent prompt for a skill invocation: the
-// skill body (its instructions), then either the user's request or — for a bare
-// invocation — the ask-first note above. Mirrors usercommands.Expand's
-// no-placeholder behavior for the args case.
-func skillInvocationPrompt(body, args string) string {
-	if args != "" {
-		return body + "\n\n" + args
-	}
-	return body + "\n\n" + bareSkillInvocationNote
+	return m.launchOrDeferExpandedPrompt(raw, skills.InvocationPrompt(body, args))
 }
 
 // launchOrDeferExpandedPrompt applies the same run-state guards the plain
@@ -161,7 +141,7 @@ func (m model) invokeSkillByName(name string) (model, tea.Cmd) {
 		// The picker runs by exact name with no typed form: echo the "/slug"
 		// token so the transcript stays compact (body goes to the agent only).
 		m.promptEchoOverride = "/" + skillSlashName(name)
-		next, teaCmd, _ := m.launchOrDeferExpandedPrompt("", skillInvocationPrompt(body, ""))
+		next, teaCmd, _ := m.launchOrDeferExpandedPrompt("", skills.InvocationPrompt(body, ""))
 		return next, teaCmd
 	}
 	// The picker row came from a slightly older load (TTL cache) and the skill
@@ -200,22 +180,9 @@ func (m model) installedSkills() []skills.Skill {
 	return m.loadSkills()
 }
 
-// skillSlashName maps a skill's frontmatter name to its slash-command form:
-// lowercased, and only if it fits the slash-token shape (letters, digits,
-// dot/underscore/hyphen — a superset of user-command names, since skill names
-// are free-form frontmatter). Returns "" for names that cannot be typed as a
-// /command (e.g. containing spaces); those skills remain loadable by the model
-// via the skill tool and are still listed by /skills.
+// skillSlashName maps a skill's frontmatter name to its slash-command form via
+// the shared skills.SlashName rule (letters, digits, dot/underscore/hyphen), so
+// the TUI and ACP agree on which skills are invocable as /name.
 func skillSlashName(name string) string {
-	name = strings.ToLower(strings.TrimSpace(name))
-	if name == "" {
-		return ""
-	}
-	for _, r := range name {
-		valid := (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' || r == '_' || r == '.'
-		if !valid {
-			return ""
-		}
-	}
-	return name
+	return skills.SlashName(name)
 }

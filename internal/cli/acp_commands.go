@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"unicode/utf8"
@@ -102,9 +103,35 @@ func acpCommands(deps appDeps) func(workspaceRoot string) []acp.AvailableCommand
 			}
 			snippet.Input = &acp.AvailableCommandInput{Hint: "arguments"}
 			out = append(out, snippet)
+			seen[snippet.Name] = true
+		}
+		for _, skill := range acpSkillCommands(deps, workspaceRoot) {
+			if seen[skill.Name] {
+				continue // a builtin/ACP/usercmd command wins on a name collision
+			}
+			skill.Input = &acp.AvailableCommandInput{Hint: "request"}
+			out = append(out, skill)
+			seen[skill.Name] = true
 		}
 		return out
 	}
+}
+
+// acpSkillCommands projects the workspace's invocable skills into advertised
+// slash commands, so an editor's palette shows each skill as /name (the same
+// form the TUI supports). Names already claimed by a builtin/ACP command or a
+// saved prompt snippet are skipped, matching the invocation precedence.
+func acpSkillCommands(deps appDeps, workspaceRoot string) []acp.AvailableCommand {
+	byName := acpSkillNames(workspaceRoot, deps)
+	out := make([]acp.AvailableCommand, 0, len(byName))
+	for name, skill := range byName {
+		if acpSkillClaimed(workspaceRoot, name, deps) {
+			continue
+		}
+		out = append(out, acp.AvailableCommand{Name: name, Description: strings.TrimSpace(skill.Description)})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
 }
 
 // acpUserCommandSnippets loads the user's file-sourced prompt snippets for the

@@ -85,6 +85,7 @@ func runACP(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) int
 		ResolveContextWindow: acpResolveContextWindow(),
 		SavePromptSnippet:    acpSavePromptSnippet(deps),
 		ExpandPromptSnippet:  acpExpandPromptSnippet(deps),
+		ExpandSkill:          acpExpandSkill(deps),
 		SuggestNes:           acpSuggestNes(deps),
 		ListProviders:        acpListProviders(deps),
 		SetProvider:          acpSetProvider(deps),

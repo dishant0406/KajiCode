@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"unicode/utf8"
+
+	"github.com/dishant0406/KajiCode/internal/skills"
 )
 
 func TestACPCatalogNamesAreUniqueAndNonEmpty(t *testing.T) {
@@ -162,5 +164,66 @@ func TestACPSnippetCannotShadowBuiltinAtInvocation(t *testing.T) {
 	}
 	if _, ok := acpExpandPromptSnippet(deps)("", "mysnip", "world"); !ok {
 		t.Fatal("a non-colliding snippet must expand")
+	}
+}
+
+// TestACPSkillCommandsAndExpand proves a skill installed in the skills dir is
+// advertised as /name and that acpExpandSkill inlines its body plus the request.
+func TestACPSkillCommandsAndExpand(t *testing.T) {
+	skillsDir := t.TempDir()
+	writeSourceSkillDir(t, filepath.Join(skillsDir, "code-review"),
+		"---\nname: code-review\ndescription: Review a diff.\n---\nReview the diff carefully.\n")
+	// A name with a space has no slash form and must not be advertised.
+	writeSourceSkillDir(t, filepath.Join(skillsDir, "bad name"),
+		"---\nname: bad name\ndescription: Not slash-able.\n---\nbody\n")
+
+	deps := appDeps{skillsDir: func() string { return skillsDir }}
+
+	names := map[string]bool{}
+	for _, c := range acpCommands(deps)("") {
+		names[c.Name] = true
+	}
+	if !names["code-review"] {
+		t.Fatal("installed skill must be advertised as a /command")
+	}
+	if names["bad name"] {
+		t.Fatal("a skill whose name is not slash-shaped must not be advertised")
+	}
+	if !names[skills.BuiltinCustomizeKajicodeName] {
+		t.Fatal("the built-in skill must be advertised")
+	}
+
+	expand := acpExpandSkill(deps)
+	got, ok := expand("", "code-review", "on this diff")
+	if !ok {
+		t.Fatal("acpExpandSkill did not resolve an installed skill")
+	}
+	if !strings.Contains(got, "Review the diff carefully.") || !strings.Contains(got, "on this diff") {
+		t.Fatalf("expand = %q, want body + request", got)
+	}
+	if _, ok := expand("", "no-such-skill", ""); ok {
+		t.Fatal("unknown skill must not resolve")
+	}
+	// A name claimed by an ACP command keeps command precedence.
+	if _, ok := expand("", "skills", ""); ok {
+		t.Fatal("a name colliding with an ACP command must not resolve as a skill")
+	}
+}
+
+// TestACPSkillCommandsSkipBodyless proves a skill with an empty body is not
+// advertised and does not expand (it could never run), so the palette never
+// offers a dead end.
+func TestACPSkillCommandsSkipBodyless(t *testing.T) {
+	dir := t.TempDir()
+	writeSourceSkillDir(t, filepath.Join(dir, "empty-body"),
+		"---\nname: empty-body\ndescription: No body.\n---\n")
+	deps := appDeps{skillsDir: func() string { return dir }}
+	for _, c := range acpCommands(deps)("") {
+		if c.Name == "empty-body" {
+			t.Fatal("a bodyless skill must not be advertised")
+		}
+	}
+	if _, ok := acpExpandSkill(deps)("", "empty-body", "x"); ok {
+		t.Fatal("a bodyless skill must not expand")
 	}
 }

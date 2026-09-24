@@ -923,3 +923,246 @@ func TestACPRefreshModelsSlashCommand(t *testing.T) {
 		t.Fatal("/refresh-models did not stream a refresh summary")
 	}
 }
+
+// TestACPSkillsListsWorkspaceSkills proves /skills lists the session's merged
+// skill set (including project skills), matching the model's own catalog — not
+// just the global-only `kajicode skills list`.
+func TestACPSkillsListsWorkspaceSkills(t *testing.T) {
+	deps := testDeps(t)
+	deps.BuildWorkspace = func(string, config.ResolvedConfig) (Workspace, error) {
+		return Workspace{Skills: []agent.SkillInfo{
+			{Name: "demo-project-skill", Description: "A project-local skill."},
+			{Name: "global-skill", Description: "A global skill."},
+		}}, nil
+	}
+	h, updates := newCollectorHarness(t, deps)
+	defer h.stop()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var res NewSessionResult
+	if err := h.client.Call(ctx, MethodSessionNew, NewSessionParams{Cwd: t.TempDir(), McpServers: []McpServer{}}, &res); err != nil {
+		t.Fatalf("session/new: %v", err)
+	}
+	var promptRes PromptResult
+	if err := h.client.Call(ctx, MethodSessionPrompt, PromptParams{SessionID: res.SessionID, Prompt: []ContentBlock{TextBlock("/skills")}}, &promptRes); err != nil {
+		t.Fatalf("session/prompt /skills: %v", err)
+	}
+	if promptRes.StopReason != StopEndTurn {
+		t.Fatalf("stopReason = %q", promptRes.StopReason)
+	}
+	var text string
+	updates.waitForVariant(t, UpdateAgentMessageChunk)
+	for _, raw := range updates.rawMessages() {
+		var probe struct {
+			Update struct {
+				SessionUpdate string `json:"sessionUpdate"`
+				Content       struct {
+					Text string `json:"text"`
+				} `json:"content"`
+			} `json:"update"`
+		}
+		if json.Unmarshal(raw, &probe) == nil && probe.Update.SessionUpdate == UpdateAgentMessageChunk {
+			text += probe.Update.Content.Text
+		}
+	}
+	if !strings.Contains(text, "demo-project-skill") {
+		t.Fatalf("/skills did not list the project skill: %q", text)
+	}
+	if !strings.Contains(text, "global-skill") {
+		t.Fatalf("/skills did not list the global skill: %q", text)
+	}
+	if !strings.Contains(text, "Skills (2)") {
+		t.Fatalf("/skills header = %q, want count 2", text)
+	}
+}
+
+// TestACPSkillsEmptyState proves a skill-less workspace gets a clear message, not
+// an empty response.
+func TestACPSkillsEmptyState(t *testing.T) {
+	deps := testDeps(t)
+	deps.BuildWorkspace = func(string, config.ResolvedConfig) (Workspace, error) {
+		return Workspace{}, nil
+	}
+	h, updates := newCollectorHarness(t, deps)
+	defer h.stop()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var res NewSessionResult
+	if err := h.client.Call(ctx, MethodSessionNew, NewSessionParams{Cwd: t.TempDir(), McpServers: []McpServer{}}, &res); err != nil {
+		t.Fatalf("session/new: %v", err)
+	}
+	if err := h.client.Call(ctx, MethodSessionPrompt, PromptParams{SessionID: res.SessionID, Prompt: []ContentBlock{TextBlock("/skills")}}, &PromptResult{}); err != nil {
+		t.Fatalf("session/prompt /skills: %v", err)
+	}
+	updates.waitForVariant(t, UpdateAgentMessageChunk)
+	var text string
+	for _, raw := range updates.rawMessages() {
+		var probe struct {
+			Update struct {
+				SessionUpdate string `json:"sessionUpdate"`
+				Content       struct {
+					Text string `json:"text"`
+				} `json:"content"`
+			} `json:"update"`
+		}
+		if json.Unmarshal(raw, &probe) == nil && probe.Update.SessionUpdate == UpdateAgentMessageChunk {
+			text += probe.Update.Content.Text
+		}
+	}
+	if !strings.Contains(text, "No skills installed") {
+		t.Fatalf("/skills empty state = %q", text)
+	}
+}
+
+// TestACPSkillsListFormUsesMergedSet proves `/skills list` takes the same
+// session-scoped path as bare `/skills` (not the global-only CLI fallback).
+func TestACPSkillsListFormUsesMergedSet(t *testing.T) {
+	deps := testDeps(t)
+	deps.BuildWorkspace = func(string, config.ResolvedConfig) (Workspace, error) {
+		return Workspace{Skills: []agent.SkillInfo{{Name: "project-only-skill"}}}, nil
+	}
+	h, updates := newCollectorHarness(t, deps)
+	defer h.stop()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var res NewSessionResult
+	if err := h.client.Call(ctx, MethodSessionNew, NewSessionParams{Cwd: t.TempDir(), McpServers: []McpServer{}}, &res); err != nil {
+		t.Fatalf("session/new: %v", err)
+	}
+	if err := h.client.Call(ctx, MethodSessionPrompt, PromptParams{SessionID: res.SessionID, Prompt: []ContentBlock{TextBlock("/skills list")}}, &PromptResult{}); err != nil {
+		t.Fatalf("session/prompt /skills list: %v", err)
+	}
+	updates.waitForVariant(t, UpdateAgentMessageChunk)
+	var text string
+	for _, raw := range updates.rawMessages() {
+		var probe struct {
+			Update struct {
+				SessionUpdate string `json:"sessionUpdate"`
+				Content       struct {
+					Text string `json:"text"`
+				} `json:"content"`
+			} `json:"update"`
+		}
+		if json.Unmarshal(raw, &probe) == nil && probe.Update.SessionUpdate == UpdateAgentMessageChunk {
+			text += probe.Update.Content.Text
+		}
+	}
+	if !strings.Contains(text, "project-only-skill") {
+		t.Fatalf("/skills list did not use the merged set: %q", text)
+	}
+}
+
+// TestACPSkillsPermissionMarkers proves the listing uses the same [deny]/[prompt]
+// markers as the model catalog.
+func TestACPSkillsPermissionMarkers(t *testing.T) {
+	deps := testDeps(t)
+	deps.BuildWorkspace = func(string, config.ResolvedConfig) (Workspace, error) {
+		return Workspace{Skills: []agent.SkillInfo{
+			{Name: "denied-skill", Permission: "deny"},
+			{Name: "prompt-skill", Permission: "prompt"},
+			{Name: "allowed-skill", Permission: "allow"},
+		}}, nil
+	}
+	h, updates := newCollectorHarness(t, deps)
+	defer h.stop()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var res NewSessionResult
+	if err := h.client.Call(ctx, MethodSessionNew, NewSessionParams{Cwd: t.TempDir(), McpServers: []McpServer{}}, &res); err != nil {
+		t.Fatalf("session/new: %v", err)
+	}
+	if err := h.client.Call(ctx, MethodSessionPrompt, PromptParams{SessionID: res.SessionID, Prompt: []ContentBlock{TextBlock("/skills")}}, &PromptResult{}); err != nil {
+		t.Fatalf("session/prompt /skills: %v", err)
+	}
+	updates.waitForVariant(t, UpdateAgentMessageChunk)
+	var text string
+	for _, raw := range updates.rawMessages() {
+		var probe struct {
+			Update struct {
+				SessionUpdate string `json:"sessionUpdate"`
+				Content       struct {
+					Text string `json:"text"`
+				} `json:"content"`
+			} `json:"update"`
+		}
+		if json.Unmarshal(raw, &probe) == nil && probe.Update.SessionUpdate == UpdateAgentMessageChunk {
+			text += probe.Update.Content.Text
+		}
+	}
+	if !strings.Contains(text, "denied-skill [deny]") {
+		t.Fatalf("missing [deny] marker: %q", text)
+	}
+	if !strings.Contains(text, "prompt-skill [prompt]") {
+		t.Fatalf("missing [prompt] marker: %q", text)
+	}
+	if strings.Contains(text, "allowed-skill [") {
+		t.Fatalf("allow skill should have no marker: %q", text)
+	}
+}
+
+// TestACPSkillCommandExpandsBody proves /name args resolves an installed skill,
+// running a turn whose prompt is the skill body plus the request (not raw prose),
+// matching the TUI's skill dispatch.
+func TestACPSkillCommandExpandsBody(t *testing.T) {
+	deps := testDeps(t)
+	var capturedPrompt string
+	deps.RunAgent = func(_ context.Context, prompt string, _ kajicoderuntime.Provider, _ agent.Options) (agent.Result, error) {
+		capturedPrompt = prompt
+		return agent.Result{FinalAnswer: "ok"}, nil
+	}
+	deps.ExpandSkill = func(workspaceRoot, name, args string) (string, bool) {
+		if name != "code-review" {
+			return "", false
+		}
+		return "SKILL BODY: review the diff.\n\n" + args, true
+	}
+	h := newHarness(t, deps)
+	defer h.stop()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var res NewSessionResult
+	if err := h.client.Call(ctx, MethodSessionNew, NewSessionParams{Cwd: t.TempDir(), McpServers: []McpServer{}}, &res); err != nil {
+		t.Fatalf("session/new: %v", err)
+	}
+	if err := h.client.Call(ctx, MethodSessionPrompt, PromptParams{SessionID: res.SessionID, Prompt: []ContentBlock{TextBlock("/code-review on this diff")}}, &PromptResult{}); err != nil {
+		t.Fatalf("session/prompt: %v", err)
+	}
+	if !strings.Contains(capturedPrompt, "SKILL BODY: review the diff.") {
+		t.Fatalf("skill body was not inlined into the prompt: %q", capturedPrompt)
+	}
+	if !strings.Contains(capturedPrompt, "on this diff") {
+		t.Fatalf("request was not appended: %q", capturedPrompt)
+	}
+}
+
+// TestACSPSkillCommandUnknownFallsThrough proves an unknown /name is not consumed
+// by the skill hook — it runs as an ordinary prompt with the raw text.
+func TestACPSkillCommandUnknownFallsThrough(t *testing.T) {
+	deps := testDeps(t)
+	var capturedPrompt string
+	deps.RunAgent = func(_ context.Context, prompt string, _ kajicoderuntime.Provider, _ agent.Options) (agent.Result, error) {
+		capturedPrompt = prompt
+		return agent.Result{FinalAnswer: "ok"}, nil
+	}
+	deps.ExpandSkill = func(string, string, string) (string, bool) { return "", false }
+	h := newHarness(t, deps)
+	defer h.stop()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var res NewSessionResult
+	if err := h.client.Call(ctx, MethodSessionNew, NewSessionParams{Cwd: t.TempDir(), McpServers: []McpServer{}}, &res); err != nil {
+		t.Fatalf("session/new: %v", err)
+	}
+	if err := h.client.Call(ctx, MethodSessionPrompt, PromptParams{SessionID: res.SessionID, Prompt: []ContentBlock{TextBlock("/no-such-skill hello")}}, &PromptResult{}); err != nil {
+		t.Fatalf("session/prompt: %v", err)
+	}
+	if !strings.Contains(capturedPrompt, "/no-such-skill hello") {
+		t.Fatalf("unknown /name should fall through to the model verbatim: %q", capturedPrompt)
+	}
+}

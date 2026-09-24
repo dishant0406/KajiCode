@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -73,6 +74,12 @@ type Deps struct {
 	// ExpandPromptSnippet resolves "/name args" against the saved snippets,
 	// returning the expanded prompt text. ok=false means no such snippet.
 	ExpandPromptSnippet func(workspaceRoot, name, args string) (string, bool)
+	// ExpandSkill resolves a "/name args" against the workspace's installed
+	// skills, returning the prompt to run (the skill body plus the request).
+	// ok=false means no skill matches. Checked after prompt snippets and before
+	// the command catalog, matching the TUI's builtin > user command > skill
+	// precedence. nil disables skill invocation, falling through to the model.
+	ExpandSkill func(workspaceRoot, name, args string) (string, bool)
 	// ProviderAdd creates/updates a provider from NON-SECRET fields (name,
 	// baseUrl, model, authHeader, authScheme, customKind). Credentials are never
 	// passed here (form elicitation must not carry secrets). It returns a
@@ -591,6 +598,16 @@ func (a *Agent) handleSessionPrompt(ctx context.Context, params json.RawMessage)
 			note.text(a.runRefreshModels(turnCtx, sess))
 			return PromptResult{StopReason: StopEndTurn}, nil
 		}
+		// `/skills` lists this session's skills. It is handled here rather than
+		// routed to the `kajicode skills list` CLI command, whose management listing
+		// is deliberately global-only: the session listing must include the
+		// workspace's project skills too, matching the model's own skill catalog.
+		// An empty arg or the explicit `list` form both take this path so
+		// `/skills` and `/skills list` cannot disagree.
+		if strings.EqualFold(name, "skills") && (strings.TrimSpace(args) == "" || strings.EqualFold(strings.TrimSpace(args), "list")) {
+			note.text(a.listSkills(sess))
+			return PromptResult{StopReason: StopEndTurn}, nil
+		}
 		// `/add-provider` collects a provider's non-secret config via an
 		// elicitation form (the native editor UI), then writes the profile through
 		// the shared CLI path. Secrets are never collected here.
@@ -624,6 +641,19 @@ func (a *Agent) handleSessionPrompt(ctx context.Context, params json.RawMessage)
 		// text and runs as an ordinary turn (ACP has no "fill the composer").
 		if a.deps.ExpandPromptSnippet != nil {
 			if expanded, ok := a.deps.ExpandPromptSnippet(sess.cwd, name, args); ok {
+				reason, runErr := a.runTurn(turnCtx, sess, expanded, images)
+				if runErr != nil {
+					return nil, runErr
+				}
+				return PromptResult{StopReason: reason}, nil
+			}
+		}
+		// An installed skill invoked as `/name args` expands into the skill body
+		// plus the request and runs as an ordinary turn. Checked after prompt
+		// snippets (builtin > user command > skill), matching the TUI so a name
+		// shared by both resolves the same way in every surface.
+		if a.deps.ExpandSkill != nil {
+			if expanded, ok := a.deps.ExpandSkill(sess.cwd, name, args); ok {
 				reason, runErr := a.runTurn(turnCtx, sess, expanded, images)
 				if runErr != nil {
 					return nil, runErr
@@ -1038,6 +1068,47 @@ func (a *Agent) runRefreshModels(ctx context.Context, sess *acpSession) string {
 		return "Refreshed models: no providers available."
 	}
 	return fmt.Sprintf("Refreshed models: %d provider(s), %d model(s).", providers, models)
+}
+
+// listSkills renders the session's skills: the same merged set (global + project
+// + plugin) the model discovers as <available_skills>, so the command and the
+// model's catalog never disagree. It reuses Deps.BuildWorkspace (the same build a
+// turn uses), so a project skill in the workspace shows up here too.
+func (a *Agent) listSkills(sess *acpSession) string {
+	if a.deps.BuildWorkspace == nil {
+		return "Skills are not available in this session."
+	}
+	workspace, err := a.deps.BuildWorkspace(sess.cwd, sess.resolved)
+	if err != nil {
+		return "Skills\nFailed to load skills: " + err.Error()
+	}
+	if len(workspace.Skills) == 0 {
+		return "Skills\nNo skills installed. Add one under ~/.local/share/kajicode/skills, ~/.agents/skills, or a project .skills/ directory."
+	}
+	skills := append([]agent.SkillInfo(nil), workspace.Skills...)
+	sort.Slice(skills, func(i, j int) bool { return skills[i].Name < skills[j].Name })
+	var b strings.Builder
+	fmt.Fprintf(&b, "Skills (%d):\n", len(skills))
+	for _, skill := range skills {
+		name := strings.TrimSpace(skill.Name)
+		if name == "" {
+			continue
+		}
+		b.WriteString("  " + name)
+		if description := strings.TrimSpace(skill.Description); description != "" {
+			b.WriteString(" - " + description)
+		}
+		// Match the model catalog's markers exactly (see agent.system_prompt.go)
+		// so the listing and <available_skills> agree on load restrictions.
+		switch skill.Permission {
+		case "deny":
+			b.WriteString(" [deny]")
+		case "prompt":
+			b.WriteString(" [prompt]")
+		}
+		b.WriteString("\n")
+	}
+	return strings.TrimRight(b.String(), "\n")
 }
 
 // countModelOptions counts the providers and models in a config-option set's
