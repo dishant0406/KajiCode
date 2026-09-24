@@ -109,7 +109,7 @@ advertises the full capability set; `session/new` returns `configOptions`;
 | 1.9 | `session/delete` | `[x]` | `agent.go` + `Store.Delete` |
 | 1.10 | `session/prompt` | `[x]` | `agent.go:192` |
 | 1.11 | `session/cancel` (notif) | `[x]` | `agent.go:406` |
-| 1.12 | `session/set_mode` | `[x]` | `agent.go:352` (auto/ask only) |
+| 1.12 | `session/set_mode` | `[x]` | same profiles as the `mode` config option (unsafe excluded) |
 | 1.13 | `session/set_config_option` | `[x]` | model/mode/effort/turns/style; returns full state |
 | 1.14 | `_kajicode/set_model` | `[x]` | `agent.go:393` — vendor ext (keep) |
 
@@ -229,7 +229,7 @@ them (Zed currently implements none of them).
 | 5.8 | `available_commands_update` | `[x]` | emitted on session start |
 | 5.9 | `config_option_update` | `[x]` | emitted on set/start |
 | 5.10 | `session_info_update` | `[x]` | emitted on `/retitle` (headless title via `sessions.RetitleSession`) |
-| 5.11 | `usage_update` | `[x]` | wired to `agent.Options.OnUsage` |
+| 5.11 | `usage_update` | `[x]` | `agent.Options.OnUsage`; `size` = resolved model context window (`Deps.ResolveContextWindow`), 0 when unknown |
 
 ### v1 unstable additions
 | # | Variant | Status |
@@ -266,7 +266,11 @@ them (Zed currently implements none of them).
   `handleSessionNew` (`agent.go:151`) and `handleSetConfigOption`; emit
   `config_option_update`.
 - [x] **1C. Emit `usage_update`.** Set `agent.Options.OnUsage` in `runTurn`
-  (`agent.go:259`) → notifier sends `usage_update` from `Usage`.
+  → notifier sends `usage_update` from `Usage`; `size` is the model's resolved
+  context window (`Deps.ResolveContextWindow`, the registry + models.dev path
+  exec/TUI use), and `agent.Options.ContextWindow` wraps it in
+  `modelregistry.AgentContextWindow` so compaction is enabled over ACP even for
+  an unknown model. An unknown window leaves `size` at 0 (no misleading gauge).
 
 ### Phase 2 — v1 session lifecycle
 
@@ -374,9 +378,9 @@ Source: `internal/tui/commands.go:81-370`. "Mechanism" = simplest correct exposu
 
 | Command | Kind | Behaves as | Best ACP mechanism | Status |
 |---------|------|-----------|--------------------|--------|
-| `/model` | picker | mutate model | `configOptions` `model` (full discovered list + `_kajicode/refresh_models`) | `[x]` |
+| `/model` | picker | mutate model | `configOptions` `model` (all providers' models, grouped + `_kajicode/refresh_models`) | `[x]` |
 | `/provider` | modal | provider CRUD | `providers/*` (unstable) + `/add-provider` elicitation; wizard is modal | `[x]` |
-| `/permissions` | picker | permission profile | `configOptions` `mode` | `[x]` |
+| `/permissions` | picker | permission profile | `configOptions` `mode` (ask/read-only/read-write/bypass-all; `unsafe` stays launch-only) | `[x]` |
 | `/effort` | picker | reasoning effort | `configOptions` `effort` | `[x]` |
 | `/profile` | text | exec profile | `configOptions` `profile` | `[x]` |
 | `/selfcorrect` | text | self-correct depth | `configOptions` `selfcorrect` | `[x]` |
@@ -432,11 +436,16 @@ All read from `config.PreferencesConfig` / `agent.Options`.
 | self-correct depth | `/selfcorrect` | `selfcorrect` | `_kajicode` | select |
 | execution profile | `internal/execprofile` | `profile` | `_kajicode` | select |
 
-The **model** selector lists the provider's full model set: ACP calls
-`Deps.DiscoverModels` (wired to the same `deps.discoverProviderModels` probe +
-`providermodelcatalog` fallback the TUI picker and `kajicode providers models`
-use), so it offers every served model rather than only the one in resolved
-config. `_kajicode/refresh_models` re-runs discovery and re-emits
+The **model** selector lists every usable provider's full model set, grouped by
+provider, so one selector offers the same cross-provider set the TUI picker
+does. ACP calls `Deps.DiscoverModels` per provider (wired to the same
+`deps.discoverProviderModels` probe + `providermodelcatalog` fallback the TUI
+picker and `kajicode providers models` use) and `Deps.Providers` for the usable
+saved-provider list (`usableSavedProviders`). Each option value qualifies the
+model with its provider (`provider\x00model`), so choosing a model from another
+provider switches the session's provider for its turns, exactly like the TUI
+picker's `switchProviderModel`. `_kajicode/refresh_models` clears every
+provider's cached list, re-runs discovery across all of them, and re-emits
 `config_option_update`, mirroring the TUI refresh affordance.
 
 **Print-only vs mutating.** A command is exposed as an ACP *control* only when
@@ -502,8 +511,9 @@ or command for a subsystem, both are covered.
 
 ### 12.6 Status summary (after the model/knob work)
 
-- **Real ACP controls** (`[x]`): model (full discovered list +
-  `_kajicode/refresh_models`), permissions, effort, turns, style, self-correct,
+- **Real ACP controls** (`[x]`): model (all providers' models, grouped, with
+  provider switching + `_kajicode/refresh_models`), permissions, effort, turns,
+  style, self-correct,
   execution profile, add-dir, session lifecycle (new/list/load/resume/close/
   delete/fork), retitle/compact/export, add-provider, `/init`, `/help`.
 - **Informational text commands** (`[=]`): the CLI only prints for these, so they

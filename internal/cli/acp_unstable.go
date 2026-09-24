@@ -10,6 +10,8 @@ import (
 	"github.com/dishant0406/KajiCode/internal/acp"
 	"github.com/dishant0406/KajiCode/internal/config"
 	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
+	"github.com/dishant0406/KajiCode/internal/modelregistry"
+	"github.com/dishant0406/KajiCode/internal/modelsource"
 	"github.com/dishant0406/KajiCode/internal/providercatalog"
 	"github.com/dishant0406/KajiCode/internal/providermodelcatalog"
 	"github.com/dishant0406/KajiCode/internal/providermodeldiscovery"
@@ -284,6 +286,47 @@ func acpDiscoverModels(deps appDeps) func(ctx context.Context, profile config.Pr
 			return modelOptionValues(nil, providermodelcatalog.Models(descriptor)), nil
 		}
 		return nil, nil
+	}
+}
+
+// acpUsableProviders returns the saved provider profiles a user can actually
+// use, so the ACP model selector lists every provider's models (grouped), the
+// same set the TUI picker shows, instead of only the active provider's. It
+// reuses usableSavedProviders so both surfaces agree on what counts as usable.
+func acpUsableProviders(deps appDeps) func() []config.ProviderProfile {
+	return func() []config.ProviderProfile {
+		root, err := resolveWorkspaceRoot("", deps)
+		if err != nil {
+			return nil
+		}
+		resolved, err := deps.resolveConfig(root, config.Overrides{})
+		if err != nil {
+			return nil
+		}
+		return usableSavedProviders(resolved.Providers)
+	}
+}
+
+// acpResolveContextWindow resolves a model's context window for ACP, reusing the
+// same registry + models.dev lookup exec uses so the ACP usage_update size and
+// compaction agree with the other surfaces. It keys models.dev on the profile's
+// own catalog id rather than the process-global binding (which ACP never sets),
+// so an uncatalogued proxy/custom model still gets its real window. 0 = unknown.
+func acpResolveContextWindow() func(profile config.ProviderProfile) int {
+	return func(profile config.ProviderProfile) int {
+		model := strings.TrimSpace(profile.Model)
+		if model == "" {
+			return 0
+		}
+		if registry, err := modelregistry.DefaultRegistry(); err == nil {
+			if entry, ok := registry.Resolve(model); ok && entry.ContextLimits.ContextWindow > 0 {
+				return entry.ContextLimits.ContextWindow
+			}
+		}
+		if facts, ok := modelsource.Lookup(profile.CatalogID, model); ok {
+			return facts.ContextWindow
+		}
+		return 0
 	}
 }
 

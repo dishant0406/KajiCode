@@ -511,20 +511,33 @@ type SetSessionModeResult struct{}
 // SessionConfigOption is a discriminated union on "type": a "select" carries
 // currentValue (string) + options; a "boolean" carries a bool currentValue. A
 // single struct with omitempty covers both directions KajiCode uses.
+//
+// Options is either a flat []SessionConfigOptionValue or a grouped
+// []ConfigOptionGroup (the spec forbids mixing the two in one array), so the
+// field is `any`; the model selector uses groups to list every provider's
+// models in one select.
 type SessionConfigOption struct {
-	ID           string                     `json:"id"`
-	Name         string                     `json:"name"`
-	Description  string                     `json:"description,omitempty"`
-	Category     string                     `json:"category,omitempty"`
-	Type         string                     `json:"type"`
-	CurrentValue any                        `json:"currentValue"`
-	Options      []SessionConfigOptionValue `json:"options,omitempty"`
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	Description  string `json:"description,omitempty"`
+	Category     string `json:"category,omitempty"`
+	Type         string `json:"type"`
+	CurrentValue any    `json:"currentValue"`
+	Options      any    `json:"options,omitempty"`
 }
 
 type SessionConfigOptionValue struct {
 	Value       string `json:"value"`
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
+}
+
+// ConfigOptionGroup organizes select values under a named heading (e.g. one
+// group per provider in the model selector).
+type ConfigOptionGroup struct {
+	Group   string                     `json:"group"`
+	Name    string                     `json:"name"`
+	Options []SessionConfigOptionValue `json:"options"`
 }
 
 // Config option ids KajiCode exposes. Model is the spec-standard selector;
@@ -545,8 +558,9 @@ const (
 	configCategoryKajicode = "_kajicode"
 )
 
-// selectOption builds a "select" config option.
-func selectOption(id, name, description, category, current string, options []SessionConfigOptionValue) SessionConfigOption {
+// selectOption builds a "select" config option. options is either a flat
+// []SessionConfigOptionValue or a grouped []ConfigOptionGroup.
+func selectOption(id, name, description, category, current string, options any) SessionConfigOption {
 	return SessionConfigOption{
 		ID: id, Name: name, Description: description, Category: category,
 		Type: "select", CurrentValue: current, Options: options,
@@ -568,10 +582,14 @@ type SetSessionConfigOptionResult struct {
 type KajiCodeSetModelParams struct {
 	SessionID string `json:"sessionId"`
 	Model     string `json:"model"`
+	// Provider optionally switches the session's provider. Empty keeps the
+	// session's provider; a model value may also carry the provider prefix.
+	Provider string `json:"provider,omitempty"`
 }
 
 type KajiCodeSetModelResult struct {
-	Model string `json:"model"`
+	Provider string `json:"provider,omitempty"`
+	Model    string `json:"model"`
 }
 
 // KajiCodeRefreshModelsParams asks the agent to re-run provider model discovery

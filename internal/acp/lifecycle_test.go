@@ -12,6 +12,7 @@ import (
 	"github.com/dishant0406/KajiCode/internal/agent"
 	"github.com/dishant0406/KajiCode/internal/config"
 	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
+	"github.com/dishant0406/KajiCode/internal/modelregistry"
 	"github.com/dishant0406/KajiCode/internal/sessions"
 )
 
@@ -243,7 +244,11 @@ func TestACPSlashCommandRoutesToDispatcher(t *testing.T) {
 
 func TestACPUsageUpdateFromOnUsage(t *testing.T) {
 	deps := testDeps(t)
+	deps.ResolveContextWindow = func(config.ProviderProfile) int { return 200_000 }
 	deps.RunAgent = func(_ context.Context, _ string, _ kajicoderuntime.Provider, opts agent.Options) (agent.Result, error) {
+		if opts.ContextWindow != 200_000 {
+			t.Errorf("agent.Options.ContextWindow = %d, want the resolved window", opts.ContextWindow)
+		}
 		if opts.OnUsage != nil {
 			opts.OnUsage(agent.Usage{PromptTokens: 7, CompletionTokens: 3})
 		}
@@ -267,14 +272,61 @@ func TestACPUsageUpdateFromOnUsage(t *testing.T) {
 			Update struct {
 				SessionUpdate string `json:"sessionUpdate"`
 				Used          int    `json:"used"`
+				Size          int    `json:"size"`
 			} `json:"update"`
 		}
-		if json.Unmarshal(raw, &probe) == nil && probe.Update.SessionUpdate == UpdateUsage && probe.Update.Used == 10 {
+		if json.Unmarshal(raw, &probe) == nil && probe.Update.SessionUpdate == UpdateUsage {
+			if probe.Update.Used != 10 {
+				t.Errorf("usage_update used = %d, want 10", probe.Update.Used)
+			}
+			if probe.Update.Size != 200_000 {
+				t.Errorf("usage_update size = %d, want the resolved context window (200000)", probe.Update.Size)
+			}
 			found = true
 		}
 	}
 	if !found {
-		t.Fatalf("expected usage_update used=10, got %v", updates.variants)
+		t.Fatalf("expected usage_update, got %v", updates.variants)
+	}
+}
+
+// TestACPUnknownModelStillEnablesCompaction proves the compaction window falls
+// back (modelregistry.AgentContextWindow) when the model's real window is
+// unknown, while usage_update.size stays 0 (no misleading denominator).
+func TestACPUnknownModelStillEnablesCompaction(t *testing.T) {
+	deps := testDeps(t)
+	deps.ResolveContextWindow = func(config.ProviderProfile) int { return 0 }
+	deps.RunAgent = func(_ context.Context, _ string, _ kajicoderuntime.Provider, opts agent.Options) (agent.Result, error) {
+		if opts.ContextWindow != modelregistry.FallbackContextWindow {
+			t.Errorf("ContextWindow = %d, want fallback %d (compaction enabled)", opts.ContextWindow, modelregistry.FallbackContextWindow)
+		}
+		if opts.OnUsage != nil {
+			opts.OnUsage(agent.Usage{PromptTokens: 1})
+		}
+		return agent.Result{FinalAnswer: "ok"}, nil
+	}
+	h, updates := newCollectorHarness(t, deps)
+	defer h.stop()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var newRes NewSessionResult
+	if err := h.client.Call(ctx, MethodSessionNew, NewSessionParams{Cwd: t.TempDir(), McpServers: []McpServer{}}, &newRes); err != nil {
+		t.Fatalf("session/new: %v", err)
+	}
+	if err := h.client.Call(ctx, MethodSessionPrompt, PromptParams{SessionID: newRes.SessionID, Prompt: []ContentBlock{TextBlock("hi")}}, &PromptResult{}); err != nil {
+		t.Fatalf("session/prompt: %v", err)
+	}
+	for _, raw := range updates.raw {
+		var probe struct {
+			Update struct {
+				SessionUpdate string `json:"sessionUpdate"`
+				Size          int    `json:"size"`
+			} `json:"update"`
+		}
+		if json.Unmarshal(raw, &probe) == nil && probe.Update.SessionUpdate == UpdateUsage && probe.Update.Size != 0 {
+			t.Errorf("usage_update size = %d, want 0 for an unknown model (no denominator)", probe.Update.Size)
+		}
 	}
 }
 
@@ -345,7 +397,7 @@ func TestACPSessionForkBranchesFromParent(t *testing.T) {
 	}
 }
 
-func TestACPRejectsUnconfinedPermissionModes(t *testing.T) {
+func TestACPRejectsUnsafePermissionModeAndAcceptsBypassAll(t *testing.T) {
 	h := newHarness(t, testDeps(t))
 	defer h.stop()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -355,22 +407,57 @@ func TestACPRejectsUnconfinedPermissionModes(t *testing.T) {
 	if err := h.client.Call(ctx, MethodSessionNew, NewSessionParams{Cwd: t.TempDir(), McpServers: []McpServer{}}, &newRes); err != nil {
 		t.Fatalf("session/new: %v", err)
 	}
-	// Both `unsafe` and `bypass-all` disable the sandbox, so neither may be set
-	// over the wire — on the config-option path or the legacy modes path.
-	for _, mode := range []string{"unsafe", "bypass-all"} {
-		if err := h.client.Call(ctx, MethodSessionSetConfigOption, SetSessionConfigOptionParams{SessionID: newRes.SessionID, ConfigID: configIDMode, Value: mode}, &SetSessionConfigOptionResult{}); err == nil {
-			t.Errorf("set_config_option must reject %q", mode)
-		}
-		if err := h.client.Call(ctx, MethodSessionSetMode, SetSessionModeParams{SessionID: newRes.SessionID, ModeID: mode}, &SetSessionModeResult{}); err == nil {
-			t.Errorf("set_mode must reject %q", mode)
-		}
+	// `unsafe` is a launch-time mode, not a session profile: it must never be
+	// settable over the wire.
+	if err := h.client.Call(ctx, MethodSessionSetConfigOption, SetSessionConfigOptionParams{SessionID: newRes.SessionID, ConfigID: configIDMode, Value: "unsafe"}, &SetSessionConfigOptionResult{}); err == nil {
+		t.Error("set_config_option must reject unsafe")
 	}
-	// The advertised mode list must not offer them either.
+	if err := h.client.Call(ctx, MethodSessionSetMode, SetSessionModeParams{SessionID: newRes.SessionID, ModeID: "unsafe"}, &SetSessionModeResult{}); err == nil {
+		t.Error("set_mode must reject unsafe")
+	}
+	// `bypass-all` is an explicit opt-in a client may offer, like the TUI picker.
+	if err := h.client.Call(ctx, MethodSessionSetConfigOption, SetSessionConfigOptionParams{SessionID: newRes.SessionID, ConfigID: configIDMode, Value: string(agent.PermissionModeBypassAll)}, &SetSessionConfigOptionResult{}); err != nil {
+		t.Errorf("set_config_option must accept bypass-all: %v", err)
+	}
+	// The advertised option lists must offer bypass-all (and never unsafe).
+	advertised := map[string]bool{}
 	for _, m := range newRes.Modes.AvailableModes {
-		if m.ID == "unsafe" || m.ID == "bypass-all" {
-			t.Errorf("unconfined mode %q must not be advertised", m.ID)
+		advertised[m.ID] = true
+	}
+	modeOption := modeConfigOption(t, newRes.ConfigOptions)
+	for _, value := range modelGroupsValues(t, modeOption) {
+		advertised[value] = true
+	}
+	if advertised["unsafe"] {
+		t.Error("unsafe must not be advertised")
+	}
+	if !advertised[string(agent.PermissionModeBypassAll)] {
+		t.Error("bypass-all must be advertised")
+	}
+}
+
+// modeConfigOption returns the permissions ("mode") config option.
+func modeConfigOption(t *testing.T, options []SessionConfigOption) *SessionConfigOption {
+	t.Helper()
+	for i := range options {
+		if options[i].ID == configIDMode {
+			return &options[i]
 		}
 	}
+	t.Fatal("no mode option")
+	return nil
+}
+
+// modelGroupsValues flattens a select option's values, grouped or flat.
+func modelGroupsValues(t *testing.T, option *SessionConfigOption) []string {
+	t.Helper()
+	var out []string
+	for _, group := range modelGroupsOf(t, option) {
+		for _, value := range group.Options {
+			out = append(out, value.Value)
+		}
+	}
+	return out
 }
 
 func TestACPSessionCloseCancelsInFlightTurn(t *testing.T) {
@@ -553,25 +640,115 @@ func TestACPModelSelectorUsesDiscoveredModels(t *testing.T) {
 	if err := h.client.Call(ctx, MethodSessionNew, NewSessionParams{Cwd: t.TempDir(), McpServers: []McpServer{}}, &res); err != nil {
 		t.Fatalf("session/new: %v", err)
 	}
-	var model *SessionConfigOption
-	for i := range res.ConfigOptions {
-		if res.ConfigOptions[i].ID == configIDModel {
-			model = &res.ConfigOptions[i]
-		}
-	}
-	if model == nil {
-		t.Fatal("no model option")
-	}
+	model := modelOption(t, res.ConfigOptions)
 	// Every discovered model must be offered, not just the resolved one.
 	have := map[string]bool{}
-	for _, v := range model.Options {
+	for _, v := range modelOptionValues(t, model) {
 		have[v.Value] = true
 	}
 	for _, want := range []string{"gpt-4.1", "gpt-4.1-mini", "o3"} {
-		if !have[want] {
+		if !have[qualifyModel("fake", want)] {
 			t.Fatalf("model %q missing from selector: %+v", want, model.Options)
 		}
 	}
+}
+
+// TestACPModelSelectorListsAllProviders proves the model selector offers every
+// usable provider's models (grouped by provider), not just the active one, and
+// that choosing a model from another provider switches the provider for the run.
+func TestACPModelSelectorListsAllProviders(t *testing.T) {
+	deps := testDeps(t)
+	deps.Providers = func() []config.ProviderProfile {
+		return []config.ProviderProfile{{Name: "fake"}, {Name: "other"}}
+	}
+	deps.DiscoverModels = func(_ context.Context, profile config.ProviderProfile) ([]SessionConfigOptionValue, error) {
+		switch profile.Name {
+		case "other":
+			return []SessionConfigOptionValue{{Value: "other-1"}}, nil
+		default:
+			return []SessionConfigOptionValue{{Value: "fake-1"}}, nil
+		}
+	}
+	var captured agent.Options
+	deps.RunAgent = func(_ context.Context, _ string, _ kajicoderuntime.Provider, opts agent.Options) (agent.Result, error) {
+		captured = opts
+		return agent.Result{FinalAnswer: "ok"}, nil
+	}
+	h := newHarness(t, deps)
+	defer h.stop()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var res NewSessionResult
+	if err := h.client.Call(ctx, MethodSessionNew, NewSessionParams{Cwd: t.TempDir(), McpServers: []McpServer{}}, &res); err != nil {
+		t.Fatalf("session/new: %v", err)
+	}
+	model := modelOption(t, res.ConfigOptions)
+	groups := modelGroupsOf(t, model)
+	providers := map[string]bool{}
+	for _, g := range groups {
+		providers[g.Group] = true
+	}
+	if !providers["fake"] || !providers["other"] {
+		t.Fatalf("selector groups = %v, want both fake and other", providers)
+	}
+	// Switch to the other provider's model via its qualified value.
+	if err := h.client.Call(ctx, MethodSessionSetConfigOption, SetSessionConfigOptionParams{
+		SessionID: res.SessionID, ConfigID: configIDModel, Value: qualifyModel("other", "other-1"),
+	}, &SetSessionConfigOptionResult{}); err != nil {
+		t.Fatalf("set model: %v", err)
+	}
+	if err := h.client.Call(ctx, MethodSessionPrompt, PromptParams{SessionID: res.SessionID, Prompt: []ContentBlock{TextBlock("hi")}}, &PromptResult{}); err != nil {
+		t.Fatalf("prompt: %v", err)
+	}
+	if captured.ProviderName != "other" {
+		t.Fatalf("run provider = %q, want other (provider did not switch)", captured.ProviderName)
+	}
+	if captured.Model != "other-1" {
+		t.Fatalf("run model = %q, want other-1", captured.Model)
+	}
+}
+
+// modelOption returns the model session config option, failing if absent.
+func modelOption(t *testing.T, options []SessionConfigOption) *SessionConfigOption {
+	t.Helper()
+	for i := range options {
+		if options[i].ID == configIDModel {
+			return &options[i]
+		}
+	}
+	t.Fatal("no model option")
+	return nil
+}
+
+// modelGroupsOf decodes a model option's options into groups, whether the wire
+// form was grouped or flat. The result travels through JSON, so it is re-decoded
+// rather than type-asserted.
+func modelGroupsOf(t *testing.T, option *SessionConfigOption) []ConfigOptionGroup {
+	t.Helper()
+	raw, err := json.Marshal(option.Options)
+	if err != nil {
+		t.Fatalf("marshal options: %v", err)
+	}
+	var groups []ConfigOptionGroup
+	if err := json.Unmarshal(raw, &groups); err == nil && len(groups) > 0 && groups[0].Group != "" {
+		return groups
+	}
+	var flat []SessionConfigOptionValue
+	if err := json.Unmarshal(raw, &flat); err == nil && len(flat) > 0 {
+		return []ConfigOptionGroup{{Options: flat}}
+	}
+	return nil
+}
+
+// modelOptionValues flattens a model option's groups into their values.
+func modelOptionValues(t *testing.T, option *SessionConfigOption) []SessionConfigOptionValue {
+	t.Helper()
+	var out []SessionConfigOptionValue
+	for _, g := range modelGroupsOf(t, option) {
+		out = append(out, g.Options...)
+	}
+	return out
 }
 
 func TestACPSelfCorrectAndProfileReachAgentOptions(t *testing.T) {
@@ -629,10 +806,13 @@ func TestACPSelfCorrectAndProfileReachAgentOptions(t *testing.T) {
 
 func TestACPRefreshModelsReemitsConfigOptions(t *testing.T) {
 	deps := testDeps(t)
-	calls := 0
-	deps.DiscoverModels = func(_ context.Context, _ config.ProviderProfile) ([]SessionConfigOptionValue, error) {
-		calls++
-		return []SessionConfigOptionValue{{Value: "m1"}, {Value: "m2"}}, nil
+	deps.Providers = func() []config.ProviderProfile {
+		return []config.ProviderProfile{{Name: "fake"}, {Name: "other"}}
+	}
+	calls := map[string]int{}
+	deps.DiscoverModels = func(_ context.Context, profile config.ProviderProfile) ([]SessionConfigOptionValue, error) {
+		calls[profile.Name]++
+		return []SessionConfigOptionValue{{Value: profile.Name + "-1"}}, nil
 	}
 	h, updates := newCollectorHarness(t, deps)
 	defer h.stop()
@@ -643,12 +823,12 @@ func TestACPRefreshModelsReemitsConfigOptions(t *testing.T) {
 	if err := h.client.Call(ctx, MethodSessionNew, NewSessionParams{Cwd: t.TempDir(), McpServers: []McpServer{}}, &res); err != nil {
 		t.Fatalf("session/new: %v", err)
 	}
-	before := calls
+	before := calls["other"]
 	if err := h.client.Call(ctx, MethodKajiCodeRefreshModels, KajiCodeRefreshModelsParams{SessionID: res.SessionID}, &KajiCodeRefreshModelsResult{}); err != nil {
 		t.Fatalf("refresh_models: %v", err)
 	}
-	if calls <= before {
-		t.Fatal("refresh_models did not re-run discovery")
+	if calls["other"] <= before {
+		t.Fatal("refresh_models did not re-run discovery for every provider")
 	}
 	if !updates.has(UpdateConfigOption) {
 		t.Fatal("refresh_models did not emit config_option_update")

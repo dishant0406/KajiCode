@@ -42,9 +42,14 @@ func testDeps(t *testing.T) Deps {
 			if o.Provider.Model != "" {
 				model = o.Provider.Model
 			}
+			provider := config.ProviderProfile{Name: "fake", Model: model}
+			if o.ActiveProvider != "" {
+				provider = config.ProviderProfile{Name: o.ActiveProvider, Model: model}
+			}
 			return config.ResolvedConfig{
-				Provider: config.ProviderProfile{Name: "fake", Model: model},
-				MaxTurns: 4,
+				ActiveProvider: provider.Name,
+				Provider:       provider,
+				MaxTurns:       4,
 			}, nil
 		},
 		NewProvider: func(config.ProviderProfile) (kajicoderuntime.Provider, error) {

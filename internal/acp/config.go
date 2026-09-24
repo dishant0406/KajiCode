@@ -12,15 +12,15 @@ import (
 // budget, response style) as ACP config options so an editor renders them as
 // native dropdowns.
 
-// validPermissionMode accepts only the profiles an editor may set. Both
-// `unsafe` and `bypass-all` are excluded: each disables the sandbox and grants
-// every tool without prompting, and an editor must not be able to grant itself
-// unconfined host access over the wire.
+// validPermissionMode accepts the profiles an editor may set. `unsafe` stays
+// excluded (it is a launch-time shell-escape mode, not a session profile), but
+// `bypass-all` is allowed so a client can offer the same "Bypass all" choice the
+// TUI's /permissions picker does — a deliberate, user-visible opt-in.
 func validPermissionMode(mode string) bool {
 	switch agent.PermissionMode(mode) {
 	case agent.PermissionModeAuto, agent.PermissionModeAsk,
 		agent.PermissionModeAskAll, agent.PermissionModeReadOnly,
-		agent.PermissionModeReadWrite:
+		agent.PermissionModeReadWrite, agent.PermissionModeBypassAll:
 		return true
 	default:
 		return false
@@ -33,6 +33,7 @@ func permissionModeValues() []SessionConfigOptionValue {
 		{Value: string(agent.PermissionModeAskAll), Name: "Ask", Description: "Ask before every tool that changes state."},
 		{Value: string(agent.PermissionModeReadOnly), Name: "Read only", Description: "Allow reads; ask for writes, shell, and network."},
 		{Value: string(agent.PermissionModeReadWrite), Name: "Read + write", Description: "Allow reads and file writes; ask for shell and network."},
+		{Value: string(agent.PermissionModeBypassAll), Name: "Bypass all", Description: "Dangerous: allow every tool without prompting and disable the sandbox (unrestricted host access)."},
 	}
 }
 

@@ -18,6 +18,7 @@ import (
 	"github.com/dishant0406/KajiCode/internal/imageinput"
 	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
 	"github.com/dishant0406/KajiCode/internal/lsp"
+	"github.com/dishant0406/KajiCode/internal/modelregistry"
 	"github.com/dishant0406/KajiCode/internal/sandbox"
 	"github.com/dishant0406/KajiCode/internal/sessions"
 	"github.com/dishant0406/KajiCode/internal/tools"
@@ -80,6 +81,18 @@ type Deps struct {
 	// catalog fallback), for the model config selector. nil falls back to the
 	// session's resolved model set.
 	DiscoverModels func(ctx context.Context, profile config.ProviderProfile) ([]SessionConfigOptionValue, error)
+	// Providers returns the usable saved provider profiles (credential-bearing
+	// or no-auth local) so the model selector lists every provider's models, the
+	// way the TUI picker does, not only the active provider's. nil means "active
+	// provider only".
+	Providers func() []config.ProviderProfile
+	// ResolveContextWindow returns a model's context window (max input tokens)
+	// for the profile's model, resolved from the curated registry then models.dev
+	// (as exec/TUI do, minus the live-discovery step since ACP resolves per turn
+	// rather than once per run). The raw value feeds the ACP usage_update size;
+	// agent.Options.ContextWindow wraps it in modelregistry.AgentContextWindow so
+	// compaction is enabled even for an unknown model. 0 means unknown.
+	ResolveContextWindow func(profile config.ProviderProfile) int
 	// SuggestNes produces a next-edit suggestion for one buffered document.
 	// nil means nes/suggest returns an empty suggestion list.
 	SuggestNes func(ctx context.Context, input NesSuggestInput) (*NesEditSuggestion, error)
@@ -133,16 +146,18 @@ type acpSession struct {
 
 	mu               sync.Mutex
 	mode             agent.PermissionMode
-	model            string                     // override; "" => config default
-	effortLevel      string                     // reasoning effort override; "" => model default
-	turns            int                        // turn budget override; 0 => resolved default
-	style            string                     // response style override; "" => balanced
-	selfCorrectDepth string                     // post-edit self-correct depth; "" => off
-	execProfileName  string                     // execution profile name; "" => balanced (empty posture)
-	modelCache       []SessionConfigOptionValue // discovered models; probed once per session
-	modelLoaded      bool
-	cancel           context.CancelFunc
-	history          []turnRecord
+	model            string // override; "" => config default
+	provider         string // provider name override; "" => resolved active provider
+	effortLevel      string // reasoning effort override; "" => model default
+	turns            int    // turn budget override; 0 => resolved default
+	style            string // response style override; "" => balanced
+	selfCorrectDepth string // post-edit self-correct depth; "" => off
+	execProfileName  string // execution profile name; "" => balanced (empty posture)
+	// modelCache holds per-provider discovered model lists, keyed by provider
+	// name. Populated lazily and cleared by _kajicode/refresh_models.
+	modelCache map[string][]SessionConfigOptionValue
+	cancel     context.CancelFunc
+	history    []turnRecord
 
 	// v1-unstable editor->agent document sync: the last-known buffer per URI.
 	docs map[string]acpDocument
@@ -716,6 +731,12 @@ func providerAddSchema() map[string]any {
 
 func (a *Agent) runTurn(ctx context.Context, sess *acpSession, userText string, images []kajicoderuntime.ImageBlock) (string, error) {
 	overrides := config.Overrides{}
+	// A session whose model selector chose a model from another provider switches
+	// providers for its turns too (mirrors the TUI picker). The stored provider
+	// name is the saved profile name, which is the key config resolution uses.
+	if provider := sess.currentProvider(); provider != "" && !strings.EqualFold(provider, sess.resolved.ActiveProvider) {
+		overrides.ActiveProvider = provider
+	}
 	if model := sess.currentModel(); model != "" {
 		overrides.Provider.Model = model
 	}
@@ -780,6 +801,17 @@ func (a *Agent) runTurn(ctx context.Context, sess *acpSession, userText string, 
 		profilePolicy = profile.Policy(displacedMaxTurns, effortFilledByProfile)
 	}
 
+	// The model's context window drives both compaction (agent.Options.ContextWindow)
+	// and the ACP usage_update size. Two values on purpose: the raw window is the
+	// display denominator (0 = unknown, so the client shows no gauge), while
+	// compaction uses modelregistry.AgentContextWindow so an uncatalogued
+	// proxy/custom model still gets the positive fallback and compacts — exactly
+	// what exec/TUI do.
+	contextWindow := 0
+	if a.deps.ResolveContextWindow != nil {
+		contextWindow = a.deps.ResolveContextWindow(resolved.Provider)
+	}
+
 	opts := agent.Options{
 		Cwd:             sess.cwd,
 		SessionID:       sess.id,
@@ -794,13 +826,16 @@ func (a *Agent) runTurn(ctx context.Context, sess *acpSession, userText string, 
 		Sandbox:         workspace.Sandbox,
 		PermissionMode:  sess.currentMode(),
 		MaxTurns:        maxTurns,
+		ContextWindow:   modelregistry.AgentContextWindow(contextWindow),
 		Images:          images,
 		ImageLimits:     imageinput.LimitsFrom(resolved.Images.MaxWidth, resolved.Images.MaxHeight, resolved.Images.MaxBytes, resolved.Images.AutoResize),
 		Skills:          workspace.Skills,
 		OnText:          note.text,
 		OnReasoning:     note.thought,
-		OnUsage:         func(u agent.Usage) { note.usage(u.TotalTokens(), 0) },
-		OnToolCall:      note.toolCall,
+		// Report real token counts with the resolved context window as size, so the
+		// client's context gauge has a denominator (matches the TUI's used/window).
+		OnUsage:    func(u agent.Usage) { note.usage(u.TotalTokens(), contextWindow) },
+		OnToolCall: note.toolCall,
 		OnToolResult: func(result agent.ToolResult) {
 			note.toolResult(result)
 			if result.Name == "todo_write" {
@@ -914,7 +949,14 @@ func (a *Agent) handleSetConfigOption(ctx context.Context, params json.RawMessag
 	value := strings.TrimSpace(p.Value)
 	switch p.ConfigID {
 	case configIDModel:
-		sess.setModel(value)
+		// A model value may be provider-qualified ("provider\x00model") so a
+		// model from another provider switches providers too, matching the TUI
+		// picker. An unqualified value applies to the active provider.
+		provider, model := splitModelValue(value)
+		if provider != "" {
+			sess.setProvider(provider)
+		}
+		sess.setModel(model)
 	case configIDMode:
 		if !validPermissionMode(value) {
 			return nil, RPCError(codeInvalidParams, "unknown mode: "+value)
@@ -963,7 +1005,7 @@ func (a *Agent) handleKajiCodeRefreshModels(ctx context.Context, params json.Raw
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	sess.mu.Lock()
-	sess.modelLoaded = false
+	sess.modelCache = nil
 	sess.mu.Unlock()
 	options := a.configOptions(ctx, sess)
 	(&notifier{conn: a.conn, sessionID: sess.id}).configOptions(options)
@@ -979,9 +1021,19 @@ func (a *Agent) handleKajiCodeSetModel(_ context.Context, params json.RawMessage
 	if sess == nil {
 		return nil, RPCError(codeInvalidParams, "unknown session: "+p.SessionID)
 	}
-	sess.setModel(strings.TrimSpace(p.Model))
+	provider := strings.TrimSpace(p.Provider)
+	model := strings.TrimSpace(p.Model)
+	// Accept either a provider-qualified model value ("provider\x00model") or an
+	// explicit provider field, so both call styles switch providers.
+	if qProvider, qModel := splitModelValue(model); qProvider != "" {
+		provider, model = qProvider, qModel
+	}
+	if provider != "" {
+		sess.setProvider(provider)
+	}
+	sess.setModel(model)
 	(&notifier{conn: a.conn, sessionID: sess.id}).configOptions(a.configOptions(context.Background(), sess))
-	return KajiCodeSetModelResult{Model: p.Model}, nil
+	return KajiCodeSetModelResult{Provider: provider, Model: model}, nil
 }
 
 func (a *Agent) handleCancel(_ context.Context, params json.RawMessage) {
@@ -996,9 +1048,9 @@ func (a *Agent) handleCancel(_ context.Context, params json.RawMessage) {
 
 // ---- advertising helpers ----
 
-// modeState is the legacy session-modes view. It lists exactly the modes
-// validPermissionMode accepts, so a client that only understands modes cannot
-// reach an unconfined profile that the config-option path rejects.
+// modeState is the legacy session-modes view. It lists the same modes the
+// config-option path accepts, so a client that only understands modes can reach
+// the same profiles.
 func (a *Agent) modeState(s *acpSession) *SessionModeState {
 	return &SessionModeState{
 		CurrentModeID: string(s.currentMode()),
@@ -1007,6 +1059,7 @@ func (a *Agent) modeState(s *acpSession) *SessionModeState {
 			{ID: string(agent.PermissionModeAskAll), Name: "Ask", Description: "Ask before every tool that changes state."},
 			{ID: string(agent.PermissionModeReadOnly), Name: "Read only", Description: "Allow reads; ask for writes, shell, and network."},
 			{ID: string(agent.PermissionModeReadWrite), Name: "Read + write", Description: "Allow reads and file writes; ask for shell and network."},
+			{ID: string(agent.PermissionModeBypassAll), Name: "Bypass all", Description: "Dangerous: allow every tool without prompting and disable the sandbox (unrestricted host access)."},
 		},
 	}
 }
@@ -1014,13 +1067,9 @@ func (a *Agent) modeState(s *acpSession) *SessionModeState {
 // configOptions returns the full set of session config selectors, in priority
 // order, with their current values.
 func (a *Agent) configOptions(ctx context.Context, sess *acpSession) []SessionConfigOption {
-	model := sess.currentModel()
-	values := a.modelValues(ctx, sess)
-	if model == "" && len(values) > 0 {
-		model = values[0].Value
-	}
+	groups := a.modelGroups(ctx, sess)
 	return []SessionConfigOption{
-		selectOption(configIDModel, "Model", "Active model for this session.", configCategoryModel, model, values),
+		selectOption(configIDModel, "Model", "Active model for this session. Models from every configured provider are grouped by provider; choosing one switches providers.", configCategoryModel, a.modelCurrentValue(sess, groups), groups),
 		selectOption(configIDMode, "Permissions", "How tool calls are authorized.", configCategoryMode, string(sess.currentMode()), permissionModeValues()),
 		selectOption(configIDEffort, "Reasoning effort", "Reasoning effort for supported models.", configCategoryThought, effortValue(sess.effort()), effortValues()),
 		selectOption(configIDTurns, "Turn budget", "Maximum tool turns per prompt.", configCategoryKajicode, strconv.Itoa(a.turnBudget(sess)), turnValues(a.turnBudget(sess))),
@@ -1030,39 +1079,175 @@ func (a *Agent) configOptions(ctx context.Context, sess *acpSession) []SessionCo
 	}
 }
 
-// modelValues lists the model ids a session can switch to. It asks the agent for
-// the provider's live/discovered model list (falling back to the static
-// catalog), so the selector offers the same set the TUI picker does rather than
-// only the single model in the resolved config. The session's current model is
-// always included so the option has a valid default.
-func (a *Agent) modelValues(ctx context.Context, sess *acpSession) []SessionConfigOptionValue {
-	values := a.sessionModelValues(ctx, sess)
-	out := make([]SessionConfigOptionValue, 0, len(values)+3)
-	seen := map[string]bool{}
-	add := func(model string) {
-		if model == "" || seen[model] {
-			return
-		}
-		seen[model] = true
-		out = append(out, SessionConfigOptionValue{Value: model, Name: model})
+// modelValueSep separates a provider name from a model id in a model option
+// value. It is a NUL control byte so it can never collide with a real provider
+// name or model id (neither contains a control character).
+const modelValueSep = "\x00"
+
+// qualifyModel encodes a provider+model pair as one select value.
+func qualifyModel(provider, model string) string {
+	provider = strings.TrimSpace(provider)
+	model = strings.TrimSpace(model)
+	if provider == "" {
+		return model
 	}
-	add(sess.currentModel())
-	for _, value := range values {
-		add(value.Value)
-	}
-	add(sess.resolved.Provider.Model)
-	add(sess.resolved.DefaultModel)
-	return out
+	return provider + modelValueSep + model
 }
 
-// sessionModelValues returns the session's discovered model list, probing the
-// provider at most once per session (or after a refresh_models). The probe is
-// network I/O, so caching keeps config-option emissions cheap and cancels the
-// repeated live probes find in the TUI picker via its own per-provider cache.
-func (a *Agent) sessionModelValues(ctx context.Context, sess *acpSession) []SessionConfigOptionValue {
+// splitModelValue splits a qualified model value. A value with no separator is
+// an unqualified model id, which belongs to the session's active provider.
+func splitModelValue(value string) (provider, model string) {
+	if i := strings.Index(value, modelValueSep); i >= 0 {
+		return value[:i], value[i+len(modelValueSep):]
+	}
+	return "", value
+}
+
+// modelSelectorProviders returns the providers whose models the selector lists:
+// every usable saved provider (so the selector matches the TUI picker), falling
+// back to the session's resolved active provider when no provider list is
+// available.
+func (a *Agent) modelSelectorProviders(sess *acpSession) []config.ProviderProfile {
+	if a.deps.Providers != nil {
+		if providers := a.deps.Providers(); len(providers) > 0 {
+			return providers
+		}
+	}
+	if config.HasProviderProfile(sess.resolved.Provider) {
+		return []config.ProviderProfile{sess.resolved.Provider}
+	}
+	return nil
+}
+
+// activeProviderName is the session's provider override, or the resolved active
+// provider when none was chosen.
+func (a *Agent) activeProviderName(sess *acpSession) string {
+	if provider := sess.currentProvider(); provider != "" {
+		return provider
+	}
+	return sess.resolved.Provider.Name
+}
+
+// modelGroups lists every provider's models as one select group per provider,
+// so one selector offers the same cross-provider set the TUI picker does. Each
+// option's value qualifies the model with its provider, so selecting a model
+// from another provider can switch providers. The active provider always
+// surfaces its current/default model so the select contains its current value.
+func (a *Agent) modelGroups(ctx context.Context, sess *acpSession) []ConfigOptionGroup {
+	// Bound the whole fan-out so a session with many slow providers cannot
+	// wedge session/new or a config-option emission. A caller with an earlier
+	// deadline (e.g. refresh_models) keeps it.
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+
+	activeProvider := a.activeProviderName(sess)
+	activeModel := sess.currentModel()
+	if activeModel == "" {
+		activeModel = sess.resolved.Provider.Model
+	}
+
+	providers := a.modelSelectorProviders(sess)
+	groups := make([]ConfigOptionGroup, 0, len(providers)+1)
+	seenProvider := map[string]bool{}
+	activeAdded := false
+	for _, profile := range providers {
+		name := strings.TrimSpace(profile.Name)
+		if name == "" || seenProvider[name] {
+			continue
+		}
+		seenProvider[name] = true
+		isActive := strings.EqualFold(name, activeProvider)
+		options := a.providerModelOptions(ctx, sess, profile, isActive, activeModel)
+		if len(options) == 0 {
+			continue
+		}
+		if isActive {
+			activeAdded = true
+		}
+		groups = append(groups, ConfigOptionGroup{Group: name, Name: name, Options: options})
+	}
+	// The active provider must always be present so the current value is a valid
+	// option — e.g. when it is not in the saved list, or discovery returned
+	// nothing for it.
+	if !activeAdded && activeModel != "" && activeProvider != "" {
+		groups = append([]ConfigOptionGroup{{
+			Group:   activeProvider,
+			Name:    activeProvider,
+			Options: []SessionConfigOptionValue{{Value: qualifyModel(activeProvider, activeModel), Name: activeModel}},
+		}}, groups...)
+	}
+	return groups
+}
+
+// providerModelOptions builds one provider's grouped-model option list.
+func (a *Agent) providerModelOptions(ctx context.Context, sess *acpSession, profile config.ProviderProfile, isActive bool, activeModel string) []SessionConfigOptionValue {
+	name := strings.TrimSpace(profile.Name)
+	options := make([]SessionConfigOptionValue, 0, 8)
+	seen := map[string]bool{}
+	add := func(id string) {
+		id = strings.TrimSpace(id)
+		if id == "" || seen[id] {
+			return
+		}
+		seen[id] = true
+		options = append(options, SessionConfigOptionValue{Value: qualifyModel(name, id), Name: id})
+	}
+	if isActive {
+		add(activeModel)
+		add(profile.Model)
+		add(sess.resolved.DefaultModel)
+	}
+	for _, discovered := range a.providerModelValues(ctx, sess, profile) {
+		add(discovered.Value)
+	}
+	return options
+}
+
+// modelCurrentValue is the model option's currentValue: the active provider +
+// model. It always returns a value that appears in groups (the spec requires
+// the current value to be one of the options), falling back to the active
+// provider's first option or the first group's first option.
+func (a *Agent) modelCurrentValue(sess *acpSession, groups []ConfigOptionGroup) string {
+	activeProvider := a.activeProviderName(sess)
+	model := sess.currentModel()
+	if model == "" {
+		model = sess.resolved.Provider.Model
+	}
+	candidate := qualifyModel(activeProvider, model)
+	if candidate != "" && groupsContainValue(groups, candidate) {
+		return candidate
+	}
+	for _, group := range groups {
+		if strings.EqualFold(group.Group, activeProvider) && len(group.Options) > 0 {
+			return group.Options[0].Value
+		}
+	}
+	if len(groups) > 0 && len(groups[0].Options) > 0 {
+		return groups[0].Options[0].Value
+	}
+	return candidate
+}
+
+// groupsContainValue reports whether any group option equals value.
+func groupsContainValue(groups []ConfigOptionGroup, value string) bool {
+	for _, group := range groups {
+		for _, option := range group.Options {
+			if option.Value == value {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// providerModelValues returns one provider's discovered model list, probing the
+// provider at most once per session (or after _kajicode/refresh_models). The
+// probe is network I/O, so the per-provider cache keeps config-option emissions
+// cheap and mirrors the TUI picker's own per-provider cache.
+func (a *Agent) providerModelValues(ctx context.Context, sess *acpSession, profile config.ProviderProfile) []SessionConfigOptionValue {
+	key := strings.TrimSpace(profile.Name)
 	sess.mu.Lock()
-	if sess.modelLoaded {
-		cached := sess.modelCache
+	if cached, ok := sess.modelCache[key]; ok {
 		sess.mu.Unlock()
 		return cached
 	}
@@ -1070,13 +1255,19 @@ func (a *Agent) sessionModelValues(ctx context.Context, sess *acpSession) []Sess
 	if a.deps.DiscoverModels == nil {
 		return nil
 	}
-	values, err := a.deps.DiscoverModels(ctx, sess.resolved.Provider)
+	// Bound each provider probe so one slow/unreachable provider cannot wedge
+	// session/new or a config-option emission (the TUI bounds each at 8s too).
+	probeCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	values, err := a.deps.DiscoverModels(probeCtx, profile)
 	if err != nil {
 		values = nil
 	}
 	sess.mu.Lock()
-	sess.modelCache = values
-	sess.modelLoaded = true
+	if sess.modelCache == nil {
+		sess.modelCache = map[string][]SessionConfigOptionValue{}
+	}
+	sess.modelCache[key] = values
 	sess.mu.Unlock()
 	return values
 }
@@ -1208,10 +1399,11 @@ func (a *Agent) newSession(id, root string, extra []string, history []turnRecord
 	}
 	mode := agent.PermissionModeAuto
 	if p := strings.TrimSpace(resolved.Preferences.PermissionProfile); p != "" {
-		// Only inherit a profile an editor is allowed to hold. A configured
-		// `unsafe`/`bypass-all` default must not leak unconfined host access into
-		// an ACP session, so fall back to Auto.
-		if normalized := agent.NormalizePermissionMode(agent.PermissionMode(p)); validPermissionMode(string(normalized)) {
+		// Inherit only a profile an editor holds safely. `unsafe` and `bypass-all`
+		// disable the sandbox and grant every tool, so a saved default must not
+		// leak into an ACP session implicitly — a client can still opt in
+		// explicitly via session/set_config_option. Fall back to Auto otherwise.
+		if normalized := agent.NormalizePermissionMode(agent.PermissionMode(p)); validPermissionMode(string(normalized)) && normalized != agent.PermissionModeBypassAll {
 			mode = normalized
 		}
 	}
@@ -1430,6 +1622,20 @@ func (s *acpSession) currentModel() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.model
+}
+
+func (s *acpSession) setProvider(provider string) {
+	s.mu.Lock()
+	s.provider = provider
+	s.mu.Unlock()
+}
+
+// currentProvider returns the session's provider override, or "" when the
+// session uses the config's resolved active provider.
+func (s *acpSession) currentProvider() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.provider
 }
 
 func (s *acpSession) setEffort(effort string) {

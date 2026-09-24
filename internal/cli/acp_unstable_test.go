@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 	"unicode/utf8"
+
+	"github.com/dishant0406/KajiCode/internal/config"
 )
 
 func TestStripNesReply(t *testing.T) {
@@ -53,5 +55,21 @@ func TestCursorLineAndTruncate(t *testing.T) {
 	got := truncateBytes(long, 101)
 	if len(got) > 101 || !utf8.ValidString(got) {
 		t.Fatalf("truncateBytes = %q (len %d)", got, len(got))
+	}
+}
+
+func TestACPResolveContextWindow(t *testing.T) {
+	resolve := acpResolveContextWindow()
+	// A curated model resolves to its catalog window.
+	if got := resolve(config.ProviderProfile{Model: "gpt-4o"}); got != 128_000 {
+		t.Errorf("gpt-4o window = %d, want 128000", got)
+	}
+	// An unknown model resolves to 0 (no denominator) rather than a guess.
+	if got := resolve(config.ProviderProfile{Model: "no-such-model-xyz"}); got != 0 {
+		t.Errorf("unknown model window = %d, want 0", got)
+	}
+	// An empty model id is 0, never a panic.
+	if got := resolve(config.ProviderProfile{}); got != 0 {
+		t.Errorf("empty model window = %d, want 0", got)
 	}
 }
