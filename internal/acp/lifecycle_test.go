@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -16,8 +17,14 @@ import (
 	"github.com/dishant0406/KajiCode/internal/sessions"
 )
 
-// updateCollector records every session/update variant a client receives.
+// updateCollector records every session/update variant a client receives. The
+// Conn dispatches each notification on its own goroutine (jsonrpc.go handleLine)
+// while a request response returns independently, so a test that asserts a
+// notification right after a Call can race the delivery goroutine. Every field
+// is read/written only under mu, and tests use waitForVariant (not an immediate
+// has) to await delivery.
 type updateCollector struct {
+	mu       sync.Mutex
 	variants []string
 	raw      []json.RawMessage
 }
@@ -31,17 +38,52 @@ func (c *updateCollector) handle(_ context.Context, params json.RawMessage) {
 	if json.Unmarshal(params, &probe) != nil {
 		return
 	}
+	c.mu.Lock()
 	c.variants = append(c.variants, probe.Update.SessionUpdate)
 	c.raw = append(c.raw, append(json.RawMessage(nil), params...))
+	c.mu.Unlock()
 }
 
 func (c *updateCollector) has(variant string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	for _, v := range c.variants {
 		if v == variant {
 			return true
 		}
 	}
 	return false
+}
+
+// snapshot returns copies of the recorded variants and raw updates.
+func (c *updateCollector) snapshot() ([]string, []json.RawMessage) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]string(nil), c.variants...), append([]json.RawMessage(nil), c.raw...)
+}
+
+func (c *updateCollector) rawMessages() []json.RawMessage {
+	_, raw := c.snapshot()
+	return raw
+}
+
+func (c *updateCollector) seen() []string {
+	variants, _ := c.snapshot()
+	return variants
+}
+
+// waitForVariant blocks until variant arrives or the timeout elapses, so an
+// assertion after a Call cannot race the notification's delivery goroutine.
+func (c *updateCollector) waitForVariant(t *testing.T, variant string) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if c.has(variant) {
+			return
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for %s, got %v", variant, c.seen())
 }
 
 // newCollectorHarness wires a client to an agent and captures every update.
@@ -79,12 +121,8 @@ func TestACPSessionNewAdvertisesConfigOptionsAndCommands(t *testing.T) {
 	if model == nil || model.Category != configCategoryModel || model.CurrentValue == "" {
 		t.Fatalf("model config option = %+v", model)
 	}
-	if !updates.has(UpdateAvailableCommands) {
-		t.Fatalf("expected available_commands_update, got %v", updates.variants)
-	}
-	if !updates.has(UpdateConfigOption) {
-		t.Fatalf("expected config_option_update, got %v", updates.variants)
-	}
+	updates.waitForVariant(t, UpdateAvailableCommands)
+	updates.waitForVariant(t, UpdateConfigOption)
 }
 
 func TestACPSessionLoadReplaysHistory(t *testing.T) {
@@ -109,9 +147,8 @@ func TestACPSessionLoadReplaysHistory(t *testing.T) {
 		t.Fatalf("session/load: %v", err)
 	}
 	// The replay must include both user and assistant chunks.
-	if !updates.has(UpdateUserMessageChunk) || !updates.has(UpdateAgentMessageChunk) {
-		t.Fatalf("load did not replay history: %v", updates.variants)
-	}
+	updates.waitForVariant(t, UpdateUserMessageChunk)
+	updates.waitForVariant(t, UpdateAgentMessageChunk)
 }
 
 func TestACPSessionListAndDelete(t *testing.T) {
@@ -223,8 +260,9 @@ func TestACPSlashCommandRoutesToDispatcher(t *testing.T) {
 		t.Fatalf("stopReason = %q", promptRes.StopReason)
 	}
 	// The command output must reach the client as a message chunk.
+	updates.waitForVariant(t, UpdateAgentMessageChunk)
 	var sawOutput bool
-	for _, raw := range updates.raw {
+	for _, raw := range updates.rawMessages() {
 		var probe struct {
 			Update struct {
 				SessionUpdate string `json:"sessionUpdate"`
@@ -267,7 +305,8 @@ func TestACPUsageUpdateFromOnUsage(t *testing.T) {
 		t.Fatalf("session/prompt: %v", err)
 	}
 	var found bool
-	for _, raw := range updates.raw {
+	updates.waitForVariant(t, UpdateUsage)
+	for _, raw := range updates.rawMessages() {
 		var probe struct {
 			Update struct {
 				SessionUpdate string `json:"sessionUpdate"`
@@ -286,7 +325,7 @@ func TestACPUsageUpdateFromOnUsage(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Fatalf("expected usage_update, got %v", updates.variants)
+		t.Fatalf("expected usage_update, got %v", updates.seen())
 	}
 }
 
@@ -317,7 +356,8 @@ func TestACPUnknownModelStillEnablesCompaction(t *testing.T) {
 	if err := h.client.Call(ctx, MethodSessionPrompt, PromptParams{SessionID: newRes.SessionID, Prompt: []ContentBlock{TextBlock("hi")}}, &PromptResult{}); err != nil {
 		t.Fatalf("session/prompt: %v", err)
 	}
-	for _, raw := range updates.raw {
+	updates.waitForVariant(t, UpdateUsage)
+	for _, raw := range updates.rawMessages() {
 		var probe struct {
 			Update struct {
 				SessionUpdate string `json:"sessionUpdate"`
@@ -604,11 +644,9 @@ func TestACPRetitleEmitsSessionInfoUpdate(t *testing.T) {
 	if err := h.client.Call(ctx, MethodSessionPrompt, PromptParams{SessionID: newRes.SessionID, Prompt: []ContentBlock{TextBlock("/retitle")}}, &promptRes); err != nil {
 		t.Fatalf("session/prompt /retitle: %v", err)
 	}
-	if !updates.has(UpdateSessionInfo) {
-		t.Fatalf("expected session_info_update, got %v", updates.variants)
-	}
+	updates.waitForVariant(t, UpdateSessionInfo)
 	var title string
-	for _, raw := range updates.raw {
+	for _, raw := range updates.rawMessages() {
 		var probe struct {
 			Update struct {
 				SessionUpdate string `json:"sessionUpdate"`
@@ -830,7 +868,5 @@ func TestACPRefreshModelsReemitsConfigOptions(t *testing.T) {
 	if calls["other"] <= before {
 		t.Fatal("refresh_models did not re-run discovery for every provider")
 	}
-	if !updates.has(UpdateConfigOption) {
-		t.Fatal("refresh_models did not emit config_option_update")
-	}
+	updates.waitForVariant(t, UpdateConfigOption)
 }
