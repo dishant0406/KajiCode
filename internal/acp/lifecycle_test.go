@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/dishant0406/KajiCode/internal/agent"
+	"github.com/dishant0406/KajiCode/internal/config"
 	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
 	"github.com/dishant0406/KajiCode/internal/sessions"
 )
@@ -531,5 +532,123 @@ func TestACPRetitleEmitsSessionInfoUpdate(t *testing.T) {
 	}
 	if title != "Fork And Compact" {
 		t.Fatalf("session_info_update title = %q", title)
+	}
+}
+
+func TestACPModelSelectorUsesDiscoveredModels(t *testing.T) {
+	deps := testDeps(t)
+	deps.DiscoverModels = func(_ context.Context, _ config.ProviderProfile) ([]SessionConfigOptionValue, error) {
+		return []SessionConfigOptionValue{
+			{Value: "gpt-4.1"}, {Value: "gpt-4.1-mini"}, {Value: "o3"},
+		}, nil
+	}
+	h := newHarness(t, deps)
+	defer h.stop()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var res NewSessionResult
+	if err := h.client.Call(ctx, MethodSessionNew, NewSessionParams{Cwd: t.TempDir(), McpServers: []McpServer{}}, &res); err != nil {
+		t.Fatalf("session/new: %v", err)
+	}
+	var model *SessionConfigOption
+	for i := range res.ConfigOptions {
+		if res.ConfigOptions[i].ID == configIDModel {
+			model = &res.ConfigOptions[i]
+		}
+	}
+	if model == nil {
+		t.Fatal("no model option")
+	}
+	// Every discovered model must be offered, not just the resolved one.
+	have := map[string]bool{}
+	for _, v := range model.Options {
+		have[v.Value] = true
+	}
+	for _, want := range []string{"gpt-4.1", "gpt-4.1-mini", "o3"} {
+		if !have[want] {
+			t.Fatalf("model %q missing from selector: %+v", want, model.Options)
+		}
+	}
+}
+
+func TestACPSelfCorrectAndProfileReachAgentOptions(t *testing.T) {
+	deps := testDeps(t)
+	var captured agent.Options
+	deps.RunAgent = func(_ context.Context, _ string, _ kajicoderuntime.Provider, opts agent.Options) (agent.Result, error) {
+		captured = opts
+		return agent.Result{FinalAnswer: "ok"}, nil
+	}
+	h := newHarness(t, deps)
+	defer h.stop()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var newRes NewSessionResult
+	if err := h.client.Call(ctx, MethodSessionNew, NewSessionParams{Cwd: t.TempDir(), McpServers: []McpServer{}}, &newRes); err != nil {
+		t.Fatalf("session/new: %v", err)
+	}
+	// Default: self-correct off, no profile policy.
+	if err := h.client.Call(ctx, MethodSessionPrompt, PromptParams{SessionID: newRes.SessionID, Prompt: []ContentBlock{TextBlock("hi")}}, &PromptResult{}); err != nil {
+		t.Fatalf("prompt: %v", err)
+	}
+	if captured.SelfCorrect != nil || captured.Profile != nil {
+		t.Fatalf("defaults changed the loop: SelfCorrect=%v Profile=%v", captured.SelfCorrect != nil, captured.Profile != nil)
+	}
+	// Enable both, then a second turn must carry them.
+	if err := h.client.Call(ctx, MethodSessionSetConfigOption, SetSessionConfigOptionParams{SessionID: newRes.SessionID, ConfigID: configIDSelfCorrect, Value: "full"}, &SetSessionConfigOptionResult{}); err != nil {
+		t.Fatalf("set selfcorrect: %v", err)
+	}
+	if err := h.client.Call(ctx, MethodSessionSetConfigOption, SetSessionConfigOptionParams{SessionID: newRes.SessionID, ConfigID: configIDProfile, Value: "fast"}, &SetSessionConfigOptionResult{}); err != nil {
+		t.Fatalf("set profile: %v", err)
+	}
+	if err := h.client.Call(ctx, MethodSessionPrompt, PromptParams{SessionID: newRes.SessionID, Prompt: []ContentBlock{TextBlock("again")}}, &PromptResult{}); err != nil {
+		t.Fatalf("second prompt: %v", err)
+	}
+	if captured.SelfCorrect == nil {
+		t.Fatal("selfcorrect=full did not reach agent.Options.SelfCorrect")
+	}
+	if captured.Profile == nil || captured.Profile.Name != "fast" {
+		t.Fatalf("profile=fast did not reach agent.Options.Profile: %+v", captured.Profile)
+	}
+	// The profile's own knobs must be applied, not just its policy: fast sets a
+	// 30-turn budget and low effort. The default testDeps MaxTurns is 4.
+	if captured.MaxTurns != 30 {
+		t.Fatalf("profile=fast did not displace the turn budget: MaxTurns=%d", captured.MaxTurns)
+	}
+	if captured.ReasoningEffort != "low" {
+		t.Fatalf("profile=fast did not fill effort: %q", captured.ReasoningEffort)
+	}
+	// Unknown values are rejected.
+	if err := h.client.Call(ctx, MethodSessionSetConfigOption, SetSessionConfigOptionParams{SessionID: newRes.SessionID, ConfigID: configIDProfile, Value: "nope"}, &SetSessionConfigOptionResult{}); err == nil {
+		t.Fatal("unknown profile must be rejected")
+	}
+}
+
+func TestACPRefreshModelsReemitsConfigOptions(t *testing.T) {
+	deps := testDeps(t)
+	calls := 0
+	deps.DiscoverModels = func(_ context.Context, _ config.ProviderProfile) ([]SessionConfigOptionValue, error) {
+		calls++
+		return []SessionConfigOptionValue{{Value: "m1"}, {Value: "m2"}}, nil
+	}
+	h, updates := newCollectorHarness(t, deps)
+	defer h.stop()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var res NewSessionResult
+	if err := h.client.Call(ctx, MethodSessionNew, NewSessionParams{Cwd: t.TempDir(), McpServers: []McpServer{}}, &res); err != nil {
+		t.Fatalf("session/new: %v", err)
+	}
+	before := calls
+	if err := h.client.Call(ctx, MethodKajiCodeRefreshModels, KajiCodeRefreshModelsParams{SessionID: res.SessionID}, &KajiCodeRefreshModelsResult{}); err != nil {
+		t.Fatalf("refresh_models: %v", err)
+	}
+	if calls <= before {
+		t.Fatal("refresh_models did not re-run discovery")
+	}
+	if !updates.has(UpdateConfigOption) {
+		t.Fatal("refresh_models did not emit config_option_update")
 	}
 }

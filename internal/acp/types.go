@@ -45,7 +45,8 @@ const (
 
 	// Vendor-prefixed KAJICODE extensions (clients that don't support them ignore the
 	// method and degrade cleanly, per the spec's _-prefixed convention).
-	MethodKajiCodeSetModel = "_kajicode/set_model"
+	MethodKajiCodeSetModel      = "_kajicode/set_model"
+	MethodKajiCodeRefreshModels = "_kajicode/refresh_models"
 )
 
 // SessionUpdate discriminator values (the "sessionUpdate" field).
@@ -534,9 +535,14 @@ const (
 	configIDEffort        = "effort"
 	configIDTurns         = "turns"
 	configIDStyle         = "style"
+	configIDSelfCorrect   = "selfcorrect"
+	configIDProfile       = "profile"
 	configCategoryModel   = "model"
 	configCategoryMode    = "mode"
 	configCategoryThought = "thought_level"
+	// configCategoryKajicode marks KajiCode-specific selectors the spec does not
+	// define; a leading underscore is the spec's convention for custom categories.
+	configCategoryKajicode = "_kajicode"
 )
 
 // selectOption builds a "select" config option.
@@ -566,6 +572,16 @@ type KajiCodeSetModelParams struct {
 
 type KajiCodeSetModelResult struct {
 	Model string `json:"model"`
+}
+
+// KajiCodeRefreshModelsParams asks the agent to re-run provider model discovery
+// for a session and re-emit its config options.
+type KajiCodeRefreshModelsParams struct {
+	SessionID string `json:"sessionId"`
+}
+
+type KajiCodeRefreshModelsResult struct {
+	ConfigOptions []SessionConfigOption `json:"configOptions"`
 }
 
 // ---- session lifecycle: list / resume / close / delete ----

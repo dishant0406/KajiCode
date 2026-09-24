@@ -10,6 +10,9 @@ import (
 	"github.com/dishant0406/KajiCode/internal/acp"
 	"github.com/dishant0406/KajiCode/internal/config"
 	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
+	"github.com/dishant0406/KajiCode/internal/providercatalog"
+	"github.com/dishant0406/KajiCode/internal/providermodelcatalog"
+	"github.com/dishant0406/KajiCode/internal/providermodeldiscovery"
 )
 
 // Wiring for the ACP v1-unstable surface (document sync, NES, providers).
@@ -263,4 +266,45 @@ func acpDisableProvider(deps appDeps) func(providerID string) error {
 		}
 		return fmt.Errorf("cannot disable %q: it is the only configured provider", providerID)
 	}
+}
+
+// acpDiscoverModels lists the models a provider serves for the ACP model
+// selector: a bounded live discovery probe (the same one `kajicode providers
+// models` and the TUI picker use), falling back to the curated static catalog so
+// the selector is never empty when the provider is unreachable.
+func acpDiscoverModels(deps appDeps) func(ctx context.Context, profile config.ProviderProfile) ([]acp.SessionConfigOptionValue, error) {
+	return func(ctx context.Context, profile config.ProviderProfile) ([]acp.SessionConfigOptionValue, error) {
+		if deps.discoverProviderModels != nil {
+			models, err := deps.discoverProviderModels(ctx, discoveryCredentialProfile(profile))
+			if err == nil && len(models) > 0 {
+				return modelOptionValues(models, nil), nil
+			}
+		}
+		if descriptor, ok := providercatalog.Get(profile.CatalogID); ok {
+			return modelOptionValues(nil, providermodelcatalog.Models(descriptor)), nil
+		}
+		return nil, nil
+	}
+}
+
+// modelOptionValues converts discovered and/or catalog models into select values,
+// de-duplicating by id and preserving order.
+func modelOptionValues(discovered []providermodeldiscovery.Model, catalog []providermodelcatalog.Model) []acp.SessionConfigOptionValue {
+	values := make([]acp.SessionConfigOptionValue, 0, len(discovered)+len(catalog))
+	seen := map[string]bool{}
+	add := func(id string) {
+		id = strings.TrimSpace(id)
+		if id == "" || seen[id] {
+			return
+		}
+		seen[id] = true
+		values = append(values, acp.SessionConfigOptionValue{Value: id, Name: id})
+	}
+	for _, m := range discovered {
+		add(m.ID)
+	}
+	for _, m := range catalog {
+		add(m.ID)
+	}
+	return values
 }

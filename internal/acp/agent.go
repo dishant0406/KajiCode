@@ -10,11 +10,14 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/dishant0406/KajiCode/internal/agent"
 	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/execprofile"
 	"github.com/dishant0406/KajiCode/internal/imageinput"
 	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
+	"github.com/dishant0406/KajiCode/internal/lsp"
 	"github.com/dishant0406/KajiCode/internal/sandbox"
 	"github.com/dishant0406/KajiCode/internal/sessions"
 	"github.com/dishant0406/KajiCode/internal/tools"
@@ -65,6 +68,10 @@ type Deps struct {
 	// passed here (form elicitation must not carry secrets). It returns a
 	// human-readable summary. nil disables the provider-add flow.
 	ProviderAdd func(ctx context.Context, fields map[string]string) (string, error)
+	// DiscoverModels lists the models a provider actually serves (live discovery,
+	// catalog fallback), for the model config selector. nil falls back to the
+	// session's resolved model set.
+	DiscoverModels func(ctx context.Context, profile config.ProviderProfile) ([]SessionConfigOptionValue, error)
 	// SuggestNes produces a next-edit suggestion for one buffered document.
 	// nil means nes/suggest returns an empty suggestion list.
 	SuggestNes func(ctx context.Context, input NesSuggestInput) (*NesEditSuggestion, error)
@@ -116,14 +123,18 @@ type acpSession struct {
 	// single cancel slot.
 	turnMu sync.Mutex
 
-	mu          sync.Mutex
-	mode        agent.PermissionMode
-	model       string // override; "" => config default
-	effortLevel string // reasoning effort override; "" => model default
-	turns       int    // turn budget override; 0 => resolved default
-	style       string // response style override; "" => balanced
-	cancel      context.CancelFunc
-	history     []turnRecord
+	mu               sync.Mutex
+	mode             agent.PermissionMode
+	model            string                     // override; "" => config default
+	effortLevel      string                     // reasoning effort override; "" => model default
+	turns            int                        // turn budget override; 0 => resolved default
+	style            string                     // response style override; "" => balanced
+	selfCorrectDepth string                     // post-edit self-correct depth; "" => off
+	execProfileName  string                     // execution profile name; "" => balanced (empty posture)
+	modelCache       []SessionConfigOptionValue // discovered models; probed once per session
+	modelLoaded      bool
+	cancel           context.CancelFunc
+	history          []turnRecord
 
 	// v1-unstable editor->agent document sync: the last-known buffer per URI.
 	docs map[string]acpDocument
@@ -146,6 +157,7 @@ func NewAgent(conn *Conn, deps Deps) *Agent {
 	conn.Handle(MethodSessionSetMode, a.handleSetMode)
 	conn.Handle(MethodSessionSetConfigOption, a.handleSetConfigOption)
 	conn.Handle(MethodKajiCodeSetModel, a.handleKajiCodeSetModel)
+	conn.Handle(MethodKajiCodeRefreshModels, a.handleKajiCodeRefreshModels)
 	conn.Handle(MethodNesStart, a.handleNesStart)
 	conn.Handle(MethodNesSuggest, a.handleNesSuggest)
 	conn.Handle(MethodNesClose, a.handleNesClose)
@@ -296,7 +308,7 @@ func (a *Agent) handleSessionNew(_ context.Context, params json.RawMessage) (any
 	a.advertise(note, sess)
 	return NewSessionResult{
 		SessionID:     sess.id,
-		ConfigOptions: a.configOptions(sess),
+		ConfigOptions: a.configOptions(context.Background(), sess),
 		Modes:         a.modeState(sess),
 	}, nil
 }
@@ -345,7 +357,7 @@ func (a *Agent) handleSessionLoad(_ context.Context, params json.RawMessage) (an
 	}
 	a.advertise(note, sess)
 	return LoadSessionResult{
-		ConfigOptions: a.configOptions(sess),
+		ConfigOptions: a.configOptions(context.Background(), sess),
 		Modes:         a.modeState(sess),
 	}, nil
 }
@@ -388,7 +400,7 @@ func (a *Agent) handleSessionResume(_ context.Context, params json.RawMessage) (
 	)
 	a.advertise(note, sess)
 	return ResumeSessionResult{
-		ConfigOptions: a.configOptions(sess),
+		ConfigOptions: a.configOptions(context.Background(), sess),
 		Modes:         a.modeState(sess),
 	}, nil
 }
@@ -438,7 +450,7 @@ func (a *Agent) handleSessionFork(_ context.Context, params json.RawMessage) (an
 	a.advertise(note, sess)
 	return ForkSessionResult{
 		SessionID:     sess.id,
-		ConfigOptions: a.configOptions(sess),
+		ConfigOptions: a.configOptions(context.Background(), sess),
 		Modes:         a.modeState(sess),
 	}, nil
 }
@@ -666,13 +678,42 @@ func (a *Agent) runTurn(ctx context.Context, sess *acpSession, userText string, 
 		maxTurns = t
 	}
 
+	// The execution profile (when selected) fills the knobs the session left
+	// unset and may displace the turn budget — the same fill-only-if-unset
+	// precedence exec applies via applyExecProfile/applyProfileTurnBudget.
+	profile, hasProfile := execprofile.Lookup(sess.execProfile())
+	effort := sess.effort()
+	effortFilledByProfile := false
+	if hasProfile && effort == "" && profile.ReasoningEffort != "" {
+		effort = profile.ReasoningEffort
+		effortFilledByProfile = true
+	}
+	displacedMaxTurns := 0
+	if hasProfile && profile.MaxTurns > 0 && sess.turnBudget() == 0 {
+		displacedMaxTurns = maxTurns
+		maxTurns = profile.MaxTurns
+	}
+
+	// Self-correct + execution profile come from the session selectors, matching
+	// how the TUI overlays them onto agent.Options right before a run. A profile
+	// that arms self-correction turns it on even when the session knob is off.
+	selfCorrector, fileDiagnostics, selfCorrectCleanup := a.buildSelfCorrect(sess, hasProfile && profile.SelfCorrect)
+	defer selfCorrectCleanup()
+	var profilePolicy *agent.ProfilePolicy
+	if hasProfile {
+		profilePolicy = profile.Policy(displacedMaxTurns, effortFilledByProfile)
+	}
+
 	opts := agent.Options{
 		Cwd:             sess.cwd,
 		SessionID:       sess.id,
 		ProviderName:    resolved.Provider.Name,
 		Model:           resolved.Provider.Model,
-		ReasoningEffort: sess.effort(),
+		ReasoningEffort: effort,
 		ResponseStyle:   sess.responseStyle(),
+		SelfCorrect:     selfCorrector,
+		FileDiagnostics: fileDiagnostics,
+		Profile:         profilePolicy,
 		Registry:        registry,
 		Sandbox:         workspace.Sandbox,
 		PermissionMode:  sess.currentMode(),
@@ -781,11 +822,11 @@ func (a *Agent) handleSetMode(_ context.Context, params json.RawMessage) (any, e
 	sess.setMode(agent.PermissionMode(p.ModeID))
 	note := &notifier{conn: a.conn, sessionID: sess.id}
 	note.currentMode(p.ModeID)
-	note.configOptions(a.configOptions(sess))
+	note.configOptions(a.configOptions(context.Background(), sess))
 	return SetSessionModeResult{}, nil
 }
 
-func (a *Agent) handleSetConfigOption(_ context.Context, params json.RawMessage) (any, error) {
+func (a *Agent) handleSetConfigOption(ctx context.Context, params json.RawMessage) (any, error) {
 	var p SetSessionConfigOptionParams
 	if err := json.Unmarshal(params, &p); err != nil {
 		return nil, RPCError(codeInvalidParams, "invalid set_config_option params")
@@ -813,12 +854,44 @@ func (a *Agent) handleSetConfigOption(_ context.Context, params json.RawMessage)
 		sess.setTurnBudget(n)
 	case configIDStyle:
 		sess.setResponseStyle(value)
+	case configIDSelfCorrect:
+		if !validSelfCorrect(value) {
+			return nil, RPCError(codeInvalidParams, "unknown self-correct depth: "+value)
+		}
+		sess.setSelfCorrect(value)
+	case configIDProfile:
+		if !validProfile(value) {
+			return nil, RPCError(codeInvalidParams, "unknown execution profile: "+value)
+		}
+		sess.setExecProfile(value)
 	default:
 		return nil, RPCError(codeInvalidParams, "unknown config option: "+p.ConfigID)
 	}
-	options := a.configOptions(sess)
+	options := a.configOptions(ctx, sess)
 	(&notifier{conn: a.conn, sessionID: sess.id}).configOptions(options)
 	return SetSessionConfigOptionResult{ConfigOptions: options}, nil
+}
+
+// handleKajiCodeRefreshModels re-runs provider model discovery for a session and
+// re-emits config_option_update, mirroring the TUI's "refresh models" affordance.
+// Discovery is bounded by ctx so a slow/hung provider cannot wedge the call.
+func (a *Agent) handleKajiCodeRefreshModels(ctx context.Context, params json.RawMessage) (any, error) {
+	var p KajiCodeRefreshModelsParams
+	if err := json.Unmarshal(params, &p); err != nil {
+		return nil, RPCError(codeInvalidParams, "invalid _kajicode/refresh_models params")
+	}
+	sess := a.session(p.SessionID)
+	if sess == nil {
+		return nil, RPCError(codeInvalidParams, "unknown session: "+p.SessionID)
+	}
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	sess.mu.Lock()
+	sess.modelLoaded = false
+	sess.mu.Unlock()
+	options := a.configOptions(ctx, sess)
+	(&notifier{conn: a.conn, sessionID: sess.id}).configOptions(options)
+	return KajiCodeRefreshModelsResult{ConfigOptions: options}, nil
 }
 
 func (a *Agent) handleKajiCodeSetModel(_ context.Context, params json.RawMessage) (any, error) {
@@ -831,7 +904,7 @@ func (a *Agent) handleKajiCodeSetModel(_ context.Context, params json.RawMessage
 		return nil, RPCError(codeInvalidParams, "unknown session: "+p.SessionID)
 	}
 	sess.setModel(strings.TrimSpace(p.Model))
-	(&notifier{conn: a.conn, sessionID: sess.id}).configOptions(a.configOptions(sess))
+	(&notifier{conn: a.conn, sessionID: sess.id}).configOptions(a.configOptions(context.Background(), sess))
 	return KajiCodeSetModelResult{Model: p.Model}, nil
 }
 
@@ -864,40 +937,71 @@ func (a *Agent) modeState(s *acpSession) *SessionModeState {
 
 // configOptions returns the full set of session config selectors, in priority
 // order, with their current values.
-func (a *Agent) configOptions(sess *acpSession) []SessionConfigOption {
+func (a *Agent) configOptions(ctx context.Context, sess *acpSession) []SessionConfigOption {
 	model := sess.currentModel()
-	values := a.modelValues(sess)
+	values := a.modelValues(ctx, sess)
 	if model == "" && len(values) > 0 {
 		model = values[0].Value
 	}
-	options := []SessionConfigOption{
+	return []SessionConfigOption{
 		selectOption(configIDModel, "Model", "Active model for this session.", configCategoryModel, model, values),
 		selectOption(configIDMode, "Permissions", "How tool calls are authorized.", configCategoryMode, string(sess.currentMode()), permissionModeValues()),
 		selectOption(configIDEffort, "Reasoning effort", "Reasoning effort for supported models.", configCategoryThought, effortValue(sess.effort()), effortValues()),
-		selectOption(configIDTurns, "Turn budget", "Maximum tool turns per prompt.", "_kajicode", strconv.Itoa(a.turnBudget(sess)), turnValues(a.turnBudget(sess))),
-		selectOption(configIDStyle, "Response style", "Reply style directive.", "_kajicode", styleValue(sess.responseStyle()), styleValues()),
+		selectOption(configIDTurns, "Turn budget", "Maximum tool turns per prompt.", configCategoryKajicode, strconv.Itoa(a.turnBudget(sess)), turnValues(a.turnBudget(sess))),
+		selectOption(configIDStyle, "Response style", "Reply style directive.", configCategoryKajicode, styleValue(sess.responseStyle()), styleValues()),
+		selectOption(configIDSelfCorrect, "Self-correction", "Post-edit verify-and-correct depth.", configCategoryKajicode, selfCorrectValue(sess.selfCorrect()), selfCorrectValues()),
+		selectOption(configIDProfile, "Execution profile", "Loop posture: turn budget, effort, self-correction.", configCategoryKajicode, profileValue(sess.execProfile()), profileValues()),
 	}
-	return options
 }
 
-// modelValues lists the provider-qualified model ids available to switch to. The
-// resolved model is always included first so the option has a valid default.
-func (a *Agent) modelValues(sess *acpSession) []SessionConfigOptionValue {
+// modelValues lists the model ids a session can switch to. It asks the agent for
+// the provider's live/discovered model list (falling back to the static
+// catalog), so the selector offers the same set the TUI picker does rather than
+// only the single model in the resolved config. The session's current model is
+// always included so the option has a valid default.
+func (a *Agent) modelValues(ctx context.Context, sess *acpSession) []SessionConfigOptionValue {
+	values := a.sessionModelValues(ctx, sess)
+	out := make([]SessionConfigOptionValue, 0, len(values)+3)
 	seen := map[string]bool{}
-	values := []SessionConfigOptionValue{}
 	add := func(model string) {
 		if model == "" || seen[model] {
 			return
 		}
 		seen[model] = true
-		values = append(values, SessionConfigOptionValue{Value: model, Name: model})
+		out = append(out, SessionConfigOptionValue{Value: model, Name: model})
+	}
+	add(sess.currentModel())
+	for _, value := range values {
+		add(value.Value)
 	}
 	add(sess.resolved.Provider.Model)
-	add(sess.currentModel())
-	for _, p := range sess.resolved.Providers {
-		add(p.Model)
-	}
 	add(sess.resolved.DefaultModel)
+	return out
+}
+
+// sessionModelValues returns the session's discovered model list, probing the
+// provider at most once per session (or after a refresh_models). The probe is
+// network I/O, so caching keeps config-option emissions cheap and cancels the
+// repeated live probes find in the TUI picker via its own per-provider cache.
+func (a *Agent) sessionModelValues(ctx context.Context, sess *acpSession) []SessionConfigOptionValue {
+	sess.mu.Lock()
+	if sess.modelLoaded {
+		cached := sess.modelCache
+		sess.mu.Unlock()
+		return cached
+	}
+	sess.mu.Unlock()
+	if a.deps.DiscoverModels == nil {
+		return nil
+	}
+	values, err := a.deps.DiscoverModels(ctx, sess.resolved.Provider)
+	if err != nil {
+		values = nil
+	}
+	sess.mu.Lock()
+	sess.modelCache = values
+	sess.modelLoaded = true
+	sess.mu.Unlock()
 	return values
 }
 
@@ -916,7 +1020,7 @@ func (a *Agent) advertise(note *notifier, sess *acpSession) {
 	if len(a.deps.Commands) > 0 {
 		note.availableCommands(a.deps.Commands)
 	}
-	note.configOptions(a.configOptions(sess))
+	note.configOptions(a.configOptions(context.Background(), sess))
 }
 
 // replayHistory re-emits a stored conversation as session/update chunks so a
@@ -1271,6 +1375,30 @@ func (s *acpSession) turnBudget() int {
 	return s.turns
 }
 
+func (s *acpSession) setSelfCorrect(depth string) {
+	s.mu.Lock()
+	s.selfCorrectDepth = depth
+	s.mu.Unlock()
+}
+
+func (s *acpSession) selfCorrect() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.selfCorrectDepth
+}
+
+func (s *acpSession) setExecProfile(name string) {
+	s.mu.Lock()
+	s.execProfileName = name
+	s.mu.Unlock()
+}
+
+func (s *acpSession) execProfile() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.execProfileName
+}
+
 func (s *acpSession) setResponseStyle(style string) {
 	s.mu.Lock()
 	s.style = style
@@ -1293,4 +1421,40 @@ func (s *acpSession) snapshotHistory() []turnRecord {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return append([]turnRecord(nil), s.history...)
+}
+
+// buildSelfCorrect returns the self-corrector for a session's chosen depth plus
+// a cleanup func that tears down any language-server session it spawned. It
+// stays disabled (nil, no-op cleanup) for the default "off"/"" depth so the loop
+// is unchanged, mirroring newExecSelfCorrector in the exec surface.
+func (a *Agent) buildSelfCorrect(sess *acpSession, armProfile bool) (*agent.SelfCorrector, func(context.Context, string) string, func()) {
+	depth := sess.selfCorrect()
+	manager := lsp.NewManager(sess.cwd)
+	cleanup := func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = manager.Shutdown(ctx)
+	}
+	fileDiagnostics := agent.NewFileDiagnostics(manager, sess.cwd)
+	if depth == "" || depth == "off" {
+		if !armProfile {
+			return nil, fileDiagnostics, cleanup
+		}
+		// A profile (e.g. thorough) arms the full self-correction loop.
+		depth = "full"
+	}
+	includeTests := depth == "tests" || depth == "full"
+	includeLSP := depth == "on" || depth == "full"
+	corrector := agent.NewSelfCorrector(
+		sess.cwd,
+		agent.NewLSPDiagnosticsChecker(manager),
+		agent.NewProjectVerifier(sess.cwd),
+		agent.SelfCorrectConfig{
+			Enabled:      true,
+			IncludeTests: includeTests,
+			IncludeLSP:   includeLSP,
+			Autonomy:     "medium",
+		},
+	)
+	return corrector, fileDiagnostics, cleanup
 }

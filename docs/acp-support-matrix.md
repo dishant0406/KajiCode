@@ -9,7 +9,8 @@ against **every** ACP schema that exists, not just v1 stable.
 - **KajiCode speaks:** `protocolVersion: 1` (`internal/acp/types.go:7`).
 - **Method counts (from schema `x-method`):** v1 stable **25**, v1 unstable
   **42**, v2 stable **16**, v2 unstable **33**.
-- **Status:** `[ ]` not started · `[~]` in progress · `[x]` done · `[n/a]` deliberately out of scope.
+- **Status:** `[ ]` not started · `[~]` in progress · `[x]` done (real ACP control) ·
+  `[=]` informational (text command; the CLI only prints) · `[n/a]` deliberately out of scope.
 - **Last verified against code:** shipped — v1 stable client→agent and the
   update variants it depends on are implemented and covered by
   `internal/acp/lifecycle_test.go`; verified live via the §0 harness.
@@ -373,44 +374,44 @@ Source: `internal/tui/commands.go:81-370`. "Mechanism" = simplest correct exposu
 
 | Command | Kind | Behaves as | Best ACP mechanism | Status |
 |---------|------|-----------|--------------------|--------|
-| `/model` | picker | mutate model | `configOptions` `category:model` | `[ ]` |
-| `/provider` | modal | provider CRUD | vendor `_kajicode/provider/*` | `[ ]` |
-| `/permissions` | picker | permission profile | `configOptions` `category:mode` | `[ ]` |
-| `/effort` | picker | reasoning effort | `configOptions` `category:thought_level` | `[ ]` |
-| `/profile` | text | exec profile | `configOptions` (custom) or command | `[ ]` |
-| `/selfcorrect` | text | self-correct depth | command / `configOptions` | `[ ]` |
-| `/turns` | text | turn budget | `configOptions` or command | `[ ]` |
-| `/style` | modal | response style | command (`/style concise`) | `[ ]` |
+| `/model` | picker | mutate model | `configOptions` `model` (full discovered list + `_kajicode/refresh_models`) | `[x]` |
+| `/provider` | modal | provider CRUD | `providers/*` (unstable) + `/add-provider` elicitation; wizard is modal | `[x]` |
+| `/permissions` | picker | permission profile | `configOptions` `mode` | `[x]` |
+| `/effort` | picker | reasoning effort | `configOptions` `effort` | `[x]` |
+| `/profile` | text | exec profile | `configOptions` `profile` | `[x]` |
+| `/selfcorrect` | text | self-correct depth | `configOptions` `selfcorrect` | `[x]` |
+| `/turns` | text | turn budget | `configOptions` `turns` | `[x]` |
+| `/style` | modal | response style | `configOptions` `style` | `[x]` |
 | `/theme` | picker | TUI theme | client-owned (editor theme) | `[n/a]` |
-| `/add-dir` | text | write roots | command; ties to `sessionCapabilities.additionalDirectories` | `[ ]` |
+| `/add-dir` | text | write roots | `sessionCapabilities.additionalDirectories` (confined to cwd) | `[x]` |
 | `/compact` | text | compaction | command `/compact` (session-scoped) | `[x]` |
-| `/init` | agent turn | write AGENTS.md | command `/init` | `[ ]` |
-| `/resume` | picker | load session | native `session/list`+`session/load` | `[ ]` |
-| `/new` | text | new session | native `session/new` (+`session/close`) | `[ ]` |
+| `/init` | agent turn | write AGENTS.md | prompt `/init` (it is just a seeded agent turn) | `[x]` |
+| `/resume` | picker | load session | native `session/list`+`session/load` | `[x]` |
+| `/new` | text | new session | native `session/new` (+`session/close`) | `[x]` |
 | `/retitle` | text | generate titles | session command + `session_info_update` | `[x]` |
 | `/export` | text | export transcript | session command `/export` (prints) | `[x]` |
-| `/thread` | modal | browse/revert | vendor `_kajicode/thread/*` (rewind exists) | `[ ]` |
-| `/btw` | text | side conversation | vendor `_kajicode/session/btw` | `[ ]` |
-| `/loop` | text | interval loop | vendor `_kajicode/loop/*` | `[ ]` |
+| `/thread` | modal | browse/revert | picker modal; `sessions rewind` is the headless core | `[n/a]` |
+| `/btw` | text | side conversation | TUI surface-state swap | `[n/a]` |
+| `/loop` | text | interval loop | driven by the TUI idle ticker | `[n/a]` |
 | `/image` | text | attach image | native prompt `image` ContentBlock | `[x]` |
-| `/search`, `/find` | text | search events | vendor `_kajicode/session/search` | `[ ]` |
-| `/mcp`, `/mcp-status` | modal | MCP config | vendor `_kajicode/mcp/*` | `[ ]` |
-| `/skills` | picker | list/run skills | command (skill name) + `available_commands_update` | `[ ]` |
-| `/tools` | text | list tools | command `/tools` (text result) | `[ ]` |
-| `/harness` | text | prompt addenda/rules | vendor `_kajicode/harness/*` | `[ ]` |
-| `/prompt` | modal | prompt snippet | vendor `_kajicode/prompt/*` | `[ ]` |
-| `/prompt-inspect` | text | prompt report | command (text result) | `[ ]` |
-| `/web-search` | form | credentials | vendor `_kajicode/websearch/*` or `elicitation` | `[ ]` |
-| `/doctor` | text | diagnostics | command (text result) | `[ ]` |
-| `/config` | text | show config | command (text result) | `[ ]` |
-| `/context` | text | context card | command (text result) | `[ ]` |
-| `/ps`, `/stop` | text | bg terminals | vendor `_kajicode/terminal/*` | `[ ]` |
-| `/sandbox-setup` | subprocess | sandbox setup | command | `[ ]` |
-| `/help` | text | help | client renders `available_commands_update` | `[ ]` |
+| `/search`, `/find` | text | search events | `[=]` (CLI `search` needs a query; no ACP method) | `[=]` |
+| `/mcp`, `/mcp-status` | modal | MCP config | command `/mcp` (status); manager is a modal | `[=]` |
+| `/skills` | picker | list/run skills | command `/skills`; picker is TUI-only | `[=]` |
+| `/tools` | text | list tools | command `/tools` | `[=]` |
+| `/harness` | text | prompt addenda/rules | command `/harness` (CLI mutates; text summaries over ACP) | `[=]` |
+| `/prompt` | modal | prompt snippet | editor modal; no headless path | `[n/a]` |
+| `/prompt-inspect` | text | prompt report | command `/prompt` | `[=]` |
+| `/web-search` | form | credentials | writes shell env; secrets must not cross ACP | `[n/a]` |
+| `/doctor` | text | diagnostics | command `/doctor` | `[=]` |
+| `/config` | text | show config | command `/config` (CLI is print-only; `/config recaps` has no CLI path) | `[=]` |
+| `/context` | text | context card | command `/context` | `[=]` |
+| `/ps`, `/stop` | text | bg terminals | no headless registry API; TUI-only | `[n/a]` |
+| `/sandbox-setup` | subprocess | sandbox setup | CLI `sandbox setup`; not exposed as an ACP command yet | `[ ]` |
+| `/help` | text | help | client renders `available_commands_update` | `[x]` |
 | `/clear`, `/transcript` | presentation | TUI view only | editor-owned UI | `[n/a]` |
-| `/debug` | text | debug status | command (text result) | `[ ]` |
+| `/debug` | text | debug status | `[=]` (no CLI command; TUI view only) | `[=]` |
 | `/retry` | text | resend prompt | client can resend | `[n/a]` |
-| `/exit`, `/quit` | meta | quit | native `session/close` | `[ ]` |
+| `/exit`, `/quit` | meta | quit | native `session/close` | `[x]` |
 | `!cmd` | bash escape | run shell | unsafe-only, local | `[n/a]` |
 
 ### 12.2 Runtime knobs → config options (native pickers)
@@ -428,6 +429,20 @@ All read from `config.PreferencesConfig` / `agent.Options`.
 | turns budget | `agent.Options.MaxTurns` (`types.go:294`) | `turns` | `_kajicode` | select |
 | response style | `agent.Options.ResponseStyle` (`types.go:333`) | `style` | `_kajicode` | select |
 | recaps | `PreferencesConfig.Recaps` | `recaps` | `_kajicode` | boolean |
+| self-correct depth | `/selfcorrect` | `selfcorrect` | `_kajicode` | select |
+| execution profile | `internal/execprofile` | `profile` | `_kajicode` | select |
+
+The **model** selector lists the provider's full model set: ACP calls
+`Deps.DiscoverModels` (wired to the same `deps.discoverProviderModels` probe +
+`providermodelcatalog` fallback the TUI picker and `kajicode providers models`
+use), so it offers every served model rather than only the one in resolved
+config. `_kajicode/refresh_models` re-runs discovery and re-emits
+`config_option_update`, mirroring the TUI refresh affordance.
+
+**Print-only vs mutating.** A command is exposed as an ACP *control* only when
+the CLI actually mutates state. Commands that merely print in the CLI stay text
+commands; informational rows are marked `[=]`. Mutating TUI commands with no
+mutating CLI path are `[]` (not faked).
 
 ### 12.3 CLI subcommands
 
@@ -472,3 +487,17 @@ or command for a subsystem, both are covered.
   methods are capability-gated; always provide a working default.
 - **Security:** never expose `unsafe` permission mode or `!cmd` over the wire
   (matches today's `handleSetMode` refusal, `agent.go:367`).
+
+### 12.6 Status summary (after the model/knob work)
+
+- **Real ACP controls** (`[x]`): model (full discovered list +
+  `_kajicode/refresh_models`), permissions, effort, turns, style, self-correct,
+  execution profile, add-dir, session lifecycle (new/list/load/resume/close/
+  delete/fork), retitle/compact/export, add-provider, `/init`, `/help`.
+- **Informational text commands** (`[=]`): the CLI only prints for these, so they
+  stay text: `config`, `context`, `tools`, `skills`, `harness`, `mcp`,
+  `prompt`, `debug`, `search`. Deliberately not faked as controls.
+- **Out of scope** (`[n/a]`): editor-owned or TUI-only state — `theme`, `clear`,
+  `transcript`, `retry`, `btw`, `loop`, `thread`, `prompt` editor, `web-search`
+  credentials (secrets must not cross ACP), `ps`/`stop` (no headless registry),
+  `!cmd` (unsafe-local).

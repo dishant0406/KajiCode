@@ -4,6 +4,7 @@ import (
 	"strconv"
 
 	"github.com/dishant0406/KajiCode/internal/agent"
+	"github.com/dishant0406/KajiCode/internal/execprofile"
 )
 
 // Value catalogs for the session config selectors. KajiCode exposes the knobs
@@ -85,4 +86,54 @@ func styleValue(current string) string {
 		return "balanced"
 	}
 	return current
+}
+
+// selfCorrectValues lists the post-edit self-correction depths. off (the
+// default) leaves the agent loop byte-identical; the others arm the verifier.
+func selfCorrectValues() []SessionConfigOptionValue {
+	return []SessionConfigOptionValue{
+		{Value: "off", Name: "Off", Description: "No post-edit verification."},
+		{Value: "on", Name: "On", Description: "Verify and correct after edits."},
+		{Value: "tests", Name: "On (tests)", Description: "Also run the project test plan."},
+		{Value: "full", Name: "Full", Description: "Tests + language diagnostics."},
+	}
+}
+
+func selfCorrectValue(current string) string {
+	if current == "" {
+		return "off"
+	}
+	return current
+}
+
+func validSelfCorrect(depth string) bool {
+	switch depth {
+	case "off", "on", "tests", "full":
+		return true
+	default:
+		return false
+	}
+}
+
+// profileValues lists the execution profiles the loop can adopt.
+func profileValues() []SessionConfigOptionValue {
+	names := execprofile.Names()
+	values := make([]SessionConfigOptionValue, 0, len(names)+1)
+	values = append(values, SessionConfigOptionValue{Value: "", Name: "Default"})
+	for _, name := range names {
+		values = append(values, SessionConfigOptionValue{Value: name, Name: name})
+	}
+	return values
+}
+
+func profileValue(current string) string {
+	return current
+}
+
+func validProfile(name string) bool {
+	if name == "" {
+		return true
+	}
+	_, ok := execprofile.Lookup(name)
+	return ok
 }
