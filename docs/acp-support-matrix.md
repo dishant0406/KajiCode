@@ -115,24 +115,32 @@ advertises the full capability set; `session/new` returns `configOptions`;
 > There is **no `session/set_model`** in ACP. Model selection = config option
 > with `category:"model"`.
 
-### 1B. v1 unstable (agent-side adds; opt in per PR)
+### 1B. v1 unstable — IMPLEMENTED
+
+All six `document/*` notifications, the five `nes/*` methods, and the three
+`providers/*` methods are implemented (`internal/acp/unstable.go`, wired in
+`internal/cli/acp_unstable.go`). `initialize` advertises `providers`, `nes`
+(with `events.document`, full sync), and `positionEncoding: utf-8`. NES is
+provider-backed: `nes/suggest` runs the active model over the session's buffered
+document. Clients that don't speak these ignore the capability and never call
+them (Zed currently implements none of them).
 
 | # | Method | Status | Notes |
 |---|--------|--------|-------|
 | 1.15 | `session/fork` | `[x]` | `handleSessionFork` → `Store.Fork`; gated by `sessionCapabilities.fork` |
-| 1.16 | `document/didOpen` (notif) | `[ ]` | editor→agent doc sync |
-| 1.17 | `document/didChange` (notif) | `[ ]` | |
-| 1.18 | `document/didClose` (notif) | `[ ]` | |
-| 1.19 | `document/didSave` (notif) | `[ ]` | |
-| 1.20 | `document/didFocus` (notif) | `[ ]` | |
-| 1.21 | `providers/list` | `[n/a]` | KajiCode owns providers (BYOK); unstable |
-| 1.22 | `providers/set` | `[n/a]` | unstable |
-| 1.23 | `providers/disable` | `[n/a]` | unstable |
-| 1.24 | `nes/start` | `[n/a]` | Next Edit Suggestions — out of scope |
-| 1.25 | `nes/suggest` | `[n/a]` | out of scope |
-| 1.26 | `nes/accept` (notif) | `[n/a]` | out of scope |
-| 1.27 | `nes/reject` (notif) | `[n/a]` | out of scope |
-| 1.28 | `nes/close` | `[n/a]` | out of scope |
+| 1.16 | `document/didOpen` (notif) | `[x]` | buffer stored per session; `nes.events.document` advertised |
+| 1.17 | `document/didChange` (notif) | `[x]` | full sync (also applies range edits) |
+| 1.18 | `document/didClose` (notif) | `[x]` | drops the buffer |
+| 1.19 | `document/didSave` (notif) | `[x]` | accepted (no-op; buffer already current) |
+| 1.20 | `document/didFocus` (notif) | `[x]` | cursor recorded |
+| 1.21 | `providers/list` | `[x]` | lists profiles + active routing config (never the key) |
+| 1.22 | `providers/set` | `[x]` | switches the active provider (`providers use`) |
+| 1.23 | `providers/disable` | `[x]` | switches off the disabled provider (refuses if it is the only one) |
+| 1.24 | `nes/start` | `[x]` | accepted |
+| 1.25 | `nes/suggest` | `[x]` | provider-backed single-edit suggestion from the buffered doc |
+| 1.26 | `nes/accept` (notif) | `[x]` | accepted |
+| 1.27 | `nes/reject` (notif) | `[x]` | accepted |
+| 1.28 | `nes/close` | `[x]` | accepted |
 
 ### 1C. v2 (future track — do NOT implement now)
 
@@ -201,9 +209,9 @@ advertises the full capability set; `session/new` returns `configOptions`;
 | # | Field | Status |
 |---|-------|--------|
 | 4.14 | `sessionCapabilities.fork` | `[x]` | advertised |
-| 4.15 | `providers` capability | `[n/a]` |
-| 4.16 | `nes` capability | `[n/a]` |
-| 4.17 | `positionEncoding` | `[ ]` |
+| 4.15 | `providers` capability | `[x]` | advertised |
+| 4.16 | `nes` capability | `[x]` | advertised with `events.document` (full sync) |
+| 4.17 | `positionEncoding` | `[x]` | `utf-8` |
 
 ## 5. `session/update` variants
 

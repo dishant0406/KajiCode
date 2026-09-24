@@ -66,6 +66,7 @@ func testDeps(t *testing.T) Deps {
 // session/update text chunks.
 type clientHarness struct {
 	client  *Conn
+	agent   *Agent
 	updates chan string
 	stop    func()
 }
@@ -78,7 +79,7 @@ func newHarness(t *testing.T, deps Deps) *clientHarness {
 	client := NewConn(br, bw)
 	a := NewAgent(agentConn, deps)
 
-	h := &clientHarness{client: client, updates: make(chan string, 128)}
+	h := &clientHarness{client: client, agent: a, updates: make(chan string, 128)}
 	client.HandleNotify(MethodSessionUpdate, func(_ context.Context, params json.RawMessage) {
 		var probe struct {
 			Update struct {

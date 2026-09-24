@@ -65,6 +65,16 @@ type Deps struct {
 	// passed here (form elicitation must not carry secrets). It returns a
 	// human-readable summary. nil disables the provider-add flow.
 	ProviderAdd func(ctx context.Context, fields map[string]string) (string, error)
+	// SuggestNes produces a next-edit suggestion for one buffered document.
+	// nil means nes/suggest returns an empty suggestion list.
+	SuggestNes func(ctx context.Context, input NesSuggestInput) (*NesEditSuggestion, error)
+	// ListProviders returns the configured providers (non-secret routing config).
+	// nil means providers/list returns an empty list.
+	ListProviders func() ([]ProviderInfo, error)
+	// SetProvider applies a non-secret routing config for a provider.
+	SetProvider func(providerID, apiType, baseURL string, headers map[string]string) error
+	// DisableProvider disables a provider.
+	DisableProvider func(providerID string) error
 }
 
 // Workspace is the per-session toolkit ACP runs a turn against: the scoped tool
@@ -114,6 +124,9 @@ type acpSession struct {
 	style       string // response style override; "" => balanced
 	cancel      context.CancelFunc
 	history     []turnRecord
+
+	// v1-unstable editor->agent document sync: the last-known buffer per URI.
+	docs map[string]acpDocument
 }
 
 // NewAgent builds the ACP server and registers its method handlers on conn.
@@ -133,7 +146,20 @@ func NewAgent(conn *Conn, deps Deps) *Agent {
 	conn.Handle(MethodSessionSetMode, a.handleSetMode)
 	conn.Handle(MethodSessionSetConfigOption, a.handleSetConfigOption)
 	conn.Handle(MethodKajiCodeSetModel, a.handleKajiCodeSetModel)
+	conn.Handle(MethodNesStart, a.handleNesStart)
+	conn.Handle(MethodNesSuggest, a.handleNesSuggest)
+	conn.Handle(MethodNesClose, a.handleNesClose)
+	conn.Handle(MethodProvidersList, a.handleProvidersList)
+	conn.Handle(MethodProvidersSet, a.handleProvidersSet)
+	conn.Handle(MethodProvidersDisable, a.handleProvidersDisable)
 	conn.HandleNotify(MethodSessionCancel, a.handleCancel)
+	conn.HandleNotify(MethodDocumentDidOpen, a.handleDidOpen)
+	conn.HandleNotify(MethodDocumentDidChange, a.handleDidChange)
+	conn.HandleNotify(MethodDocumentDidClose, a.handleDidClose)
+	conn.HandleNotify(MethodDocumentDidSave, a.handleDidSave)
+	conn.HandleNotify(MethodDocumentDidFocus, a.handleDidFocus)
+	conn.HandleNotify(MethodNesAccept, a.handleNesAccept)
+	conn.HandleNotify(MethodNesReject, a.handleNesReject)
 	return a
 }
 
@@ -188,6 +214,18 @@ func (a *Agent) handleInitialize(_ context.Context, params json.RawMessage) (any
 				AdditionalDirectories: &struct{}{},
 			},
 			Auth: authCaps,
+			// v1 unstable: advertise provider config and NES document events.
+			Providers: &struct{}{},
+			Nes: &NesCapabilities{Events: &NesEventCapabilities{
+				Document: &NesDocumentEventCapabilities{
+					DidOpen:   &struct{}{},
+					DidChange: &NesDidChangeCapabilities{SyncKind: "full"},
+					DidClose:  &struct{}{},
+					DidSave:   &struct{}{},
+					DidFocus:  &struct{}{},
+				},
+			}},
+			PositionEncoding: "utf-8",
 		},
 		AgentInfo: &info,
 		// KAJICODE owns credentials (BYOK): it advertises login methods for its

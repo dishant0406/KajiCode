@@ -80,6 +80,10 @@ func runACP(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) int
 		Authenticate:         acpAuthenticate(),
 		Logout:               acpLogout(deps),
 		ProviderAdd:          acpProviderAdd(deps),
+		SuggestNes:           acpSuggestNes(deps),
+		ListProviders:        acpListProviders(deps),
+		SetProvider:          acpSetProvider(deps),
+		DisableProvider:      acpDisableProvider(deps),
 	})
 
 	ctx, stop := signalContext()

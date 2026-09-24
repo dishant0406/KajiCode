@@ -26,6 +26,23 @@ const (
 	MethodSessionRequestPerm     = "session/request_permission" // agent -> client
 	MethodElicitationCreate      = "elicitation/create"         // agent -> client
 
+	// v1 unstable: editor->agent document sync + next edit suggestions.
+	MethodDocumentDidOpen   = "document/didOpen"
+	MethodDocumentDidChange = "document/didChange"
+	MethodDocumentDidClose  = "document/didClose"
+	MethodDocumentDidSave   = "document/didSave"
+	MethodDocumentDidFocus  = "document/didFocus"
+	MethodNesStart          = "nes/start"
+	MethodNesSuggest        = "nes/suggest"
+	MethodNesAccept         = "nes/accept"
+	MethodNesReject         = "nes/reject"
+	MethodNesClose          = "nes/close"
+
+	// v1 unstable: provider configuration.
+	MethodProvidersList    = "providers/list"
+	MethodProvidersSet     = "providers/set"
+	MethodProvidersDisable = "providers/disable"
+
 	// Vendor-prefixed KAJICODE extensions (clients that don't support them ignore the
 	// method and degrade cleanly, per the spec's _-prefixed convention).
 	MethodKajiCodeSetModel = "_kajicode/set_model"
@@ -146,6 +163,34 @@ type AgentCapabilities struct {
 	McpCapabilities     McpCapabilities       `json:"mcpCapabilities"`
 	SessionCapabilities SessionCapabilities   `json:"sessionCapabilities"`
 	Auth                AgentAuthCapabilities `json:"auth"`
+	// v1 unstable additions.
+	Providers        *struct{}        `json:"providers,omitempty"`
+	Nes              *NesCapabilities `json:"nes,omitempty"`
+	PositionEncoding string           `json:"positionEncoding,omitempty"`
+}
+
+// NesCapabilities advertises that KajiCode wants document events for next-edit
+// suggestions. Only `events.document` is set (with full, utf-8 sync).
+type NesCapabilities struct {
+	Events *NesEventCapabilities `json:"events,omitempty"`
+}
+
+type NesEventCapabilities struct {
+	Document *NesDocumentEventCapabilities `json:"document,omitempty"`
+}
+
+type NesDocumentEventCapabilities struct {
+	DidOpen   *struct{}                 `json:"didOpen,omitempty"`
+	DidChange *NesDidChangeCapabilities `json:"didChange,omitempty"`
+	DidClose  *struct{}                 `json:"didClose,omitempty"`
+	DidSave   *struct{}                 `json:"didSave,omitempty"`
+	DidFocus  *struct{}                 `json:"didFocus,omitempty"`
+}
+
+// NesDidChangeCapabilities requires the sync kind. KajiCode advertises "full":
+// every didChange carries the whole document, so it needs no range arithmetic.
+type NesDidChangeCapabilities struct {
+	SyncKind string `json:"syncKind"`
 }
 
 // AuthMethod is either an agent-type method (KajiCode handles the login via
@@ -580,3 +625,156 @@ type DeleteSessionParams struct {
 }
 
 type DeleteSessionResult struct{}
+
+// ---- v1 unstable: editor->agent document sync (gated by nes.events.document) ----
+
+// Position is a zero-based line/character position (LSP-shaped). With the
+// utf-8 position encoding KajiCode advertises, character is a byte offset.
+type Position struct {
+	Line      int `json:"line"`
+	Character int `json:"character"`
+}
+
+type Range struct {
+	Start Position `json:"start"`
+	End   Position `json:"end"`
+}
+
+type TextDocumentContentChangeEvent struct {
+	Range *Range `json:"range,omitempty"`
+	Text  string `json:"text"`
+}
+
+type DidOpenDocumentParams struct {
+	SessionID  string `json:"sessionId"`
+	URI        string `json:"uri"`
+	LanguageID string `json:"languageId"`
+	Version    int    `json:"version"`
+	Text       string `json:"text"`
+}
+
+type DidChangeDocumentParams struct {
+	SessionID      string                           `json:"sessionId"`
+	URI            string                           `json:"uri"`
+	Version        int                              `json:"version"`
+	ContentChanges []TextDocumentContentChangeEvent `json:"contentChanges"`
+}
+
+type DidCloseDocumentParams struct {
+	SessionID string `json:"sessionId"`
+	URI       string `json:"uri"`
+}
+
+type DidSaveDocumentParams struct {
+	SessionID string `json:"sessionId"`
+	URI       string `json:"uri"`
+}
+
+type DidFocusDocumentParams struct {
+	SessionID    string   `json:"sessionId"`
+	URI          string   `json:"uri"`
+	Version      int      `json:"version"`
+	Position     Position `json:"position"`
+	VisibleRange Range    `json:"visibleRange"`
+}
+
+// ---- v1 unstable: next edit suggestions ----
+
+type StartNesParams struct {
+	WorkspaceURI     string   `json:"workspaceUri,omitempty"`
+	WorkspaceFolders []string `json:"workspaceFolders,omitempty"`
+	Repository       any      `json:"repository,omitempty"`
+}
+
+type StartNesResult struct{}
+
+type SuggestNesParams struct {
+	SessionID   string      `json:"sessionId"`
+	URI         string      `json:"uri"`
+	Version     int         `json:"version"`
+	Position    Position    `json:"position"`
+	Selection   *Range      `json:"selection,omitempty"`
+	TriggerKind string      `json:"triggerKind"`
+	Context     *NesContext `json:"context,omitempty"`
+}
+
+// NesContext mirrors the client-supplied context. KajiCode does not request any
+// context capability, so these are accepted for shape compliance and unused.
+type NesContext struct {
+	RecentFiles     []string `json:"recentFiles,omitempty"`
+	RelatedSnippets []string `json:"relatedSnippets,omitempty"`
+	EditHistory     []string `json:"editHistory,omitempty"`
+	UserActions     []string `json:"userActions,omitempty"`
+	OpenFiles       []string `json:"openFiles,omitempty"`
+	Diagnostics     []string `json:"diagnostics,omitempty"`
+}
+
+type NesTextEdit struct {
+	Range   Range  `json:"range"`
+	NewText string `json:"newText"`
+}
+
+type NesEditSuggestion struct {
+	ID             string        `json:"id"`
+	URI            string        `json:"uri"`
+	Edits          []NesTextEdit `json:"edits"`
+	CursorPosition *Position     `json:"cursorPosition,omitempty"`
+}
+
+// NesSuggestion is a tagged union on the presence of the fields the spec's
+// variants use; KajiCode only emits NesEditSuggestion.
+type NesSuggestion = NesEditSuggestion
+
+type SuggestNesResult struct {
+	Suggestions []NesSuggestion `json:"suggestions"`
+}
+
+type AcceptNesParams struct {
+	SessionID string `json:"sessionId"`
+	ID        string `json:"id"`
+}
+
+type RejectNesParams struct {
+	SessionID string `json:"sessionId"`
+	ID        string `json:"id"`
+	Reason    string `json:"reason,omitempty"`
+}
+
+type CloseNesParams struct {
+	SessionID string `json:"sessionId"`
+}
+
+// ---- v1 unstable: provider configuration ----
+
+type ProviderInfo struct {
+	ProviderID string               `json:"providerId"`
+	Supported  []string             `json:"supported"`
+	Required   bool                 `json:"required"`
+	Current    *ProviderCurrentInfo `json:"current,omitempty"`
+}
+
+type ProviderCurrentInfo struct {
+	APIType string `json:"apiType"`
+	BaseURL string `json:"baseUrl"`
+}
+
+type ListProvidersResult struct {
+	Providers []ProviderInfo `json:"providers"`
+}
+
+type SetProviderParams struct {
+	ProviderID string            `json:"providerId"`
+	APIType    string            `json:"apiType"`
+	BaseURL    string            `json:"baseUrl"`
+	Headers    map[string]string `json:"headers,omitempty"`
+}
+
+type SetProviderResult struct{}
+
+type DisableProviderParams struct {
+	ProviderID string `json:"providerId"`
+}
+
+type DisableProviderResult struct{}
+
+type CloseNesResult struct{}
