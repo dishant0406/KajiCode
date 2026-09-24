@@ -73,6 +73,7 @@ func acpCommandSpecs() []acpCommandSpec {
 		{name: "sandbox-setup", description: "Run native sandbox setup for this platform.", run: runSandboxSetup},
 		{name: "web-search", description: "Configure web-search credentials (status/set/remove).", hint: "status", baseArgs: []string{"status"}, run: runWebSearch},
 		{name: "add-provider", description: "Add or update a provider (name, base URL, API key).", session: true},
+		{name: "refresh-models", description: "Re-discover every provider's models and refresh the model selector.", session: true},
 		{name: "retitle", description: "Generate a concise title for this session.", session: true},
 		{name: "compact", description: "Compact this session's history now.", session: true},
 		{name: "export", description: "Export this session's conversation as plain text.", session: true},

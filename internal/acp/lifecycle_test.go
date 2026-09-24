@@ -870,3 +870,56 @@ func TestACPRefreshModelsReemitsConfigOptions(t *testing.T) {
 	}
 	updates.waitForVariant(t, UpdateConfigOption)
 }
+
+// TestACPRefreshModelsSlashCommand proves the /refresh-models slash command — the
+// client-reachable refresh — re-runs discovery across every provider, streams a
+// summary, and re-emits config_option_update, matching the vendor method.
+func TestACPRefreshModelsSlashCommand(t *testing.T) {
+	deps := testDeps(t)
+	deps.Providers = func() []config.ProviderProfile {
+		return []config.ProviderProfile{{Name: "fake"}, {Name: "other"}}
+	}
+	calls := map[string]int{}
+	deps.DiscoverModels = func(_ context.Context, profile config.ProviderProfile) ([]SessionConfigOptionValue, error) {
+		calls[profile.Name]++
+		return []SessionConfigOptionValue{{Value: profile.Name + "-1"}}, nil
+	}
+	h, updates := newCollectorHarness(t, deps)
+	defer h.stop()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var res NewSessionResult
+	if err := h.client.Call(ctx, MethodSessionNew, NewSessionParams{Cwd: t.TempDir(), McpServers: []McpServer{}}, &res); err != nil {
+		t.Fatalf("session/new: %v", err)
+	}
+	before := calls["other"]
+	var promptRes PromptResult
+	if err := h.client.Call(ctx, MethodSessionPrompt, PromptParams{SessionID: res.SessionID, Prompt: []ContentBlock{TextBlock("/refresh-models")}}, &promptRes); err != nil {
+		t.Fatalf("session/prompt /refresh-models: %v", err)
+	}
+	if promptRes.StopReason != StopEndTurn {
+		t.Fatalf("stopReason = %q", promptRes.StopReason)
+	}
+	if calls["other"] <= before {
+		t.Fatal("/refresh-models did not re-run discovery for every provider")
+	}
+	updates.waitForVariant(t, UpdateConfigOption)
+	var summarySeen bool
+	for _, raw := range updates.rawMessages() {
+		var probe struct {
+			Update struct {
+				SessionUpdate string `json:"sessionUpdate"`
+				Content       struct {
+					Text string `json:"text"`
+				} `json:"content"`
+			} `json:"update"`
+		}
+		if json.Unmarshal(raw, &probe) == nil && strings.Contains(probe.Update.Content.Text, "Refreshed models") {
+			summarySeen = true
+		}
+	}
+	if !summarySeen {
+		t.Fatal("/refresh-models did not stream a refresh summary")
+	}
+}

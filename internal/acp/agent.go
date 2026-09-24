@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"path/filepath"
 	"strconv"
@@ -583,6 +584,13 @@ func (a *Agent) handleSessionPrompt(ctx context.Context, params json.RawMessage)
 			note.text("Retitled: " + title)
 			return PromptResult{StopReason: StopEndTurn}, nil
 		}
+		// `/refresh-models` re-runs discovery across every provider and re-emits
+		// the model selector, so an editor that cannot call the vendor
+		// _kajicode/refresh_models method still has a reachable refresh.
+		if strings.EqualFold(name, "refresh-models") {
+			note.text(a.runRefreshModels(turnCtx, sess))
+			return PromptResult{StopReason: StopEndTurn}, nil
+		}
 		// `/add-provider` collects a provider's non-secret config via an
 		// elicitation form (the native editor UI), then writes the profile through
 		// the shared CLI path. Secrets are never collected here.
@@ -990,9 +998,24 @@ func (a *Agent) handleSetConfigOption(ctx context.Context, params json.RawMessag
 	return SetSessionConfigOptionResult{ConfigOptions: options}, nil
 }
 
+// refreshModels clears the session's per-provider model cache, re-runs discovery
+// across every provider, and re-emits config_option_update. It is the shared
+// implementation behind _kajicode/refresh_models and the /refresh-models slash
+// command, so the vendor method and the client-reachable command never diverge.
+// Discovery is bounded by ctx so a slow/hung provider cannot wedge the call.
+func (a *Agent) refreshModels(ctx context.Context, sess *acpSession) []SessionConfigOption {
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	sess.mu.Lock()
+	sess.modelCache = nil
+	sess.mu.Unlock()
+	options := a.configOptions(ctx, sess)
+	(&notifier{conn: a.conn, sessionID: sess.id}).configOptions(options)
+	return options
+}
+
 // handleKajiCodeRefreshModels re-runs provider model discovery for a session and
 // re-emits config_option_update, mirroring the TUI's "refresh models" affordance.
-// Discovery is bounded by ctx so a slow/hung provider cannot wedge the call.
 func (a *Agent) handleKajiCodeRefreshModels(ctx context.Context, params json.RawMessage) (any, error) {
 	var p KajiCodeRefreshModelsParams
 	if err := json.Unmarshal(params, &p); err != nil {
@@ -1002,14 +1025,38 @@ func (a *Agent) handleKajiCodeRefreshModels(ctx context.Context, params json.Raw
 	if sess == nil {
 		return nil, RPCError(codeInvalidParams, "unknown session: "+p.SessionID)
 	}
-	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
-	defer cancel()
-	sess.mu.Lock()
-	sess.modelCache = nil
-	sess.mu.Unlock()
-	options := a.configOptions(ctx, sess)
-	(&notifier{conn: a.conn, sessionID: sess.id}).configOptions(options)
-	return KajiCodeRefreshModelsResult{ConfigOptions: options}, nil
+	return KajiCodeRefreshModelsResult{ConfigOptions: a.refreshModels(ctx, sess)}, nil
+}
+
+// runRefreshModels is the /refresh-models slash command: the same refresh the
+// vendor method performs, plus a one-line summary so an editor that cannot call
+// vendor methods still has a visible, reachable refresh affordance.
+func (a *Agent) runRefreshModels(ctx context.Context, sess *acpSession) string {
+	options := a.refreshModels(ctx, sess)
+	providers, models := countModelOptions(options)
+	if providers == 0 {
+		return "Refreshed models: no providers available."
+	}
+	return fmt.Sprintf("Refreshed models: %d provider(s), %d model(s).", providers, models)
+}
+
+// countModelOptions counts the providers and models in a config-option set's
+// model selector (grouped options), skipping the leading non-model options.
+func countModelOptions(options []SessionConfigOption) (providers, models int) {
+	for _, option := range options {
+		if option.ID != configIDModel {
+			continue
+		}
+		groups, ok := option.Options.([]ConfigOptionGroup)
+		if !ok {
+			return 0, 0
+		}
+		for _, group := range groups {
+			providers++
+			models += len(group.Options)
+		}
+	}
+	return providers, models
 }
 
 func (a *Agent) handleKajiCodeSetModel(_ context.Context, params json.RawMessage) (any, error) {

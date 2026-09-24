@@ -446,7 +446,10 @@ model with its provider (`provider\x00model`), so choosing a model from another
 provider switches the session's provider for its turns, exactly like the TUI
 picker's `switchProviderModel`. `_kajicode/refresh_models` clears every
 provider's cached list, re-runs discovery across all of them, and re-emits
-`config_option_update`, mirroring the TUI refresh affordance.
+`config_option_update`, mirroring the TUI refresh affordance. The same refresh
+is reachable without vendor-method support via the `/refresh-models` slash
+command, which streams a one-line summary ("Refreshed models: N provider(s),
+M model(s)") and re-emits the selector.
 
 **Print-only vs mutating.** A command is exposed as an ACP *control* only when
 the CLI actually mutates state. Commands that merely print in the CLI stay text
