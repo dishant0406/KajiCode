@@ -369,6 +369,50 @@ func TestSetThemePersistsUserPreference(t *testing.T) {
 	}
 }
 
+func TestSetMaxTurnsPersistsAndClamps(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "kajicode.json")
+	writeConfigFixture(t, path, FileConfig{
+		ActiveProvider: "openai",
+		Providers: []ProviderProfile{
+			{Name: "openai", ProviderKind: ProviderKindOpenAI, Model: "gpt-4.1"},
+		},
+	}, 0o600)
+
+	cfg, err := SetMaxTurns(path, 123)
+	if err != nil {
+		t.Fatalf("SetMaxTurns(123) error = %v", err)
+	}
+	if cfg.MaxTurns != 123 {
+		t.Fatalf("MaxTurns = %d, want 123", cfg.MaxTurns)
+	}
+	persisted := readConfigFixture(t, path)
+	if persisted.MaxTurns != 123 {
+		t.Fatalf("persisted MaxTurns = %d, want 123", persisted.MaxTurns)
+	}
+	if persisted.ActiveProvider != "openai" || len(persisted.Providers) != 1 {
+		t.Fatalf("provider config was not preserved by SetMaxTurns: %#v", persisted)
+	}
+
+	// Over-ceiling values are clamped to the ceiling the resolver enforces.
+	if cfg, err = SetMaxTurns(path, MaxTurnsCeiling+50); err != nil {
+		t.Fatalf("SetMaxTurns(over ceiling) error = %v", err)
+	}
+	if cfg.MaxTurns != MaxTurnsCeiling {
+		t.Fatalf("clamped MaxTurns = %d, want %d", cfg.MaxTurns, MaxTurnsCeiling)
+	}
+
+	// Non-positive values are rejected and leave the file untouched.
+	if _, err = SetMaxTurns(path, 0); err == nil {
+		t.Fatal("SetMaxTurns(0) should be rejected")
+	}
+	if _, err = SetMaxTurns(path, -5); err == nil {
+		t.Fatal("SetMaxTurns(-5) should be rejected")
+	}
+	if readConfigFixture(t, path).MaxTurns != MaxTurnsCeiling {
+		t.Fatal("rejected writes must not change the stored MaxTurns")
+	}
+}
+
 func TestRecapsPreferenceRoundTrips(t *testing.T) {
 	// Default (unset) is ON.
 	if !(PreferencesConfig{}).RecapsEnabled() {

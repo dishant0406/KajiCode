@@ -26,6 +26,9 @@ type modelSummary = kajicodecommands.ModelSnapshot
 type providerCatalogSummary = kajicodecommands.ProviderCatalogSnapshot
 
 func runConfig(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) int {
+	if len(args) > 0 && args[0] == "set" {
+		return runConfigSet(args[1:], stdout, stderr, deps)
+	}
 	options, help, err := parseCommandCenterArgs(args, false, false)
 	if err != nil {
 		return writeExecUsageError(stderr, err.Error())
@@ -43,6 +46,60 @@ func runConfig(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) 
 	}
 	summary := summarizeConfig(resolved)
 	if options.json {
+		if err := writePrettyJSON(stdout, summary); err != nil {
+			return exitCrash
+		}
+		return exitSuccess
+	}
+	if _, err := fmt.Fprintln(stdout, formatConfigSummary(summary)); err != nil {
+		return exitCrash
+	}
+	return exitSuccess
+}
+
+// runConfigSet writes one config key to the user config file. It prints the
+// fresh summary so a caller (e.g. the desktop app) repaints from authoritative
+// state in a single round trip.
+func runConfigSet(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) int {
+	jsonOut := false
+	var positional []string
+	for _, arg := range args {
+		switch {
+		case arg == "--json":
+			jsonOut = true
+		case strings.HasPrefix(arg, "-"):
+			return writeExecUsageError(stderr, fmt.Sprintf("unknown flag %q", arg))
+		default:
+			positional = append(positional, arg)
+		}
+	}
+	if len(positional) != 2 {
+		return writeExecUsageError(stderr, "usage: kajicode config set maxTurns <number>")
+	}
+	key := strings.ToLower(strings.TrimSpace(positional[0]))
+	value := strings.TrimSpace(positional[1])
+	switch key {
+	case "maxturns":
+		turns, err := strconv.Atoi(value)
+		if err != nil || turns < 1 {
+			return writeExecUsageError(stderr, fmt.Sprintf("invalid maxTurns %q. Expected a positive integer.", value))
+		}
+		path, err := deps.userConfigPath()
+		if err != nil {
+			return writeAppError(stderr, err.Error(), exitCrash)
+		}
+		if _, err := config.SetMaxTurns(path, turns); err != nil {
+			return writeAppError(stderr, err.Error(), exitCrash)
+		}
+	default:
+		return writeExecUsageError(stderr, fmt.Sprintf("unknown config key %q", key))
+	}
+	resolved, exitCode := resolveCommandCenterConfig(stderr, deps)
+	if exitCode != exitSuccess {
+		return exitCode
+	}
+	summary := summarizeConfig(resolved)
+	if jsonOut {
 		if err := writePrettyJSON(stdout, summary); err != nil {
 			return exitCrash
 		}
@@ -462,8 +519,10 @@ func formatProviderCatalogValue(value string, fallback string) string {
 func writeConfigHelp(w io.Writer) error {
 	_, err := fmt.Fprint(w, `Usage:
   kajicode config [flags]
+  kajicode config set maxTurns <number> [--json]
 
 Inspects resolved Go configuration without printing secrets.
+The "set" form writes one key to the user config and prints the fresh summary.
 
 Flags:
       --json      Print JSON summary

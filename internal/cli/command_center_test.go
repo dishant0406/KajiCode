@@ -40,6 +40,60 @@ func TestRunConfigPrintsRedactedSummary(t *testing.T) {
 	}
 }
 
+func TestRunConfigSetMaxTurnsPersists(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(cfgPath, []byte(`{"activeProvider":"work"}`), 0o600); err != nil {
+		t.Fatalf("seed config: %v", err)
+	}
+	deps := commandCenterDeps(t)
+	resolved := deps.resolveConfig
+	deps.userConfigPath = func() (string, error) { return cfgPath, nil }
+	deps.resolveConfig = func(workspaceRoot string, overrides config.Overrides) (config.ResolvedConfig, error) {
+		if _, err := resolved(workspaceRoot, overrides); err != nil {
+			return config.ResolvedConfig{}, err
+		}
+		data, err := os.ReadFile(cfgPath)
+		if err != nil {
+			return config.ResolvedConfig{}, err
+		}
+		var stored config.FileConfig
+		if err := json.Unmarshal(data, &stored); err != nil {
+			return config.ResolvedConfig{}, err
+		}
+		return config.ResolvedConfig{MaxTurns: stored.MaxTurns}, nil
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	if code := runWithDeps([]string{"config", "set", "maxTurns", "42", "--json"}, &stdout, &stderr, deps); code != exitSuccess {
+		t.Fatalf("exit = %d: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"maxTurns": 42`) {
+		t.Fatalf("fresh summary not printed: %q", stdout.String())
+	}
+	data, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	var stored config.FileConfig
+	if err := json.Unmarshal(data, &stored); err != nil {
+		t.Fatalf("parse config: %v", err)
+	}
+	if stored.MaxTurns != 42 {
+		t.Fatalf("persisted maxTurns = %d, want 42", stored.MaxTurns)
+	}
+	if stored.ActiveProvider != "work" {
+		t.Fatalf("unrelated config dropped: %q", stored.ActiveProvider)
+	}
+
+	// A non-numeric value is a usage error and must not touch the file.
+	stdout.Reset()
+	stderr.Reset()
+	if code := runWithDeps([]string{"config", "set", "maxTurns", "nope"}, &stdout, &stderr, deps); code != exitUsage {
+		t.Fatalf("invalid value exit = %d, want %d", code, exitUsage)
+	}
+}
+
 func TestRunConfigPrintsJSONSummary(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer

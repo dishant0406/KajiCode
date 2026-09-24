@@ -552,6 +552,35 @@ func SetRecentModels(path string, entries []RecentModelEntry) (FileConfig, error
 	return cfg, nil
 }
 
+// SetMaxTurns persists the per-run tool-turn budget, mirroring SetTheme
+// (read-modify-atomic-write). Values are clamped to the same ceiling the
+// resolver enforces so a stored value cannot exceed what a run can use.
+func SetMaxTurns(path string, turns int) (FileConfig, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return FileConfig{}, fmt.Errorf("config path is required")
+	}
+	if turns < 1 {
+		return FileConfig{}, fmt.Errorf("maxTurns must be a positive integer, got %d", turns)
+	}
+	if turns > MaxTurnsCeiling {
+		turns = MaxTurnsCeiling
+	}
+	cfg := FileConfig{}
+	if data, err := os.ReadFile(path); err == nil {
+		if err := json.Unmarshal(data, &cfg); err != nil {
+			return FileConfig{}, fmt.Errorf("invalid config JSON %s: %w", path, err)
+		}
+	} else if !os.IsNotExist(err) {
+		return FileConfig{}, fmt.Errorf("read config %s: %w", path, err)
+	}
+	cfg.MaxTurns = turns
+	if err := writeConfigFile(path, cfg); err != nil {
+		return FileConfig{}, err
+	}
+	return cfg, nil
+}
+
 // SetRecapsEnabled persists the post-turn recap preference, mirroring
 // SetFavoriteModels (read-modify-atomic-write).
 func SetRecapsEnabled(path string, enabled bool) (FileConfig, error) {
