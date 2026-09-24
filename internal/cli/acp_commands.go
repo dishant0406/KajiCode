@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"unicode/utf8"
 
 	"github.com/dishant0406/KajiCode/internal/acp"
 	"github.com/dishant0406/KajiCode/internal/agent"
+	"github.com/dishant0406/KajiCode/internal/usercommands"
 )
 
 // The ACP command catalog exposes KajiCode's inspection commands to editors as
@@ -56,7 +58,8 @@ func acpCommandSpecs() []acpCommandSpec {
 		{name: "changes", description: "Inspect local git changes.", hint: "status", baseArgs: []string{"status"}, run: runChanges},
 		{name: "repo-info", description: "Characterize the current repository (local git).", run: runRepoInfo},
 		{name: "repo-map", description: "Build a deterministic repository map.", run: runRepoMap},
-		{name: "prompt", description: "Inspect runtime prompt sections and token estimates.", hint: "inspect", baseArgs: []string{"inspect"}, run: runPrompt},
+		{name: "prompt-inspect", description: "Inspect runtime prompt sections and token estimates.", hint: "inspect", baseArgs: []string{"inspect"}, run: runPrompt},
+		{name: "prompt", description: "Create a reusable prompt snippet (/name).", hint: "name", session: true},
 		{name: "harness", description: "Show harness prompt addenda and permission rules.", run: runHarness},
 		{name: "learning", description: "Show self-learning settings.", run: runLearningConfig},
 		{name: "sandbox", description: "Show the sandbox policy.", hint: "policy", baseArgs: []string{"policy"}, run: runSandbox},
@@ -66,6 +69,9 @@ func acpCommandSpecs() []acpCommandSpec {
 		{name: "plugins", description: "List installed plugins.", hint: "list", baseArgs: []string{"list"}, run: runPlugins},
 		{name: "backends", description: "Inspect MCP, hook, and plugin backend state.", run: runBackends},
 		{name: "cron", description: "List scheduled agent jobs.", hint: "list", baseArgs: []string{"list"}, run: runCron},
+		{name: "search", description: "Search local session events.", hint: "query", run: runSearch},
+		{name: "sandbox-setup", description: "Run native sandbox setup for this platform.", run: runSandboxSetup},
+		{name: "web-search", description: "Configure web-search credentials (status/set/remove).", hint: "status", baseArgs: []string{"status"}, run: runWebSearch},
 		{name: "add-provider", description: "Add or update a provider (name, base URL, API key).", session: true},
 		{name: "retitle", description: "Generate a concise title for this session.", session: true},
 		{name: "compact", description: "Compact this session's history now.", session: true},
@@ -73,16 +79,47 @@ func acpCommandSpecs() []acpCommandSpec {
 	}
 }
 
-// acpCommands projects the catalog into the wire form advertised to clients.
-func acpCommands() []acp.AvailableCommand {
-	specs := acpCommandSpecs()
-	out := make([]acp.AvailableCommand, 0, len(specs))
-	for _, spec := range specs {
-		command := acp.AvailableCommand{Name: spec.name, Description: spec.description}
-		if spec.hint != "" {
-			command.Input = &acp.AvailableCommandInput{Hint: spec.hint}
+// acpCommands projects the catalog into the wire form advertised to clients,
+// including the user's saved prompt snippets (usercommands) so a saved /command
+// appears in the client's slash palette and prompts for its arguments.
+func acpCommands(deps appDeps) func(workspaceRoot string) []acp.AvailableCommand {
+	return func(workspaceRoot string) []acp.AvailableCommand {
+		specs := acpCommandSpecs()
+		out := make([]acp.AvailableCommand, 0, len(specs))
+		seen := map[string]bool{}
+		for _, spec := range specs {
+			command := acp.AvailableCommand{Name: spec.name, Description: spec.description}
+			if spec.hint != "" {
+				command.Input = &acp.AvailableCommandInput{Hint: spec.hint}
+			}
+			out = append(out, command)
+			seen[spec.name] = true
 		}
-		out = append(out, command)
+		for _, snippet := range acpUserCommandSnippets(deps, workspaceRoot) {
+			if seen[snippet.Name] {
+				continue // a builtin/ACP command wins on a name collision
+			}
+			snippet.Input = &acp.AvailableCommandInput{Hint: "arguments"}
+			out = append(out, snippet)
+		}
+		return out
+	}
+}
+
+// acpUserCommandSnippets loads the user's file-sourced prompt snippets for the
+// workspace, ignoring any whose name collides with a builtin command.
+func acpUserCommandSnippets(deps appDeps, workspaceRoot string) []acp.AvailableCommand {
+	paths := usercommands.Paths{}
+	if dir := acpUserCommandDir(deps); dir != "" {
+		paths.UserDir = dir
+	}
+	if strings.TrimSpace(workspaceRoot) != "" {
+		paths.ProjectDir = filepath.Join(workspaceRoot, ".kajicode", "commands")
+	}
+	snippets := usercommands.Load(paths)
+	out := make([]acp.AvailableCommand, 0, len(snippets))
+	for _, snippet := range snippets {
+		out = append(out, acp.AvailableCommand{Name: snippet.Name, Description: snippet.Description})
 	}
 	return out
 }
@@ -177,6 +214,18 @@ func acpRunCommand(deps appDeps, sessionCommands ACPSessionCommand) func(context
 		}
 		return output, true, nil
 	}
+}
+
+// isSessionCommand reports whether name is one of the session-scoped ACP
+// commands (handled against the live session, not a CLI subcommand).
+func isSessionCommand(name string) bool {
+	name = strings.ToLower(strings.TrimSpace(strings.TrimPrefix(name, "/")))
+	for _, spec := range acpCommandSpecs() {
+		if spec.session && spec.name == name {
+			return true
+		}
+	}
+	return false
 }
 
 // lookupACPCommand resolves a command name (with or without a leading slash,

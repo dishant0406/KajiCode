@@ -394,19 +394,19 @@ Source: `internal/tui/commands.go:81-370`. "Mechanism" = simplest correct exposu
 | `/btw` | text | side conversation | TUI surface-state swap | `[n/a]` |
 | `/loop` | text | interval loop | driven by the TUI idle ticker | `[n/a]` |
 | `/image` | text | attach image | native prompt `image` ContentBlock | `[x]` |
-| `/search`, `/find` | text | search events | `[=]` (CLI `search` needs a query; no ACP method) | `[=]` |
+| `/search`, `/find` | text | search events | command `/search` (hint: query) | `[x]` |
 | `/mcp`, `/mcp-status` | modal | MCP config | command `/mcp` (status); manager is a modal | `[=]` |
 | `/skills` | picker | list/run skills | command `/skills`; picker is TUI-only | `[=]` |
 | `/tools` | text | list tools | command `/tools` | `[=]` |
 | `/harness` | text | prompt addenda/rules | command `/harness` (CLI mutates; text summaries over ACP) | `[=]` |
-| `/prompt` | modal | prompt snippet | editor modal; no headless path | `[n/a]` |
-| `/prompt-inspect` | text | prompt report | command `/prompt` | `[=]` |
-| `/web-search` | form | credentials | writes shell env; secrets must not cross ACP | `[n/a]` |
+| `/prompt` | modal | create snippet | form elicitation → `usercommands.Save`; snippet then appears in `available_commands_update` | `[x]` |
+| `/prompt-inspect` | text | prompt report | command `/prompt-inspect` | `[=]` |
+| `/web-search` | form | credentials | `kajicode web-search status|set|remove` (headless CLI); key never crosses ACP | `[x]` |
 | `/doctor` | text | diagnostics | command `/doctor` | `[=]` |
 | `/config` | text | show config | command `/config` (CLI is print-only; `/config recaps` has no CLI path) | `[=]` |
 | `/context` | text | context card | command `/context` | `[=]` |
 | `/ps`, `/stop` | text | bg terminals | no headless registry API; TUI-only | `[n/a]` |
-| `/sandbox-setup` | subprocess | sandbox setup | CLI `sandbox setup`; not exposed as an ACP command yet | `[ ]` |
+| `/sandbox-setup` | subprocess | sandbox setup | command `/sandbox-setup` | `[x]` |
 | `/help` | text | help | client renders `available_commands_update` | `[x]` |
 | `/clear`, `/transcript` | presentation | TUI view only | editor-owned UI | `[n/a]` |
 | `/debug` | text | debug status | `[=]` (no CLI command; TUI view only) | `[=]` |
@@ -487,6 +487,18 @@ or command for a subsystem, both are covered.
   methods are capability-gated; always provide a working default.
 - **Security:** never expose `unsafe` permission mode or `!cmd` over the wire
   (matches today's `handleSetMode` refusal, `agent.go:367`).
+
+### 12.6 Slash-command parity: snippets, prompt editor, web-search
+
+- **Saved prompt snippets** are first-class: `/prompt` creates one through a form
+  (`usercommands.Save`), the new `/name` is immediately re-advertised via
+  `available_commands_update`, and invoking `/<name> args` expands the template
+  (`usercommands.Expand`) and runs it. The catalog is a function of the
+  workspace so snippets saved mid-session appear without a reconnect.
+- **`/web-search`** is headless via `kajicode web-search status|set|remove`. The
+  API key is written to the env fallback file by that CLI command and **never**
+  travels over ACP (form elicitation must not carry secrets); `status` reads the
+  stored file, so a configured key shows as `set`.
 
 ### 12.6 Status summary (after the model/knob work)
 

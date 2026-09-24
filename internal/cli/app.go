@@ -469,6 +469,8 @@ func runWithDeps(args []string, stdout io.Writer, stderr io.Writer, deps appDeps
 		return runChanges(args[1:], stdout, stderr, deps)
 	case "usage":
 		return runUsage(args[1:], stdout, stderr, deps)
+	case "web-search":
+		return runWebSearch(args[1:], stdout, stderr, deps)
 	case "cron":
 		return runCron(args[1:], stdout, stderr, deps)
 	case "repo-info", "repoinfo":
@@ -1263,6 +1265,7 @@ Commands:
   eval       Validate offline agent eval suites
   changes    Inspect and commit local git changes
   usage      Summarize token usage and estimated cost
+  web-search Configure web-search credentials (status/set/remove)
   cron       Schedule agent jobs (foreground, file-backed)
   repo-info  Characterize the current repository (local git only)
   serve      Run KajiCode protocol servers

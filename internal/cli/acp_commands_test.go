@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"path/filepath"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -47,7 +48,7 @@ func TestACPLookupCommandNormalizesInput(t *testing.T) {
 
 func TestACPCommandsProjectInputHints(t *testing.T) {
 	byName := map[string]bool{}
-	for _, c := range acpCommands() {
+	for _, c := range acpCommands(appDeps{})("") {
 		byName[c.Name] = c.Input != nil
 	}
 	if !byName["sessions"] {
@@ -87,5 +88,79 @@ func TestLimitedWriterTruncatesOnRuneBoundary(t *testing.T) {
 	}
 	if !utf8.ValidString(w.String()) {
 		t.Fatal("truncated output must remain valid UTF-8")
+	}
+}
+
+func TestACPUserCommandSnippetsSaveExpandAndAdvertise(t *testing.T) {
+	dir := t.TempDir()
+	cfg := filepath.Join(dir, "config.json")
+	deps := appDeps{userConfigPath: func() (string, error) { return cfg, nil }}
+
+	// Save a snippet via the wired handler.
+	name, err := acpSavePromptSnippet(deps)("", "release", "Open a PR titled $1. Summarize: $ARGUMENTS")
+	if err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	if name != "release" {
+		t.Fatalf("name = %q", name)
+	}
+	// It appears in the advertised catalog...
+	var advertised bool
+	for _, c := range acpCommands(deps)("") {
+		if c.Name == "release" {
+			advertised = true
+			if c.Input == nil {
+				t.Error("snippet must advertise an input hint")
+			}
+		}
+	}
+	if !advertised {
+		t.Fatal("saved snippet not advertised in the command catalog")
+	}
+	// ...and expands with its placeholders filled.
+	expanded, ok := acpExpandPromptSnippet(deps)("", "release", "v1.2")
+	if !ok || !strings.Contains(expanded, "v1.2") {
+		t.Fatalf("expand = %q ok=%v", expanded, ok)
+	}
+	if _, ok := acpExpandPromptSnippet(deps)("", "nope", ""); ok {
+		t.Fatal("unknown snippet must not resolve")
+	}
+	// A builtin name wins over a same-named snippet.
+	if _, err := acpSavePromptSnippet(deps)("", "config", "shadow me"); err != nil {
+		t.Fatalf("save shadow: %v", err)
+	}
+	for _, c := range acpCommands(deps)("") {
+		if c.Name == "config" && strings.Contains(c.Description, "shadow") {
+			t.Fatal("a snippet must not shadow a builtin command")
+		}
+	}
+}
+
+func TestACPSnippetCannotShadowBuiltinAtInvocation(t *testing.T) {
+	dir := t.TempDir()
+	cfg := filepath.Join(dir, "config.json")
+	deps := appDeps{userConfigPath: func() (string, error) { return cfg, nil }}
+
+	if _, err := acpSavePromptSnippet(deps)("", "config", "shadow"); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	// A snippet whose name matches a builtin must NOT expand (it would hijack
+	// the builtin at dispatch time).
+	if _, ok := acpExpandPromptSnippet(deps)("", "config", ""); ok {
+		t.Fatal("a snippet named after a builtin command must not expand")
+	}
+	// A session-scoped ACP command name is likewise protected.
+	if _, err := acpSavePromptSnippet(deps)("", "compact", "shadow"); err != nil {
+		t.Fatalf("save compact: %v", err)
+	}
+	if _, ok := acpExpandPromptSnippet(deps)("", "compact", ""); ok {
+		t.Fatal("a snippet named after a session command must not expand")
+	}
+	// A non-colliding snippet still expands.
+	if _, err := acpSavePromptSnippet(deps)("", "mysnip", "hello $1"); err != nil {
+		t.Fatalf("save mysnip: %v", err)
+	}
+	if _, ok := acpExpandPromptSnippet(deps)("", "mysnip", "world"); !ok {
+		t.Fatal("a non-colliding snippet must expand")
 	}
 }

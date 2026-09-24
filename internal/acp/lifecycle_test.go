@@ -54,7 +54,9 @@ func newCollectorHarness(t *testing.T, deps Deps) (*clientHarness, *updateCollec
 
 func TestACPSessionNewAdvertisesConfigOptionsAndCommands(t *testing.T) {
 	deps := testDeps(t)
-	deps.Commands = []AvailableCommand{{Name: "config", Description: "Show config"}}
+	deps.Commands = func(string) []AvailableCommand {
+		return []AvailableCommand{{Name: "config", Description: "Show config"}}
+	}
 	h, updates := newCollectorHarness(t, deps)
 	defer h.stop()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

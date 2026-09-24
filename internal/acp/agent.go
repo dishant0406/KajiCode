@@ -42,9 +42,11 @@ type Deps struct {
 	ResolveWorkspaceRoot func(cwd string) (string, error)
 	Store                *sessions.Store
 	AgentInfo            Implementation
-	// Commands is the slash-command catalog advertised to the client via
-	// available_commands_update. Empty advertises none.
-	Commands []AvailableCommand
+	// Commands returns the slash-command catalog advertised to the client via
+	// available_commands_update for a workspace. It is a function (not a slice)
+	// so user-defined prompt snippets saved mid-session appear immediately when
+	// the catalog is re-emitted. nil advertises none.
+	Commands func(workspaceRoot string) []AvailableCommand
 	// RunCommand executes a slash command (name without the leading "/") for a
 	// session. ok=false means the command is unknown and the text should be
 	// treated as an ordinary prompt.
@@ -63,6 +65,12 @@ type Deps struct {
 	// Logout clears the active provider credential (OAuth token and stored key).
 	// nil means `logout` is not advertised.
 	Logout func(ctx context.Context) error
+	// SavePromptSnippet writes a reusable prompt snippet (slug + body). It
+	// returns the saved name for confirmation. nil disables /prompt creation.
+	SavePromptSnippet func(workspaceRoot, slug, body string) (string, error)
+	// ExpandPromptSnippet resolves "/name args" against the saved snippets,
+	// returning the expanded prompt text. ok=false means no such snippet.
+	ExpandPromptSnippet func(workspaceRoot, name, args string) (string, bool)
 	// ProviderAdd creates/updates a provider from NON-SECRET fields (name,
 	// baseUrl, model, authHeader, authScheme, customKind). Credentials are never
 	// passed here (form elicitation must not carry secrets). It returns a
@@ -575,6 +583,31 @@ func (a *Agent) handleSessionPrompt(ctx context.Context, params json.RawMessage)
 			note.text(output)
 			return PromptResult{StopReason: StopEndTurn}, nil
 		}
+		// `/prompt` creates a reusable prompt snippet (slug + body) via a form;
+		// saving re-emits the command catalog so the new /name appears in the
+		// client's palette.
+		if strings.EqualFold(name, "prompt") && a.deps.SavePromptSnippet != nil {
+			output, saved, promptErr := a.runCreatePrompt(turnCtx, sess.cwd, sess.id, args)
+			if promptErr != nil {
+				return nil, RPCError(codeInternalError, "prompt: "+promptErr.Error())
+			}
+			note.text(output)
+			if saved {
+				a.advertiseCommands(note, sess)
+			}
+			return PromptResult{StopReason: StopEndTurn}, nil
+		}
+		// A saved prompt snippet invoked as `/name args` expands into the prompt
+		// text and runs as an ordinary turn (ACP has no "fill the composer").
+		if a.deps.ExpandPromptSnippet != nil {
+			if expanded, ok := a.deps.ExpandPromptSnippet(sess.cwd, name, args); ok {
+				reason, runErr := a.runTurn(turnCtx, sess, expanded, images)
+				if runErr != nil {
+					return nil, runErr
+				}
+				return PromptResult{StopReason: reason}, nil
+			}
+		}
 		if a.deps.RunCommand != nil {
 			if output, handled, runErr := a.deps.RunCommand(turnCtx, name, args, sess.cwd, sess.id); handled {
 				note.text(output)
@@ -619,6 +652,49 @@ func (a *Agent) runAddProvider(ctx context.Context, sessionID string) (string, e
 	}
 	return summary + "\nSet the API key with: kajicode providers add --name " + strings.TrimSpace(fields["name"]) +
 		" --api-key-env <ENV_VAR>  (or run `kajicode auth login <provider>` for OAuth providers).", nil
+}
+
+// runCreatePrompt collects a snippet's slug and body through a form and saves
+// it. saved reports whether a snippet was written (so the caller re-emits the
+// catalog). Secrets are never requested, so form elicitation is valid here.
+func (a *Agent) runCreatePrompt(ctx context.Context, workspaceRoot, sessionID, args string) (string, bool, error) {
+	presetSlug := strings.TrimSpace(args)
+	fields, supported, err := a.elicitForm(ctx, sessionID, "Create a reusable prompt (/name)", promptCreateSchema(presetSlug))
+	if err != nil {
+		return "", false, err
+	}
+	if !supported {
+		return "Creating a prompt needs form input this editor does not support.\n" +
+			"Create it in a terminal with `kajicode prompt edit` (or the TUI /prompt).", false, nil
+	}
+	if len(fields) == 0 {
+		return "Prompt not created (cancelled).", false, nil
+	}
+	slug := strings.TrimSpace(fields["slug"])
+	body := fields["body"]
+	if slug == "" || strings.TrimSpace(body) == "" {
+		return "Prompt not created: a name and a body are required.", false, nil
+	}
+	name, err := a.deps.SavePromptSnippet(workspaceRoot, slug, body)
+	if err != nil {
+		if strings.Contains(err.Error(), "exist") {
+			return "Prompt /" + slug + " already exists. Choose another name.", false, nil
+		}
+		return "", false, err
+	}
+	return "Saved prompt /" + name + ". It now appears in the command list; run it as /" + name + " <args>.", true, nil
+}
+
+// promptCreateSchema is the /prompt form: a slug and the reusable body text.
+func promptCreateSchema(presetSlug string) map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"slug": map[string]any{"type": "string", "title": "Name (lowercase letters, numbers, hyphens)", "default": presetSlug},
+			"body": map[string]any{"type": "string", "title": "Prompt body ($ARGUMENTS / $1 placeholders allowed)"},
+		},
+		"required": []string{"slug", "body"},
+	}
 }
 
 // providerAddSchema is the elicitation form for adding a provider. It carries
@@ -1017,10 +1093,18 @@ func (a *Agent) turnBudget(sess *acpSession) int {
 
 // advertise emits the slash-command catalog and config options for a session.
 func (a *Agent) advertise(note *notifier, sess *acpSession) {
-	if len(a.deps.Commands) > 0 {
-		note.availableCommands(a.deps.Commands)
-	}
+	a.advertiseCommands(note, sess)
 	note.configOptions(a.configOptions(context.Background(), sess))
+}
+
+// advertiseCommands emits available_commands_update for a session's workspace.
+func (a *Agent) advertiseCommands(note *notifier, sess *acpSession) {
+	if a.deps.Commands == nil {
+		return
+	}
+	if commands := a.deps.Commands(sess.cwd); len(commands) > 0 {
+		note.availableCommands(commands)
+	}
 }
 
 // replayHistory re-emits a stored conversation as session/update chunks so a
