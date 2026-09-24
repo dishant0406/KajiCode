@@ -120,7 +120,7 @@ func TestSessionTitleDigestRespectsCharBudget(t *testing.T) {
 	digest := sessionTitleDigest(events)
 	// A single over-long message is per-message capped, so the whole digest stays
 	// well under the total budget rather than echoing the entire turn.
-	if len([]rune(digest)) > sessionTitleMaxMessageChars+len("User: ")+8 {
+	if len([]rune(digest)) > sessions.TitleMaxMessageChars+len("User: ")+8 {
 		t.Fatalf("digest not capped: %d runes", len([]rune(digest)))
 	}
 }

@@ -73,6 +73,13 @@ func runACP(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) int
 		ResolveWorkspaceRoot: acpWorkspaceRootResolver(deps),
 		Store:                deps.newSessionStore(),
 		AgentInfo:            acp.Implementation{Name: "kajicode", Version: version},
+		Commands:             acpCommands(),
+		RunCommand:           acpRunCommand(deps, acpSessionCommand(deps)),
+		Retitle:              acpRetitle(deps),
+		AuthMethods:          acpAuthMethods,
+		Authenticate:         acpAuthenticate(),
+		Logout:               acpLogout(deps),
+		ProviderAdd:          acpProviderAdd(deps),
 	})
 
 	ctx, stop := signalContext()

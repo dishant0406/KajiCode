@@ -785,3 +785,25 @@ func TestWriteFileSyncRoundTrips(t *testing.T) {
 		}
 	}
 }
+
+func TestStoreDeleteRemovesSession(t *testing.T) {
+	store := NewStore(StoreOptions{RootDir: t.TempDir()})
+	meta, err := store.Create(CreateInput{Title: "doomed", Cwd: "/tmp"})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if err := store.Delete(meta.SessionID); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if got, _ := store.Get(meta.SessionID); got != nil {
+		t.Fatalf("session still present after delete: %+v", got)
+	}
+	// Deleting again is idempotent, not an error.
+	if err := store.Delete(meta.SessionID); err != nil {
+		t.Fatalf("second delete: %v", err)
+	}
+	// An invalid id is rejected before touching the filesystem.
+	if err := store.Delete("../escape"); err == nil {
+		t.Fatal("expected invalid session id to be rejected")
+	}
+}

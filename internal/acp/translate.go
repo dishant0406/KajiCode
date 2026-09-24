@@ -21,6 +21,11 @@ func agentThoughtChunk(delta string) ContentChunk {
 	return ContentChunk{SessionUpdate: UpdateAgentThoughtChunk, Content: TextBlock(delta)}
 }
 
+// userMessageChunk replays a stored user turn during session/load.
+func userMessageChunk(text string) ContentChunk {
+	return ContentChunk{SessionUpdate: UpdateUserMessageChunk, Content: TextBlock(text)}
+}
+
 // toolKindFor maps a KAJICODE tool name to the closest ACP ToolKind so editors can
 // pick an icon/affordance. Unknown tools fall back to "other".
 func toolKindFor(name string) string {
@@ -168,15 +173,59 @@ func planStatusToACP(s string) string {
 	}
 }
 
-// promptText concatenates the text content blocks of an inbound prompt.
+// promptText concatenates the text of an inbound prompt. Baseline text and
+// resource_link blocks are supported; an embedded resource contributes its URI
+// and any inline text, so a context-only prompt is not silently dropped.
 func promptText(blocks []ContentBlock) string {
 	var b strings.Builder
 	for _, blk := range blocks {
-		if blk.Type == "text" {
+		switch blk.Type {
+		case "text":
 			b.WriteString(blk.Text)
+		case "resource_link":
+			writeResourceText(&b, blk.URI, "")
+		case "resource":
+			uri, text := resourceFields(blk.Resource)
+			writeResourceText(&b, uri, text)
 		}
 	}
 	return b.String()
+}
+
+func writeResourceText(b *strings.Builder, uri, text string) {
+	if uri == "" && text == "" {
+		return
+	}
+	if b.Len() > 0 {
+		b.WriteString("\n")
+	}
+	if uri != "" {
+		b.WriteString("<resource>")
+		b.WriteString(uri)
+		b.WriteString("</resource>")
+	}
+	if text != "" {
+		if uri != "" {
+			b.WriteString("\n")
+		}
+		b.WriteString(text)
+	}
+}
+
+// resourceFields extracts the uri and inline text from an embedded resource
+// block. Unknown or malformed shapes yield empty strings.
+func resourceFields(raw json.RawMessage) (string, string) {
+	if len(raw) == 0 {
+		return "", ""
+	}
+	var res struct {
+		URI  string `json:"uri"`
+		Text string `json:"text"`
+	}
+	if json.Unmarshal(raw, &res) != nil {
+		return "", ""
+	}
+	return res.URI, res.Text
 }
 
 // notifier sends translated updates over a connection for one session.
@@ -201,6 +250,13 @@ func (n *notifier) thought(delta string) {
 	}
 }
 
+// userText replays a stored user message chunk (session/load history).
+func (n *notifier) userText(text string) {
+	if text != "" {
+		n.send(userMessageChunk(text))
+	}
+}
+
 func (n *notifier) toolCall(call agent.ToolCall)       { n.send(toolCallStart(call)) }
 func (n *notifier) toolResult(result agent.ToolResult) { n.send(toolCallResult(result)) }
 
@@ -212,4 +268,24 @@ func (n *notifier) plan(items []tools.PlanItem) {
 
 func (n *notifier) currentMode(modeID string) {
 	n.send(CurrentModeUpdate{SessionUpdate: UpdateCurrentMode, CurrentModeID: modeID})
+}
+
+func (n *notifier) configOptions(options []SessionConfigOption) {
+	if len(options) > 0 {
+		n.send(ConfigOptionUpdate{SessionUpdate: UpdateConfigOption, ConfigOptions: options})
+	}
+}
+
+func (n *notifier) availableCommands(commands []AvailableCommand) {
+	n.send(AvailableCommandsUpdate{SessionUpdate: UpdateAvailableCommands, AvailableCommands: commands})
+}
+
+func (n *notifier) sessionInfo(title string) {
+	if title != "" {
+		n.send(SessionInfoUpdate{SessionUpdate: UpdateSessionInfo, Title: title})
+	}
+}
+
+func (n *notifier) usage(used, size int) {
+	n.send(UsageUpdate{SessionUpdate: UpdateUsage, Used: used, Size: size})
 }

@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/dishant0406/KajiCode/internal/sessions"
 )
 
 // plainTranscriptText renders the conversation as a plain, role-prefixed text
@@ -16,11 +18,11 @@ func (m model) plainTranscriptText() string {
 		var prefix string
 		switch row.kind {
 		case rowUser:
-			prefix = "you: "
+			prefix = sessions.TranscriptUserPrefix
 		case rowAssistant:
-			prefix = "kajicode: "
+			prefix = sessions.TranscriptAssistantPrefix
 		case rowSystem:
-			prefix = "· "
+			prefix = sessions.TranscriptSystemPrefix
 		case rowError:
 			prefix = "error: "
 		default:

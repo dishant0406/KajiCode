@@ -2,7 +2,6 @@ package tui
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -15,31 +14,10 @@ import (
 )
 
 const (
-	// sessionTitleMaxMessageChars caps how much of any single message goes into
-	// the title prompt — a title only needs the gist, not the whole turn.
-	sessionTitleMaxMessageChars = 320
-	// sessionTitleMaxDigestChars bounds the whole digest so titling stays a cheap
-	// one-shot call regardless of how long the conversation was.
-	sessionTitleMaxDigestChars = 1600
-	// sessionTitleWordCap is the most words a cleaned title may keep.
-	sessionTitleWordCap = 8
 	// sessionTitleTimeout bounds a single title generation so a hung provider can
 	// never wedge the background command.
 	sessionTitleTimeout = 30 * time.Second
 )
-
-// titleTrimCutset is stripped from both ends of a model-produced title:
-// whitespace, surrounding quotes/backticks, markdown emphasis/heading marks, and
-// trailing sentence punctuation. ` is a backtick.
-const titleTrimCutset = " \t\r\n\"'`*#.,:;!"
-
-const sessionTitleSystemPrompt = "You write a short, specific title for a coding-assistant conversation so a user can tell it apart from others in a list. " +
-	"Reply with ONLY the title and nothing else: 3 to 6 words, Title Case, naming the concrete task or topic. " +
-	"No surrounding quotes, no trailing punctuation, no preamble, no explanation."
-
-// errSessionTitleNoContent marks a session that has nothing worth titling, so the
-// background command exits without a wasted provider call.
-var errSessionTitleNoContent = errors.New("session has no content to title")
 
 // sessionTitleGeneratedMsg carries the outcome of a background title generation
 // back to the Update loop. backfill distinguishes a /retitle queue step (which
@@ -52,119 +30,23 @@ type sessionTitleGeneratedMsg struct {
 }
 
 // sessionTitleDigest renders a compact, bounded transcript of a session for the
-// title prompt: user/assistant text and tool names, each trimmed, the whole
-// thing capped. The no-output guardrail stop is skipped so a failed run never
-// becomes the "topic".
+// title prompt. The shared implementation lives in internal/sessions so the TUI,
+// CLI, and ACP produce identical digests.
 func sessionTitleDigest(events []sessions.Event) string {
-	var builder strings.Builder
-	total := 0
-	add := func(label, content string) bool {
-		content = strings.Join(strings.Fields(content), " ")
-		if content == "" {
-			return true
-		}
-		content = cutRunes(content, sessionTitleMaxMessageChars)
-		line := label + ": " + content + "\n"
-		if total > 0 && total+len(line) > sessionTitleMaxDigestChars {
-			return false // budget spent — keep what we have
-		}
-		builder.WriteString(line)
-		total += len(line)
-		return true
-	}
-	for _, event := range events {
-		payload := sessionPayload(event)
-		switch event.Type {
-		case sessions.EventMessage:
-			content := payloadString(payload, "content")
-			if agent.IsNoProgressStop(content) {
-				continue
-			}
-			switch strings.ToLower(strings.TrimSpace(payloadString(payload, "role"))) {
-			case "user":
-				if !add("User", content) {
-					return strings.TrimSpace(builder.String())
-				}
-			case "assistant":
-				if !add("Assistant", content) {
-					return strings.TrimSpace(builder.String())
-				}
-			}
-		case sessions.EventToolCall:
-			if name := strings.TrimSpace(payloadString(payload, "name")); name != "" {
-				if !add("Tool", name) {
-					return strings.TrimSpace(builder.String())
-				}
-			}
-		}
-	}
-	return strings.TrimSpace(builder.String())
+	return sessions.TitleDigest(events, agent.IsNoProgressStop)
 }
 
 // cleanGeneratedTitle normalizes a raw model response into a single short title
-// line: first non-empty line only, surrounding quotes/markup and a leading
-// "Title:" label removed, whitespace collapsed, word- and rune-capped. Returns ""
-// when nothing usable remains so the caller keeps the existing title.
+// line. The shared implementation lives in internal/sessions.
 func cleanGeneratedTitle(raw string) string {
-	title := strings.TrimSpace(raw)
-	if title == "" {
-		return ""
-	}
-	// Use the first line with real content after trimming markup — a model may
-	// open with a bare code fence or blank line before the title itself.
-	for _, line := range strings.Split(title, "\n") {
-		if trimmed := strings.Trim(line, titleTrimCutset); trimmed != "" {
-			title = trimmed
-			break
-		}
-	}
-	title = strings.Trim(title, titleTrimCutset)
-	// Drop a leading "Title:" / "Title -" label the model sometimes prepends.
-	if idx := strings.IndexAny(title, ":-"); idx > 0 && idx <= 6 {
-		if strings.EqualFold(strings.TrimSpace(title[:idx]), "title") {
-			title = strings.TrimSpace(title[idx+1:])
-		}
-	}
-	title = strings.Trim(title, titleTrimCutset)
-	fields := strings.Fields(title)
-	if len(fields) == 0 {
-		return ""
-	}
-	if len(fields) > sessionTitleWordCap {
-		fields = fields[:sessionTitleWordCap]
-	}
-	return cutRunes(strings.Join(fields, " "), tuiSessionTitleLimit)
+	return sessions.CleanTitle(raw)
 }
 
 // generateSessionTitle asks the provider for a concise title for digest and
-// returns the cleaned result. It is provider-shaped exactly like the one-shot
-// summarization call: system instructions + a single user turn, no tools.
+// returns the cleaned result. The shared implementation lives in
+// internal/sessions; the TUI keeps this thin wrapper so its callers are unchanged.
 func generateSessionTitle(ctx context.Context, provider kajicoderuntime.Provider, digest string) (string, error) {
-	if provider == nil {
-		return "", errors.New("no provider configured")
-	}
-	if strings.TrimSpace(digest) == "" {
-		return "", errSessionTitleNoContent
-	}
-	request := kajicoderuntime.CompletionRequest{
-		Messages: []kajicoderuntime.Message{
-			{Role: kajicoderuntime.MessageRoleSystem, Content: sessionTitleSystemPrompt},
-			{Role: kajicoderuntime.MessageRoleUser, Content: "Conversation:\n\n" + digest + "\n\nTitle:"},
-		},
-	}
-	stream, err := provider.StreamCompletion(ctx, request)
-	if err != nil {
-		return "", err
-	}
-	collected := kajicoderuntime.CollectStreamWithOptions(ctx, stream, kajicoderuntime.CollectOptions{})
-	if collected.Error != "" {
-		return "", errors.New(collected.Error)
-	}
-	title := cleanGeneratedTitle(collected.Text)
-	if title == "" {
-		return "", errors.New("model returned no usable title")
-	}
-	return title, nil
+	return sessions.GenerateTitle(ctx, provider, digest)
 }
 
 // generateSessionTitleCmd builds the background command that generates and

@@ -20,6 +20,7 @@ KajiCode.
 ## Maintainer Docs
 
 - [Architecture](architecture.md)
+- [ACP support matrix](acp-support-matrix.md)
 - [How KajiCode Works](HOW_KAJICODE_WORKS.md)
 - [Attachment thumbnails](attachment-thumbnails.md)
 - [npm packaging](NPM_PACKAGING.md)

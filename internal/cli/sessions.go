@@ -1,11 +1,15 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"strings"
 
+	"github.com/dishant0406/KajiCode/internal/agent"
+	"github.com/dishant0406/KajiCode/internal/config"
 	"github.com/dishant0406/KajiCode/internal/kajicodecommands"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
 	"github.com/dishant0406/KajiCode/internal/redaction"
 	"github.com/dishant0406/KajiCode/internal/sessions"
 )
@@ -72,6 +76,21 @@ func runSessions(args []string, stdout io.Writer, stderr io.Writer, deps appDeps
 			return writeExecUsageError(stderr, "sessions compact-plan requires a session id")
 		}
 		return runSessionsCompactPlan(store, remaining[0], options, stdout, stderr)
+	case "compact":
+		if len(remaining) != 1 {
+			return writeExecUsageError(stderr, "sessions compact requires a session id")
+		}
+		return runSessionsCompact(store, remaining[0], options, stdout, stderr, deps)
+	case "retitle":
+		if len(remaining) != 1 {
+			return writeExecUsageError(stderr, "sessions retitle requires a session id")
+		}
+		return runSessionsRetitle(store, remaining[0], options, stdout, stderr, deps)
+	case "export":
+		if len(remaining) != 1 {
+			return writeExecUsageError(stderr, "sessions export requires a session id")
+		}
+		return runSessionsExport(store, remaining[0], options, stdout, stderr, deps)
 	default:
 		return writeExecUsageError(stderr, fmt.Sprintf("unknown sessions command %q", command))
 	}
@@ -225,7 +244,7 @@ func parseSessionKindFlag(value string) (sessions.SessionKind, error) {
 
 func isSessionsCommand(command string) bool {
 	switch command {
-	case "list", "children", "lineage", "tree", "rewind-plan", "rewind", "compact-plan":
+	case "list", "children", "lineage", "tree", "rewind-plan", "rewind", "compact-plan", "compact", "retitle", "export":
 		return true
 	default:
 		return false
@@ -241,8 +260,8 @@ func validateSessionCommandFlags(command string, options sessionCommandOptions) 
 		return execUsageError{"--sequence, --event, and --exclude-target are only valid for sessions rewind-plan and rewind"}
 	}
 	hasCompactionFlag := options.preserveLast > 0 || options.maxPromptChars > 0
-	if hasCompactionFlag && command != "compact-plan" {
-		return execUsageError{"--preserve-last and --max-prompt-chars are only valid for sessions compact-plan"}
+	if hasCompactionFlag && command != "compact-plan" && command != "compact" {
+		return execUsageError{"--preserve-last and --max-prompt-chars are only valid for sessions compact-plan and compact"}
 	}
 	return nil
 }
@@ -418,6 +437,115 @@ func runSessionsCompactPlan(store *sessions.Store, sessionID string, options ses
 	return exitSuccess
 }
 
+// runSessionsCompact applies a compaction to a session (writes the compaction
+// event). It summarizes via the configured provider; when no provider profile is
+// set, it falls back to a deterministic summary.
+func runSessionsCompact(store *sessions.Store, sessionID string, options sessionCommandOptions, stdout io.Writer, stderr io.Writer, deps appDeps) int {
+	provider, err := sessionProvider(deps)
+	if err != nil {
+		return writeAppError(stderr, err.Error(), exitProvider)
+	}
+	ctx, stop := signalContext()
+	defer stop()
+	event, err := store.CompactSession(ctx, sessionID, provider, sessions.CompactionOptions{
+		PreserveLast:   options.preserveLast,
+		MaxPromptChars: options.maxPromptChars,
+	})
+	if err != nil {
+		if errors.Is(err, sessions.ErrNothingToCompact) {
+			if _, werr := fmt.Fprintln(stdout, "KajiCode session compaction\nnothing to compact."); werr != nil {
+				return exitCrash
+			}
+			return exitSuccess
+		}
+		return writeSessionCommandError(stderr, err)
+	}
+	if options.json {
+		if err := writePrettyJSON(stdout, redaction.RedactValue(event, redaction.Options{})); err != nil {
+			return exitCrash
+		}
+		return exitSuccess
+	}
+	if _, err := fmt.Fprintln(stdout, "KajiCode session compacted\nsession: "+redact(sessionID)); err != nil {
+		return exitCrash
+	}
+	return exitSuccess
+}
+
+// runSessionsRetitle generates and persists a title for a session using the
+// configured provider.
+func runSessionsRetitle(store *sessions.Store, sessionID string, options sessionCommandOptions, stdout io.Writer, stderr io.Writer, deps appDeps) int {
+	provider, err := sessionProvider(deps)
+	if err != nil {
+		return writeAppError(stderr, err.Error(), exitProvider)
+	}
+	if provider == nil {
+		return writeAppError(stderr, "no provider configured; run `kajicode setup`", exitProvider)
+	}
+	ctx, stop := signalContext()
+	defer stop()
+	meta, err := store.RetitleSession(ctx, sessionID, provider, agent.IsNoProgressStop)
+	if err != nil {
+		if errors.Is(err, sessions.ErrTitleNoContent) {
+			return writeExecUsageError(stderr, "session has no content to title")
+		}
+		return writeSessionCommandError(stderr, err)
+	}
+	if options.json {
+		if err := writePrettyJSON(stdout, redaction.RedactValue(meta, redaction.Options{})); err != nil {
+			return exitCrash
+		}
+		return exitSuccess
+	}
+	if _, err := fmt.Fprintln(stdout, "KajiCode session retitled\nsession: "+redact(meta.SessionID)+"\ntitle: "+redact(meta.Title)); err != nil {
+		return exitCrash
+	}
+	return exitSuccess
+}
+
+// runSessionsExport renders a session's conversation as plain text. With an
+// argument it writes that file; without one it prints to stdout.
+func runSessionsExport(store *sessions.Store, sessionID string, _ sessionCommandOptions, stdout io.Writer, stderr io.Writer, _ appDeps) int {
+	events, err := store.ReadRehydratedEvents(sessionID)
+	if err != nil {
+		return writeSessionCommandError(stderr, err)
+	}
+	body := sessions.TranscriptFromEvents(events, agent.IsNoProgressStop)
+	if strings.TrimSpace(body) == "" {
+		return writeExecUsageError(stderr, "session has no conversation to export")
+	}
+	if _, err := io.WriteString(stdout, body); err != nil {
+		return exitCrash
+	}
+	return exitSuccess
+}
+
+// sessionProvider builds the active provider for a headless session command,
+// resolving config against the process cwd. A command that does not need a model
+// (export) never calls this; a command that does (retitle, compact) degrades only
+// if no provider is configured at all.
+func sessionProvider(deps appDeps) (kajicoderuntime.Provider, error) {
+	return sessionProviderIn("", deps)
+}
+
+// sessionProviderIn is sessionProvider with an explicit workspace, so an ACP
+// caller can resolve the provider for the SESSION's cwd (project-local provider
+// config) rather than the ACP process cwd.
+func sessionProviderIn(cwd string, deps appDeps) (kajicoderuntime.Provider, error) {
+	workspaceRoot, err := resolveWorkspaceRoot(cwd, deps)
+	if err != nil {
+		return nil, err
+	}
+	resolved, err := deps.resolveConfig(workspaceRoot, config.Overrides{})
+	if err != nil {
+		return nil, err
+	}
+	if !config.HasProviderProfile(resolved.Provider) {
+		return nil, nil
+	}
+	return deps.newProvider(resolved.Provider)
+}
+
 func writeSessionCommandError(stderr io.Writer, err error) int {
 	message := strings.TrimPrefix(err.Error(), "kajicode session")
 	if message != err.Error() {
@@ -526,6 +654,9 @@ Commands:
   rewind-plan <id>      Preview events kept and dropped by a rewind
   rewind <id>           Restore workspace files and truncate the log to a checkpoint
   compact-plan <id>     Preview events compacted and preserved by compaction
+  compact <id>          Apply a compaction (writes a compaction event)
+  retitle <id>          Generate and persist a concise title for a session
+  export <id>           Render a session's conversation as plain text to stdout
 
 Flags:
       --json            Print JSON output
@@ -533,8 +664,8 @@ Flags:
       --sequence <n>    Rewind target sequence (rewind-plan, rewind)
       --event <id>      Rewind target event id (rewind-plan, rewind)
       --exclude-target  Drop the target event (rewind-plan, rewind)
-      --preserve-last <n> Keep recent events in compact-plan
-      --max-prompt-chars <n> Limit compact-plan summary prompt
+      --preserve-last <n> Keep recent events in compact-plan and compact
+      --max-prompt-chars <n> Limit compact-plan and compact summary prompt
   -h, --help            Show this help
 `)
 	return err

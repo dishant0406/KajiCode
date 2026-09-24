@@ -1,6 +1,7 @@
 package acp
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -121,11 +122,21 @@ func TestPlanUpdateAndStatus(t *testing.T) {
 func TestPromptText(t *testing.T) {
 	got := promptText([]ContentBlock{
 		TextBlock("hello "),
-		ImageBlock("base64", "image/png"),
+		ContentBlock{Type: "image", Data: "base64", MimeType: "image/png"},
 		TextBlock("world"),
 	})
 	if got != "hello world" {
 		t.Fatalf("promptText = %q", got)
+	}
+}
+
+func TestPromptTextIncludesResources(t *testing.T) {
+	got := promptText([]ContentBlock{
+		{Type: "resource_link", URI: "file:///a.go", Name: "a.go"},
+		{Type: "resource", Resource: json.RawMessage(`{"uri":"file:///b.go","text":"package b"}`)},
+	})
+	if !strings.Contains(got, "file:///a.go") || !strings.Contains(got, "package b") {
+		t.Fatalf("resource blocks dropped: %q", got)
 	}
 }
 

@@ -659,6 +659,31 @@ func (store *Store) UpdatePermissionProfile(sessionID string, profile string) (M
 	return session, nil
 }
 
+// Delete permanently removes a session and all of its on-disk state (metadata,
+// events, checkpoints, blobs). It holds the cross-process session lock so a
+// concurrent append or rewind cannot resurrect the directory mid-delete.
+// Deleting an already-absent session succeeds (idempotent).
+func (store *Store) Delete(sessionID string) error {
+	if !ValidSessionID(sessionID) {
+		return fmt.Errorf("invalid kajicode session id %q", sessionID)
+	}
+	// Idempotent: an already-absent session is a no-op. Checked before locking
+	// because the file lock itself lives inside the session directory.
+	if _, err := os.Stat(store.sessionPath(sessionID)); os.IsNotExist(err) {
+		return nil
+	}
+	unlock, err := store.lockSession(sessionID)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
+	if err := os.RemoveAll(store.sessionPath(sessionID)); err != nil {
+		return fmt.Errorf("delete kajicode session %s: %w", sessionID, err)
+	}
+	return nil
+}
+
 func (store *Store) ReadEvents(sessionID string) ([]Event, error) {
 	if !ValidSessionID(sessionID) {
 		return nil, fmt.Errorf("invalid kajicode session id %q", sessionID)

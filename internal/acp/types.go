@@ -10,16 +10,21 @@ const ProtocolVersion = 1
 const (
 	MethodInitialize             = "initialize"
 	MethodAuthenticate           = "authenticate"
+	MethodLogout                 = "logout"
 	MethodSessionNew             = "session/new"
 	MethodSessionLoad            = "session/load"
+	MethodSessionResume          = "session/resume"
+	MethodSessionFork            = "session/fork"
+	MethodSessionList            = "session/list"
+	MethodSessionClose           = "session/close"
+	MethodSessionDelete          = "session/delete"
 	MethodSessionPrompt          = "session/prompt"
 	MethodSessionCancel          = "session/cancel" // notification
 	MethodSessionUpdate          = "session/update" // notification (agent -> client)
 	MethodSessionSetMode         = "session/set_mode"
 	MethodSessionSetConfigOption = "session/set_config_option"
 	MethodSessionRequestPerm     = "session/request_permission" // agent -> client
-	MethodFSReadTextFile         = "fs/read_text_file"          // agent -> client
-	MethodFSWriteTextFile        = "fs/write_text_file"         // agent -> client
+	MethodElicitationCreate      = "elicitation/create"         // agent -> client
 
 	// Vendor-prefixed KAJICODE extensions (clients that don't support them ignore the
 	// method and degrade cleanly, per the spec's _-prefixed convention).
@@ -36,6 +41,9 @@ const (
 	UpdatePlan              = "plan"
 	UpdateAvailableCommands = "available_commands_update"
 	UpdateCurrentMode       = "current_mode_update"
+	UpdateConfigOption      = "config_option_update"
+	UpdateUsage             = "usage_update"
+	UpdateSessionInfo       = "session_info_update"
 )
 
 // ---- initialize ----
@@ -51,8 +59,53 @@ type FileSystemCapabilities struct {
 }
 
 type ClientCapabilities struct {
-	FS       FileSystemCapabilities `json:"fs"`
-	Terminal bool                   `json:"terminal"`
+	FS          FileSystemCapabilities     `json:"fs"`
+	Terminal    bool                       `json:"terminal"`
+	Elicitation *ElicitationCapabilities   `json:"elicitation,omitempty"`
+	Auth        ClientAuthCapabilities     `json:"auth"`
+	Session     *ClientSessionCapabilities `json:"session,omitempty"`
+}
+
+// ClientAuthCapabilities advertises which auth method types the client can run.
+// A client sets Terminal true only when it can launch the agent program in an
+// interactive terminal; the agent may then advertise terminal AuthMethods.
+type ClientAuthCapabilities struct {
+	Terminal bool `json:"terminal"`
+}
+
+// ClientSessionCapabilities advertises session-related client support.
+type ClientSessionCapabilities struct {
+	ConfigOptions *ClientConfigOptionsCapabilities `json:"configOptions,omitempty"`
+}
+
+// ClientConfigOptionsCapabilities advertises config-option extensions the client
+// renders. Boolean means it can show `type:"boolean"` config options.
+type ClientConfigOptionsCapabilities struct {
+	Boolean *struct{} `json:"boolean,omitempty"`
+}
+
+// ElicitationCapabilities is the client's opt-in for structured user input. A
+// present Form object means the client renders the requested JSON-schema form.
+type ElicitationCapabilities struct {
+	Form *struct{} `json:"form,omitempty"`
+	URL  *struct{} `json:"url,omitempty"`
+}
+
+// ---- elicitation (agent -> client) ----
+
+type CreateElicitationParams struct {
+	Mode            string          `json:"mode"` // "form"
+	Message         string          `json:"message"`
+	SessionID       string          `json:"sessionId,omitempty"`
+	ToolCallID      string          `json:"toolCallId,omitempty"`
+	RequestedSchema json.RawMessage `json:"requestedSchema,omitempty"`
+}
+
+// CreateElicitationResult is a tagged union on "action": accept carries the
+// submitted content; decline/cancel carry nothing.
+type CreateElicitationResult struct {
+	Action  string                     `json:"action"`
+	Content map[string]json.RawMessage `json:"content,omitempty"`
 }
 
 type PromptCapabilities struct {
@@ -61,16 +114,70 @@ type PromptCapabilities struct {
 	EmbeddedContext bool `json:"embeddedContext"`
 }
 
-type AgentCapabilities struct {
-	LoadSession        bool               `json:"loadSession"`
-	PromptCapabilities PromptCapabilities `json:"promptCapabilities"`
+// McpCapabilities advertises which MCP transports the agent can be asked to
+// connect to via a session's `mcpServers`. KajiCode owns its MCP configuration,
+// so both transports are advertised as unsupported.
+type McpCapabilities struct {
+	HTTP bool `json:"http"`
+	SSE  bool `json:"sse"`
 }
 
-type AuthMethod struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Description string `json:"description,omitempty"`
+// SessionCapabilities advertises the optional session lifecycle methods. A
+// present, non-null object means the method is supported (per the spec); an
+// absent/nil field means it is not.
+type SessionCapabilities struct {
+	List                  *struct{} `json:"list,omitempty"`
+	Resume                *struct{} `json:"resume,omitempty"`
+	Close                 *struct{} `json:"close,omitempty"`
+	Delete                *struct{} `json:"delete,omitempty"`
+	Fork                  *struct{} `json:"fork,omitempty"`
+	AdditionalDirectories *struct{} `json:"additionalDirectories,omitempty"`
 }
+
+// AgentAuthCapabilities advertises auth-related methods the agent supports.
+// Logout, when non-nil (present `{}`), means the agent implements `logout`.
+type AgentAuthCapabilities struct {
+	Logout *struct{} `json:"logout,omitempty"`
+}
+
+type AgentCapabilities struct {
+	LoadSession         bool                  `json:"loadSession"`
+	PromptCapabilities  PromptCapabilities    `json:"promptCapabilities"`
+	McpCapabilities     McpCapabilities       `json:"mcpCapabilities"`
+	SessionCapabilities SessionCapabilities   `json:"sessionCapabilities"`
+	Auth                AgentAuthCapabilities `json:"auth"`
+}
+
+// AuthMethod is either an agent-type method (KajiCode handles the login via
+// `authenticate`) or a terminal-type method (the client launches the agent
+// program in a terminal with Args/Env). Type is omitted for the default agent
+// type, matching the spec.
+type AuthMethod struct {
+	ID          string   `json:"id"`
+	Name        string   `json:"name"`
+	Description string   `json:"description,omitempty"`
+	Type        string   `json:"type,omitempty"` // "" (agent) or "terminal"
+	Args        []string `json:"args,omitempty"` // terminal only
+	Env         []EnvVar `json:"env,omitempty"`  // terminal only
+}
+
+// EnvVar is one environment variable for a terminal auth method.
+type EnvVar struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
+}
+
+// ---- authenticate / logout ----
+
+type AuthenticateParams struct {
+	MethodID string `json:"methodId"`
+}
+
+type AuthenticateResult struct{}
+
+type LogoutParams struct{}
+
+type LogoutResult struct{}
 
 type InitializeParams struct {
 	ProtocolVersion    int                `json:"protocolVersion"`
@@ -102,10 +209,6 @@ type ContentBlock struct {
 }
 
 func TextBlock(text string) ContentBlock { return ContentBlock{Type: "text", Text: text} }
-
-func ImageBlock(base64Data, mimeType string) ContentBlock {
-	return ContentBlock{Type: "image", Data: base64Data, MimeType: mimeType}
-}
 
 // ---- sessions ----
 
@@ -233,13 +336,8 @@ func ToolContent(block ContentBlock) ToolCallContent {
 	return ToolCallContent{Type: "content", Content: &block}
 }
 
-func ToolDiff(path, oldText, newText string) ToolCallContent {
-	return ToolCallContent{Type: "diff", Path: path, OldText: oldText, NewText: newText}
-}
-
 type ToolCallLocation struct {
 	Path string `json:"path"`
-	Line *int   `json:"line,omitempty"`
 }
 
 // ---- plan ----
@@ -265,9 +363,30 @@ type PlanUpdate struct {
 	Entries       []PlanEntry `json:"entries"`
 }
 
+type CurrentModeUpdate struct {
+	SessionUpdate string `json:"sessionUpdate"`
+	CurrentModeID string `json:"currentModeId"`
+}
+
+type SessionInfoUpdate struct {
+	SessionUpdate string `json:"sessionUpdate"`
+	Title         string `json:"title,omitempty"`
+}
+
+type ConfigOptionUpdate struct {
+	SessionUpdate string                `json:"sessionUpdate"`
+	ConfigOptions []SessionConfigOption `json:"configOptions"`
+}
+
+// AvailableCommandInput is the optional input hint for a slash command.
+type AvailableCommandInput struct {
+	Hint string `json:"hint"`
+}
+
 type AvailableCommand struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
+	Name        string                 `json:"name"`
+	Description string                 `json:"description"`
+	Input       *AvailableCommandInput `json:"input,omitempty"`
 }
 
 type AvailableCommandsUpdate struct {
@@ -275,9 +394,13 @@ type AvailableCommandsUpdate struct {
 	AvailableCommands []AvailableCommand `json:"availableCommands"`
 }
 
-type CurrentModeUpdate struct {
+// UsageUpdate reports token accounting for the session. KajiCode maps the
+// provider's prompt/completion token counts onto used/size; size is the model's
+// context window when known, else 0.
+type UsageUpdate struct {
 	SessionUpdate string `json:"sessionUpdate"`
-	CurrentModeID string `json:"currentModeId"`
+	Used          int    `json:"used"`
+	Size          int    `json:"size"`
 }
 
 // ---- permissions ----
@@ -339,17 +462,44 @@ type SetSessionModeResult struct{}
 
 // ---- session config options (model selection) ----
 
-type SessionConfigOptionValue struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
+// SessionConfigOption is a discriminated union on "type": a "select" carries
+// currentValue (string) + options; a "boolean" carries a bool currentValue. A
+// single struct with omitempty covers both directions KajiCode uses.
+type SessionConfigOption struct {
+	ID           string                     `json:"id"`
+	Name         string                     `json:"name"`
+	Description  string                     `json:"description,omitempty"`
+	Category     string                     `json:"category,omitempty"`
+	Type         string                     `json:"type"`
+	CurrentValue any                        `json:"currentValue"`
+	Options      []SessionConfigOptionValue `json:"options,omitempty"`
 }
 
-type SessionConfigOption struct {
-	ID          string                     `json:"id"`
-	Name        string                     `json:"name"`
-	Description string                     `json:"description,omitempty"`
-	Value       string                     `json:"value"`
-	Values      []SessionConfigOptionValue `json:"values,omitempty"`
+type SessionConfigOptionValue struct {
+	Value       string `json:"value"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+}
+
+// Config option ids KajiCode exposes. Model is the spec-standard selector;
+// the rest are vendor extensions (leading underscore category).
+const (
+	configIDModel         = "model"
+	configIDMode          = "mode"
+	configIDEffort        = "effort"
+	configIDTurns         = "turns"
+	configIDStyle         = "style"
+	configCategoryModel   = "model"
+	configCategoryMode    = "mode"
+	configCategoryThought = "thought_level"
+)
+
+// selectOption builds a "select" config option.
+func selectOption(id, name, description, category, current string, options []SessionConfigOptionValue) SessionConfigOption {
+	return SessionConfigOption{
+		ID: id, Name: name, Description: description, Category: category,
+		Type: "select", CurrentValue: current, Options: options,
+	}
 }
 
 type SetSessionConfigOptionParams struct {
@@ -373,6 +523,60 @@ type KajiCodeSetModelResult struct {
 	Model string `json:"model"`
 }
 
-// configIDModel is the SessionConfigOption id KAJICODE uses to expose model choice
-// through the standard session/set_config_option method.
-const configIDModel = "model"
+// ---- session lifecycle: list / resume / close / delete ----
+
+type ListSessionsParams struct {
+	Cwd    string `json:"cwd,omitempty"`
+	Cursor string `json:"cursor,omitempty"`
+}
+
+// SessionInfo is one entry returned by session/list.
+type SessionInfo struct {
+	SessionID string `json:"sessionId"`
+	Cwd       string `json:"cwd"`
+	Title     string `json:"title,omitempty"`
+	UpdatedAt string `json:"updatedAt,omitempty"`
+}
+
+type ListSessionsResult struct {
+	Sessions   []SessionInfo `json:"sessions"`
+	NextCursor *string       `json:"nextCursor,omitempty"`
+}
+
+type ResumeSessionParams struct {
+	SessionID             string      `json:"sessionId"`
+	Cwd                   string      `json:"cwd"`
+	McpServers            []McpServer `json:"mcpServers"`
+	AdditionalDirectories []string    `json:"additionalDirectories,omitempty"`
+}
+
+type ResumeSessionResult struct {
+	ConfigOptions []SessionConfigOption `json:"configOptions,omitempty"`
+	Modes         *SessionModeState     `json:"modes,omitempty"`
+}
+
+// ForkSessionParams mirrors session/new but branches from an existing session.
+type ForkSessionParams struct {
+	SessionID             string      `json:"sessionId"`
+	Cwd                   string      `json:"cwd"`
+	McpServers            []McpServer `json:"mcpServers"`
+	AdditionalDirectories []string    `json:"additionalDirectories,omitempty"`
+}
+
+type ForkSessionResult struct {
+	SessionID     string                `json:"sessionId"`
+	ConfigOptions []SessionConfigOption `json:"configOptions,omitempty"`
+	Modes         *SessionModeState     `json:"modes,omitempty"`
+}
+
+type CloseSessionParams struct {
+	SessionID string `json:"sessionId"`
+}
+
+type CloseSessionResult struct{}
+
+type DeleteSessionParams struct {
+	SessionID string `json:"sessionId"`
+}
+
+type DeleteSessionResult struct{}

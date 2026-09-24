@@ -1248,7 +1248,6 @@ Commands:
   search     Search persisted local KajiCode session events
   find       Alias for search
   sessions   Inspect local KajiCode session lineage
-  spec       Review and approve saved spec-mode drafts
   agent      Manage local KajiCode agent definitions
   plugins    Inspect, install, and remove local KajiCode plugins
   backends   Inspect MCP, hook, and plugin backend lifecycle state

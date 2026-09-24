@@ -863,45 +863,13 @@ func (m model) recordCompactionWithPayload(payload sessions.CompactionPayload) (
 	})
 }
 
+// summarizeCompactionPlan delegates to the shared implementation so the TUI,
+// CLI, and ACP summarize identically; the TUI's provider may be nil (fallback).
 func (m model) summarizeCompactionPlan(plan sessions.CompactionPlan) (string, error) {
 	if m.provider == nil {
-		return deterministicCompactionSummary(plan), nil
+		return sessions.DeterministicCompactionSummary(plan), nil
 	}
-	stream, err := m.provider.StreamCompletion(m.ctx, kajicoderuntime.CompletionRequest{
-		Messages: []kajicoderuntime.Message{
-			{Role: kajicoderuntime.MessageRoleSystem, Content: "Summarize compacted KajiCode session events for future coding context. Preserve user goals, decisions, files, tool outcomes, blockers, and exact next steps. Omit secrets and do not invent details."},
-			{Role: kajicoderuntime.MessageRoleUser, Content: plan.SummaryPrompt},
-		},
-	})
-	if err != nil {
-		return "", fmt.Errorf("summarize compacted session: %w", err)
-	}
-	collected := kajicoderuntime.CollectStream(m.ctx, stream)
-	if collected.Error != "" {
-		return "", fmt.Errorf("summarize compacted session: %s", collected.Error)
-	}
-	summary := strings.TrimSpace(collected.Text)
-	if summary == "" {
-		return "", fmt.Errorf("summarize compacted session: empty summary")
-	}
-	return summary, nil
-}
-
-func deterministicCompactionSummary(plan sessions.CompactionPlan) string {
-	lines := []string{
-		fmt.Sprintf("Compacted earlier session context: %d event(s) summarized, %d recent event(s) preserved.", plan.CompactableCount, plan.PreservedCount),
-	}
-	if len(plan.CompactableEvents) > 0 {
-		first := plan.CompactableEvents[0]
-		last := plan.CompactableEvents[len(plan.CompactableEvents)-1]
-		lines = append(lines, fmt.Sprintf("Compacted range: #%d %s through #%d %s.", first.Sequence, first.Type, last.Sequence, last.Type))
-	}
-	if len(plan.PreservedEvents) > 0 {
-		first := plan.PreservedEvents[0]
-		last := plan.PreservedEvents[len(plan.PreservedEvents)-1]
-		lines = append(lines, fmt.Sprintf("Preserved recent range: #%d %s through #%d %s.", first.Sequence, first.Type, last.Sequence, last.Type))
-	}
-	return strings.TrimSpace(strings.Join(lines, "\n"))
+	return sessions.SummarizePlan(m.ctx, m.provider, plan)
 }
 
 func compactContextWindowText(window int) string {
