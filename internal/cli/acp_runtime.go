@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"path/filepath"
 	"strings"
@@ -69,26 +70,30 @@ func buildACPWorkspace(workspaceRoot, sessionID string, resolved config.Resolved
 		MCPInstructions: mcpInstructionInfos(mcpRuntime),
 	}
 
-	// Sub-agents: register the Task tool and hydrate its child-run context. The
-	// per-turn provider/model/window/mode/resolved config are supplied via Rebase.
-	if depth := resolved.Agents.Depth; depth > 0 {
-		if runtime, err := registerAgents(registry, workspaceRoot, depth); err == nil {
-			ws.Agents = runtime.agentInfos()
-			ws.TaskCompletions = runtime.completions()
-			ws.Rebase = func(base agents.ChildRunContext, resolved config.ResolvedConfig) {
-				base.Sandbox = engine
-				base.FileTracker = fileTracker
-				base.Hooks = hookDispatcher
-				base.Cwd = workspaceRoot
-				base.SessionStore = sessionStore
-				base.Store = store
-				base.ResolveModel = execModelResolver(resolved, deps)
-				// Register captured the registry as the child ceiling; leave
-				// base.Registry nil so setBase does not overwrite it.
-				base.Registry = nil
-				runtime.setBase(base)
-			}
+	// Sub-agents: register the Task tool and hydrate its child-run context, always
+	// — agents.depth == 0 means "use the built-in default" (agents.DefaultMaxDepth),
+	// not "disabled", exactly as the TUI passes it through to NewRunner. A
+	// registration failure is non-fatal: the session keeps its non-agent tools and
+	// the reason is surfaced on stderr rather than wedging session/new.
+	// The per-turn provider/model/window/mode/resolved config are supplied via Rebase.
+	if runtime, err := registerAgents(registry, workspaceRoot, resolved.Agents.Depth); err == nil {
+		ws.Agents = runtime.agentInfos()
+		ws.TaskCompletions = runtime.completions()
+		ws.Rebase = func(base agents.ChildRunContext, resolved config.ResolvedConfig) {
+			base.Sandbox = engine
+			base.FileTracker = fileTracker
+			base.Hooks = hookDispatcher
+			base.Cwd = workspaceRoot
+			base.SessionStore = sessionStore
+			base.Store = store
+			base.ResolveModel = execModelResolver(resolved, deps)
+			// Register captured the registry as the child ceiling; leave
+			// base.Registry nil so setBase does not overwrite it.
+			base.Registry = nil
+			runtime.setBase(base)
 		}
+	} else {
+		_, _ = fmt.Fprintf(stderr, "[kajicode] warning: failed to initialize sub-agent tools: %s\n", err)
 	}
 
 	ws.Close = func() { closeMCPRuntime(stderr, mcpRuntime) }
