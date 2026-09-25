@@ -512,7 +512,23 @@ or command for a subsystem, both are covered.
   travels over ACP (form elicitation must not carry secrets); `status` reads the
   stored file, so a configured key shows as `set`.
 
-### 12.6 Status summary (after the model/knob work)
+### 12.6 Runtime parity with exec/TUI
+
+An ACP session runs the same `agent.Options` feature set as the exec and TUI
+surfaces: self-learning (perpetual memory: review/plan/apply across global +
+project + session stores), hooks (beforeTool/afterTool), harness rules +
+prompt section, KajiCode-owned MCP servers (tools + `<mcp_instructions>`),
+sub-agents (`Task` + background completion push), durable `todo_write`/
+`todo_read` session store, file-conflict tracking, deferred tool loading
+(`tool_search`) + `batch`, and the per-turn context gauge (`OnContext`). The
+workspace (registry, sandbox, MCP clients, hooks, agent supervisor) is built
+once per session and released on `session/close` / `session/delete`. Trust
+skips (dropped project hooks/plugins/MCP for an untrusted workspace) are
+surfaced on stderr exactly like exec. Intentional exceptions: the headless
+completion gate (`RequireCompletionSignal`) stays off — an editor has an
+operator present — and tracing (`Trace`) has no ACP consumer, so it is off.
+
+### 12.7 Status summary (after the model/knob work)
 
 - **Real ACP controls** (`[x]`): model (all providers' models, grouped, with
   provider switching + `_kajicode/refresh_models`), permissions, effort, turns,

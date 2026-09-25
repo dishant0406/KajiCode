@@ -56,7 +56,7 @@ func testDeps(t *testing.T) Deps {
 			return fakeProvider{text: "Hello from KAJICODE"}, nil
 		},
 		RunAgent: agent.Run,
-		BuildWorkspace: func(string, config.ResolvedConfig) (Workspace, error) {
+		BuildWorkspace: func(string, string, config.ResolvedConfig) (Workspace, error) {
 			r := tools.NewRegistry()
 			r.Register(tools.NewTodoWriteTool())
 			return Workspace{Registry: r}, nil
@@ -207,7 +207,7 @@ func TestACPRunTurnWiresSandboxAndScopedRegistry(t *testing.T) {
 	reg.Register(tools.NewTodoWriteTool())
 	engine := sandbox.NewEngine(sandbox.EngineOptions{WorkspaceRoot: t.TempDir()})
 	skills := []agent.SkillInfo{{Name: "demo", Description: "demo skill"}}
-	deps.BuildWorkspace = func(string, config.ResolvedConfig) (Workspace, error) {
+	deps.BuildWorkspace = func(string, string, config.ResolvedConfig) (Workspace, error) {
 		return Workspace{Registry: reg, Sandbox: engine, Skills: skills}, nil
 	}
 	var captured agent.Options

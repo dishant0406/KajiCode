@@ -15,8 +15,10 @@ import (
 	"time"
 
 	"github.com/dishant0406/KajiCode/internal/agent"
+	"github.com/dishant0406/KajiCode/internal/agents"
 	"github.com/dishant0406/KajiCode/internal/config"
 	"github.com/dishant0406/KajiCode/internal/execprofile"
+	"github.com/dishant0406/KajiCode/internal/hooks"
 	"github.com/dishant0406/KajiCode/internal/imageinput"
 	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
 	"github.com/dishant0406/KajiCode/internal/lsp"
@@ -35,11 +37,12 @@ type Deps struct {
 	ResolveConfig func(workspaceRoot string, overrides config.Overrides) (config.ResolvedConfig, error)
 	NewProvider   func(profile config.ProviderProfile) (kajicoderuntime.Provider, error)
 	RunAgent      func(ctx context.Context, prompt string, provider kajicoderuntime.Provider, opts agent.Options) (agent.Result, error)
-	// BuildWorkspace builds the SCOPED tool registry, the sandbox engine, and the
-	// skill catalog for a validated workspace root. The registry confines ACP
-	// shell tools (bash/exec_command) exactly like the exec surface — never run
-	// unconfined on the host.
-	BuildWorkspace func(workspaceRoot string, resolved config.ResolvedConfig) (Workspace, error)
+	// BuildWorkspace builds the SCOPED tool registry, the sandbox engine, the
+	// skill catalog, and the per-session collaborators (hooks, MCP, sub-agents,
+	// durable session store) for a validated workspace root. The registry confines
+	// ACP shell tools (bash/exec_command) exactly like the exec surface — never run
+	// unconfined on the host. sessionID namespaces the durable session store.
+	BuildWorkspace func(workspaceRoot, sessionID string, resolved config.ResolvedConfig) (Workspace, error)
 	// ResolveWorkspaceRoot validates + normalizes a client-supplied cwd (must be an
 	// existing directory; never the bare root). It is the file-tool confinement root.
 	ResolveWorkspaceRoot func(cwd string) (string, error)
@@ -101,6 +104,11 @@ type Deps struct {
 	// agent.Options.ContextWindow wraps it in modelregistry.AgentContextWindow so
 	// compaction is enabled even for an unknown model. 0 means unknown.
 	ResolveContextWindow func(profile config.ProviderProfile) int
+	// BuildLearning builds the self-learning engine (perpetual memory) for a
+	// session, matching exec/TUI, so review/plan/apply and session/project/global
+	// memory work over ACP. nil means no learning engine (feature off). The
+	// engine is per-turn because it needs the current provider.
+	BuildLearning func(workspaceRoot string, resolved config.ResolvedConfig, provider kajicoderuntime.Provider, sessionID string) *agent.LearningEngine
 	// SuggestNes produces a next-edit suggestion for one buffered document.
 	// nil means nes/suggest returns an empty suggestion list.
 	SuggestNes func(ctx context.Context, input NesSuggestInput) (*NesEditSuggestion, error)
@@ -115,12 +123,30 @@ type Deps struct {
 
 // Workspace is the per-session toolkit ACP runs a turn against: the scoped tool
 // registry, the sandbox engine (nil for ACP, which runs no sandboxed backend of
-// its own), the skill catalog advertised in the system prompt, and the effective
-// working directory after additional directories are folded into the scope.
+// its own), the skill catalog advertised in the system prompt, and the
+// per-session collaborators a run needs (hooks, MCP instructions, sub-agents,
+// durable session store, file tracker) so an ACP session runs the same feature
+// set as exec/TUI. Close releases the collaborators' resources (MCP clients,
+// agent supervisor) and is called once when the session is dropped.
 type Workspace struct {
 	Registry *tools.Registry
 	Sandbox  *sandbox.Engine
 	Skills   []agent.SkillInfo
+
+	Harness         config.HarnessConfig
+	DeferThreshold  int
+	Hooks           *hooks.Dispatcher
+	FileTracker     *tools.FileTracker
+	SessionStore    tools.SessionStore
+	MCPInstructions []agent.MCPInstructions
+	Agents          []agent.AgentInfo
+	TaskCompletions agent.TaskCompletionSource
+	// Rebase hydrates the sub-agent supervisor with the current turn's handles
+	// (provider, model, context window, permission mode) so a Task child runs on
+	// the live provider under the session's permission mode. nil when no
+	// sub-agents are registered.
+	Rebase func(base agents.ChildRunContext, resolved config.ResolvedConfig)
+	Close  func()
 }
 
 // Agent is the ACP agent server bound to one JSON-RPC connection (one editor).
@@ -164,8 +190,24 @@ type acpSession struct {
 	// modelCache holds per-provider discovered model lists, keyed by provider
 	// name. Populated lazily and cleared by _kajicode/refresh_models.
 	modelCache map[string][]SessionConfigOptionValue
-	cancel     context.CancelFunc
-	history    []turnRecord
+
+	// workspace is the per-session toolkit (registry, sandbox, collaborators),
+	// built once on first use and reused for every turn so stateful collaborators
+	// (MCP clients, hooks, sub-agent supervisor) are not rebuilt per turn. Closed
+	// when the session is dropped.
+	workspace    Workspace
+	workspaceErr error
+	workspaceSet bool
+
+	// learning is the self-learning engine, cached per active provider so its
+	// turn-interval / failed→fixed state survives across turns (a fresh engine
+	// every turn would reset it). learningKey identifies the provider+model it
+	// was built for.
+	learning    *agent.LearningEngine
+	learningKey string
+
+	cancel  context.CancelFunc
+	history []turnRecord
 
 	// v1-unstable editor->agent document sync: the last-known buffer per URI.
 	docs map[string]acpDocument
@@ -797,11 +839,11 @@ func (a *Agent) runTurn(ctx context.Context, sess *acpSession, userText string, 
 	if err != nil {
 		return "", RPCError(codeInternalError, "provider: "+err.Error())
 	}
-	// Build the SCOPED registry + sandbox engine + skill catalog for this session's
-	// workspace so shell/file tools are confined to the workspace exactly like the
-	// exec surface, and the system prompt advertises the same skills the skill tool
-	// can load.
-	workspace, err := a.deps.BuildWorkspace(sess.cwd, resolved)
+	// Build (once per session) the SCOPED registry + sandbox engine + skill
+	// catalog + collaborators for this session's workspace, so shell/file tools
+	// are confined exactly like exec and every feature the TUI/exec surfaces wire
+	// (hooks, MCP, sub-agents, durable session store, learning) is present too.
+	workspace, err := a.workspaceFor(sess, resolved)
 	if err != nil {
 		return "", RPCError(codeInternalError, "workspace: "+err.Error())
 	}
@@ -850,6 +892,24 @@ func (a *Agent) runTurn(ctx context.Context, sess *acpSession, userText string, 
 		contextWindow = a.deps.ResolveContextWindow(resolved.Provider)
 	}
 
+	// Re-base the sub-agent supervisor with this turn's live handles (provider,
+	// model, context window, permission mode) so a Task child runs on the current
+	// provider under the session's permission mode, matching exec.
+	if workspace.Rebase != nil {
+		workspace.Rebase(agents.ChildRunContext{
+			Provider:       provider,
+			Model:          resolved.Provider.Model,
+			ContextWindow:  modelregistry.AgentContextWindow(contextWindow),
+			PermissionMode: sess.currentMode(),
+		}, resolved)
+	}
+
+	// Self-learning, exactly as exec/TUI: review/plan/apply against the harness
+	// stores (global + project + this session) plus manual learn-tool requests.
+	// Cached per active provider so the engine's interval/signal state survives
+	// across turns; nil when learning is disabled in config.
+	learning := a.learningFor(sess, resolved, provider)
+
 	opts := agent.Options{
 		Cwd:             sess.cwd,
 		SessionID:       sess.id,
@@ -860,11 +920,20 @@ func (a *Agent) runTurn(ctx context.Context, sess *acpSession, userText string, 
 		SelfCorrect:     selfCorrector,
 		FileDiagnostics: fileDiagnostics,
 		Profile:         profilePolicy,
+		Learning:        learning,
 		Registry:        registry,
 		Sandbox:         workspace.Sandbox,
 		PermissionMode:  sess.currentMode(),
+		Autonomy:        "low",
 		MaxTurns:        maxTurns,
 		ContextWindow:   modelregistry.AgentContextWindow(contextWindow),
+		DeferThreshold:  workspace.DeferThreshold,
+		Harness:         workspace.Harness,
+		Agents:          workspace.Agents,
+		MCPInstructions: workspace.MCPInstructions,
+		FileTracker:     workspace.FileTracker,
+		SessionStore:    workspace.SessionStore,
+		Hooks:           workspace.Hooks,
 		Images:          images,
 		ImageLimits:     imageinput.LimitsFrom(resolved.Images.MaxWidth, resolved.Images.MaxHeight, resolved.Images.MaxBytes, resolved.Images.AutoResize),
 		Skills:          workspace.Skills,
@@ -872,8 +941,12 @@ func (a *Agent) runTurn(ctx context.Context, sess *acpSession, userText string, 
 		OnReasoning:     note.thought,
 		// Report real token counts with the resolved context window as size, so the
 		// client's context gauge has a denominator (matches the TUI's used/window).
-		OnUsage:    func(u agent.Usage) { note.usage(u.TotalTokens(), contextWindow) },
-		OnToolCall: note.toolCall,
+		OnUsage: func(u agent.Usage) { note.usage(u.TotalTokens(), contextWindow) },
+		// Live per-turn context estimate, so the client's gauge has a value before
+		// the provider reports real token counts.
+		OnContext:       func(b agent.ContextBreakdown) { note.usage(b.TotalTokens, b.ContextWindow) },
+		OnToolCall:      note.toolCall,
+		TaskCompletions: workspace.TaskCompletions,
 		OnToolResult: func(result agent.ToolResult) {
 			note.toolResult(result)
 			if result.Name == "todo_write" {
@@ -1075,10 +1148,11 @@ func (a *Agent) runRefreshModels(ctx context.Context, sess *acpSession) string {
 // model's catalog never disagree. It reuses Deps.BuildWorkspace (the same build a
 // turn uses), so a project skill in the workspace shows up here too.
 func (a *Agent) listSkills(sess *acpSession) string {
-	if a.deps.BuildWorkspace == nil {
-		return "Skills are not available in this session."
+	resolved := sess.resolved
+	if len(sess.extra) > 0 {
+		resolved.Sandbox.AdditionalWriteRoots = append(resolved.Sandbox.AdditionalWriteRoots, sess.extra...)
 	}
-	workspace, err := a.deps.BuildWorkspace(sess.cwd, sess.resolved)
+	workspace, err := a.workspaceFor(sess, resolved)
 	if err != nil {
 		return "Skills\nFailed to load skills: " + err.Error()
 	}
@@ -1688,6 +1762,71 @@ func (a *Agent) session(id string) *acpSession {
 	return a.sessions[id]
 }
 
+// workspaceFor returns the session's cached toolkit, building it once and
+// reusing it for every turn so stateful collaborators are not rebuilt (and
+// leaked) per turn. A build failure is cached too, so a broken workspace is not
+// retried on every prompt.
+func (a *Agent) workspaceFor(sess *acpSession, resolved config.ResolvedConfig) (Workspace, error) {
+	sess.mu.Lock()
+	if sess.workspaceSet {
+		ws, err := sess.workspace, sess.workspaceErr
+		sess.mu.Unlock()
+		return ws, err
+	}
+	sess.mu.Unlock()
+
+	ws, err := a.deps.BuildWorkspace(sess.cwd, sess.id, resolved)
+
+	sess.mu.Lock()
+	if sess.workspaceSet {
+		// A concurrent turn won the race; use the winner and discard ours.
+		existing, existingErr := sess.workspace, sess.workspaceErr
+		sess.mu.Unlock()
+		if ws.Close != nil {
+			ws.Close()
+		}
+		return existing, existingErr
+	}
+	sess.workspace, sess.workspaceErr, sess.workspaceSet = ws, err, true
+	sess.mu.Unlock()
+	return ws, err
+}
+
+// learningFor returns the session's cached self-learning engine, rebuilding it
+// when the active provider/model changed (the engine binds one provider). nil
+// when no learning dep is configured.
+func (a *Agent) learningFor(sess *acpSession, resolved config.ResolvedConfig, provider kajicoderuntime.Provider) *agent.LearningEngine {
+	if a.deps.BuildLearning == nil {
+		return nil
+	}
+	key := resolved.Provider.Name + "\x00" + resolved.Provider.Model
+	sess.mu.Lock()
+	if sess.learning != nil && sess.learningKey == key {
+		engine := sess.learning
+		sess.mu.Unlock()
+		return engine
+	}
+	sess.mu.Unlock()
+	engine := a.deps.BuildLearning(sess.cwd, resolved, provider, sess.id)
+	sess.mu.Lock()
+	sess.learning, sess.learningKey = engine, key
+	sess.mu.Unlock()
+	return engine
+}
+
+// closeWorkspace releases the session's cached toolkit collaborators exactly
+// once. Safe to call when no workspace was ever built.
+func (s *acpSession) closeWorkspace() {
+	s.mu.Lock()
+	ws := s.workspace
+	s.workspace = Workspace{}
+	s.workspaceSet = false
+	s.mu.Unlock()
+	if ws.Close != nil {
+		ws.Close()
+	}
+}
+
 func (a *Agent) dropSession(id string) {
 	a.mu.Lock()
 	sess := a.sessions[id]
@@ -1697,6 +1836,7 @@ func (a *Agent) dropSession(id string) {
 	// concurrent session/cancel is a no-op regardless of ordering.
 	if sess != nil {
 		sess.invokeCancel()
+		sess.closeWorkspace()
 	}
 }
 

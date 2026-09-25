@@ -12,9 +12,11 @@ import (
 
 	"github.com/dishant0406/KajiCode/internal/agent"
 	"github.com/dishant0406/KajiCode/internal/config"
+	"github.com/dishant0406/KajiCode/internal/hooks"
 	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
 	"github.com/dishant0406/KajiCode/internal/modelregistry"
 	"github.com/dishant0406/KajiCode/internal/sessions"
+	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
 // updateCollector records every session/update variant a client receives. The
@@ -929,7 +931,7 @@ func TestACPRefreshModelsSlashCommand(t *testing.T) {
 // just the global-only `kajicode skills list`.
 func TestACPSkillsListsWorkspaceSkills(t *testing.T) {
 	deps := testDeps(t)
-	deps.BuildWorkspace = func(string, config.ResolvedConfig) (Workspace, error) {
+	deps.BuildWorkspace = func(string, string, config.ResolvedConfig) (Workspace, error) {
 		return Workspace{Skills: []agent.SkillInfo{
 			{Name: "demo-project-skill", Description: "A project-local skill."},
 			{Name: "global-skill", Description: "A global skill."},
@@ -981,7 +983,7 @@ func TestACPSkillsListsWorkspaceSkills(t *testing.T) {
 // an empty response.
 func TestACPSkillsEmptyState(t *testing.T) {
 	deps := testDeps(t)
-	deps.BuildWorkspace = func(string, config.ResolvedConfig) (Workspace, error) {
+	deps.BuildWorkspace = func(string, string, config.ResolvedConfig) (Workspace, error) {
 		return Workspace{}, nil
 	}
 	h, updates := newCollectorHarness(t, deps)
@@ -1020,7 +1022,7 @@ func TestACPSkillsEmptyState(t *testing.T) {
 // session-scoped path as bare `/skills` (not the global-only CLI fallback).
 func TestACPSkillsListFormUsesMergedSet(t *testing.T) {
 	deps := testDeps(t)
-	deps.BuildWorkspace = func(string, config.ResolvedConfig) (Workspace, error) {
+	deps.BuildWorkspace = func(string, string, config.ResolvedConfig) (Workspace, error) {
 		return Workspace{Skills: []agent.SkillInfo{{Name: "project-only-skill"}}}, nil
 	}
 	h, updates := newCollectorHarness(t, deps)
@@ -1059,7 +1061,7 @@ func TestACPSkillsListFormUsesMergedSet(t *testing.T) {
 // markers as the model catalog.
 func TestACPSkillsPermissionMarkers(t *testing.T) {
 	deps := testDeps(t)
-	deps.BuildWorkspace = func(string, config.ResolvedConfig) (Workspace, error) {
+	deps.BuildWorkspace = func(string, string, config.ResolvedConfig) (Workspace, error) {
 		return Workspace{Skills: []agent.SkillInfo{
 			{Name: "denied-skill", Permission: "deny"},
 			{Name: "prompt-skill", Permission: "prompt"},
@@ -1164,5 +1166,132 @@ func TestACPSkillCommandUnknownFallsThrough(t *testing.T) {
 	}
 	if !strings.Contains(capturedPrompt, "/no-such-skill hello") {
 		t.Fatalf("unknown /name should fall through to the model verbatim: %q", capturedPrompt)
+	}
+}
+
+// TestACPRunTurnWiresWorkspaceCollaborators proves every collaborator the
+// workspace carries (harness, deferred tools, hooks, file tracker, session
+// store, MCP instructions, sub-agents, learning) reaches agent.Options — i.e.
+// ACP runs the same feature set as exec/TUI.
+func TestACPRunTurnWiresWorkspaceCollaborators(t *testing.T) {
+	deps := testDeps(t)
+	hookStub := hooks.NewDispatcher(hooks.DispatcherOptions{})
+	taskStub := stubTaskCompletions{}
+	deps.BuildWorkspace = func(_, _ string, _ config.ResolvedConfig) (Workspace, error) {
+		return Workspace{
+			Registry:        tools.NewRegistry(),
+			Harness:         config.HarnessConfig{},
+			DeferThreshold:  42,
+			Hooks:           hookStub,
+			FileTracker:     tools.NewFileTracker(),
+			SessionStore:    tools.SessionStore(nil),
+			MCPInstructions: []agent.MCPInstructions{{Server: "s", Instructions: "i"}},
+			Agents:          []agent.AgentInfo{{Name: "a", WhenToUse: "w"}},
+			TaskCompletions: taskStub,
+		}, nil
+	}
+	deps.BuildLearning = func(string, config.ResolvedConfig, kajicoderuntime.Provider, string) *agent.LearningEngine {
+		return &agent.LearningEngine{}
+	}
+	var captured agent.Options
+	deps.RunAgent = func(_ context.Context, _ string, _ kajicoderuntime.Provider, opts agent.Options) (agent.Result, error) {
+		captured = opts
+		return agent.Result{FinalAnswer: "ok"}, nil
+	}
+	h := newHarness(t, deps)
+	defer h.stop()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var res NewSessionResult
+	if err := h.client.Call(ctx, MethodSessionNew, NewSessionParams{Cwd: t.TempDir(), McpServers: []McpServer{}}, &res); err != nil {
+		t.Fatalf("session/new: %v", err)
+	}
+	if err := h.client.Call(ctx, MethodSessionPrompt, PromptParams{SessionID: res.SessionID, Prompt: []ContentBlock{TextBlock("hi")}}, &PromptResult{}); err != nil {
+		t.Fatalf("session/prompt: %v", err)
+	}
+	if captured.DeferThreshold != 42 {
+		t.Errorf("DeferThreshold = %d, want 42", captured.DeferThreshold)
+	}
+	if captured.Hooks == nil {
+		t.Error("Hooks not wired")
+	}
+	if captured.FileTracker == nil {
+		t.Error("FileTracker not wired")
+	}
+	if captured.Learning == nil {
+		t.Error("Learning not wired")
+	}
+	if len(captured.MCPInstructions) != 1 || len(captured.Agents) != 1 {
+		t.Errorf("MCP/Agents not wired: mcp=%v agents=%v", captured.MCPInstructions, captured.Agents)
+	}
+	if captured.TaskCompletions == nil {
+		t.Error("TaskCompletions not wired")
+	}
+}
+
+type stubTaskCompletions struct{}
+
+func (stubTaskCompletions) DrainCompletedTasks() []string { return nil }
+
+// TestACPWorkspaceBuiltOnceAndClosedOnce proves the workspace is built once per
+// session and its Close runs exactly once when the session is dropped.
+func TestACPWorkspaceBuiltOnceAndClosedOnce(t *testing.T) {
+	deps := testDeps(t)
+	builds, closes := 0, 0
+	deps.BuildWorkspace = func(string, string, config.ResolvedConfig) (Workspace, error) {
+		builds++
+		return Workspace{Registry: tools.NewRegistry(), Close: func() { closes++ }}, nil
+	}
+	h := newHarness(t, deps)
+	defer h.stop()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var res NewSessionResult
+	if err := h.client.Call(ctx, MethodSessionNew, NewSessionParams{Cwd: t.TempDir(), McpServers: []McpServer{}}, &res); err != nil {
+		t.Fatalf("session/new: %v", err)
+	}
+	for i := 0; i < 3; i++ {
+		if err := h.client.Call(ctx, MethodSessionPrompt, PromptParams{SessionID: res.SessionID, Prompt: []ContentBlock{TextBlock("hi")}}, &PromptResult{}); err != nil {
+			t.Fatalf("prompt %d: %v", i, err)
+		}
+	}
+	if builds != 1 {
+		t.Fatalf("workspace built %d times, want 1 (cached per session)", builds)
+	}
+	if err := h.client.Call(ctx, MethodSessionClose, CloseSessionParams{SessionID: res.SessionID}, &CloseSessionResult{}); err != nil {
+		t.Fatalf("session/close: %v", err)
+	}
+	if closes != 1 {
+		t.Fatalf("workspace Close called %d times, want 1", closes)
+	}
+}
+
+// TestACPWorkspaceClosedOnDelete proves session/delete also releases the
+// workspace (no MCP/sub-agent leak).
+func TestACPWorkspaceClosedOnDelete(t *testing.T) {
+	deps := testDeps(t)
+	closes := 0
+	deps.BuildWorkspace = func(string, string, config.ResolvedConfig) (Workspace, error) {
+		return Workspace{Registry: tools.NewRegistry(), Close: func() { closes++ }}, nil
+	}
+	h := newHarness(t, deps)
+	defer h.stop()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var res NewSessionResult
+	if err := h.client.Call(ctx, MethodSessionNew, NewSessionParams{Cwd: t.TempDir(), McpServers: []McpServer{}}, &res); err != nil {
+		t.Fatalf("session/new: %v", err)
+	}
+	if err := h.client.Call(ctx, MethodSessionPrompt, PromptParams{SessionID: res.SessionID, Prompt: []ContentBlock{TextBlock("hi")}}, &PromptResult{}); err != nil {
+		t.Fatalf("prompt: %v", err)
+	}
+	if err := h.client.Call(ctx, MethodSessionDelete, DeleteSessionParams{SessionID: res.SessionID}, &DeleteSessionResult{}); err != nil {
+		t.Fatalf("session/delete: %v", err)
+	}
+	if closes != 1 {
+		t.Fatalf("workspace Close called %d times, want 1", closes)
 	}
 }

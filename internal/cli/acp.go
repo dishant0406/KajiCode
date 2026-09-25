@@ -9,7 +9,6 @@ import (
 	"github.com/dishant0406/KajiCode/internal/acp"
 	"github.com/dishant0406/KajiCode/internal/agent"
 	"github.com/dishant0406/KajiCode/internal/config"
-	"github.com/dishant0406/KajiCode/internal/sandbox"
 )
 
 const acpUsage = `kajicode acp — serve the Agent Client Protocol (ACP) over stdio
@@ -52,24 +51,10 @@ func runACP(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) int
 		// Plugin activation overlays the multi-root skill tool and its roots, and the
 		// same roots render the skill catalog, so ACP's advertised skills match what
 		// the skill tool can resolve.
-		BuildWorkspace: func(workspaceRoot string, resolved config.ResolvedConfig) (acp.Workspace, error) {
-			scope, err := sandbox.NewScope(workspaceRoot, resolved.Sandbox.AdditionalWriteRoots)
-			if err != nil {
-				return acp.Workspace{}, err
-			}
-			engine, err := buildExecSandboxEngine(workspaceRoot, resolved, deps, scope)
-			if err != nil {
-				return acp.Workspace{}, err
-			}
-			registry := newCoreRegistryScoped(workspaceRoot, scope)
-			registerLocalControlTools(registry, workspaceRoot, resolved.LocalControl)
-			activation := activatePlugins(workspaceRoot, registry, deps, stderr, workspaceRoot)
-			return acp.Workspace{
-				Registry: registry,
-				Sandbox:  engine,
-				Skills:   activation.skillInfos(deps.skillsDir(), workspaceRoot),
-			}, nil
+		BuildWorkspace: func(workspaceRoot, sessionID string, resolved config.ResolvedConfig) (acp.Workspace, error) {
+			return buildACPWorkspace(workspaceRoot, sessionID, resolved, deps, stderr)
 		},
+		BuildLearning:        acpBuildLearning(deps),
 		ResolveWorkspaceRoot: acpWorkspaceRootResolver(deps),
 		Store:                deps.newSessionStore(),
 		AgentInfo:            acp.Implementation{Name: "kajicode", Version: version},
