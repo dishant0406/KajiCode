@@ -313,15 +313,15 @@ func runExec(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) in
 	}
 	if options.listTools {
 		if options.outputFormat == execOutputStreamJSON {
-			return writeExecStreamJSONFinal(stdout, workspaceRoot, execRunMetadata{}, permissionMode, formatExecToolList(registry, options, permissionMode), exitSuccess)
+			return writeExecStreamJSONFinal(stdout, workspaceRoot, execRunMetadata{}, permissionMode, formatExecToolList(registry, options), exitSuccess)
 		}
 		if options.outputFormat == execOutputJSON {
-			if err := writeExecToolListJSON(stdout, registry, options, permissionMode); err != nil {
+			if err := writeExecToolListJSON(stdout, registry, options); err != nil {
 				return exitCrash
 			}
 			return exitSuccess
 		}
-		if err := writeExecToolList(stdout, registry, options, permissionMode); err != nil {
+		if err := writeExecToolList(stdout, registry, options); err != nil {
 			return exitCrash
 		}
 		return exitSuccess
@@ -341,10 +341,9 @@ func runExec(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) in
 	}
 	// Activate deferred MCP-tool loading for this run only when the VISIBLE
 	// deferred-eligible count meets the resolved threshold; below threshold this
-	// is a no-op and tool advertising stays byte-identical. The registry is
-	// already complete (core + MCP) at this point, so the count is accurate. The
-	// permission mode and operator tool filters MUST match the values passed to
-	// agent.Run below so this registration gate counts the same population the
+	// is a no-op. The registry is already complete (core + MCP) at this point, so
+	// the count is accurate. The operator tool filters MUST match the values passed
+	// to agent.Run below so this registration gate counts the same population the
 	// loop's partition gate counts.
 	// tool_search is the only way to reach a hidden deferred tool, so if the
 	// operator explicitly disables it, deferral must not activate at all —
@@ -355,7 +354,7 @@ func runExec(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) in
 	if toolListContains(options.disabledTools, tools.ToolSearchToolName) {
 		effectiveDeferThreshold = 0
 	}
-	registerToolSearchIfEligible(registry, effectiveDeferThreshold, permissionMode, options.enabledTools, options.disabledTools)
+	registerToolSearchIfEligible(registry, effectiveDeferThreshold, options.enabledTools, options.disabledTools)
 	registerBatchTool(registry, options.enabledTools, options.disabledTools)
 	images, err := resolveExecImages(options.imagePaths, workspaceRoot, resolved.Images)
 	if err != nil {
@@ -841,12 +840,12 @@ func runExec(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) in
 
 // deferredEligibleCount returns the number of registered tools that are
 // deferred-eligible (MCP tools) AND visible to the model for THIS run — i.e. they
-// pass the same agent.ToolVisible gate (permission-mode advertising + operator
-// allow/deny filters) that the agent loop's partitionTools applies when it
-// decides whether deferral activates. Counting the SAME visible-deferred
-// population here keeps registration and activation in agreement: tool_search is
-// registered iff the partition will actually go active. Built-ins never implement
-// the Deferred interface, so they never count.
+// pass the same agent.ToolVisible gate (operator allow/deny filters) that the
+// agent loop's partitionTools applies when it decides whether deferral activates.
+// Counting the SAME visible-deferred population here keeps registration and
+// activation in agreement: tool_search is registered iff the partition will
+// actually go active. Built-ins never implement the Deferred interface, so they
+// never count.
 // newExecSelfCorrector builds the post-edit corrector for a headless run and a
 // cleanup func the caller must defer. When enabled it wires both halves: the
 // workspace test plan AND an LSP diagnostics checker backed by a per-run
@@ -880,7 +879,7 @@ func newExecSelfCorrector(enabled bool, workspaceRoot string, autonomy string) (
 	return corrector, fileDiagnostics, cleanup
 }
 
-func deferredEligibleCount(registry *tools.Registry, permissionMode agent.PermissionMode, enabledTools []string, disabledTools []string) int {
+func deferredEligibleCount(registry *tools.Registry, enabledTools []string, disabledTools []string) int {
 	count := 0
 	for _, tool := range registry.All() {
 		// Count by deferral-eligibility (not current deferred state) to match
@@ -890,7 +889,7 @@ func deferredEligibleCount(registry *tools.Registry, permissionMode agent.Permis
 		if !tools.IsDeferralEligible(tool) {
 			continue
 		}
-		if !agent.ToolVisible(tool, permissionMode, enabledTools, disabledTools) {
+		if !agent.ToolVisible(tool, enabledTools, disabledTools) {
 			continue
 		}
 		count++
@@ -902,15 +901,15 @@ func deferredEligibleCount(registry *tools.Registry, permissionMode agent.Permis
 // is active for this run: the visible-deferred count (the same population the
 // agent loop's partition counts) meets the (positive) threshold. Below threshold
 // or with a kajicode/negative threshold, tool_search is never registered, so the
-// agent loop's partition stays inactive and tool advertising is byte-identical to
-// today. The permissionMode + enabled/disabled filters MUST match the values the
-// run passes to agent.Run so the registration gate and the activation gate count
-// the same tools.
-func registerToolSearchIfEligible(registry *tools.Registry, deferThreshold int, permissionMode agent.PermissionMode, enabledTools []string, disabledTools []string) {
+// agent loop's partition stays inactive and every visible tool is advertised
+// eagerly with its full schema. The enabled/disabled filters MUST match the values
+// the run passes to agent.Run so the registration gate and the activation gate
+// count the same tools.
+func registerToolSearchIfEligible(registry *tools.Registry, deferThreshold int, enabledTools []string, disabledTools []string) {
 	if deferThreshold <= 0 {
 		return
 	}
-	if deferredEligibleCount(registry, permissionMode, enabledTools, disabledTools) < deferThreshold {
+	if deferredEligibleCount(registry, enabledTools, disabledTools) < deferThreshold {
 		return
 	}
 	registry.Register(tools.NewToolSearchTool(registry))

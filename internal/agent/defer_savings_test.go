@@ -56,7 +56,7 @@ func TestDeferralTokenSavingsMeasurement(t *testing.T) {
 	registry.Register(fakeToolSearchTool{})
 
 	measure := func(threshold int) (int, int) {
-		defs, reminder := partitionTools(registry, PermissionModeAuto, Options{DeferThreshold: threshold}, map[string]bool{})
+		defs, reminder := partitionTools(registry, Options{DeferThreshold: threshold}, map[string]bool{})
 		encoded, err := json.Marshal(defs)
 		if err != nil {
 			t.Fatalf("marshal tool defs: %v", err)

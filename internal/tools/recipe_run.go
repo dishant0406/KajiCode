@@ -42,10 +42,9 @@ func NewRecipeRunTool(registry *Registry, learningRoot string) Tool {
 				AdditionalProperties: false,
 			},
 			safety: Safety{
-				SideEffect:      SideEffectRead,
-				Permission:      PermissionAllow,
-				Reason:          "Dispatches stored tool commands; each is gated by the same sandbox and permissions as a direct call.",
-				AdvertiseInAuto: true,
+				SideEffect: SideEffectRead,
+				Permission: PermissionAllow,
+				Reason:     "Dispatches stored tool commands; each is gated by the same sandbox and permissions as a direct call.",
 			},
 			capabilities: ToolCapabilities{Effect: EffectReadOnly, ThreadSafe: false},
 		},

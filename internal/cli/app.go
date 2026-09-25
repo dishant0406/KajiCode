@@ -791,13 +791,11 @@ func runInteractiveTUIWithSetup(stderr io.Writer, deps appDeps, permissionMode a
 	// launch directory itself.
 	trustRoot := workspaceRoot
 	pluginActivation := activatePlugins(workspaceRoot, registry, deps, stderr, trustRoot)
-	// Resolve the saved interactive profile, defaulting to ask-all so prompt-gated
-	// tools remain advertised and route through the permission flow. An explicit
+	// Resolve the saved interactive profile, defaulting to ask-all. An explicit
 	// --skip-permissions-unsafe launch still overrides the saved profile.
 	//
-	// Resolve the effective mode BEFORE the deferral gate below so the registration
-	// count uses the SAME permission mode the agent loop's partition will use; an
-	// empty mode here would mis-gate prompt-advertised deferred tools.
+	// Resolve the effective mode here (before the deferral gate below) so the run
+	// carries one consistent profile.
 	if permissionMode == "" {
 		permissionMode = agent.PermissionMode(strings.TrimSpace(resolved.Preferences.PermissionProfile))
 		if permissionMode == "" {
@@ -810,7 +808,7 @@ func runInteractiveTUIWithSetup(stderr io.Writer, deps appDeps, permissionMode a
 	// count is accurate; below threshold this is a no-op and the surface is
 	// unchanged. The interactive surface applies no operator tool filters, so
 	// enabled/disabled are nil — matching the AgentOptions below.
-	registerToolSearchIfEligible(registry, resolved.Tools.DeferThreshold, permissionMode, nil, nil)
+	registerToolSearchIfEligible(registry, resolved.Tools.DeferThreshold, nil, nil)
 	registerBatchTool(registry, nil, nil)
 	sandboxStore, err := deps.newSandboxStore()
 	if err != nil {

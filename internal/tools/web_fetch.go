@@ -136,10 +136,9 @@ func newWebFetchToolWithClientAndResolver(client *http.Client, resolver webFetch
 				AdditionalProperties: false,
 			},
 			safety: Safety{
-				SideEffect:      SideEffectNetwork,
-				Permission:      PermissionPrompt,
-				Reason:          "Fetches remote URL content over the network.",
-				AdvertiseInAuto: true,
+				SideEffect: SideEffectNetwork,
+				Permission: PermissionPrompt,
+				Reason:     "Fetches remote URL content over the network.",
 			},
 			// Concurrent-safe: net/http.Client is documented as safe for
 			// concurrent use; each call issues independent request I/O.

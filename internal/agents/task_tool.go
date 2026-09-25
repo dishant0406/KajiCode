@@ -88,10 +88,9 @@ func (tool *TaskTool) Parameters() tools.Schema {
 
 func (tool *TaskTool) Safety() tools.Safety {
 	return tools.Safety{
-		SideEffect:      tools.SideEffectShell,
-		Permission:      tools.PermissionAllow,
-		Reason:          "Runs a sub-agent whose own tool permissions bound what it can do.",
-		AdvertiseInAuto: true,
+		SideEffect: tools.SideEffectShell,
+		Permission: tools.PermissionAllow,
+		Reason:     "Runs a sub-agent whose own tool permissions bound what it can do.",
 	}
 }
 

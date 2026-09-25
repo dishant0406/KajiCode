@@ -42,7 +42,7 @@ func TestWebFetchToolSafetyAndSchema(t *testing.T) {
 		t.Fatal("Description is empty")
 	}
 	safety := tool.Safety()
-	if safety.SideEffect != SideEffectNetwork || safety.Permission != PermissionPrompt || !safety.AdvertiseInAuto {
+	if safety.SideEffect != SideEffectNetwork || safety.Permission != PermissionPrompt {
 		t.Fatalf("unexpected safety metadata: %#v", safety)
 	}
 	if safety.Reason == "" {

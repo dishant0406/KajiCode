@@ -140,6 +140,7 @@ func (tool multiEditTool) RunWithOptions(ctx context.Context, args map[string]an
 	summary := fmt.Sprintf("Successfully edited %s (%d edits applied).", relativePath, len(edits))
 	result := okResult(summary)
 	result.ChangedFiles = []string{relativePath}
+	result.FileChanges = []FileChange{{Path: relativePath, OldContent: before, NewContent: content}}
 	result.Display = Display{Summary: fmt.Sprintf("Edited %s (%d edits)", relativePath, len(edits)), Kind: "diff", Preview: boundedUnifiedDiff(relativePath, before, content)}
 	return result
 }

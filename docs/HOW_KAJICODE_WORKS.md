@@ -224,9 +224,10 @@ Key responsibilities of the loop:
    history is replayed by the caller before a new run, not passed as a separate
    `agent.Run` history field.
 2. **Expose tools** — starts from the registry built by the CLI, then filters
-   tool definitions by permission mode, enabled or disabled filters, and
-   deferred-loading rules. Tool schemas also count toward context budget, so they
-   matter for compaction decisions.
+   tool definitions by operator enabled/disabled filters and deferred-loading
+   rules. Every non-denied tool is advertised in every permission mode; the mode
+   only governs approval at call time. Tool schemas also count toward context
+   budget, so they matter for compaction decisions.
 3. **Call provider** — sends a provider-neutral `kajicoderuntime.CompletionRequest`.
 4. **Stream events** — forwards text, reasoning, tool-call deltas, and usage to
    the caller via callbacks.
@@ -736,11 +737,12 @@ Core tool groups include:
   `internal/browser`.
 - **Extension tools**: MCP tools, sub-agents, plugins.
 
-Tool definitions include safety metadata: side-effect class, permission level,
-reason, and whether prompt-gated tools are advertised in auto-like modes. The
-agent uses this metadata plus per-turn filters and deferred-loading state to
-choose which registered tools the model can see and whether a call can run
-immediately.
+Tool definitions include safety metadata: side-effect class, permission level, and
+reason. Every registered tool whose permission is not `deny` is advertised to the
+model in **every** permission mode — the mode decides *when* a call is approved
+(prompt vs auto-allowed), never *whether* the tool is visible. The agent uses this
+metadata plus per-turn operator filters and deferred-loading state to choose which
+registered tools the model can see and whether a call can run immediately.
 
 ## Permission and Sandbox Model
 

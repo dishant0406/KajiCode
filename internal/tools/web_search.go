@@ -137,13 +137,12 @@ func newWebSearchToolWithBackend(backend searchBackend) Tool {
 				AdditionalProperties: false,
 			},
 			// Hosted search sends model-provided query text to a configured network
-			// backend. Keep it visible in auto mode, but guard execution through the
-			// normal permission flow like web_fetch.
+			// backend. It stays advertised like every non-denied tool; execution is
+			// guarded by the normal permission flow like web_fetch.
 			safety: Safety{
-				SideEffect:      SideEffectNetwork,
-				Permission:      PermissionPrompt,
-				Reason:          "Sends model-provided search query text to the configured web search backend.",
-				AdvertiseInAuto: true,
+				SideEffect: SideEffectNetwork,
+				Permission: PermissionPrompt,
+				Reason:     "Sends model-provided search query text to the configured web search backend.",
 			},
 			// Search backends may share non-thread-safe clients.
 			capabilities: ToolCapabilities{Effect: EffectReadOnly, ThreadSafe: false},

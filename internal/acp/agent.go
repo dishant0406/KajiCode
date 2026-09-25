@@ -377,7 +377,7 @@ func (a *Agent) handleSessionNew(_ context.Context, params json.RawMessage) (any
 	if err != nil {
 		return nil, err
 	}
-	note := &notifier{conn: a.conn, sessionID: sess.id}
+	note := a.notifierFor(sess)
 	a.advertise(note, sess)
 	return NewSessionResult{
 		SessionID:     sess.id,
@@ -415,7 +415,7 @@ func (a *Agent) handleSessionLoad(_ context.Context, params json.RawMessage) (an
 	if err != nil {
 		return nil, err
 	}
-	note := &notifier{conn: a.conn, sessionID: sess.id}
+	note := a.notifierFor(sess)
 	a.warnPersistence(
 		note,
 		"load session history",
@@ -464,7 +464,7 @@ func (a *Agent) handleSessionResume(_ context.Context, params json.RawMessage) (
 	if err != nil {
 		return nil, err
 	}
-	note := &notifier{conn: a.conn, sessionID: sess.id}
+	note := a.notifierFor(sess)
 	a.warnPersistence(
 		note,
 		"load session history",
@@ -510,7 +510,7 @@ func (a *Agent) handleSessionFork(_ context.Context, params json.RawMessage) (an
 	if err != nil {
 		return nil, err
 	}
-	note := &notifier{conn: a.conn, sessionID: sess.id}
+	note := a.notifierFor(sess)
 	a.warnPersistence(
 		note,
 		"load session history",
@@ -526,6 +526,12 @@ func (a *Agent) handleSessionFork(_ context.Context, params json.RawMessage) (an
 		ConfigOptions: a.configOptions(context.Background(), sess),
 		Modes:         a.modeState(sess),
 	}, nil
+}
+
+// notifierFor builds a session-scoped notifier bound to the session's workspace
+// root, so tool-call locations and diffs carry the absolute paths ACP requires.
+func (a *Agent) notifierFor(sess *acpSession) *notifier {
+	return &notifier{conn: a.conn, sessionID: sess.id, workspaceRoot: sess.cwd}
 }
 
 func (a *Agent) handleSessionList(_ context.Context, params json.RawMessage) (any, error) {
@@ -623,7 +629,7 @@ func (a *Agent) handleSessionPrompt(ctx context.Context, params json.RawMessage)
 	// handled here so the generated title can be surfaced via session_info_update.
 	// Unknown commands fall through to the model so an editor never loses the prompt.
 	if name, args, ok := splitSlashCommand(userText); ok {
-		note := &notifier{conn: a.conn, sessionID: sess.id}
+		note := a.notifierFor(sess)
 		if strings.EqualFold(name, "retitle") && a.deps.Retitle != nil {
 			title, retitleErr := a.deps.Retitle(turnCtx, sess.id, sess.cwd)
 			if retitleErr != nil {
@@ -848,7 +854,7 @@ func (a *Agent) runTurn(ctx context.Context, sess *acpSession, userText string, 
 		return "", RPCError(codeInternalError, "workspace: "+err.Error())
 	}
 	registry := workspace.Registry
-	note := &notifier{conn: a.conn, sessionID: sess.id}
+	note := a.notifierFor(sess)
 
 	maxTurns := resolved.MaxTurns
 	if t := sess.turnBudget(); t > 0 {
@@ -1042,7 +1048,7 @@ func (a *Agent) handleSetMode(_ context.Context, params json.RawMessage) (any, e
 		return nil, RPCError(codeInvalidParams, "unknown mode: "+p.ModeID)
 	}
 	sess.setMode(agent.PermissionMode(p.ModeID))
-	note := &notifier{conn: a.conn, sessionID: sess.id}
+	note := a.notifierFor(sess)
 	note.currentMode(p.ModeID)
 	note.configOptions(a.configOptions(context.Background(), sess))
 	return SetSessionModeResult{}, nil
@@ -1097,7 +1103,7 @@ func (a *Agent) handleSetConfigOption(ctx context.Context, params json.RawMessag
 		return nil, RPCError(codeInvalidParams, "unknown config option: "+p.ConfigID)
 	}
 	options := a.configOptions(ctx, sess)
-	(&notifier{conn: a.conn, sessionID: sess.id}).configOptions(options)
+	a.notifierFor(sess).configOptions(options)
 	return SetSessionConfigOptionResult{ConfigOptions: options}, nil
 }
 
@@ -1113,7 +1119,7 @@ func (a *Agent) refreshModels(ctx context.Context, sess *acpSession) []SessionCo
 	sess.modelCache = nil
 	sess.mu.Unlock()
 	options := a.configOptions(ctx, sess)
-	(&notifier{conn: a.conn, sessionID: sess.id}).configOptions(options)
+	a.notifierFor(sess).configOptions(options)
 	return options
 }
 
@@ -1224,7 +1230,7 @@ func (a *Agent) handleKajiCodeSetModel(_ context.Context, params json.RawMessage
 		sess.setProvider(provider)
 	}
 	sess.setModel(model)
-	(&notifier{conn: a.conn, sessionID: sess.id}).configOptions(a.configOptions(context.Background(), sess))
+	a.notifierFor(sess).configOptions(a.configOptions(context.Background(), sess))
 	return KajiCodeSetModelResult{Provider: provider, Model: model}, nil
 }
 

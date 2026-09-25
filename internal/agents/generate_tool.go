@@ -72,10 +72,9 @@ func (tool *GenerateTool) Parameters() tools.Schema {
 
 func (tool *GenerateTool) Safety() tools.Safety {
 	return tools.Safety{
-		SideEffect:      tools.SideEffectWrite,
-		Permission:      tools.PermissionPrompt,
-		Reason:          "Writes a project agent definition inside the workspace.",
-		AdvertiseInAuto: true,
+		SideEffect: tools.SideEffectWrite,
+		Permission: tools.PermissionPrompt,
+		Reason:     "Writes a project agent definition inside the workspace.",
 	}
 }
 

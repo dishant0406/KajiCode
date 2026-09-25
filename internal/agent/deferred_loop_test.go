@@ -123,7 +123,7 @@ func (fakeToolSearchTool) Parameters() tools.Schema {
 	return tools.Schema{Type: "object", AdditionalProperties: false}
 }
 func (fakeToolSearchTool) Safety() tools.Safety {
-	return tools.Safety{SideEffect: tools.SideEffectNone, Permission: tools.PermissionAllow, AdvertiseInAuto: true}
+	return tools.Safety{SideEffect: tools.SideEffectNone, Permission: tools.PermissionAllow}
 }
 func (fakeToolSearchTool) Run(_ context.Context, _ map[string]any) tools.Result {
 	return tools.Result{Status: tools.StatusOK, Output: "ok"}
@@ -157,7 +157,7 @@ func TestPartitionToolsInactiveIsByteIdenticalAndDropsToolSearch(t *testing.T) {
 	options := Options{DeferThreshold: 0} // 0 => deferral disabled => inactive path.
 
 	// DeferThreshold 0 => deferral disabled => inactive path.
-	exposed, reminder := partitionTools(registry, PermissionModeAuto, options, map[string]bool{})
+	exposed, reminder := partitionTools(registry, options, map[string]bool{})
 
 	if reminder != "" {
 		t.Fatalf("expected empty reminder on inactive path, got %q", reminder)
@@ -168,7 +168,7 @@ func TestPartitionToolsInactiveIsByteIdenticalAndDropsToolSearch(t *testing.T) {
 	// EXCEPT tool_search, alpha-sorted by name) and require an exact DeepEqual. This
 	// pins that the inactive partition produces the pre-deferral output verbatim,
 	// not merely the same set of names.
-	reference := legacyToolDefinitions(registry, PermissionModeAuto, options)
+	reference := legacyToolDefinitions(registry, options)
 	if !reflect.DeepEqual(exposed, reference) {
 		t.Fatalf("inactive partition not byte-identical to legacy toolDefinitions:\n got %#v\nwant %#v", exposed, reference)
 	}
@@ -195,13 +195,13 @@ func TestPartitionToolsInactiveIsByteIdenticalAndDropsToolSearch(t *testing.T) {
 }
 
 // legacyToolDefinitions reconstructs the PRE-deferral tool-list builder: every
-// tool that is visible (passes the operator filters) and advertised for the mode,
-// EXCEPT tool_search, rendered with its full schema and alpha-sorted by name. It
-// is the byte-identity reference for the inactive partition path.
-func legacyToolDefinitions(registry *tools.Registry, permissionMode PermissionMode, options Options) []kajicoderuntime.ToolDefinition {
+// tool that is visible (passes the operator filters) and advertised, EXCEPT
+// tool_search, rendered with its full schema and alpha-sorted by name. It is the
+// byte-identity reference for the inactive partition path.
+func legacyToolDefinitions(registry *tools.Registry, options Options) []kajicoderuntime.ToolDefinition {
 	definitions := make([]kajicoderuntime.ToolDefinition, 0)
 	for _, tool := range registry.All() {
-		if !ToolVisible(tool, permissionMode, options.EnabledTools, options.DisabledTools) {
+		if !ToolVisible(tool, options.EnabledTools, options.DisabledTools) {
 			continue
 		}
 		if tool.Name() == tools.ToolSearchToolName {
@@ -225,7 +225,7 @@ func TestPartitionToolsBelowThresholdInactive(t *testing.T) {
 	registry.Register(fakeDeferredTool{name: "mcp__srv__a", desc: "a"})
 	registry.Register(fakeDeferredTool{name: "mcp__srv__b", desc: "b"})
 
-	exposed, reminder := partitionTools(registry, PermissionModeAuto, Options{DeferThreshold: 10}, map[string]bool{})
+	exposed, reminder := partitionTools(registry, Options{DeferThreshold: 10}, map[string]bool{})
 	if reminder != "" {
 		t.Fatalf("expected empty reminder below threshold, got %q", reminder)
 	}
@@ -244,7 +244,7 @@ func TestPartitionToolsDisabledDeferredDropsBelowThresholdInactive(t *testing.T)
 	registry.Register(fakeDeferredTool{name: "mcp__srv__alpha", desc: "alpha"})
 	registry.Register(fakeDeferredTool{name: "mcp__srv__beta", desc: "beta"})
 
-	exposed, reminder := partitionTools(registry, PermissionModeAuto, Options{
+	exposed, reminder := partitionTools(registry, Options{
 		DeferThreshold: 2,
 		DisabledTools:  []string{"mcp__srv__beta"},
 	}, map[string]bool{})
@@ -274,7 +274,7 @@ func TestPartitionToolsActiveExcludesDisabledDeferredFromDiscoveryAndExposed(t *
 	registry.Register(fakeToolSearchTool{}) // usable loader => deferral can activate
 
 	// 3 deferred, disable beta => 2 surviving eligible, threshold 2 => active.
-	exposed, discovery := partitionTools(registry, PermissionModeAuto, Options{
+	exposed, discovery := partitionTools(registry, Options{
 		DeferThreshold: 2,
 		DisabledTools:  []string{"mcp__srv__beta"},
 	}, map[string]bool{})
@@ -313,7 +313,7 @@ func TestPartitionToolsActiveHidesUnloadedExposesLoaded(t *testing.T) {
 	loaded := map[string]bool{"mcp__srv__alpha": true}
 
 	// 2 eligible deferred tools, threshold 2 => active.
-	exposed, discovery := partitionTools(registry, PermissionModeAuto, Options{DeferThreshold: 2}, loaded)
+	exposed, discovery := partitionTools(registry, Options{DeferThreshold: 2}, loaded)
 
 	exposedNames := map[string]bool{}
 	for _, def := range exposed {
@@ -356,7 +356,7 @@ func TestPartitionToolsActiveNothingHiddenEmptyReminder(t *testing.T) {
 	registry.Register(fakeToolSearchTool{}) // usable loader => deferral can activate
 
 	loaded := map[string]bool{"mcp__srv__alpha": true, "mcp__srv__beta": true}
-	exposed, reminder := partitionTools(registry, PermissionModeAuto, Options{DeferThreshold: 2}, loaded)
+	exposed, reminder := partitionTools(registry, Options{DeferThreshold: 2}, loaded)
 
 	exposedNames := map[string]bool{}
 	for _, def := range exposed {
@@ -695,7 +695,7 @@ func TestAllowlistedDeferredToolsKeepToolSearchReachable(t *testing.T) {
 		EnabledTools: append([]string{}, deferredNames...),
 	}
 
-	exposed, discovery := partitionTools(registry, PermissionModeAuto, options, map[string]bool{})
+	exposed, discovery := partitionTools(registry, options, map[string]bool{})
 
 	// Deferral active => non-empty tool_search discovery for hidden deferred tools.
 	if discovery == "" {
@@ -767,7 +767,7 @@ func TestDisabledToolSearchFallsBackToEager(t *testing.T) {
 	// the dispatch gate rejects (an inescapable dead-end). Expect the eager /
 	// inactive fallback: every deferred tool exposed with its full schema, no
 	// tool_search definition, and an empty reminder.
-	exposed, reminder := partitionTools(registry, PermissionModeAuto, options, map[string]bool{})
+	exposed, reminder := partitionTools(registry, options, map[string]bool{})
 	if reminder != "" {
 		t.Fatalf("inactive fallback must emit no reminder, got %q", reminder)
 	}

@@ -468,7 +468,7 @@ func nextFlagValue(args []string, index int, flag string) (string, int, error) {
 	switch flag {
 	case "--auto":
 		switch strings.ToLower(next) {
-		case "low", "medium", "high", "member":
+		case "low", "medium", "high":
 		default:
 			return "", index, execUsageError{fmt.Sprintf("Invalid autonomy level %q. Expected low, medium, or high.", next)}
 		}

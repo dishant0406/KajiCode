@@ -495,7 +495,7 @@ func TestRunExecModeToolFilterReflectedInListTools(t *testing.T) {
 	// options before the listing must narrow the tools the model can see.
 	options := execOptions{enabledTools: []string{"read_file", "grep"}}
 	registry := newCoreRegistry(t.TempDir())
-	list := formatExecToolList(registry, options, agent.PermissionModeAuto)
+	list := formatExecToolList(registry, options)
 	for _, want := range []string{"read_file", "grep"} {
 		if !strings.Contains(list, want) {
 			t.Fatalf("expected tool list to contain %q, got %q", want, list)
@@ -514,7 +514,6 @@ func TestResolveExecPermissionModeMember(t *testing.T) {
 		{"", agent.PermissionModeAuto},
 		{"low", agent.PermissionModeAuto},
 		{"medium", agent.PermissionModeAuto},
-		{"member", agent.PermissionModeMemberAuto}, // headless members: write + sandboxed shell
 		{"high", agent.PermissionModeUnsafe},
 	}
 	for _, c := range cases {
@@ -531,21 +530,19 @@ func TestResolveExecPermissionModeMember(t *testing.T) {
 	}
 }
 
-// A member-auto headless tool list must include the in-workspace mutators that
-// plain Auto hides, so a swarm member can actually build. Match the tool ENTRY
-// line ("  write_file [") — a bare substring would false-match tool descriptions.
-func TestExecMemberAutoToolListIncludesMutators(t *testing.T) {
+// The exec tool listing now includes the in-workspace mutators
+// (write_file/edit_file/apply_patch) that it previously hid. The listing is
+// mode-independent because advertising no longer depends on the permission mode;
+// per-mode parity is asserted at the gate (agent.ToolVisible). Match the tool
+// ENTRY line ("  write_file [") so a bare substring in a description cannot
+// false-match.
+func TestExecToolListIncludesMutators(t *testing.T) {
 	registry := newCoreRegistry(t.TempDir())
 	const writeEntry = "\n  write_file ["
 
-	member := formatExecToolList(registry, execOptions{}, agent.PermissionModeMemberAuto)
-	if !strings.Contains(member, writeEntry) {
-		t.Fatalf("member-auto tool list must include write_file, got %q", member)
-	}
-	// Plain Auto must still hide it (unchanged behavior — this is the read-only gate).
-	auto := formatExecToolList(registry, execOptions{}, agent.PermissionModeAuto)
-	if strings.Contains(auto, writeEntry) {
-		t.Fatalf("plain Auto must still hide write_file, got %q", auto)
+	list := formatExecToolList(registry, execOptions{})
+	if !strings.Contains(list, writeEntry) {
+		t.Fatalf("tool list must include write_file, got %q", list)
 	}
 }
 

@@ -140,6 +140,9 @@ func (tool writeFileTool) RunWithOptions(ctx context.Context, args map[string]an
 	summary += inlineDiagnostics(ctx, options, absolutePath, relativePath)
 	result := okResult(summary)
 	result.ChangedFiles = []string{relativePath}
+	// Structured full-content diff for an ACP client; Display.Preview stays the
+	// bounded TUI card body.
+	result.FileChanges = []FileChange{{Path: relativePath, OldContent: priorContent, NewContent: content}}
 	// Card-only preview: a real unified diff (all-green for a create, red/green for
 	// an overwrite) on Display.Preview. Output stays the summary, so the model never
 	// re-reads the file — the rich preview costs kajicode model tokens.

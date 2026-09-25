@@ -36,9 +36,20 @@ Implemented and verified:
   `agent_thought_chunk`, `tool_call`, `tool_call_update`, `plan`,
   `current_mode_update`, `config_option_update`, `available_commands_update`,
   `usage_update`.
+- **Tool diffs + follow-along:** a mutating tool (`write_file`, `edit_file`,
+  `multi_edit`, `apply_patch`) reports the full before/after content of every file
+  it writes as a v1 `diff` content item (`oldText: null` for a create), and every
+  file-tool call carries an absolute `locations[]` entry on both the initial
+  `tool_call` and the completed `tool_call_update`, so a client renders a real
+  diff and follows the file the agent is on. Content crossing this surface passes
+  the same secret-redaction boundary as `Output`/`Display`.
 - **Capabilities:** `loadSession`, image + embedded-context prompts,
   `sessionCapabilities` {list,resume,close,delete,fork,additionalDirectories},
   `mcpCapabilities` (both false — KajiCode owns MCP).
+- **Tool visibility:** an ACP session advertises the same toolbelt the CLI does.
+  Every non-denied registered tool (file edits, shell, MCP, browser/desktop local
+  control) reaches the model in every permission mode; the session's permissions
+  mode only decides whether a call runs or asks the client first.
 - **Session fork:** `session/fork` branches a new session from a stored one via
   `Store.Fork`, replaying the inherited transcript.
 - **Auth:** `authenticate` (rejects agent-type ids) and `logout` (clears the

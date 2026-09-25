@@ -82,11 +82,6 @@ func resolveExecPermissionMode(options execOptions) (agent.PermissionMode, error
 	switch strings.ToLower(strings.TrimSpace(options.autonomy)) {
 	case "", "low", "medium":
 		mode = agent.PermissionModeAuto
-	case "member":
-		// Internal autonomy for headless sub-agent members: Auto plus
-		// advertised in-workspace mutators (see PermissionModeMemberAuto). The
-		// agent runner sets this; it is not part of the public low|medium|high set.
-		mode = agent.PermissionModeMemberAuto
 	case "high":
 		mode = agent.PermissionModeUnsafe
 	default:
@@ -101,16 +96,16 @@ func resolveExecPermissionMode(options execOptions) (agent.PermissionMode, error
 	return mode, nil
 }
 
-func writeExecToolList(w io.Writer, registry *tools.Registry, options execOptions, permissionMode agent.PermissionMode) error {
-	_, err := fmt.Fprintln(w, formatExecToolList(registry, options, permissionMode))
+func writeExecToolList(w io.Writer, registry *tools.Registry, options execOptions) error {
+	_, err := fmt.Fprintln(w, formatExecToolList(registry, options))
 	return err
 }
 
 // writeExecToolListJSON emits the visible tool list as a single JSON object so
 // `exec --list-tools -o json` honors the requested machine-readable format
 // instead of falling through to the human-readable text listing.
-func writeExecToolListJSON(w io.Writer, registry *tools.Registry, options execOptions, permissionMode agent.PermissionMode) error {
-	visible := visibleExecTools(registry, options, permissionMode)
+func writeExecToolListJSON(w io.Writer, registry *tools.Registry, options execOptions) error {
+	visible := visibleExecTools(registry, options)
 	infos := make([]map[string]any, 0, len(visible))
 	for _, tool := range visible {
 		safety := tool.Safety()
@@ -127,8 +122,8 @@ func writeExecToolListJSON(w io.Writer, registry *tools.Registry, options execOp
 	})
 }
 
-func formatExecToolList(registry *tools.Registry, options execOptions, permissionMode agent.PermissionMode) string {
-	visible := visibleExecTools(registry, options, permissionMode)
+func formatExecToolList(registry *tools.Registry, options execOptions) string {
+	visible := visibleExecTools(registry, options)
 	lines := []string{"Tools visible to model:"}
 	for _, tool := range visible {
 		safety := tool.Safety()
@@ -140,11 +135,11 @@ func formatExecToolList(registry *tools.Registry, options execOptions, permissio
 	return strings.Join(lines, "\n")
 }
 
-func visibleExecTools(registry *tools.Registry, options execOptions, permissionMode agent.PermissionMode) []tools.Tool {
+func visibleExecTools(registry *tools.Registry, options execOptions) []tools.Tool {
 	all := registry.All()
 	visible := []tools.Tool{}
 	for _, tool := range all {
-		if !agent.ToolVisible(tool, permissionMode, options.enabledTools, options.disabledTools) {
+		if !agent.ToolVisible(tool, options.enabledTools, options.disabledTools) {
 			continue
 		}
 		visible = append(visible, tool)

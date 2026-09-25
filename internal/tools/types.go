@@ -62,9 +62,6 @@ type Safety struct {
 	SideEffect SideEffect
 	Permission Permission
 	Reason     string
-	// AdvertiseInAuto allows selected non-allow tools to be visible in auto mode
-	// while still requiring the normal permission flow before execution.
-	AdvertiseInAuto bool
 }
 
 type Schema struct {
@@ -103,6 +100,12 @@ type Result struct {
 	// entries under a granted extra write root are absolute, since
 	// workspace-relative would be ambiguous there.
 	ChangedFiles []string
+	// FileChanges carries the full before/after content of each file a mutating
+	// tool wrote, so an ACP client can render a real diff. It holds authoritative
+	// content (not the bounded Display.Preview); the new content is what is now on
+	// disk and the old content is "" for a create. Redacted at the registry
+	// boundary like Output/Display.
+	FileChanges []FileChange
 	// Display carries a short, structured summary for the TUI / stream.
 	Display Display
 	// Images carries image bytes a tool returns for the model to SEE (not text) —
@@ -111,6 +114,16 @@ type Result struct {
 	// these onto a synthetic user turn after the tool batch, since providers only
 	// accept image parts on a user role. nil for every text-only result.
 	Images []kajicoderuntime.ImageBlock
+}
+
+// FileChange is one file a mutating tool wrote, captured as full before/after
+// content so a client can render a real diff. OldContent is "" for a create;
+// Path is (see Result.ChangedFiles) workspace-relative, or absolute when the
+// file lies under a granted extra write root.
+type FileChange struct {
+	Path       string
+	OldContent string
+	NewContent string
 }
 
 // Display carries a short, structured summary of a tool result for the TUI/stream.

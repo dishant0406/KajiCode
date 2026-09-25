@@ -69,9 +69,6 @@ func TestToolSearchExposesExpectedSafetyAndSchema(t *testing.T) {
 	if safety.Permission != PermissionAllow {
 		t.Fatalf("permission = %s, want allow", safety.Permission)
 	}
-	if !safety.AdvertiseInAuto {
-		t.Fatal("tool_search must be AdvertiseInAuto")
-	}
 
 	schema := tool.Parameters()
 	if schema.Type != "object" || schema.AdditionalProperties {

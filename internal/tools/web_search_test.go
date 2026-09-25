@@ -187,9 +187,6 @@ func TestWebSearchSafetyPromptsForHostedSearchButAdvertisesInAuto(t *testing.T) 
 	if safety.Permission != PermissionPrompt {
 		t.Fatalf("permission = %s, want prompt", safety.Permission)
 	}
-	if !safety.AdvertiseInAuto {
-		t.Fatal("web_search should be advertised in auto mode while still requiring permission")
-	}
 }
 
 func TestWebSearchRegistryRequiresPermissionBeforeBackendCall(t *testing.T) {

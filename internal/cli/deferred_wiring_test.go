@@ -81,7 +81,7 @@ func TestRegisterToolSearchIfEligibleRegistersAtThreshold(t *testing.T) {
 		registry.Register(cliFakeDeferredTool{name: "mcp_srv_t" + string(rune('a'+i))})
 	}
 
-	registerToolSearchIfEligible(registry, 3, agent.PermissionModeAuto, nil, nil)
+	registerToolSearchIfEligible(registry, 3, nil, nil)
 
 	if !registryHasToolSearch(registry) {
 		t.Fatal("expected tool_search registered when eligible count == threshold")
@@ -95,7 +95,7 @@ func TestRegisterToolSearchIfEligibleSkipsBelowThreshold(t *testing.T) {
 	// A plain (non-deferred) MCP-named tool must NOT count toward eligibility.
 	registry.Register(cliFakeMCPRegistryTool{})
 
-	registerToolSearchIfEligible(registry, 3, agent.PermissionModeAuto, nil, nil)
+	registerToolSearchIfEligible(registry, 3, nil, nil)
 
 	if registryHasToolSearch(registry) {
 		t.Fatal("expected no tool_search when eligible count (2) < threshold (3)")
@@ -108,7 +108,7 @@ func TestRegisterToolSearchIfEligibleSkipsWhenThresholdZero(t *testing.T) {
 		registry.Register(cliFakeDeferredTool{name: "mcp_srv_t" + string(rune('a'+i))})
 	}
 
-	registerToolSearchIfEligible(registry, 0, agent.PermissionModeAuto, nil, nil)
+	registerToolSearchIfEligible(registry, 0, nil, nil)
 
 	if registryHasToolSearch(registry) {
 		t.Fatal("expected no tool_search when threshold is 0 (disabled)")
@@ -118,7 +118,7 @@ func TestRegisterToolSearchIfEligibleSkipsWhenThresholdZero(t *testing.T) {
 func TestDeferredEligibleCountIgnoresCoreTools(t *testing.T) {
 	registry := newCoreRegistry(t.TempDir())
 	// newCoreRegistry holds only built-ins; none implement Deferred().
-	if got := deferredEligibleCount(registry, agent.PermissionModeAuto, nil, nil); got != 0 {
+	if got := deferredEligibleCount(registry, nil, nil); got != 0 {
 		t.Fatalf("deferredEligibleCount(core) = %d, want 0", got)
 	}
 }
@@ -132,7 +132,7 @@ func TestRegisterToolSearchSkipsWhenDisabledDropsVisibleBelowThreshold(t *testin
 	registry.Register(cliFakeDeferredTool{name: "mcp_srv_ta"})
 	registry.Register(cliFakeDeferredTool{name: "mcp_srv_tb"})
 
-	registerToolSearchIfEligible(registry, 2, agent.PermissionModeAuto, nil, []string{"mcp_srv_tb"})
+	registerToolSearchIfEligible(registry, 2, nil, []string{"mcp_srv_tb"})
 
 	if registryHasToolSearch(registry) {
 		t.Fatal("expected no tool_search: a disabled deferred tool must not count toward the visible-deferred total")

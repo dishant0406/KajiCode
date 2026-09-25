@@ -746,10 +746,9 @@ func NewWriteStdinTool(manager *execSessionManager) Tool {
 				AdditionalProperties: false,
 			},
 			safety: Safety{
-				SideEffect:      SideEffectShell,
-				Permission:      PermissionPrompt,
-				Reason:          "Sending stdin can drive an existing shell process beyond the original command; empty polling and Ctrl-C interrupts are allowed automatically.",
-				AdvertiseInAuto: true,
+				SideEffect: SideEffectShell,
+				Permission: PermissionPrompt,
+				Reason:     "Sending stdin can drive an existing shell process beyond the original command; empty polling and Ctrl-C interrupts are allowed automatically.",
 			},
 			// Writes to a retained process stdin — process interaction.
 			capabilities: ToolCapabilities{Effect: EffectInteractive, ThreadSafe: false, ResourceKeys: processResourceKeys},

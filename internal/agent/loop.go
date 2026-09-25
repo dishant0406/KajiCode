@@ -383,7 +383,7 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 		// partitionTools depends only on registry/permissions/options/loaded, not on
 		// the messages, so computing it before compaction is safe.
 		toolPartitionSpan := options.Trace.Span(trace.SpanToolPartition)
-		exposed, _ := partitionToolsCached(registry, permissionMode, options, loaded, toolDefCache)
+		exposed, _ := partitionToolsCached(registry, options, loaded, toolDefCache)
 		toolPartitionSpan.End()
 
 		// Fingerprint the exact system prompt built at run start plus this turn's
@@ -1133,7 +1133,7 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 			Content: coach,
 		})
 	}
-	finalExposed, _ := partitionToolsCached(registry, permissionMode, options, loaded, toolDefCache)
+	finalExposed, _ := partitionToolsCached(registry, options, loaded, toolDefCache)
 	if answer, finalMessages, finishReason := finalAnswerAfterMaxTurns(ctx, provider, messages, finalExposed, options); strings.TrimSpace(answer) != "" {
 		result.FinalAnswer = answer
 		result.FinishReason = finishReason
@@ -1697,6 +1697,7 @@ func executeToolCall(ctx context.Context, registry *tools.Registry, call ToolCal
 		Meta:         result.Meta,
 		Redacted:     result.Redacted,
 		ChangedFiles: result.ChangedFiles,
+		FileChanges:  result.FileChanges,
 		Display:      result.Display,
 		Images:       result.Images,
 		LoadedTools:  loadedToolsFromResult(result.Meta),
@@ -1998,6 +1999,7 @@ func toolResultFromPrePermissionReject(call ToolCall, result tools.Result) ToolR
 	display := result.Display
 	summary, summaryRedacted := scrubInterceptedOutput(display.Summary)
 	display.Summary = summary
+	fileChanges, changesRedacted := redactFileChanges(result.FileChanges)
 
 	meta := result.Meta
 	metaRedacted := false
@@ -2019,8 +2021,9 @@ func toolResultFromPrePermissionReject(call ToolCall, result tools.Result) ToolR
 		Output:         output,
 		Truncated:      result.Truncated,
 		Meta:           meta,
-		Redacted:       result.Redacted || outputRedacted || summaryRedacted || metaRedacted,
+		Redacted:       result.Redacted || outputRedacted || summaryRedacted || metaRedacted || changesRedacted,
 		ChangedFiles:   result.ChangedFiles,
+		FileChanges:    fileChanges,
 		Display:        display,
 		LoadedTools:    loadedToolsFromResult(meta),
 		RequestedModel: meta["escalate_to_model"],
@@ -2200,6 +2203,29 @@ func isRetriableToolError(result ToolResult) bool {
 func scrubInterceptedOutput(output string) (string, bool) {
 	scrubbed := redaction.RedactString(output, redaction.Options{})
 	return scrubbed, scrubbed != output
+}
+
+// redactFileChanges mirrors the registry's scrub of tools.FileChange content for
+// the loop-intercepted paths that build a ToolResult without going through
+// registry.RunWithOptions, so a secret in a file diff never reaches the ACP client.
+func redactFileChanges(changes []tools.FileChange) ([]tools.FileChange, bool) {
+	if len(changes) == 0 {
+		return changes, false
+	}
+	redacted := false
+	out := make([]tools.FileChange, len(changes))
+	for index, change := range changes {
+		if scrubbed := redaction.RedactString(change.OldContent, redaction.Options{}); scrubbed != change.OldContent {
+			change.OldContent = scrubbed
+			redacted = true
+		}
+		if scrubbed := redaction.RedactString(change.NewContent, redaction.Options{}); scrubbed != change.NewContent {
+			change.NewContent = scrubbed
+			redacted = true
+		}
+		out[index] = change
+	}
+	return out, redacted
 }
 
 // executeAskUser routes an ask_user call to the interactive front-end via
@@ -3162,8 +3188,8 @@ func permissionActionFromSandbox(action sandbox.Action) PermissionAction {
 	}
 }
 
-func ToolVisible(tool tools.Tool, permissionMode PermissionMode, enabledTools []string, disabledTools []string) bool {
-	return ToolAllowedByFilters(tool.Name(), enabledTools, disabledTools) && ToolAdvertised(tool, permissionMode)
+func ToolVisible(tool tools.Tool, enabledTools []string, disabledTools []string) bool {
+	return ToolAllowedByFilters(tool.Name(), enabledTools, disabledTools) && ToolAdvertised(tool)
 }
 
 func ToolAllowedByFilters(name string, enabledTools []string, disabledTools []string) bool {
@@ -3243,29 +3269,13 @@ func propertyToRuntimeMap(property tools.PropertySchema) map[string]any {
 	return schema
 }
 
-func ToolAdvertised(tool tools.Tool, permissionMode PermissionMode) bool {
-	if tool.Safety().Permission == tools.PermissionDeny {
-		return false
-	}
-	if permissionMode == PermissionModeAuto {
-		return tool.Safety().Permission == tools.PermissionAllow || tool.Safety().AdvertiseInAuto
-	}
-	if permissionMode == PermissionModeMemberAuto {
-		// Like Auto, plus the in-workspace mutators a headless member needs to
-		// build. The sandbox engine still decides at call time: in-workspace writes
-		// and sandbox-backed shell auto-allow, while out-of-workspace writes,
-		// network, and destructive commands prompt → denied headless. So this
-		// advertises capability without widening sandbox authority.
-		if tool.Safety().Permission == tools.PermissionAllow || tool.Safety().AdvertiseInAuto {
-			return true
-		}
-		switch tool.Safety().SideEffect {
-		case tools.SideEffectWrite, tools.SideEffectShell:
-			return true
-		}
-		return false
-	}
-	return true
+// ToolAdvertised reports whether a tool is offered to the model at all. Every
+// registered tool is advertised in every permission mode — the mode only decides
+// whether a call runs immediately or asks for approval at call time, never
+// whether the tool is visible. The sole exception is PermissionDeny (an
+// operator-disabled or capability-absent tool), which is never advertised.
+func ToolAdvertised(tool tools.Tool) bool {
+	return tool.Safety().Permission != tools.PermissionDeny
 }
 
 // loadedToolsFromResult extracts the deferred-tool names a tool (tool_search)

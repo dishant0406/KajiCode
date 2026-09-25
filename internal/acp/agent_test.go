@@ -73,7 +73,10 @@ type clientHarness struct {
 	client  *Conn
 	agent   *Agent
 	updates chan string
-	stop    func()
+	// raw carries every session/update params payload, so a test can inspect
+	// non-text updates (tool_call / tool_call_update).
+	raw  chan json.RawMessage
+	stop func()
 }
 
 func newHarness(t *testing.T, deps Deps) *clientHarness {
@@ -84,8 +87,12 @@ func newHarness(t *testing.T, deps Deps) *clientHarness {
 	client := NewConn(br, bw)
 	a := NewAgent(agentConn, deps)
 
-	h := &clientHarness{client: client, agent: a, updates: make(chan string, 128)}
+	h := &clientHarness{client: client, agent: a, updates: make(chan string, 128), raw: make(chan json.RawMessage, 128)}
 	client.HandleNotify(MethodSessionUpdate, func(_ context.Context, params json.RawMessage) {
+		select {
+		case h.raw <- params:
+		default:
+		}
 		var probe struct {
 			Update struct {
 				SessionUpdate string `json:"sessionUpdate"`
@@ -160,6 +167,110 @@ func TestACPEndToEndPrompt(t *testing.T) {
 	if got := drainText(t, h.updates); !strings.Contains(got, "Hello from KAJICODE") {
 		t.Fatalf("streamed text = %q, want it to contain the assistant message", got)
 	}
+}
+
+// TestACPToolResultEmitsDiffAndAbsoluteLocation drives the real agent.Run loop
+// with a scripted tool call and asserts the client receives a v1 diff (with a
+// null oldText for a create) plus absolute locations on both the initial
+// tool_call and the completed tool_call_update.
+func TestACPToolResultEmitsDiffAndAbsoluteLocation(t *testing.T) {
+	root := t.TempDir()
+	deps := testDeps(t)
+	reg := tools.NewRegistry()
+	reg.Register(tools.NewWriteFileTool(root))
+	deps.BuildWorkspace = func(string, string, config.ResolvedConfig) (Workspace, error) {
+		return Workspace{Registry: reg}, nil
+	}
+	deps.NewProvider = func(config.ProviderProfile) (kajicoderuntime.Provider, error) {
+		return &scriptedProvider{}, nil
+	}
+
+	h := newHarness(t, deps)
+	defer h.stop()
+	h.client.Handle(MethodSessionRequestPerm, func(_ context.Context, params json.RawMessage) (any, error) {
+		var p RequestPermissionParams
+		_ = json.Unmarshal(params, &p)
+		for _, option := range p.Options {
+			if option.Kind == PermAllowOnce {
+				return RequestPermissionResult{Outcome: RequestPermissionOutcome{Outcome: OutcomeSelected, OptionID: option.OptionID}}, nil
+			}
+		}
+		return nil, fmt.Errorf("no allow option offered: %+v", p.Options)
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	var newRes NewSessionResult
+	if err := h.client.Call(ctx, MethodSessionNew, NewSessionParams{Cwd: root, McpServers: []McpServer{}}, &newRes); err != nil {
+		t.Fatalf("session/new: %v", err)
+	}
+	if err := h.client.Call(ctx, MethodSessionPrompt, PromptParams{SessionID: newRes.SessionID, Prompt: []ContentBlock{TextBlock("write a file")}}, &PromptResult{}); err != nil {
+		t.Fatalf("session/prompt: %v", err)
+	}
+
+	var start, done *ToolCallUpdate
+	drain := time.After(2 * time.Second)
+	for start == nil || done == nil {
+		select {
+		case params := <-h.raw:
+			var probe struct {
+				Update ToolCallUpdate `json:"update"`
+			}
+			if json.Unmarshal(params, &probe) != nil {
+				continue
+			}
+			switch probe.Update.SessionUpdate {
+			case UpdateToolCall:
+				u := probe.Update
+				start = &u
+			case UpdateToolCallUpdate:
+				u := probe.Update
+				done = &u
+			}
+		case <-drain:
+			t.Fatalf("timed out; start=%v done=%v", start, done)
+		}
+	}
+
+	wantPath := filepath.Join(root, "created.txt")
+	if len(start.Locations) != 1 || start.Locations[0].Path != wantPath {
+		t.Fatalf("initial tool_call location = %+v, want %s", start.Locations, wantPath)
+	}
+	t.Logf("DEBUG done=%+v content=%+v", done, done.Content)
+	if len(done.Locations) != 1 || done.Locations[0].Path != wantPath {
+		t.Fatalf("completed tool_call location = %+v, want %s", done.Locations, wantPath)
+	}
+	if len(done.Content) == 0 || done.Content[0].Type != "diff" {
+		t.Fatalf("expected a diff content item, got %+v", done.Content)
+	}
+	raw, err := json.Marshal(done.Content[0])
+	if err != nil {
+		t.Fatalf("marshal diff: %v", err)
+	}
+	if !strings.Contains(string(raw), `"oldText":null`) || !strings.Contains(string(raw), `"newText":"hello\n"`) {
+		t.Fatalf("unexpected diff payload: %s", raw)
+	}
+}
+
+// scriptedProvider asks write_file once (turn 1) then ends the turn (turn 2).
+type scriptedProvider struct{ calls int }
+
+func (p *scriptedProvider) StreamCompletion(_ context.Context, _ kajicoderuntime.CompletionRequest) (<-chan kajicoderuntime.StreamEvent, error) {
+	p.calls++
+	ch := make(chan kajicoderuntime.StreamEvent, 4)
+	go func() {
+		defer close(ch)
+		if p.calls == 1 {
+			ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventToolCallStart, ToolCallID: "call_1", ToolName: "write_file"}
+			ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventToolCallDelta, ToolCallID: "call_1", ArgumentsFragment: `{"path":"created.txt","content":"hello\n"}`}
+			ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventToolCallEnd, ToolCallID: "call_1"}
+			ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventDone}
+			return
+		}
+		ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventText, Content: "done"}
+		ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventDone}
+	}()
+	return ch, nil
 }
 
 func TestACPUnknownSessionPromptErrors(t *testing.T) {

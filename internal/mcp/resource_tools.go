@@ -53,10 +53,9 @@ func (tool catalogTool) Run(ctx context.Context, args map[string]any) tools.Resu
 
 func catalogToolSafety() tools.Safety {
 	return tools.Safety{
-		SideEffect:      tools.SideEffectNetwork,
-		Permission:      tools.PermissionPrompt,
-		Reason:          "Reads data from a configured MCP server.",
-		AdvertiseInAuto: true,
+		SideEffect: tools.SideEffectNetwork,
+		Permission: tools.PermissionPrompt,
+		Reason:     "Reads data from a configured MCP server.",
 	}
 }
 

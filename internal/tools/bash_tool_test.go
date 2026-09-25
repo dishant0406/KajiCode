@@ -101,9 +101,6 @@ func TestCoreToolsExposeShellTools(t *testing.T) {
 		if tool.Safety().Permission != wantPermission {
 			t.Fatalf("%s permission = %s, want %s", name, tool.Safety().Permission, wantPermission)
 		}
-		if name == "write_stdin" && !tool.Safety().AdvertiseInAuto {
-			t.Fatalf("write_stdin should stay visible in auto mode for polling and interrupts")
-		}
 	}
 }
 

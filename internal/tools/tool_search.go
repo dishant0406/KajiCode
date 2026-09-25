@@ -27,8 +27,8 @@ type toolSearchTool struct {
 }
 
 // NewToolSearchTool builds the tool_search tool over the given registry. The
-// tool is informational/no-side-effect and is advertised even in auto mode so
-// the model can always discover withheld tools.
+// tool is informational/no-side-effect and is always advertised so the model can
+// always discover withheld tools.
 func NewToolSearchTool(registry *Registry) Tool {
 	return toolSearchTool{
 		baseTool: baseTool{
@@ -46,10 +46,9 @@ func NewToolSearchTool(registry *Registry) Tool {
 				AdditionalProperties: false,
 			},
 			safety: Safety{
-				SideEffect:      SideEffectNone,
-				Permission:      PermissionAllow,
-				Reason:          "Lists and loads already-registered tool schemas; performs no side effects.",
-				AdvertiseInAuto: true,
+				SideEffect: SideEffectNone,
+				Permission: PermissionAllow,
+				Reason:     "Lists and loads already-registered tool schemas; performs no side effects.",
 			},
 			// Reads registry schemas only; no workspace mutation.
 			capabilities: ToolCapabilities{Effect: EffectReadOnly, ThreadSafe: false},

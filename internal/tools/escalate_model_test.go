@@ -25,9 +25,6 @@ func TestEscalateModelToolMetadata(t *testing.T) {
 	if safety.Permission != PermissionAllow {
 		t.Fatalf("permission = %q, want allow", safety.Permission)
 	}
-	if !safety.AdvertiseInAuto {
-		t.Fatal("escalate_model must advertise in auto")
-	}
 
 	schema := tool.Parameters()
 	if schema.Type != "object" {

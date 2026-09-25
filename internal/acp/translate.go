@@ -2,6 +2,7 @@ package acp
 
 import (
 	"encoding/json"
+	"path/filepath"
 	"strings"
 	"unicode/utf8"
 
@@ -93,8 +94,10 @@ func rawInput(args string) json.RawMessage {
 
 // toolCallStart maps an advertised KAJICODE tool call to the initial ACP "tool_call"
 // update (status in_progress — KAJICODE executes immediately after advertising).
-func toolCallStart(call agent.ToolCall) ToolCallUpdate {
-	return ToolCallUpdate{
+// The initial update carries the call's primary file location (resolved against
+// workspaceRoot) so a client can follow the agent before the tool finishes.
+func toolCallStart(call agent.ToolCall, workspaceRoot string) ToolCallUpdate {
+	upd := ToolCallUpdate{
 		SessionUpdate: UpdateToolCall,
 		ToolCallID:    call.ID,
 		Title:         toolTitle(call.Name, call.Arguments),
@@ -102,10 +105,65 @@ func toolCallStart(call agent.ToolCall) ToolCallUpdate {
 		Status:        ToolStatusInProgress,
 		RawInput:      rawInput(call.Arguments),
 	}
+	if location := callLocation(call, workspaceRoot); location != nil {
+		upd.Locations = []ToolCallLocation{*location}
+	}
+	return upd
+}
+
+// callLocation derives the file a file-tool call targets from its arguments, so
+// the initial tool_call already carries a location for follow-along. Non-file
+// tools (bash, grep, ...) yield nil.
+func callLocation(call agent.ToolCall, workspaceRoot string) *ToolCallLocation {
+	if !fileTool(call.Name) {
+		return nil
+	}
+	path := primaryFilePath(call.Arguments)
+	if path == "" {
+		return nil
+	}
+	return &ToolCallLocation{Path: absoluteWorkspacePath(workspaceRoot, path)}
+}
+
+// fileTool reports whether a tool's primary argument is a file path worth
+// reporting as a location.
+func fileTool(name string) bool {
+	switch name {
+	case "read_file", "read_minified_file", "write_file", "edit_file", "multi_edit":
+		return true
+	default:
+		return false
+	}
+}
+
+// primaryFilePath extracts the file path argument from raw JSON arguments.
+func primaryFilePath(rawArgs string) string {
+	if strings.TrimSpace(rawArgs) == "" {
+		return ""
+	}
+	var m map[string]any
+	if err := json.Unmarshal([]byte(rawArgs), &m); err != nil {
+		return ""
+	}
+	for _, key := range []string{"path", "file_path", "file"} {
+		if v, ok := m[key].(string); ok && strings.TrimSpace(v) != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+// absoluteWorkspacePath resolves a possibly-relative path against workspaceRoot.
+// ACP requires absolute paths; an already-absolute path is cleaned and returned.
+func absoluteWorkspacePath(workspaceRoot, path string) string {
+	if filepath.IsAbs(path) || workspaceRoot == "" {
+		return filepath.Clean(path)
+	}
+	return filepath.Join(workspaceRoot, path)
 }
 
 // toolCallResult maps a finished KAJICODE tool result to a "tool_call_update".
-func toolCallResult(result agent.ToolResult) ToolCallUpdate {
+func toolCallResult(result agent.ToolResult, workspaceRoot string) ToolCallUpdate {
 	status := ToolStatusCompleted
 	if result.Status == tools.StatusError {
 		status = ToolStatusFailed
@@ -115,33 +173,38 @@ func toolCallResult(result agent.ToolResult) ToolCallUpdate {
 		ToolCallID:    result.ToolCallID,
 		Status:        status,
 	}
-	if content := toolResultContent(result); len(content) > 0 {
+	if content := toolResultContent(result, workspaceRoot); len(content) > 0 {
 		upd.Content = content
 	}
-	if locs := toolResultLocations(result); len(locs) > 0 {
+	if locs := toolResultLocations(result, workspaceRoot); len(locs) > 0 {
 		upd.Locations = locs
 	}
 	return upd
 }
 
-func toolResultContent(result agent.ToolResult) []ToolCallContent {
+func toolResultContent(result agent.ToolResult, workspaceRoot string) []ToolCallContent {
+	content := make([]ToolCallContent, 0, len(result.FileChanges)+1)
+	for _, change := range result.FileChanges {
+		path := absoluteWorkspacePath(workspaceRoot, change.Path)
+		content = append(content, DiffContent(path, change.OldContent, change.NewContent))
+	}
 	text := strings.TrimRight(result.Output, "\n")
 	if text == "" {
 		text = result.Display.Summary
 	}
-	if text == "" {
-		return nil
+	if text != "" {
+		content = append(content, ToolContent(TextBlock(text)))
 	}
-	return []ToolCallContent{ToolContent(TextBlock(text))}
+	return content
 }
 
-func toolResultLocations(result agent.ToolResult) []ToolCallLocation {
+func toolResultLocations(result agent.ToolResult, workspaceRoot string) []ToolCallLocation {
 	locs := make([]ToolCallLocation, 0, len(result.ChangedFiles))
 	for _, f := range result.ChangedFiles {
 		if strings.TrimSpace(f) == "" {
 			continue
 		}
-		locs = append(locs, ToolCallLocation{Path: f})
+		locs = append(locs, ToolCallLocation{Path: absoluteWorkspacePath(workspaceRoot, f)})
 	}
 	return locs
 }
@@ -228,10 +291,13 @@ func resourceFields(raw json.RawMessage) (string, string) {
 	return res.URI, res.Text
 }
 
-// notifier sends translated updates over a connection for one session.
+// notifier sends translated updates over a connection for one session. The
+// workspace root resolves tool-argument/ChangedFiles paths to the absolute paths
+// ACP requires.
 type notifier struct {
-	conn      *Conn
-	sessionID string
+	conn          *Conn
+	sessionID     string
+	workspaceRoot string
 }
 
 func (n *notifier) send(update any) {
@@ -257,8 +323,11 @@ func (n *notifier) userText(text string) {
 	}
 }
 
-func (n *notifier) toolCall(call agent.ToolCall)       { n.send(toolCallStart(call)) }
-func (n *notifier) toolResult(result agent.ToolResult) { n.send(toolCallResult(result)) }
+func (n *notifier) toolCall(call agent.ToolCall) { n.send(toolCallStart(call, n.workspaceRoot)) }
+
+func (n *notifier) toolResult(result agent.ToolResult) {
+	n.send(toolCallResult(result, n.workspaceRoot))
+}
 
 func (n *notifier) plan(items []tools.PlanItem) {
 	if len(items) > 0 {

@@ -39,13 +39,13 @@ func TestPartitionToolsCacheRendersOnceAndMatchesUncached(t *testing.T) {
 	registry.Register(countingSchemaTool{name: "alpha", calls: &calls})
 	registry.Register(countingSchemaTool{name: "beta", calls: &calls})
 
-	uncached, _ := partitionTools(registry, PermissionModeAuto, Options{}, map[string]bool{})
+	uncached, _ := partitionTools(registry, Options{}, map[string]bool{})
 
 	base := calls
 	cache := map[string]kajicoderuntime.ToolDefinition{}
-	first, _ := partitionToolsCached(registry, PermissionModeAuto, Options{}, map[string]bool{}, cache)
+	first, _ := partitionToolsCached(registry, Options{}, map[string]bool{}, cache)
 	rendersAfterFirst := calls - base
-	second, _ := partitionToolsCached(registry, PermissionModeAuto, Options{}, map[string]bool{}, cache)
+	second, _ := partitionToolsCached(registry, Options{}, map[string]bool{}, cache)
 	rendersAfterSecond := calls - base
 
 	if rendersAfterFirst != 2 {

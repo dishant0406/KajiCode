@@ -19,7 +19,7 @@ func TestPartitionToolsActiveAppendsLoadedToolAfterEagerBlock(t *testing.T) {
 	registry.Register(fakeDeferredTool{name: "mcp__srv__alpha", desc: "alpha"})
 	registry.Register(fakeDeferredTool{name: "mcp__srv__beta", desc: "beta"})
 
-	exposed, _ := partitionTools(registry, PermissionModeAuto, Options{DeferThreshold: 2}, map[string]bool{"mcp__srv__alpha": true})
+	exposed, _ := partitionTools(registry, Options{DeferThreshold: 2}, map[string]bool{"mcp__srv__alpha": true})
 
 	pos := func(name string) int {
 		for i := range exposed {

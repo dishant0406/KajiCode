@@ -193,10 +193,9 @@ func (tool *recordingWebSearchTool) Parameters() tools.Schema {
 }
 func (tool *recordingWebSearchTool) Safety() tools.Safety {
 	return tools.Safety{
-		SideEffect:      tools.SideEffectNetwork,
-		Permission:      tools.PermissionPrompt,
-		Reason:          "Sends model-provided search query text to the configured web search backend.",
-		AdvertiseInAuto: true,
+		SideEffect: tools.SideEffectNetwork,
+		Permission: tools.PermissionPrompt,
+		Reason:     "Sends model-provided search query text to the configured web search backend.",
 	}
 }
 func (tool *recordingWebSearchTool) Run(_ context.Context, args map[string]any) tools.Result {

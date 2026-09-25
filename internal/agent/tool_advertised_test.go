@@ -7,6 +7,7 @@ import (
 	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
+// safetyTool is a minimal tools.Tool with a fixed Safety, for advertising tests.
 type safetyTool struct {
 	name   string
 	safety tools.Safety
@@ -22,30 +23,32 @@ func (t safetyTool) Run(context.Context, map[string]any) tools.Result {
 	return tools.Result{Status: tools.StatusOK}
 }
 
-// member-auto advertises the in-workspace mutators a headless member needs to
-// build (write/edit + shell) that plain Auto hides, but NOT network or denied
-// tools — the sandbox still gates the advertised ones at call time.
-func TestToolAdvertisedMemberAuto(t *testing.T) {
+// Every permission mode must advertise the same registered tools — the mode
+// decides WHEN a call is approved (prompt vs auto-allowed), never WHETHER the
+// tool is visible to the model. Only a PermissionDeny tool (operator-disabled or
+// capability-absent) is withheld, in every mode.
+func TestToolAdvertisedIsModeIndependent(t *testing.T) {
+	read := safetyTool{name: "read_file", safety: tools.Safety{SideEffect: tools.SideEffectRead, Permission: tools.PermissionAllow}}
 	write := safetyTool{name: "write_file", safety: tools.Safety{SideEffect: tools.SideEffectWrite, Permission: tools.PermissionPrompt}}
 	shell := safetyTool{name: "bash", safety: tools.Safety{SideEffect: tools.SideEffectShell, Permission: tools.PermissionPrompt}}
-	read := safetyTool{name: "read_file", safety: tools.Safety{SideEffect: tools.SideEffectRead, Permission: tools.PermissionAllow}}
 	network := safetyTool{name: "net_tool", safety: tools.Safety{SideEffect: tools.SideEffectNetwork, Permission: tools.PermissionPrompt}}
 	denied := safetyTool{name: "blocked", safety: tools.Safety{SideEffect: tools.SideEffectRead, Permission: tools.PermissionDeny}}
 
-	// Plain Auto hides prompt-requiring mutators (the read-only member problem).
-	if ToolAdvertised(write, PermissionModeAuto) || ToolAdvertised(shell, PermissionModeAuto) {
-		t.Fatal("Auto must NOT advertise write/shell prompt tools")
+	advertised := []tools.Tool{read, write, shell, network}
+	modes := []PermissionMode{
+		PermissionModeAuto, PermissionModeAsk, PermissionModeUnsafe,
+		PermissionModeAskAll, PermissionModeReadOnly, PermissionModeReadWrite,
+		PermissionModeBypassAll,
 	}
 
-	for _, tool := range []tools.Tool{write, shell, read} {
-		if !ToolAdvertised(tool, PermissionModeMemberAuto) {
-			t.Fatalf("member-auto must advertise %q", tool.Name())
+	for _, mode := range modes {
+		for _, tool := range advertised {
+			if !ToolAdvertised(tool) {
+				t.Fatalf("mode %q must advertise %q", mode, tool.Name())
+			}
 		}
-	}
-	if ToolAdvertised(network, PermissionModeMemberAuto) {
-		t.Fatal("member-auto must NOT advertise a network prompt tool")
-	}
-	if ToolAdvertised(denied, PermissionModeMemberAuto) {
-		t.Fatal("member-auto must NOT advertise a denied tool")
+		if ToolAdvertised(denied) {
+			t.Fatalf("mode %q must NOT advertise a denied tool", mode)
+		}
 	}
 }

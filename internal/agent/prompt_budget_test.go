@@ -14,21 +14,16 @@ import (
 // deliberately) or trimmed — the per-turn floor should not creep up silently.
 //
 // Measured baselines (2026-07): base system prompt ~3160 tokens; the tools a normal
-// (auto permission-mode) interactive turn sends ~2430 tokens. The tool figure is
-// the auto-mode advertised set, not the full core registry — higher-risk tools that
-// only advertise in other modes are excluded, matching what a real turn actually
-// pays. The todo_read/todo_write, multi_edit, and ls tools advanced this floor and
-// are part of the intended eager (read-only, low-risk) surface, so the ceiling was
-// raised deliberately to keep 10% headroom over the measured 2828 tokens.
-//
-// The declarative tool-spec + LSP work added web_search (319), lsp_navigate (289),
-// and the new ask_user/request_permissions permission flow tooling to the eager
-// surface; all are read-only / low-risk interaction tools that must be advertised
-// in auto mode, so the ceiling was raised deliberately to keep ~10% headroom over
-// the measured 3327 tokens rather than trimming the surface.
+// interactive turn sends ~2430 tokens. That figure was the auto-mode advertised
+// subset; tool advertising no longer depends on the permission mode (every
+// non-denied tool is visible in every mode), so the eager set is now the full core
+// registry — 22 tools / 5383 tokens on a plugin- and MCP-free session. The ceiling
+// was raised deliberately to keep 10% headroom over that full surface rather than
+// re-hiding mutators in auto. MCP-heavy sessions still collapse behind tool_search
+// via the deferral threshold, so the eager floor stays at the core set.
 const (
 	maxBaseSystemPromptTokens = 3500
-	maxEagerToolSchemaTokens  = 3600
+	maxEagerToolSchemaTokens  = 6000
 )
 
 func TestSystemPromptTokenBudget(t *testing.T) {
@@ -50,7 +45,7 @@ func TestEagerToolSchemaTokenBudget(t *testing.T) {
 	}
 	// Options{} keeps DeferThreshold at 0, so deferral is inactive and every core
 	// tool is exposed eagerly — exactly what a plugin-free session sends each turn.
-	exposed, _ := partitionTools(registry, PermissionModeAuto, Options{}, map[string]bool{})
+	exposed, _ := partitionTools(registry, Options{}, map[string]bool{})
 	got := estimateToolDefTokens(exposed)
 	t.Logf("eager core tool schemas: %d tokens across %d tools", got, len(exposed))
 	if got > maxEagerToolSchemaTokens {

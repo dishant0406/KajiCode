@@ -372,14 +372,43 @@ type ToolCallContent struct {
 	Type string `json:"type"`
 	// type == "content"
 	Content *ContentBlock `json:"content,omitempty"`
-	// type == "diff"
-	Path    string `json:"path,omitempty"`
-	OldText string `json:"oldText,omitempty"`
-	NewText string `json:"newText,omitempty"`
+	// type == "diff". OldText is nil for a new file; MarshalJSON emits the spec's
+	// explicit `oldText: null` for a diff and omits these fields for a content item.
+	Path    string  `json:"path,omitempty"`
+	OldText *string `json:"oldText,omitempty"`
+	NewText string  `json:"newText,omitempty"`
+}
+
+// MarshalJSON gives each variant its exact wire shape: a diff always carries
+// path/newText and an explicit oldText (null for a new file); any other type
+// carries only its content block, so diff-only fields never leak onto it.
+func (c ToolCallContent) MarshalJSON() ([]byte, error) {
+	if c.Type == "diff" {
+		return json.Marshal(struct {
+			Type    string  `json:"type"`
+			Path    string  `json:"path"`
+			OldText *string `json:"oldText"`
+			NewText string  `json:"newText"`
+		}{c.Type, c.Path, c.OldText, c.NewText})
+	}
+	return json.Marshal(struct {
+		Type    string        `json:"type"`
+		Content *ContentBlock `json:"content,omitempty"`
+	}{c.Type, c.Content})
 }
 
 func ToolContent(block ContentBlock) ToolCallContent {
 	return ToolCallContent{Type: "content", Content: &block}
+}
+
+// DiffContent builds a v1 "diff" content item. An empty oldText means a create,
+// so the wire carries oldText: null as the spec requires.
+func DiffContent(path, oldText, newText string) ToolCallContent {
+	item := ToolCallContent{Type: "diff", Path: path, NewText: newText}
+	if oldText != "" {
+		item.OldText = &oldText
+	}
+	return item
 }
 
 type ToolCallLocation struct {

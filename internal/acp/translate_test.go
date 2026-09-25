@@ -58,7 +58,7 @@ func TestToolTitleAndHint(t *testing.T) {
 }
 
 func TestToolCallStart(t *testing.T) {
-	upd := toolCallStart(agent.ToolCall{ID: "tc1", Name: "read_file", Arguments: `{"path":"a.go"}`})
+	upd := toolCallStart(agent.ToolCall{ID: "tc1", Name: "read_file", Arguments: `{"path":"a.go"}`}, "/work")
 	if upd.SessionUpdate != UpdateToolCall {
 		t.Fatalf("sessionUpdate = %q", upd.SessionUpdate)
 	}
@@ -68,33 +68,90 @@ func TestToolCallStart(t *testing.T) {
 	if string(upd.RawInput) != `{"path":"a.go"}` {
 		t.Fatalf("rawInput = %s", upd.RawInput)
 	}
+	// The initial file-tool call carries an absolute location so clients can
+	// follow the agent before the tool finishes.
+	if len(upd.Locations) != 1 || upd.Locations[0].Path != "/work/a.go" {
+		t.Fatalf("expected absolute initial location, got %+v", upd.Locations)
+	}
+	// A non-file tool has no location to follow.
+	shell := toolCallStart(agent.ToolCall{ID: "tc2", Name: "bash", Arguments: `{"command":"ls"}`}, "/work")
+	if len(shell.Locations) != 0 {
+		t.Fatalf("bash should not report a location, got %+v", shell.Locations)
+	}
 	// Malformed args must not produce invalid JSON on the wire.
-	if got := toolCallStart(agent.ToolCall{ID: "x", Name: "bash", Arguments: "broken"}); got.RawInput != nil {
+	if got := toolCallStart(agent.ToolCall{ID: "x", Name: "bash", Arguments: "broken"}, "/work"); got.RawInput != nil {
 		t.Fatalf("malformed args should drop rawInput, got %s", got.RawInput)
 	}
 }
 
 func TestToolCallResult(t *testing.T) {
+	oldContent := "package main\n"
 	ok := toolCallResult(agent.ToolResult{
 		ToolCallID:   "tc1",
 		Name:         "edit_file",
 		Status:       tools.StatusOK,
 		Output:       "applied\n",
 		ChangedFiles: []string{"a.go", ""},
-	})
+		FileChanges:  []tools.FileChange{{Path: "a.go", OldContent: oldContent, NewContent: "package main\n\n"}},
+	}, "/work")
 	if ok.SessionUpdate != UpdateToolCallUpdate || ok.Status != ToolStatusCompleted {
 		t.Fatalf("unexpected ok result: %+v", ok)
 	}
-	if len(ok.Content) != 1 || ok.Content[0].Type != "content" || ok.Content[0].Content.Text != "applied" {
-		t.Fatalf("unexpected content: %+v", ok.Content)
+	// A diff content item precedes the text summary.
+	if len(ok.Content) != 2 || ok.Content[0].Type != "diff" {
+		t.Fatalf("expected a diff then a text item, got %+v", ok.Content)
 	}
-	if len(ok.Locations) != 1 || ok.Locations[0].Path != "a.go" {
-		t.Fatalf("blank changed files should be dropped, got %+v", ok.Locations)
+	diff := ok.Content[0]
+	if diff.Path != "/work/a.go" || diff.NewText != "package main\n\n" {
+		t.Fatalf("unexpected diff: %+v", diff)
+	}
+	if diff.OldText == nil || *diff.OldText != oldContent {
+		t.Fatalf("expected old text preserved, got %v", diff.OldText)
+	}
+	if ok.Content[1].Type != "content" || ok.Content[1].Content.Text != "applied" {
+		t.Fatalf("unexpected text content: %+v", ok.Content[1])
+	}
+	if len(ok.Locations) != 1 || ok.Locations[0].Path != "/work/a.go" {
+		t.Fatalf("blank changed files should be dropped and paths made absolute, got %+v", ok.Locations)
 	}
 
-	failed := toolCallResult(agent.ToolResult{ToolCallID: "tc2", Status: tools.StatusError, Output: "boom"})
+	failed := toolCallResult(agent.ToolResult{ToolCallID: "tc2", Status: tools.StatusError, Output: "boom"}, "/work")
 	if failed.Status != ToolStatusFailed {
 		t.Fatalf("error result should be failed, got %q", failed.Status)
+	}
+}
+
+func TestToolCallResultCreateEmitsNullOldText(t *testing.T) {
+	upd := toolCallResult(agent.ToolResult{
+		ToolCallID:   "tc1",
+		Name:         "write_file",
+		Status:       tools.StatusOK,
+		Output:       "Created a.go",
+		ChangedFiles: []string{"a.go"},
+		FileChanges:  []tools.FileChange{{Path: "a.go", OldContent: "", NewContent: "hello"}},
+	}, "/work")
+	if len(upd.Content) == 0 || upd.Content[0].Type != "diff" {
+		t.Fatalf("expected a diff, got %+v", upd.Content)
+	}
+	// A new file must serialize oldText as null, not an omitted or empty string.
+	raw, err := json.Marshal(upd.Content[0])
+	if err != nil {
+		t.Fatalf("marshal diff: %v", err)
+	}
+	if !strings.Contains(string(raw), `"oldText":null`) {
+		t.Fatalf("create diff must carry oldText:null, got %s", raw)
+	}
+}
+
+func TestAbsoluteWorkspacePath(t *testing.T) {
+	if got := absoluteWorkspacePath("/work", "src/a.go"); got != "/work/src/a.go" {
+		t.Fatalf("relative path = %q", got)
+	}
+	if got := absoluteWorkspacePath("/work", "/abs/a.go"); got != "/abs/a.go" {
+		t.Fatalf("absolute path = %q", got)
+	}
+	if got := absoluteWorkspacePath("/work", "/abs/../a.go"); got != "/a.go" {
+		t.Fatalf("absolute path should be cleaned, got %q", got)
 	}
 }
 

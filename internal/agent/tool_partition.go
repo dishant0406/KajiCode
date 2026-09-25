@@ -13,20 +13,20 @@ import (
 // tool_search (dropped so it is never advertised when it cannot help), and the
 // discovery text is empty. ACTIVE: deferred-eligible tools stay hidden until
 // tool_search loads them; non-deferred tools and tool_search remain visible.
-func partitionTools(registry *tools.Registry, permissionMode PermissionMode, options Options, loaded map[string]bool) ([]kajicoderuntime.ToolDefinition, string) {
-	return partitionToolsCached(registry, permissionMode, options, loaded, nil)
+func partitionTools(registry *tools.Registry, options Options, loaded map[string]bool) ([]kajicoderuntime.ToolDefinition, string) {
+	return partitionToolsCached(registry, options, loaded, nil)
 }
 
 // partitionToolsCached is partitionTools with an optional per-tool definition
 // cache. Partitioning is recomputed every call because a tool's deferred state
 // can flip mid-run; only schema rendering is memoized by tool name.
-func partitionToolsCached(registry *tools.Registry, permissionMode PermissionMode, options Options, loaded map[string]bool, defCache map[string]kajicoderuntime.ToolDefinition) ([]kajicoderuntime.ToolDefinition, string) {
+func partitionToolsCached(registry *tools.Registry, options Options, loaded map[string]bool, defCache map[string]kajicoderuntime.ToolDefinition) ([]kajicoderuntime.ToolDefinition, string) {
 	registeredTools := registry.All()
 
 	visible := make([]tools.Tool, 0, len(registeredTools))
 	eligible := 0
 	for _, tool := range registeredTools {
-		if !ToolVisible(tool, permissionMode, options.EnabledTools, options.DisabledTools) {
+		if !ToolVisible(tool, options.EnabledTools, options.DisabledTools) {
 			continue
 		}
 		visible = append(visible, tool)
@@ -38,7 +38,7 @@ func partitionToolsCached(registry *tools.Registry, permissionMode PermissionMod
 	loader, loaderFound := registry.Get(tools.ToolSearchToolName)
 	loaderUsable := loaderFound &&
 		!containsToolName(options.DisabledTools, tools.ToolSearchToolName) &&
-		ToolAdvertised(loader, permissionMode)
+		ToolAdvertised(loader)
 	active := options.DeferThreshold > 0 && eligible >= options.DeferThreshold && loaderUsable
 	if !active {
 		return eagerToolDefinitions(visible, defCache), ""

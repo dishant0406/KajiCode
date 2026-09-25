@@ -52,10 +52,9 @@ func newEscalateModelTool(registry modelregistry.Registry) escalateModelTool {
 				AdditionalProperties: false,
 			},
 			safety: Safety{
-				SideEffect:      SideEffectNone,
-				Permission:      PermissionAllow,
-				Reason:          "Requests a mid-run switch to a stronger model; the agent loop performs the switch.",
-				AdvertiseInAuto: true,
+				SideEffect: SideEffectNone,
+				Permission: PermissionAllow,
+				Reason:     "Requests a mid-run switch to a stronger model; the agent loop performs the switch.",
 			},
 			// Requests mid-run model switch; session-bound.
 			capabilities: ToolCapabilities{Effect: EffectInteractive, ThreadSafe: false},

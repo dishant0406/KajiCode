@@ -328,6 +328,19 @@ func scrubResultSecrets(res Result) Result {
 			res.Redacted = true
 		}
 	}
+	// FileChanges carries full file content an ACP client renders as a diff, so it
+	// crosses the same secret boundary as Output/Display before it leaves a tool.
+	for index := range res.FileChanges {
+		change := &res.FileChanges[index]
+		if scrubbed := redaction.RedactString(change.OldContent, redaction.Options{}); scrubbed != change.OldContent {
+			change.OldContent = scrubbed
+			res.Redacted = true
+		}
+		if scrubbed := redaction.RedactString(change.NewContent, redaction.Options{}); scrubbed != change.NewContent {
+			change.NewContent = scrubbed
+			res.Redacted = true
+		}
+	}
 	return res
 }
 

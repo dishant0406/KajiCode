@@ -30,15 +30,6 @@ const (
 	PermissionModeReadOnly  PermissionMode = "read-only"
 	PermissionModeReadWrite PermissionMode = "read-write"
 	PermissionModeBypassAll PermissionMode = "bypass-all"
-	// PermissionModeMemberAuto is a headless mode for sub-agent MEMBERS: it
-	// advertises the in-workspace mutators a member needs to build (write/edit +
-	// shell) on top of the Auto set, while the sandbox engine still gates them at
-	// call time — in-workspace writes and sandbox-backed shell auto-allow, but
-	// out-of-workspace writes, network, and destructive commands still prompt (and
-	// a headless member has no approver, so they are denied). It normalizes to Auto
-	// everywhere except ToolAdvertised, so authority is never widened beyond what an
-	// interactive auto agent already has inside the sandbox.
-	PermissionModeMemberAuto PermissionMode = "member-auto"
 )
 
 // StopReason is the terminal reason a run stopped when it was not a plain
@@ -74,7 +65,10 @@ type ToolResult struct {
 	Meta         map[string]string
 	Redacted     bool
 	ChangedFiles []string
-	Display      tools.Display
+	// FileChanges carries the full before/after content of each file a mutating
+	// tool wrote, so an ACP client can render a real diff. See tools.FileChange.
+	FileChanges []tools.FileChange
+	Display     tools.Display
 	// Images carries image bytes a tool returned for the model to SEE (e.g.
 	// read_file on a raster image). The loop lifts them onto a synthetic user
 	// turn after the tool batch, since providers only accept image parts on a

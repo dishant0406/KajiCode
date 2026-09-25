@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 type applyPatchTool struct {
@@ -90,6 +91,8 @@ func (tool applyPatchTool) RunWithOptions(ctx context.Context, args map[string]a
 	if options.FileTracker != nil {
 		createdTargets = missingPatchTargets(applyRoot, patch)
 	}
+	patchFiles := patchTargets(applyRoot, relativeRoot, patch)
+	beforeContents := patchBeforeContents(patchFiles)
 
 	command := exec.CommandContext(ctx, "git", "apply", "--whitespace=nowarn", patchPath)
 	command.Dir = applyRoot
@@ -108,6 +111,7 @@ func (tool applyPatchTool) RunWithOptions(ctx context.Context, args map[string]a
 	}
 	result := okResult(summary)
 	result.ChangedFiles = changedFilesFromPatch(relativeRoot, patch)
+	result.FileChanges = patchFileChanges(patchFiles, beforeContents)
 	result.Display = Display{Summary: summary, Kind: "diff", Preview: capPreviewDiff(patch)}
 	// git apply already rejects a patch whose context drifted, so it has its own
 	// staleness guard. Drop any tracked baseline for the files it rewrote so a
@@ -182,6 +186,76 @@ func changedFilesFromPatch(relativeRoot string, patch string) []string {
 		paths = append(paths, workspacePath)
 	}
 	return paths
+}
+
+// patchTarget is one file a patch touches: its absolute path on disk plus the
+// label the client sees (workspace-relative, or absolute under an extra root).
+type patchTarget struct {
+	label    string
+	absolute string
+}
+
+// patchTargets resolves the files a patch touches, deduplicated by absolute path.
+func patchTargets(applyRoot, relativeRoot, patch string) []patchTarget {
+	var targets []patchTarget
+	seen := map[string]bool{}
+	for _, path := range patchHeaderPaths(patch) {
+		if path == "" || path == "/dev/null" {
+			continue
+		}
+		absolute, _, err := resolveWorkspaceTargetPath(applyRoot, path)
+		if err != nil || seen[absolute] {
+			continue
+		}
+		seen[absolute] = true
+		targets = append(targets, patchTarget{label: workspacePathForPatch(relativeRoot, path), absolute: absolute})
+	}
+	return targets
+}
+
+// patchBeforeContents snapshots the pre-apply content of each target, keyed by
+// absolute path. A file that does not exist yet (a create) is absent, and an
+// unreadable or binary file is skipped so no bogus diff is emitted for it.
+func patchBeforeContents(targets []patchTarget) map[string]string {
+	before := map[string]string{}
+	for _, target := range targets {
+		data, err := os.ReadFile(target.absolute)
+		if err != nil || !utf8.Valid(data) {
+			continue
+		}
+		before[target.absolute] = string(data)
+	}
+	return before
+}
+
+// patchFileChanges builds the structured file changes for an applied patch by
+// re-reading each target. A file with no pre-apply content that is still empty
+// after the patch is skipped.
+func patchFileChanges(targets []patchTarget, before map[string]string) []FileChange {
+	var changes []FileChange
+	for _, target := range targets {
+		data, err := os.ReadFile(target.absolute)
+		if err != nil || !utf8.Valid(data) {
+			continue
+		}
+		oldContent, existedBefore := before[target.absolute]
+		newContent := string(data)
+		if !existedBefore && newContent == "" {
+			continue
+		}
+		changes = append(changes, FileChange{Path: target.label, OldContent: oldContent, NewContent: newContent})
+	}
+	return changes
+}
+
+// workspacePathForPatch labels a patch path the way changedFilesFromPatch does:
+// workspace-relative for the workspace root, prefixed by relativeRoot otherwise
+// (which is absolute when the apply cwd is an extra write root).
+func workspacePathForPatch(relativeRoot, path string) string {
+	if relativeRoot == "" || relativeRoot == "." {
+		return filepath.ToSlash(path)
+	}
+	return filepath.ToSlash(filepath.Join(relativeRoot, path))
 }
 
 func validatePatchPaths(root string, patch string) error {

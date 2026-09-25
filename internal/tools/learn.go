@@ -59,10 +59,9 @@ func NewLearnTool(learningRoot string) Tool {
 				AdditionalProperties: false,
 			},
 			safety: Safety{
-				SideEffect:      SideEffectRead,
-				Permission:      PermissionAllow,
-				Reason:          "Reads and writes KajiCode's learning memory store only; never touches the workspace.",
-				AdvertiseInAuto: true,
+				SideEffect: SideEffectRead,
+				Permission: PermissionAllow,
+				Reason:     "Reads and writes KajiCode's learning memory store only; never touches the workspace.",
 			},
 			capabilities: ToolCapabilities{Effect: EffectReadOnly, ThreadSafe: false},
 		},

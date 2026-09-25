@@ -110,8 +110,8 @@ func TestCoreNetworkToolsExposeSafetyMetadata(t *testing.T) {
 	if property, ok := fetch.Parameters().Properties["url"]; !ok || property.Type != "string" {
 		t.Fatalf("web_fetch must expose a string url property, got %#v", fetch.Parameters().Properties["url"])
 	}
-	if safety := fetch.Safety(); safety.Permission != PermissionPrompt || !safety.AdvertiseInAuto {
-		t.Fatalf("web_fetch safety = %#v, want prompt and advertised in auto", safety)
+	if safety := fetch.Safety(); safety.Permission != PermissionPrompt {
+		t.Fatalf("web_fetch safety = %#v, want prompt", safety)
 	}
 
 	// web_search discovers URLs; its key parameter is "query".
@@ -122,8 +122,8 @@ func TestCoreNetworkToolsExposeSafetyMetadata(t *testing.T) {
 	if property, ok := search.Parameters().Properties["query"]; !ok || property.Type != "string" {
 		t.Fatalf("web_search must expose a string query property, got %#v", search.Parameters().Properties["query"])
 	}
-	if safety := search.Safety(); safety.Permission != PermissionPrompt || !safety.AdvertiseInAuto {
-		t.Fatalf("web_search safety = %#v, want prompt and advertised in auto", safety)
+	if safety := search.Safety(); safety.Permission != PermissionPrompt {
+		t.Fatalf("web_search safety = %#v, want prompt", safety)
 	}
 }
 

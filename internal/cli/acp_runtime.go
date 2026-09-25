@@ -47,7 +47,7 @@ func buildACPWorkspace(workspaceRoot, sessionID string, resolved config.Resolved
 
 	// Deferred-tool loading + batch, in the same order exec/TUI register them
 	// (after MCP/plugin tools so the eligible count matches).
-	registerToolSearchIfEligible(registry, resolved.Tools.DeferThreshold, agent.PermissionModeAuto, nil, nil)
+	registerToolSearchIfEligible(registry, resolved.Tools.DeferThreshold, nil, nil)
 	registerBatchTool(registry, nil, nil)
 
 	hookDispatcher, hookSkip := newHookDispatcherWithExtra(workspaceRoot, activation.hooks, workspaceRoot)
