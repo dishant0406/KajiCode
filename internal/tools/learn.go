@@ -156,6 +156,9 @@ func (tool *learnTool) edit(action string, args map[string]any) Result {
 	if err != nil {
 		state = harness.State{Scope: harness.ScopeProject}
 	}
+	// deletedRecipe carries the manifest name of a removed recipe entry so its
+	// on-disk manifest is cleaned up after the state write succeeds.
+	deletedRecipe := ""
 
 	switch action {
 	case "create":
@@ -217,6 +220,9 @@ func (tool *learnTool) edit(action string, args map[string]any) Result {
 		if idx < 0 {
 			return errorResult(fmt.Sprintf("Error: %s:%s does not exist", kind, id))
 		}
+		if kind == harness.KindRecipe && state.Entries[idx].Recipe != nil {
+			deletedRecipe = state.Entries[idx].Recipe.Name
+		}
 		state.Entries = append(state.Entries[:idx], state.Entries[idx+1:]...)
 	}
 
@@ -232,7 +238,23 @@ func (tool *learnTool) edit(action string, args map[string]any) Result {
 			}
 		}
 	}
+	// A deleted recipe must not leave its manifest behind for recipe_run to
+	// still discover; removal is best-effort after the state write succeeds.
+	if deletedRecipe != "" && !recipeNameInUse(state.Entries, deletedRecipe) {
+		_ = harness.RemoveRecipe(tool.learningRoot, deletedRecipe)
+	}
 	return okResult(fmt.Sprintf("ok: %s %s:%s", action, kind, id))
+}
+
+// recipeNameInUse reports whether any surviving entry still references the given
+// recipe manifest name, so a delete never removes a manifest another entry needs.
+func recipeNameInUse(entries []harness.Entry, name string) bool {
+	for _, e := range entries {
+		if e.Kind == harness.KindRecipe && e.Recipe != nil && e.Recipe.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 // parseRecipeArg decodes an optional inline recipe JSON argument. It defaults to

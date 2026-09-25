@@ -89,7 +89,26 @@ type LearningEngine struct {
 	used     map[string]usedLesson
 	lastPass time.Time
 	finished bool
+	// work is non-nil while a background pass goroutine runs and is closed when
+	// it exits, so RunTurn/Finish can wait for quiescence without polling (the
+	// same pattern as asyncDiagnostics.working).
+	work chan struct{}
+	// appliedSinceSplice is set by a background pass that landed lessons, so the
+	// next RunTurn knows to ask the loop to splice a fresh <learned_memory>
+	// block. It is consumed by RunTurn.
+	appliedSinceSplice bool
 }
+
+// learningPassWaitTimeout bounds how long RunTurn waits for a background pass to
+// finish before deciding whether a splice is due. A pass makes two provider
+// calls, so the wait is short: if it is still running, the splice simply happens
+// a turn later.
+var learningPassWaitTimeout = 250 * time.Millisecond
+
+// learningFinishTimeout bounds how long Finish waits for an in-flight pass. It
+// runs in the run's defer, so an orphaned pass would be lost when a headless/ACP
+// process exits, but a hung provider must not wedge shutdown.
+var learningFinishTimeout = 15 * time.Second
 
 // NewLearningEngine builds the engine. cfg is the effective (defaulted) learning
 // config; provider must be non-nil or the engine is a no-op. globalStore,
@@ -174,20 +193,44 @@ func (e *LearningEngine) addSignalLocked(reason string) {
 }
 
 // RunTurn is the loop hook, called once per assistant turn after any compaction.
-// It runs a pass when a signal is pending, a compaction happened (when enabled),
-// or a manual request was armed, subject to the debounce. It returns whether any
-// learning was applied, so the loop can splice the fresh learned-memory block
-// into the next request (same-session pickup) without an extra store read on
-// every turn.
+// It schedules a background pass when a signal is pending, a compaction happened
+// (when enabled), or a manual request was armed, subject to the debounce. The
+// pass runs on its own goroutine, so the turn's next request is never delayed by
+// review/plan provider calls.
+//
+// It returns whether a pass landed lessons, so the loop splices a fresh
+// <learned_memory> block into the next request (same-session pickup). On the turn
+// a pass is started it waits only briefly (learningPassWaitTimeout) so a fast
+// provider can splice immediately; on every other turn it is fully non-blocking
+// and simply reports a pass that finished since the last turn.
 func (e *LearningEngine) RunTurn(ctx context.Context, messages []kajicoderuntime.Message) bool {
-	return e.run(ctx, messages, false)
+	if e == nil {
+		return false
+	}
+	if e.schedulePass(ctx, messages, false) {
+		return e.waitAndConsumeApplied(learningPassWaitTimeout, nil)
+	}
+	return e.consumeApplied()
 }
 
-// Finish is the end-of-run hook. It runs a final pass over the completed session
-// turn is processed here (a failure→fix or correction raised on the last turn
-// that the loop did not get to act on) and the lessons the run actually surfaced
-// are reinforced. A clean run with no signal performs no provider work, so a
-// routine session costs nothing extra; it is idempotent per run.
+// consumeApplied reports whether a pass has landed lessons since the last
+// consumption, without waiting.
+func (e *LearningEngine) consumeApplied() bool {
+	if e == nil {
+		return false
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	applied := e.appliedSinceSplice
+	e.appliedSinceSplice = false
+	return applied
+}
+
+// Finish is the end-of-run hook. It schedules a final pass over the completed
+// session (a failure→fix or correction raised on the last turn that the loop did
+// not get to act on), waits for any in-flight pass with a bounded timeout so it
+// is not orphaned when the process exits, and reinforces the lessons the run
+// actually surfaced. It is idempotent per run.
 func (e *LearningEngine) Finish(ctx context.Context, messages []kajicoderuntime.Message) bool {
 	if e == nil {
 		return false
@@ -199,18 +242,34 @@ func (e *LearningEngine) Finish(ctx context.Context, messages []kajicoderuntime.
 	}
 	e.finished = true
 	e.mu.Unlock()
-	applied := e.run(ctx, messages, true)
+
+	// One overall deadline so a hung provider cannot stack waits. First let an
+	// in-flight pass finish: otherwise the single-flight guard makes the final
+	// schedule a no-op and the last turn's signals would be dropped with the run.
+	deadline := time.Now().Add(learningFinishTimeout)
+	e.waitForWork(time.Until(deadline), ctx.Done())
+	e.schedulePass(ctx, messages, true)
+	applied := e.waitAndConsumeApplied(time.Until(deadline), ctx.Done())
 	e.Reinforce()
 	return applied
 }
 
-// run is the shared implementation of RunTurn and Finish. force bypasses the
-// debounce (a run boundary is a natural capture point).
-func (e *LearningEngine) run(ctx context.Context, messages []kajicoderuntime.Message, force bool) bool {
+// schedulePass decides whether a pass is due and, if so, starts it on a
+// background goroutine, reporting whether one was started. Signals are consumed
+// exactly once; when a pass is already in flight the newly-armed signals stay
+// queued for the next boundary. force bypasses the debounce (a run boundary is a
+// natural capture point).
+func (e *LearningEngine) schedulePass(ctx context.Context, messages []kajicoderuntime.Message, force bool) bool {
 	if !e.Enabled() {
 		return false
 	}
 	e.mu.Lock()
+	// Single-flight: a pass already running leaves new signals queued so a burst
+	// of triggers coalesces into the next pass instead of racing two writers.
+	if e.work != nil {
+		e.mu.Unlock()
+		return false
+	}
 	signals := e.pendingSignals
 	manual := e.manualReady
 	compacted := e.compactionSignal
@@ -226,14 +285,70 @@ func (e *LearningEngine) run(ctx context.Context, messages []kajicoderuntime.Mes
 		e.mu.Unlock()
 		return false
 	}
-	// The pass runs now: consume the queued signals and one-shot flags.
+	// The pass runs now: consume the queued signals and one-shot flags, and mark
+	// the worker in flight so RunTurn/Finish can wait for quiescence.
 	e.pendingSignals = nil
 	e.compactionSignal = false
 	e.manualReady = false
 	e.lastPass = time.Now()
+	done := make(chan struct{})
+	e.work = done
 	e.mu.Unlock()
 
+	// renderTranscript builds the immutable snapshot synchronously: the loop may
+	// keep mutating messages while the pass runs, so the pass must own a copy.
 	conversation := renderTranscript(messages)
+	go func() {
+		applied := e.runPass(ctx, conversation, signals)
+		e.mu.Lock()
+		if applied {
+			e.appliedSinceSplice = true
+		}
+		if e.work == done {
+			e.work = nil
+		}
+		e.mu.Unlock()
+		close(done)
+	}()
+	return true
+}
+
+// waitAndConsumeApplied waits up to timeout for the in-flight pass to quiesce,
+// then reports whether a pass has landed lessons since the last consumption. A
+// nil extra channel is ignored; a non-nil one (ctx.Done) ends the wait early.
+func (e *LearningEngine) waitAndConsumeApplied(timeout time.Duration, extra <-chan struct{}) bool {
+	if e == nil {
+		return false
+	}
+	e.waitForWork(timeout, extra)
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	applied := e.appliedSinceSplice
+	e.appliedSinceSplice = false
+	return applied
+}
+
+// waitForWork blocks until the in-flight pass quiesces, timeout elapses, or the
+// extra channel closes. A non-positive timeout skips the wait.
+func (e *LearningEngine) waitForWork(timeout time.Duration, extra <-chan struct{}) {
+	e.mu.Lock()
+	busy := e.work
+	e.mu.Unlock()
+	if busy == nil || timeout <= 0 {
+		return
+	}
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case <-busy:
+	case <-timer.C:
+	case <-extra:
+	}
+}
+
+// runPass is the background pass body: review → plan → apply. It returns whether
+// any proposal actually landed.
+func (e *LearningEngine) runPass(ctx context.Context, conversation string, signals []string) bool {
 	decision, err := harness.RunReview(ctx, harness.ReviewOptions{
 		Provider:     e.provider,
 		Conversation: conversation,

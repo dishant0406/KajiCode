@@ -46,6 +46,7 @@ func TestCoreSystemPromptIncludesCodingQualityRules(t *testing.T) {
 		"do not recognize",
 		"scaled to the work",
 		"comment density",
+		"call `recall` before non-trivial work",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("expected core system prompt to include %q, got:\n%s", want, buildSystemPrompt(Options{}))

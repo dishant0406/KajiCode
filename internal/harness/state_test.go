@@ -339,3 +339,89 @@ func TestLoadNormalizesLegacyLocalScope(t *testing.T) {
 		t.Fatalf("legacy scope not normalized: %#v", state.Entries)
 	}
 }
+
+func TestPruneStaleCapsRefinementsKeepingNewestRollback(t *testing.T) {
+	dir := t.TempDir()
+	store := NewStore(StoreOptions{Dir: dir, Scope: ScopeProject})
+	now := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
+	if err := store.WithLock(func(state State) (State, error) {
+		for i := 0; i < MaxRefinements*4; i++ {
+			event := RefinementEvent{ID: "r", Trigger: "auto", Changes: []string{"x"}, CreatedAt: now.Format(time.RFC3339)}
+			if i == MaxRefinements*4-1 {
+				// The newest event is the one LatestRollback must still find.
+				event.Rollback = []EditOutcome{{Proposal: EditProposal{Action: ActionCreate, Kind: KindMemory, ID: "fact"}, Applied: true}}
+			}
+			state.Refinements = append(state.Refinements, event)
+		}
+		return state, nil
+	}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	store.PruneStale(0, 0, now)
+	state, _ := store.Load()
+	if len(state.Refinements) != MaxRefinements {
+		t.Fatalf("refinements = %d, want %d (bounded)", len(state.Refinements), MaxRefinements)
+	}
+	if _, ok := LatestRollback(state); !ok {
+		t.Fatal("newest rollback-able event should survive the cap")
+	}
+}
+
+func TestPruneStaleRemovesOrphanedRecipeManifest(t *testing.T) {
+	dir := t.TempDir()
+	store := NewStore(StoreOptions{Dir: dir, Scope: ScopeProject})
+	now := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
+	recipe := &Recipe{Name: "flow", Commands: []RecipeCommand{{Tool: "read_file"}}}
+	manifest, err := SaveRecipe(dir, *recipe, nil)
+	if err != nil {
+		t.Fatalf("SaveRecipe: %v", err)
+	}
+	old := now.AddDate(0, 0, -200).Format(time.RFC3339)
+	if err := store.WithLock(func(state State) (State, error) {
+		entry := NewEntry(KindRecipe, "flow", "c", "flow", "general", ScopeProject, "agent", now)
+		entry.Recipe = recipe
+		entry.LastUsedAt = old
+		entry.UpdatedAt = old
+		state.Entries = append(state.Entries, entry)
+		return state, nil
+	}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if removed := store.PruneStale(90, 0, now); removed != 1 {
+		t.Fatalf("removed = %d, want 1", removed)
+	}
+	if _, err := os.Stat(manifest); !os.IsNotExist(err) {
+		t.Fatalf("orphaned recipe manifest should be removed, stat err = %v", err)
+	}
+}
+
+func TestPruneStaleSweepsPreExistingOrphanRecipe(t *testing.T) {
+	dir := t.TempDir()
+	store := NewStore(StoreOptions{Dir: dir, Scope: ScopeProject})
+	now := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
+	// A manifest with no surviving entry (the pre-fix orphan case).
+	orphan, err := SaveRecipe(dir, Recipe{Name: "orphan", Commands: []RecipeCommand{{Tool: "read_file"}}}, nil)
+	if err != nil {
+		t.Fatalf("SaveRecipe: %v", err)
+	}
+	// A manifest whose entry survives the prune.
+	kept, err := SaveRecipe(dir, Recipe{Name: "kept", Commands: []RecipeCommand{{Tool: "read_file"}}}, nil)
+	if err != nil {
+		t.Fatalf("SaveRecipe: %v", err)
+	}
+	if err := store.WithLock(func(state State) (State, error) {
+		entry := NewEntry(KindRecipe, "kept", "c", "kept", "general", ScopeProject, "agent", now)
+		entry.Recipe = &Recipe{Name: "kept", Commands: []RecipeCommand{{Tool: "read_file"}}}
+		state.Entries = append(state.Entries, entry)
+		return state, nil
+	}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	store.PruneStale(0, 0, now)
+	if _, err := os.Stat(orphan); !os.IsNotExist(err) {
+		t.Fatalf("pre-existing orphan manifest should be swept, stat err = %v", err)
+	}
+	if _, err := os.Stat(kept); err != nil {
+		t.Fatalf("in-use manifest must survive: %v", err)
+	}
+}

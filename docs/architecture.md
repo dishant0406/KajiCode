@@ -199,23 +199,29 @@ subcommand inspects and changes these settings and reverts the last pass.
 Learning is **event-driven**. The gate (`internal/agent/learning.go`) runs a pass
 when the agent hits a real signal — a tool that failed then was fixed, a user
 correction, a compaction (when enabled) — or on an explicit `learn run`, subject
-to a debounce. A clean run with no signal does no provider work.
+to a debounce. A clean run with no signal does no provider work. The pass runs
+**off the turn's critical path** on a single-flight background goroutine, so the
+loop never blocks on the review/plan provider calls; `Finish` lets an in-flight
+pass complete under a bounded timeout at end of run.
 
 The layers, each with its own tests:
 
 - `internal/config/learning*.go` defines the settings, defaults, merge,
   validation, and the config-file writer used by the CLI.
 - `internal/agent/learning.go` is the engine: it captures signals from tool
-  results and user turns, gates on the debounce, routes proposals by scope, and
-  splices a refreshed `<learned_memory>` block into the next request so a
-  mid-session lesson takes effect immediately.
+  results and user turns, gates on the debounce, schedules the pass in the
+  background, routes proposals by scope, and splices a refreshed
+  `<learned_memory>` block into the next request so a mid-session lesson takes
+  effect once its pass lands.
 - `internal/harness` owns the durable store and pipeline: the review gate, the
   plan pass (anchored so it prefers update-over-create), the guarded apply
   critical section with version-conflict detection, refinement history with a
-  self-contained rollback record, decay/cap (`PruneStale`), and Go-native recipe
-  manifests that `recipe_run` executes through the tool registry.
-- `internal/tools` exposes the `learn` (status/run/CRUD) and `recall` (search)
-  tools plus `recipe_run`.
+  self-contained rollback record (capped to the newest `MaxRefinements`), and
+  decay/cap (`PruneStale`, which also removes orphaned recipe manifests), and
+  Go-native recipe manifests that `recipe_run` executes through the tool
+  registry.
+- `internal/tools` exposes the `learn` (status/run/CRUD) and `recall` (search
+  project + global) tools plus `recipe_run`.
 
 Scopes are `session`, `project` (default; `<workspace>/.kajicode/learning`), and
 `global`; legacy per-session stores recorded as `local` are read back as

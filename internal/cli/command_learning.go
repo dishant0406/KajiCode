@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/dishant0406/KajiCode/internal/config"
 	"github.com/dishant0406/KajiCode/internal/harness"
@@ -38,6 +39,8 @@ func runLearningConfig(args []string, stdout io.Writer, stderr io.Writer, deps a
 		return runLearningSet(args[1:], stdout, stderr, deps)
 	case "revert", "rollback":
 		return runLearningRevert(stdout, stderr, deps)
+	case "prune":
+		return runLearningPrune(stdout, stderr, deps)
 	case "on", "off":
 		return runLearningSet([]string{"enabled", args[0]}, stdout, stderr, deps)
 	default:
@@ -179,6 +182,7 @@ Subcommands:
                maxEntries      <int>   (>= 0; cap per scope)
   on|off     Shorthand for `+"`set enabled on|off`"+`
   revert     Undo the most recent automatic learning pass
+  prune      Apply decay + caps now, shrinking harness_state.json
 
 Flags:
       --json      Print JSON summary (status)
@@ -187,6 +191,34 @@ Flags:
 	if err != nil {
 		return exitCrash
 	}
+	return exitSuccess
+}
+
+// runLearningPrune applies decay and caps to the project and global stores on
+// demand, so an already-bloated harness_state.json shrinks without waiting for
+// the next automatic pass. It uses the effective learning config (pruneAfterDays
+// / maxEntries) and also caps the refinement history. Session stores are
+// transient and are pruned on every automatic pass, so they are not scanned here.
+func runLearningPrune(stdout io.Writer, stderr io.Writer, deps appDeps) int {
+	workspaceRoot, err := resolveWorkspaceRoot("", deps)
+	if err != nil {
+		return writeExecUsageError(stderr, err.Error())
+	}
+	learning := config.DefaultLearningConfig()
+	if resolved, rerr := deps.resolveConfig(workspaceRoot, config.Overrides{}); rerr == nil {
+		learning = resolved.Learning.Effective()
+	}
+	now := time.Now()
+	removed := harness.NewStore(harness.StoreOptions{Dir: harness.ProjectDir(workspaceRoot), Scope: harness.ScopeProject}).
+		PruneStale(learning.PruneAfterDays, learning.MaxEntries, now)
+	removed += harness.NewStore(harness.StoreOptions{Dir: harness.GlobalDir(nil), Scope: harness.ScopeGlobal}).
+		PruneStale(learning.PruneAfterDays, learning.MaxEntries, now)
+	noun := "entries"
+	if removed == 1 {
+		noun = "entry"
+	}
+	_, _ = fmt.Fprintf(stdout, "Pruned %d %s; refinement history bounded to %d. Reclaimed project + global harness_state.json.\n",
+		removed, noun, harness.MaxRefinements)
 	return exitSuccess
 }
 

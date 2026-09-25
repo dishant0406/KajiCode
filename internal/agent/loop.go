@@ -418,13 +418,14 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 		if didCompact {
 			messages = applyPostCompactionSafetyNet(messages)
 		}
-		// Self-learning hook: after compaction (and once per turn) run the
-		// review→plan→apply pipeline when its gates open (interval,
-		// post-compaction, or a manual learn-tool request). A nil engine leaves
-		// the loop byte-identical. When a pass actually applied lessons, splice
-		// the fresh, bounded <learned_memory> block into the leading system
-		// message so they take effect on this very next provider call
-		// (same-session pickup) instead of waiting for the next run.
+		// Self-learning hook: after compaction (and once per turn) the engine
+		// schedules its review→plan→apply pass when its gates open
+		// (post-compaction, an event signal, or a manual learn-tool request). The
+		// pass runs on a background goroutine, so it never delays this turn's
+		// request. A nil engine leaves the loop byte-identical. RunTurn returns
+		// true when a pass landed lessons, so the loop splices the fresh, bounded
+		// <learned_memory> block into the leading system message for the next
+		// provider call (same-session pickup).
 		if ilc := options.Learning; ilc != nil {
 			if didCompact {
 				ilc.NoteCompaction()

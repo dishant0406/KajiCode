@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -122,6 +123,30 @@ func TestLearnToolCreateRecipe(t *testing.T) {
 	status := learn.Run(context.Background(), map[string]any{"action": "status"})
 	if !strings.Contains(status.Output, "build") || !strings.Contains(status.Output, "recipe") {
 		t.Fatalf("status missing recipe: %q", status.Output)
+	}
+}
+
+func TestLearnToolDeleteRemovesRecipeManifest(t *testing.T) {
+	learn, root := testLearnTool(t)
+	create := map[string]any{
+		"action": "create",
+		"kind":   "recipe",
+		"id":     "build",
+		"title":  "Build project",
+		"recipe": `{"name":"build","commands":[{"id":"build","tool":"bash","args":{"command":"make build"}}]}`,
+	}
+	if res := learn.Run(context.Background(), create); res.Status != StatusOK {
+		t.Fatalf("create recipe = %#v", res)
+	}
+	manifest := filepath.Join(harness.RecipesPath(root), "build", harness.RecipeFile)
+	if _, err := os.Stat(manifest); err != nil {
+		t.Fatalf("recipe manifest should exist after create: %v", err)
+	}
+	if res := learn.Run(context.Background(), map[string]any{"action": "delete", "kind": "recipe", "id": "build"}); res.Status != StatusOK {
+		t.Fatalf("delete recipe = %#v", res)
+	}
+	if _, err := os.Stat(manifest); !os.IsNotExist(err) {
+		t.Fatalf("recipe manifest should be removed on delete, stat err = %v", err)
 	}
 }
 

@@ -3,6 +3,9 @@ package cli
 import (
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/dishant0406/KajiCode/internal/harness"
 )
 
 func TestRunLearningStatusShowsDefaults(t *testing.T) {
@@ -95,5 +98,48 @@ func TestRunLearningHelp(t *testing.T) {
 				t.Fatalf("%v help missing %q:\n%s", args, want, stdout)
 			}
 		}
+	}
+}
+
+func TestRunLearningPruneCompactsStores(t *testing.T) {
+	deps, _, _ := harnessCommandDeps(t)
+	dataHome := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", dataHome)
+
+	// Seed a project store with far more refinements than the cap.
+	root, err := deps.getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	project := harness.NewStore(harness.StoreOptions{Dir: harness.ProjectDir(root), Scope: harness.ScopeProject})
+	if err := project.WithLock(func(state harness.State) (harness.State, error) {
+		for i := 0; i < harness.MaxRefinements*3; i++ {
+			state.Refinements = append(state.Refinements, harness.RefinementEvent{
+				ID: "r", Trigger: "auto", Changes: []string{"x"},
+			})
+		}
+		state.Entries = append(state.Entries,
+			harness.NewEntry(harness.KindMemory, "fresh", "kept", "fresh", "general", harness.ScopeProject, "agent", time.Now()))
+		return state, nil
+	}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	code, stdout, stderr := runCLICommand([]string{"learning", "prune"}, deps)
+	if code != exitSuccess {
+		t.Fatalf("prune exit = %d stderr=%q stdout=%q", code, stderr, stdout)
+	}
+	if !strings.Contains(stdout, "refinement history bounded") {
+		t.Fatalf("prune output = %q", stdout)
+	}
+	state, err := project.Load()
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if len(state.Refinements) != harness.MaxRefinements {
+		t.Fatalf("refinements = %d, want %d", len(state.Refinements), harness.MaxRefinements)
+	}
+	if len(state.Entries) != 1 {
+		t.Fatalf("fresh entry should survive prune: %#v", state.Entries)
 	}
 }

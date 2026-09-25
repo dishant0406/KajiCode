@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -19,13 +20,34 @@ import (
 type fakeLearningProvider struct {
 	learn     bool
 	planResp  string
+	delay     time.Duration
 	lastReq   *kajicoderuntime.CompletionRequest
 	callCount int
+
+	mu       sync.Mutex
+	inFlight int
+	maxIn    int
 }
 
 func (p *fakeLearningProvider) StreamCompletion(_ context.Context, request kajicoderuntime.CompletionRequest) (<-chan kajicoderuntime.StreamEvent, error) {
+	p.mu.Lock()
 	p.lastReq = &request
 	p.callCount++
+	p.inFlight++
+	if p.inFlight > p.maxIn {
+		p.maxIn = p.inFlight
+	}
+	p.mu.Unlock()
+
+	if p.delay > 0 {
+		time.Sleep(p.delay)
+	}
+	defer func() {
+		p.mu.Lock()
+		p.inFlight--
+		p.mu.Unlock()
+	}()
+
 	resp := `{"shouldLearn": false, "rationale": "nothing durable"}`
 	if p.callCount == 1 && p.learn {
 		resp = `{"shouldLearn": true, "rationale": "durable cmake lesson", "instructions": "capture cmake"}`
@@ -383,6 +405,54 @@ func TestRunTurnReportsApplied(t *testing.T) {
 }
 
 func boolP(v bool) *bool { return &v }
+
+// TestLearningEngineRunTurnDoesNotBlock proves the pass runs off the caller's
+// goroutine: RunTurn must return well before a slow provider (two completions at
+// fakeLearningProvider.delay) could have finished. This is the regression guard
+// for learning no longer blocking the agent loop.
+func TestLearningEngineRunTurnDoesNotBlock(t *testing.T) {
+	gs, ps, ss := newEngineStores(t)
+	p := &fakeLearningProvider{learn: true, delay: 300 * time.Millisecond, planResp: `{"summary":"s","edits":[{"action":"create","kind":"memory","id":"x","title":"X","content":"c"}]}`}
+	eng := NewLearningEngine(config.LearningConfig{}, p, gs, ps, ss)
+	eng.NoteToolResult(ToolResult{Name: "exec_command", Status: tools.StatusError})
+	eng.NoteToolResult(ToolResult{Name: "exec_command", Status: tools.StatusOK})
+
+	start := time.Now()
+	eng.RunTurn(context.Background(), []kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleUser, Content: "x"}})
+	elapsed := time.Since(start)
+	// Two 300ms provider calls would need ≥600ms if RunTurn blocked; the bounded
+	// wait is 250ms, so anything near that proves the work moved off the caller.
+	if elapsed >= 500*time.Millisecond {
+		t.Fatalf("RunTurn blocked for %v; the pass should run in the background", elapsed)
+	}
+
+	// Finish waits for the in-flight pass and reinforces, so the lesson lands.
+	eng.Finish(context.Background(), []kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleUser, Content: "x"}})
+	state, _ := ps.Load()
+	if len(state.Entries) != 1 || state.Entries[0].ID != "x" {
+		t.Fatalf("background pass did not persist the lesson: %#v", state.Entries)
+	}
+}
+
+// TestLearningEngineFinishCoalescesInFlightPass proves a burst of signals while a
+// pass is in flight does not start a second concurrent pass (single-flight), and
+// that Finish still lets the in-flight pass complete.
+func TestLearningEngineFinishCoalescesInFlightPass(t *testing.T) {
+	gs, ps, ss := newEngineStores(t)
+	p := &fakeLearningProvider{learn: true, delay: 50 * time.Millisecond, planResp: `{"summary":"s","edits":[{"action":"create","kind":"memory","id":"x","title":"X","content":"c"}]}`}
+	eng := NewLearningEngine(config.LearningConfig{}, p, gs, ps, ss)
+	fire := func() {
+		eng.NoteToolResult(ToolResult{Name: "exec_command", Status: tools.StatusError})
+		eng.NoteToolResult(ToolResult{Name: "exec_command", Status: tools.StatusOK})
+		eng.RunTurn(context.Background(), []kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleUser, Content: "x"}})
+	}
+	fire()
+	fire() // a second signal while the first pass may still be running
+	eng.Finish(context.Background(), []kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleUser, Content: "x"}})
+	if p.maxIn > 1 {
+		t.Fatalf("single-flight violated: %d concurrent provider calls", p.maxIn)
+	}
+}
 
 // learnScriptedProvider drives both the auto-learning pipeline calls (review +
 // plan) and the agent loop from a single StreamCompletion, selecting its

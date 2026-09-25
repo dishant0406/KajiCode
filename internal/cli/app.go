@@ -1029,7 +1029,7 @@ func newCoreRegistryScoped(workspaceRoot string, scope tools.PathScope) *tools.R
 	// through it) and the resolved global learning directory.
 	registry.Register(tools.NewLearnTool(harness.ProjectDir(workspaceRoot)))
 	registry.Register(tools.NewRecipeRunTool(registry, harness.ProjectDir(workspaceRoot)))
-	registry.Register(tools.NewRecallTool(harness.ProjectDir(workspaceRoot)))
+	registry.Register(tools.NewRecallTool(harness.ProjectDir(workspaceRoot), harness.GlobalDir(nil)))
 	return registry
 }
 

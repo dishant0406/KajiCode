@@ -85,6 +85,44 @@ func RecipesPath(learningRoot string) string {
 	return filepath.Join(learningRoot, RecipesDir)
 }
 
+// RemoveRecipe deletes a learned recipe's manifest directory
+// (<learningRoot>/recipes/<name>) so a deleted or pruned recipe entry does not
+// leave an orphaned, still-listable manifest behind. A missing directory is not
+// an error; a reserved or empty name is ignored.
+func RemoveRecipe(learningRoot, name string) error {
+	name = strings.TrimSpace(name)
+	if name == "" || name == BasePromptID {
+		return nil
+	}
+	dir := filepath.Join(learningRoot, RecipesDir, name)
+	if err := os.RemoveAll(dir); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("remove recipe %q: %w", name, err)
+	}
+	return nil
+}
+
+// RemoveOrphanRecipes deletes every manifest directory under
+// <learningRoot>/recipes whose name is not in keep, so a prune cannot leave a
+// recipe discoverable after its entry is gone. It scans once and returns the
+// number removed; a missing recipes directory is not an error.
+func RemoveOrphanRecipes(learningRoot string, keep map[string]bool) int {
+	root := RecipesPath(learningRoot)
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return 0
+	}
+	removed := 0
+	for _, entry := range entries {
+		if !entry.IsDir() || keep[entry.Name()] {
+			continue
+		}
+		if err := os.RemoveAll(filepath.Join(root, entry.Name())); err == nil {
+			removed++
+		}
+	}
+	return removed
+}
+
 // ListRecipes scans the recipes directory for all valid manifests, sorted by
 // recipe name. Problems (unreadable/unparseable/invalid manifests) are returned
 // separately so a corrupt recipe is reported without stranding valid ones.

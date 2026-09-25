@@ -268,6 +268,13 @@ provider-neutral. A pass runs when the agent does something worth learning from:
 The debounce coalesces a burst of signals; a manual request bypasses it. A clean
 run with no signal performs no provider work.
 
+A pass runs **off the turn's critical path**: the engine consumes the signals,
+snapshots the transcript, and runs review→plan→apply on a background goroutine
+(single-flight — only one pass at a time, and a mid-session pass is picked up by
+a later turn's splice). The loop never waits on the pass's provider calls. At the
+end of a run `Finish` lets an in-flight pass complete under a bounded timeout so
+the final turn's lesson is not orphaned when a headless/ACP process exits.
+
 Reviews, applies, and recipes are owned by `internal/harness`:
 
 - A review (`RunReview`) cheaply decides whether the conversation holds a durable,
@@ -281,15 +288,21 @@ Reviews, applies, and recipes are owned by `internal/harness`:
   so what the agent learns about a repository stays with that repository.
 - A `recipe` entry is persisted as a runnable manifest
   (`<root>/recipes/<name>/recipe.json`) and executed via the `recipe_run` tool,
-  which dispatches each command through the registered tools.
+  which dispatches each command through the registered tools. Deleting or pruning
+  a recipe entry removes its manifest, so no orphaned recipe lingers.
 - Entries are pruned and capped per store (`PruneStale`) so memory cannot grow
-  without bound.
+  without bound. `PruneStale` also caps the **refinement history** to the newest
+  `MaxRefinements` events (only the most recent rollback is ever read), keeping
+  `harness_state.json` bounded.
 
 Learned lessons are surfaced two ways. The bounded `<learned_memory>` prompt block
 (`learning.Context`) shows the freshest few, and the `learn` (CRUD/status) and
-`recall` (search) tools provide the deep-retrieval path. Both are treated as
-project/user conventions, not immutable facts, and a current explicit instruction
-always wins over one of them.
+`recall` (search) tools provide the deep-retrieval path. The prompt instructs the
+model to call `recall` before non-trivial work and when something fails
+unexpectedly, and `recall` searches both the project and global stores (project
+entries shadow global on the same `kind:id`), reporting each entry's scope. Both
+sources are treated as project/user conventions, not immutable facts, and a
+current explicit instruction always wins over one of them.
 
 Recall mirrors the compaction engine's "keep the freshest within a budget"
 principle:

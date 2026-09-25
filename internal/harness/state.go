@@ -187,6 +187,12 @@ const StateFile = "harness_state.json"
 // from this dedicated root, never merged into internal/skills.
 const RecipesDir = "recipes"
 
+// MaxRefinements caps the refinement history retained in a state file. Only the
+// most recent rollback-able event is ever read (LatestRollback), so keeping a
+// bounded tail prevents the refinement log — the bulk of harness_state.json —
+// from growing without bound and slowing every locked read/write.
+const MaxRefinements = 50
+
 // homeRelDir is the per-scope learning subdirectory name (the global store uses
 // it under the data home, exactly like sessions.DefaultRoot, and the session
 // store uses it under a session directory).
@@ -605,20 +611,57 @@ func Slug(raw, fallback string) string {
 //
 // It runs under the store's file lock and returns the number of entries removed.
 // A non-positive maxAgeDays disables age pruning; a non-positive maxEntries
-// disables the cap.
+// disables the cap. It also caps the refinement history to MaxRefinements and
+// removes any recipe manifest whose entry was pruned, so neither the state file
+// nor the recipes/ tree grows without bound.
 func (store *Store) PruneStale(maxAgeDays, maxEntries int, now time.Time) int {
 	if store == nil {
 		return 0
 	}
 	removed := 0
-	_ = store.WithLock(func(state State) (State, error) {
-		before := len(state.Entries)
-		state.Entries = pruneEntries(state.Entries, maxAgeDays, now)
-		state.Entries = capEntries(state.Entries, maxEntries)
-		removed = before - len(state.Entries)
+	var inUse map[string]bool
+	lockErr := store.WithLock(func(state State) (State, error) {
+		kept := pruneEntries(state.Entries, maxAgeDays, now)
+		kept = capEntries(kept, maxEntries)
+		removed = len(state.Entries) - len(kept)
+		state.Entries = kept
+		state.Refinements = capRefinements(state.Refinements, MaxRefinements)
+		inUse = recipeNamesInUse(kept)
 		return state, nil
 	})
+	if lockErr != nil {
+		// A failed load/mutate must not be treated as "no recipes are in use",
+		// which would sweep every manifest. Leave the recipes/ tree untouched.
+		return removed
+	}
+	// Manifest removal is filesystem I/O independent of the state file, so it
+	// happens outside the store's cross-process lock (mirrors ApplyLearning).
+	// Sweeping every unreferenced manifest also clears orphans left by an older
+	// build that pruned an entry without removing its recipe.
+	_ = RemoveOrphanRecipes(store.Dir, inUse)
 	return removed
+}
+
+// recipeNamesInUse returns the set of recipe manifest names referenced by a
+// surviving entry set, so a prune never removes a manifest an entry still needs.
+func recipeNamesInUse(entries []Entry) map[string]bool {
+	inUse := make(map[string]bool)
+	for _, e := range entries {
+		if e.Kind == KindRecipe && e.Recipe != nil && e.Recipe.Name != "" {
+			inUse[e.Recipe.Name] = true
+		}
+	}
+	return inUse
+}
+
+// capRefinements keeps the newest max refinement events. LatestRollback only
+// ever reads the most recent rollback-able event, so dropping older history is
+// safe. A non-positive cap leaves the list unchanged.
+func capRefinements(refinements []RefinementEvent, max int) []RefinementEvent {
+	if max <= 0 || len(refinements) <= max {
+		return refinements
+	}
+	return refinements[len(refinements)-max:]
 }
 
 // pruneEntries removes entries older than maxAgeDays (by LastUsedAt, falling back
