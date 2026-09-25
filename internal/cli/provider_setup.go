@@ -19,6 +19,8 @@ type providerAddOptions struct {
 	model           string
 	baseURL         string
 	apiKeyEnv       string
+	apiKeyStdin     bool
+	apiKey          string
 	authHeader      string
 	authScheme      string
 	authHeaderValue string
@@ -43,6 +45,18 @@ func runProvidersAdd(args []string, stdout io.Writer, stderr io.Writer, deps app
 			return exitCrash
 		}
 		return exitSuccess
+	}
+
+	// A key supplied inline over stdin is captured here and moved into the
+	// encrypted credential store by SecureProviderProfile below. Reading stdin
+	// (never a flag) keeps the secret out of shell history, process listings and
+	// logs. The store is loaded lazily, so a blank stdin (no key) stays a no-op.
+	if options.apiKeyStdin {
+		key, err := readProviderKeyStdin(deps)
+		if err != nil {
+			return writeExecUsageError(stderr, err.Error())
+		}
+		options.apiKey = key
 	}
 
 	profile, err := providerProfileForAdd(options)
@@ -297,6 +311,8 @@ func parseProviderAddArgs(args []string) (providerAddOptions, bool, error) {
 				return options, false, err
 			}
 			options.baseURL = value
+		case arg == "--api-key-stdin":
+			options.apiKeyStdin = true
 		case arg == "--api-key-env":
 			value, next, err := nextFlagValue(args, index, arg)
 			if err != nil {
@@ -400,6 +416,24 @@ func parseProviderCheckArgs(args []string) (providerCheckOptions, bool, error) {
 	return options, false, nil
 }
 
+// readProviderKeyStdin reads one line of API-key material from the CLI's stdin.
+// An empty read is a no-op (the profile then keeps its env/stored credential);
+// the value is never echoed, logged, or returned in JSON.
+func readProviderKeyStdin(deps appDeps) (string, error) {
+	if deps.stdin == nil {
+		return "", nil
+	}
+	data, err := io.ReadAll(deps.stdin)
+	if err != nil {
+		return "", fmt.Errorf("read API key from stdin: %w", err)
+	}
+	key := strings.TrimSpace(string(data))
+	if key == "" {
+		return "", fmt.Errorf("--api-key-stdin received an empty API key")
+	}
+	return key, nil
+}
+
 func addCustomHeader(options *providerAddOptions, value string) error {
 	key, headerValue, ok := strings.Cut(value, "=")
 	key = strings.TrimSpace(key)
@@ -445,6 +479,7 @@ func providerProfileForAdd(options providerAddOptions) (config.ProviderProfile, 
 		ProviderKind:    providerKindForDescriptor(descriptor),
 		CatalogID:       descriptor.ID,
 		BaseURL:         baseURL,
+		APIKey:          strings.TrimSpace(options.apiKey),
 		APIKeyEnv:       apiKeyEnv,
 		APIFormat:       firstAPIFormat(descriptor),
 		AuthHeader:      strings.TrimSpace(options.authHeader),

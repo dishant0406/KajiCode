@@ -1,6 +1,9 @@
 package cli
 
 import (
+	"bytes"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/dishant0406/KajiCode/internal/config"
@@ -64,5 +67,58 @@ func TestValidateProviderRuntimeReadyCustomEndpoint(t *testing.T) {
 				t.Fatalf("validateProviderRuntimeReady() error = %v, wantErr %v", err, c.wantErr)
 			}
 		})
+	}
+}
+
+// --api-key-stdin reads the secret from stdin and moves it into the encrypted
+// credential store: config.json gains the apiKeyStored marker and never the key.
+func TestRunProvidersAddKeyFromStdin(t *testing.T) {
+	t.Setenv("KAJICODE_CRED_STORAGE", "encrypted-file")
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
+
+	var stdout, stderr bytes.Buffer
+	deps := providerSetupDeps(configPath)
+	deps.stdin = strings.NewReader("sk-secret-value\n")
+	exitCode := runWithDeps([]string{"providers", "add", "openai", "--api-key-stdin", "--json"}, &stdout, &stderr, deps)
+	if exitCode != exitSuccess {
+		t.Fatalf("exit = %d, stderr = %s", exitCode, stderr.String())
+	}
+	if strings.Contains(stdout.String(), "sk-secret-value") {
+		t.Fatalf("stdout leaked the API key: %s", stdout.String())
+	}
+	cfg := readFileConfig(t, configPath)
+	if len(cfg.Providers) != 1 {
+		t.Fatalf("providers = %d, want 1", len(cfg.Providers))
+	}
+	if !cfg.Providers[0].APIKeyStored {
+		t.Fatalf("apiKeyStored = false, want true")
+	}
+	if cfg.Providers[0].APIKey != "" {
+		t.Fatalf("inline apiKey persisted, want empty")
+	}
+	store, err := config.ProviderKeyStoreAt(dir)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	key, ok, err := store.Get(cfg.Providers[0].Name)
+	if err != nil || !ok {
+		t.Fatalf("stored key = %q ok=%v err=%v", key, ok, err)
+	}
+	if key != "sk-secret-value" {
+		t.Fatalf("stored key = %q, want the stdin value", key)
+	}
+}
+
+// An empty stdin is rejected rather than silently storing an empty credential.
+func TestRunProvidersAddKeyFromStdinRejectsEmpty(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
+	var stdout, stderr bytes.Buffer
+	deps := providerSetupDeps(configPath)
+	deps.stdin = strings.NewReader("   \n")
+	exitCode := runWithDeps([]string{"providers", "add", "openai", "--api-key-stdin"}, &stdout, &stderr, deps)
+	if exitCode == exitSuccess {
+		t.Fatalf("expected failure for an empty stdin key, got success: %s", stdout.String())
 	}
 }

@@ -574,6 +574,7 @@ Add flags:
       --model <model>           Override catalog default model
       --base-url <url>          Override catalog default base URL
       --api-key-env <name>      Environment variable that contains the API key
+      --api-key-stdin           Read the API key from stdin and store it encrypted
       --auth-header <header>    Custom API-key header name
       --auth-scheme <scheme>    Auth scheme prefix, for example Bearer or Token
       --auth-header-value <v>   Exact auth header value; stored in config
