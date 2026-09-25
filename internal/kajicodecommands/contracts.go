@@ -44,11 +44,19 @@ type ConfigSnapshot struct {
 type ProviderSnapshot struct {
 	Name         string `json:"name"`
 	ProviderKind string `json:"providerKind,omitempty"`
-	BaseURL      string `json:"baseUrl,omitempty"`
-	Model        string `json:"model,omitempty"`
-	APIModel     string `json:"apiModel,omitempty"`
-	Active       bool   `json:"active"`
-	APIKeySet    bool   `json:"apiKeySet"`
+	// CatalogID identifies which provider-catalog entry the profile came from
+	// (e.g. "openai", "custom-openai-compatible"). Consumers need it to update or
+	// re-add a profile by identity instead of guessing from ProviderKind, which for
+	// a custom endpoint does not resolve back to a catalog entry.
+	CatalogID string `json:"catalogID,omitempty"`
+	BaseURL   string `json:"baseUrl,omitempty"`
+	Model     string `json:"model,omitempty"`
+	APIModel  string `json:"apiModel,omitempty"`
+	// APIKeyEnv names the environment variable the profile reads its key from, or
+	// "" when the key is inline / in the encrypted store. Never the secret.
+	APIKeyEnv string `json:"apiKeyEnv,omitempty"`
+	Active    bool   `json:"active"`
+	APIKeySet bool   `json:"apiKeySet"`
 	// OAuthLogin marks a keyless profile whose credential is a stored OAuth login
 	// (e.g. ChatGPT). Filled by callers with access to the oauth store — the
 	// snapshot builder itself does no secret I/O.
@@ -90,7 +98,18 @@ type ProviderCatalogSnapshot struct {
 	Local                    bool     `json:"local"`
 	RuntimeSupported         bool     `json:"runtimeSupported"`
 	RuntimeUnsupportedReason string   `json:"runtimeUnsupportedReason,omitempty"`
-	Recommended              bool     `json:"recommended,omitempty"`
+	// Custom marks the "bring your own endpoint" entries, for which RequiresAuth
+	// is only a wizard template and the endpoint must come from the user.
+	Custom              bool     `json:"custom,omitempty"`
+	RequiresEndpoint    bool     `json:"requiresEndpoint,omitempty"`
+	SupportedAPIFormats []string `json:"supportedApiFormats,omitempty"`
+	Aliases             []string `json:"aliases,omitempty"`
+	// OAuth capability: an in-app login exists, whether it mints a normal API
+	// key, and whether RFC 8628 device-code flow is available.
+	OAuth           bool `json:"oauth,omitempty"`
+	OAuthMintsKey   bool `json:"oauthMintsKey,omitempty"`
+	OAuthDeviceFlow bool `json:"oauthDeviceFlow,omitempty"`
+	Recommended     bool `json:"recommended,omitempty"`
 }
 
 type SessionSnapshot struct {
@@ -156,8 +175,10 @@ func ProviderSnapshotFromProfile(profile config.ProviderProfile, active bool) Pr
 	snapshot := ProviderSnapshot{
 		Name:         profile.Name,
 		ProviderKind: string(profile.ProviderKind),
+		CatalogID:    profile.CatalogID,
 		BaseURL:      redactProviderBaseURL(profile.BaseURL, profile.APIKey, profile.AuthHeaderValue),
 		Model:        profile.Model,
+		APIKeyEnv:    profile.APIKeyEnv,
 		Active:       active,
 		// HasConfiguredCredential is the shared definition of "this profile is
 		// key-authed": inline key, raw auth-header value, or a key in the encrypted
@@ -235,6 +256,10 @@ func knownProviderCatalogTransport(transport string) bool {
 }
 
 func ProviderCatalogSnapshotFromDescriptor(descriptor providercatalog.Descriptor) ProviderCatalogSnapshot {
+	formats := make([]string, 0, len(descriptor.SupportedAPIFormats))
+	for _, format := range descriptor.SupportedAPIFormats {
+		formats = append(formats, string(format))
+	}
 	return ProviderCatalogSnapshot{
 		ID:                       descriptor.ID,
 		Name:                     descriptor.Name,
@@ -246,6 +271,13 @@ func ProviderCatalogSnapshotFromDescriptor(descriptor providercatalog.Descriptor
 		Local:                    descriptor.Local,
 		RuntimeSupported:         providercatalog.RuntimeSupported(descriptor),
 		RuntimeUnsupportedReason: providercatalog.RuntimeUnsupportedReason(descriptor),
+		Custom:                   descriptor.Custom,
+		RequiresEndpoint:         descriptor.RequiresEndpoint,
+		SupportedAPIFormats:      formats,
+		Aliases:                  append([]string{}, descriptor.Aliases...),
+		OAuth:                    descriptor.OAuth,
+		OAuthMintsKey:            descriptor.OAuthMintsKey,
+		OAuthDeviceFlow:          descriptor.OAuthDeviceFlow,
 		Recommended:              descriptor.Recommended,
 	}
 }

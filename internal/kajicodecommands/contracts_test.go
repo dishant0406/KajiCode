@@ -340,3 +340,38 @@ func TestProviderSnapshotRedactsAuthHeaderValueInBaseURL(t *testing.T) {
 		t.Fatalf("auth-header value leaked into base URL: %q", snapshot.BaseURL)
 	}
 }
+
+func TestProviderSnapshotIncludesCatalogIDAndAPIKeyEnv(t *testing.T) {
+	snapshot := ProviderSnapshotFromProfile(config.ProviderProfile{
+		Name:      "gw",
+		CatalogID: "custom-openai-compatible",
+		BaseURL:   "https://gw.example.com/v1",
+		APIKeyEnv: "GW_API_KEY",
+		Model:     "m1",
+	}, false)
+	if snapshot.CatalogID != "custom-openai-compatible" {
+		t.Fatalf("CatalogID = %q, want custom-openai-compatible", snapshot.CatalogID)
+	}
+	if snapshot.APIKeyEnv != "GW_API_KEY" {
+		t.Fatalf("APIKeyEnv = %q, want GW_API_KEY", snapshot.APIKeyEnv)
+	}
+}
+
+func TestProviderCatalogSnapshotExposesOAuthAndCustomFlags(t *testing.T) {
+	snapshots, err := ProviderCatalogSnapshots(ProviderCatalogSnapshotOptions{})
+	if err != nil {
+		t.Fatalf("ProviderCatalogSnapshots: %v", err)
+	}
+	openrouter := findCatalogSnapshot(t, snapshots, "openrouter")
+	if !openrouter.OAuth || !openrouter.OAuthMintsKey {
+		t.Fatalf("openrouter OAuth = %v mintsKey = %v, want both true", openrouter.OAuth, openrouter.OAuthMintsKey)
+	}
+	custom := findCatalogSnapshot(t, snapshots, "custom-openai-compatible")
+	if !custom.Custom {
+		t.Fatalf("custom-openai-compatible Custom = false, want true")
+	}
+	azure := findCatalogSnapshot(t, snapshots, "azure-openai")
+	if !azure.RequiresEndpoint {
+		t.Fatalf("azure-openai RequiresEndpoint = false, want true")
+	}
+}
