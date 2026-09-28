@@ -100,10 +100,9 @@ type ProviderCatalogSnapshot struct {
 	RuntimeUnsupportedReason string   `json:"runtimeUnsupportedReason,omitempty"`
 	// Custom marks the "bring your own endpoint" entries, for which RequiresAuth
 	// is only a wizard template and the endpoint must come from the user.
-	Custom              bool     `json:"custom,omitempty"`
-	RequiresEndpoint    bool     `json:"requiresEndpoint,omitempty"`
-	SupportedAPIFormats []string `json:"supportedApiFormats,omitempty"`
-	Aliases             []string `json:"aliases,omitempty"`
+	Custom           bool     `json:"custom,omitempty"`
+	RequiresEndpoint bool     `json:"requiresEndpoint,omitempty"`
+	Aliases          []string `json:"aliases,omitempty"`
 	// OAuth capability: an in-app login exists, whether it mints a normal API
 	// key, and whether RFC 8628 device-code flow is available.
 	OAuth           bool `json:"oauth,omitempty"`
@@ -256,10 +255,6 @@ func knownProviderCatalogTransport(transport string) bool {
 }
 
 func ProviderCatalogSnapshotFromDescriptor(descriptor providercatalog.Descriptor) ProviderCatalogSnapshot {
-	formats := make([]string, 0, len(descriptor.SupportedAPIFormats))
-	for _, format := range descriptor.SupportedAPIFormats {
-		formats = append(formats, string(format))
-	}
 	return ProviderCatalogSnapshot{
 		ID:                       descriptor.ID,
 		Name:                     descriptor.Name,
@@ -273,7 +268,6 @@ func ProviderCatalogSnapshotFromDescriptor(descriptor providercatalog.Descriptor
 		RuntimeUnsupportedReason: providercatalog.RuntimeUnsupportedReason(descriptor),
 		Custom:                   descriptor.Custom,
 		RequiresEndpoint:         descriptor.RequiresEndpoint,
-		SupportedAPIFormats:      formats,
 		Aliases:                  append([]string{}, descriptor.Aliases...),
 		OAuth:                    descriptor.OAuth,
 		OAuthMintsKey:            descriptor.OAuthMintsKey,

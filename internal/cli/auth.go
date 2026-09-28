@@ -111,7 +111,11 @@ func runAuthOpenRouter(args []string, stdout io.Writer, stderr io.Writer, deps a
 	key = strings.TrimSpace(key)
 	line, err := saveOpenRouterProviderKey(deps, key)
 	if err != nil {
-		if _, writeErr := fmt.Fprintf(stdout, "\nOpenRouter login complete — new API key minted, but KajiCode could not save it: %s\nUse it manually, e.g.:\n  export OPENROUTER_API_KEY=%s\n", err, key); writeErr != nil {
+		// Never print the minted key. This stdout reaches logs and bug reports and
+		// — through the desktop's streaming auth view — the UI, so the secret must
+		// not travel that way. The login itself succeeded, so the remedy is just to
+		// mint and save another key, which openRouterKeyFailureMessage says.
+		if _, writeErr := fmt.Fprint(stdout, openRouterKeyFailureMessage(err)); writeErr != nil {
 			return exitCrash
 		}
 		return exitSuccess
@@ -120,6 +124,13 @@ func runAuthOpenRouter(args []string, stdout io.Writer, stderr io.Writer, deps a
 		return exitCrash
 	}
 	return exitSuccess
+}
+
+// openRouterKeyFailureMessage explains that a minted OpenRouter key could not be
+// saved WITHOUT including the key itself: this text is the CLI's stdout, which is
+// copied into logs and shown verbatim by the desktop's streaming auth view.
+func openRouterKeyFailureMessage(saveErr error) string {
+	return fmt.Sprintf("\nOpenRouter login complete — a new API key was minted, but KajiCode could not save it: %s\nRe-run `kajicode auth openrouter` to mint and save another key.\n", redaction.ErrorMessage(saveErr, redaction.Options{}))
 }
 
 func saveOpenRouterProviderKey(deps appDeps, key string) (string, error) {

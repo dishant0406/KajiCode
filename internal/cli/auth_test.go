@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -188,6 +189,33 @@ func TestRunAuthOpenRouterSavesMintedKey(t *testing.T) {
 	}
 	if !ok || key != "sk-openrouter-test" {
 		t.Fatalf("stored key = %q, %v", key, ok)
+	}
+}
+
+func TestRunAuthOpenRouterNeverPrintsMintedKeyOnSaveFailure(t *testing.T) {
+	// The minted key is a secret. This stdout is copied into logs and bug reports
+	// and is shown verbatim by the desktop's streaming auth view, so a save
+	// failure must explain itself without ever echoing the key.
+	const mintedKey = "sk-or-v1-DO-NOT-PRINT-ME"
+	var stdout, stderr bytes.Buffer
+
+	// Resolving the config path to an error makes saveOpenRouterProviderKey fail
+	// before the key can be stored, exercising the failure message.
+	code := runWithDeps([]string{"auth", "openrouter"}, &stdout, &stderr, appDeps{
+		userConfigPath: func() (string, error) { return "", errors.New("config path unavailable") },
+		openRouterLogin: func(context.Context, provideroauth.OpenRouterOptions) (string, error) {
+			return mintedKey, nil
+		},
+	})
+
+	if code != exitSuccess {
+		t.Fatalf("a save failure should still exit successfully, got %d stderr=%q", code, stderr.String())
+	}
+	if strings.Contains(stdout.String(), mintedKey) {
+		t.Fatalf("the minted API key leaked to stdout: %q", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "could not save it") {
+		t.Fatalf("expected an explanation of the failure, got %q", stdout.String())
 	}
 }
 
