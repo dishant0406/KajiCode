@@ -16,6 +16,7 @@ import (
 
 	"github.com/dishant0406/KajiCode/internal/agent"
 	"github.com/dishant0406/KajiCode/internal/agents"
+	"github.com/dishant0406/KajiCode/internal/classifier"
 	"github.com/dishant0406/KajiCode/internal/config"
 	"github.com/dishant0406/KajiCode/internal/execprofile"
 	"github.com/dishant0406/KajiCode/internal/hooks"
@@ -109,6 +110,10 @@ type Deps struct {
 	// memory work over ACP. nil means no learning engine (feature off). The
 	// engine is per-turn because it needs the current provider.
 	BuildLearning func(workspaceRoot string, resolved config.ResolvedConfig, provider kajicoderuntime.Provider, sessionID string) *agent.LearningEngine
+	// BuildCompactionJudge builds the fast classifier the compaction judge uses,
+	// matching exec/TUI. nil (or a nil return) leaves compaction byte-identical to
+	// the free prune + summarizer path.
+	BuildCompactionJudge func(resolved config.ResolvedConfig) classifier.Classifier
 	// SuggestNes produces a next-edit suggestion for one buffered document.
 	// nil means nes/suggest returns an empty suggestion list.
 	SuggestNes func(ctx context.Context, input NesSuggestInput) (*NesEditSuggestion, error)
@@ -205,6 +210,13 @@ type acpSession struct {
 	// was built for.
 	learning    *agent.LearningEngine
 	learningKey string
+
+	// judge is the fast classifier backing the compaction judge, cached so a turn
+	// does not reopen the credential store to rebuild a stateless client.
+	// judgeKey identifies the resolved classifier config it was built from, so a
+	// mid-session /classifier change rebuilds it.
+	judge    classifier.Classifier
+	judgeKey string
 
 	cancel  context.CancelFunc
 	history []turnRecord
@@ -932,19 +944,25 @@ func (a *Agent) runTurn(ctx context.Context, sess *acpSession, userText string, 
 		PermissionMode:  sess.currentMode(),
 		Autonomy:        "low",
 		MaxTurns:        maxTurns,
-		ContextWindow:   modelregistry.AgentContextWindow(contextWindow),
-		DeferThreshold:  workspace.DeferThreshold,
-		Harness:         workspace.Harness,
-		Agents:          workspace.Agents,
-		MCPInstructions: workspace.MCPInstructions,
-		FileTracker:     workspace.FileTracker,
-		SessionStore:    workspace.SessionStore,
-		Hooks:           workspace.Hooks,
-		Images:          images,
-		ImageLimits:     imageinput.LimitsFrom(resolved.Images.MaxWidth, resolved.Images.MaxHeight, resolved.Images.MaxBytes, resolved.Images.AutoResize),
-		Skills:          workspace.Skills,
-		OnText:          note.text,
-		OnReasoning:     note.thought,
+		// Optional relevance judge for compaction, matching exec/TUI. nil (no
+		// builder or feature off) leaves compaction byte-identical to the free
+		// prune + summarizer path.
+		CompactionJudge:              a.compactionJudgeFor(sess, resolved),
+		CompactionJudgeKeepThreshold: resolved.Classifier.Features.Compaction.EffectiveKeepResultThreshold(),
+		CompactionJudgeDropThreshold: resolved.Classifier.Features.Compaction.EffectiveDropResultThreshold(),
+		ContextWindow:                modelregistry.AgentContextWindow(contextWindow),
+		DeferThreshold:               workspace.DeferThreshold,
+		Harness:                      workspace.Harness,
+		Agents:                       workspace.Agents,
+		MCPInstructions:              workspace.MCPInstructions,
+		FileTracker:                  workspace.FileTracker,
+		SessionStore:                 workspace.SessionStore,
+		Hooks:                        workspace.Hooks,
+		Images:                       images,
+		ImageLimits:                  imageinput.LimitsFrom(resolved.Images.MaxWidth, resolved.Images.MaxHeight, resolved.Images.MaxBytes, resolved.Images.AutoResize),
+		Skills:                       workspace.Skills,
+		OnText:                       note.text,
+		OnReasoning:                  note.thought,
 		// Report real token counts with the resolved context window as size, so the
 		// client's context gauge has a denominator (matches the TUI's used/window).
 		OnUsage: func(u agent.Usage) { note.usage(u.TotalTokens(), contextWindow) },
@@ -1796,6 +1814,32 @@ func (a *Agent) workspaceFor(sess *acpSession, resolved config.ResolvedConfig) (
 	sess.workspace, sess.workspaceErr, sess.workspaceSet = ws, err, true
 	sess.mu.Unlock()
 	return ws, err
+}
+
+// compactionJudgeFor returns the session's cached compaction classifier,
+// rebuilding it only when the resolved classifier config changed. A nil builder
+// (capability off) or a nil build result means "no judge", which leaves
+// compaction unchanged.
+func (a *Agent) compactionJudgeFor(sess *acpSession, resolved config.ResolvedConfig) classifier.Classifier {
+	if a.deps.BuildCompactionJudge == nil {
+		return nil
+	}
+	cfg := resolved.Classifier
+	key := cfg.Active + "\x00" + strconv.FormatBool(cfg.Enabled) + "\x00" +
+		strconv.FormatBool(cfg.Features.Compaction.Enabled) + "\x00" +
+		strconv.FormatFloat(cfg.Features.Compaction.EffectiveKeepResultThreshold(), 'g', -1, 64)
+	sess.mu.Lock()
+	if sess.judge != nil && sess.judgeKey == key {
+		judge := sess.judge
+		sess.mu.Unlock()
+		return judge
+	}
+	sess.mu.Unlock()
+	judge := a.deps.BuildCompactionJudge(resolved)
+	sess.mu.Lock()
+	sess.judge, sess.judgeKey = judge, key
+	sess.mu.Unlock()
+	return judge
 }
 
 // learningFor returns the session's cached self-learning engine, rebuilding it

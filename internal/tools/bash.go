@@ -507,7 +507,7 @@ func spillBashStreams(stdout string, stdoutTotal int, stderr string, stderrTotal
 	}
 	combined.WriteString("### stderr\n")
 	combined.WriteString(stderr)
-	return spillTruncatedOutput("bash", combined.String())
+	return SpillOutput("bash", combined.String())
 }
 
 // sectionWithCaptureGap marks the point where boundedBuffer dropped the middle

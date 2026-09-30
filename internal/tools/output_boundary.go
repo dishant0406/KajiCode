@@ -191,7 +191,7 @@ func shellOutputCategory(command string) outputCategory {
 // is the already-redacted text received by this layer; it may itself be a
 // capture-bounded view produced by a subprocess tool.
 func attachExistingSpill(toolName, output string, budget outputBudget, current budgetedOutput) budgetedOutput {
-	path := spillTruncatedOutput(toolName, output)
+	path := SpillOutput(toolName, output)
 	if path == "" {
 		return current
 	}

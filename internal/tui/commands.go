@@ -15,6 +15,7 @@ const (
 	commandTools
 	commandHarness
 	commandMCP
+	commandClassifier
 	commandPermissions
 	commandPS
 	commandStop
@@ -222,6 +223,14 @@ var commandDefinitions = []commandDefinition{
 		group:       commandGroupTools,
 		description: "Show MCP server status.",
 		kind:        commandMCP,
+	},
+	{
+		name:        "/classifier",
+		aliases:     []string{"/classifier-status"},
+		usage:       "/classifier [add|list|remove|use|check]",
+		group:       commandGroupTools,
+		description: "Manage the pluggable fast-classifier capability.",
+		kind:        commandClassifier,
 	},
 	{
 		name:        "/resume",

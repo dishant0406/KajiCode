@@ -8,7 +8,9 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/dishant0406/KajiCode/internal/classifier"
 	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
+	"github.com/dishant0406/KajiCode/internal/tools"
 	"github.com/dishant0406/KajiCode/internal/trace"
 )
 
@@ -121,7 +123,9 @@ const summaryInstructions = "You are compacting a coding-assistant conversation 
 	"and never mention that you are summarizing or compacting.\n\n" +
 	summaryTemplate + "\n\nPreserve the user's goals, explicit constraints, decisions and why, files created or " +
 	"modified (exact paths) and key code changes, commands run and their important results, and anything still " +
-	"in progress or unresolved. Omit pleasantries. Do not invent details."
+	"in progress or unresolved. Omit pleasantries. Do not invent details. " +
+	"If a \"" + artifactsLabel + "\" block follows your summary, treat it as an authoritative list of files and " +
+	"commands still in play: name its paths in ## Relevant Files and do not contradict it."
 
 // previousSummaryOpenTag / CloseTag wrap a prior compaction's summary block that
 // is folded into the next summarizer call, so a later compaction updates the
@@ -170,11 +174,18 @@ func extractPreviousSummary(messages []kajicoderuntime.Message) string {
 		}
 		body := strings.TrimPrefix(content, summaryLabel)
 		body = strings.TrimSpace(body)
-		// Strip the preserved-state JSON block appended by appendPreservedState
-		// so the previous *prose* summary carries into the template without the
-		// structured state duplicate.
-		if idx := strings.Index(body, preservedStateLabel); idx >= 0 {
-			body = strings.TrimSpace(body[:idx])
+		// Strip the structured blocks appended by appendPreservedState (state
+		// JSON) and by the artifacts carry, so the previous *prose* summary
+		// carries into the template without the structured duplicates. Cut at the
+		// earliest label so both blocks are removed.
+		cut := -1
+		for _, label := range []string{preservedStateLabel, artifactsLabel} {
+			if idx := strings.Index(body, label); idx >= 0 && (cut < 0 || idx < cut) {
+				cut = idx
+			}
+		}
+		if cut >= 0 {
+			body = strings.TrimSpace(body[:cut])
 		}
 		if body == "" {
 			continue
@@ -212,6 +223,11 @@ type CompactionOptions struct {
 	// objective is always preserved; mutable fields are admitted only when its
 	// plan projection still matches the transcript.
 	taskState *taskStateSnapshot
+	// artifacts are the stale tool results the judge pass reported as relevant
+	// (path targets first, capped) — carried verbatim into the injected summary
+	// so their targets reach the model even when the prose summary does not name
+	// them. nil (no judge) leaves the summary byte-identical to the judge-off path.
+	artifacts []durableArtifact
 }
 
 // CompactionResult is the metadata-bearing result returned by CompactMessages.
@@ -430,7 +446,20 @@ func CompactMessages(messages []kajicoderuntime.Message, opts CompactionOptions)
 
 	// Preserve structured state (active plan + loaded skills) from the elided
 	// middle verbatim, so it is not lost or paraphrased away by the prose summary.
-	content := appendPreservedState(summaryLabel+"\n"+summary, middle, opts.taskState)
+	content := summaryLabel + "\n" + summary
+	// Carry the judge's stale-tool targets verbatim too: the prose summary
+	// compresses the judge's decisions away, so without this block a path the
+	// judge kept never reaches the model. Only artifacts whose source message is
+	// elided are carried (a preserved one is already in context).
+	//
+	// The artifacts block goes BEFORE the preserved-state block: the state is
+	// found by the LAST occurrence of its label (parsePreservedStateBlock), so
+	// keeping the single-line JSON last means a tool body that itself contains
+	// the label text cannot shadow the real state block.
+	if block := formatArtifacts(artifactsWithin(opts.artifacts, systemEnd, boundary)); block != "" {
+		content += "\n\n" + block
+	}
+	content = appendPreservedState(content, middle, opts.taskState)
 
 	compacted := make([]kajicoderuntime.Message, 0, systemEnd+1+(len(messages)-boundary))
 	compacted = append(compacted, messages[:systemEnd]...)
@@ -551,6 +580,21 @@ type compactionState struct {
 	// no-ops; it never affects the conversation sent to the provider.
 	onPhase func(PhaseEvent)
 	task    *taskState
+	// judge, when non-nil, is an optional fast classifier that decides which
+	// stale tool bodies are still relevant (see compaction_judge.go). nil keeps
+	// compaction byte-identical to the prune-then-summarize path.
+	judge classifier.Classifier
+	// judgeDropThreshold / judgeKeepThreshold bound the judge's uncertain band:
+	// a result below drop is dropped, one at or above keep is confidently kept,
+	// and one inside the band is kept. judgeRecover builds the placeholder that
+	// replaces a dropped body (nil is today's re-run hint).
+	judgeDropThreshold float64
+	judgeKeepThreshold float64
+	judgeRecover       prunedBodyRewriter
+	// spillBudget bounds how many dropped bodies one compaction writes to the
+	// spill dir, so a pass that drops hundreds of bodies cannot do hundreds of
+	// synchronous filesystem cycles on the turn path. Reset at each maybeCompact.
+	spillBudget int
 
 	// calibrationRatio scales the raw byte/4 token estimate toward the provider's
 	// real prompt-token count. ApproxTextTokens over-counts code-heavy content by
@@ -599,6 +643,15 @@ func newCompactionState(options Options, task *taskState) *compactionState {
 		onCompaction: options.OnCompaction,
 		onPhase:      options.OnPhase,
 		task:         task,
+		// Optional relevance judge; nil keeps the free prune + summarizer path.
+		judge:              options.CompactionJudge,
+		judgeKeepThreshold: options.CompactionJudgeKeepThreshold,
+		judgeDropThreshold: options.CompactionJudgeDropThreshold,
+	}
+	// The recovery hook is a method value so it can share this state's per-pass
+	// spill budget. It is only ever invoked on the drop path (see judgeOptions).
+	if options.CompactionJudge != nil {
+		state.judgeRecover = state.spillPrunedBodyRewriter
 	}
 	// opencode-style budgeted tail: active for realistic model windows (the real
 	// deployment path), keeping a recent turn window verbatim instead of a bare
@@ -614,6 +667,29 @@ func newCompactionState(options Options, task *taskState) *compactionState {
 		state.tailBudget = tailTokenBudget(options.ContextWindow)
 	}
 	return state
+}
+
+// spillPrunedBodyRewriter is the production drop-recovery hook: it writes a
+// dropped body to the tool-output spill directory and returns a placeholder
+// naming the file, so the body stays reachable with read_file or grep instead of
+// re-running a tool that may be expensive or non-idempotent. It fails open to
+// the plain re-run hint when the spill cannot be written.
+//
+// The spill runs on the turn path, so it is deliberately bounded: a body larger
+// than maxPrunedSpillBytes is not written (its placeholder stays the re-run
+// hint), and a count budget caps how many bodies one compaction will write, so
+// a single pass can never do thousands of synchronous mkdir/readdir/write
+// cycles. Past the budget the rewriter is a no-op, which keeps the worst case
+// bounded while the common case (a handful of dropped bodies) is fully covered.
+func (state *compactionState) spillPrunedBodyRewriter(tool string, tokens int, body string) string {
+	if len(body) > maxPrunedSpillBytes || state.spillBudget <= 0 {
+		return prunedPlaceholder(tool, tokens)
+	}
+	state.spillBudget--
+	if path := tools.SpillOutput(tool, body); path != "" {
+		return prunedPlaceholderWithPath(tool, tokens, path)
+	}
+	return prunedPlaceholder(tool, tokens)
 }
 
 // maybeCompact runs proactive compaction at the top of a turn. It returns the
@@ -646,12 +722,42 @@ func (state *compactionState) maybeCompact(
 		return messages, false
 	}
 
-	// CHEAP FIRST STAGE: reclaim context at zero token/latency cost by pruning
-	// the bodies of old, large tool results (the model has already acted on
-	// them). If that brings us back under threshold, skip the paid summarizer
-	// entirely and preserve recent turns verbatim.
-	if pruned, reclaimed := pruneStaleToolOutput(messages, state.preserveLast); reclaimed > 0 {
-		messages = pruned
+	// CHEAP FIRST STAGE: reclaim context at zero token/latency cost before the
+	// paid summarizer runs, and skip the summarizer entirely when that clears the
+	// threshold while keeping recent turns verbatim.
+	//
+	// When a relevance judge is configured it FILTERS the stale history: the free
+	// positional prune runs first as the deterministic floor (dropping every stale
+	// body, duplicates included), then the judge restores the bodies it judges
+	// relevant and additionally reduces irrelevant tool-call arguments and
+	// assistant narration. Keeping more tool bodies than the blind prune is the
+	// whole point (relevance preservation), so the prune is NOT a competitor to
+	// out-reclaim — it is the fallback taken only when the classifier is
+	// unavailable (nil, error, or no answers), which keeps the judge-off path
+	// byte-identical.
+	state.spillBudget = maxPrunedSpillsPerCompaction
+	pruned, _ := pruneStaleToolOutput(messages, state.preserveLast)
+	chosen := pruned
+	var judgeArtifacts []durableArtifact
+	if state.judge != nil {
+		judged, artifacts, ok := judgeStaleHistory(ctx, state.judge, compactionGoal(messages), messages, pruned, state.preserveLast, judgeOptions{
+			dropThreshold: state.judgeDropThreshold,
+			keepThreshold: state.judgeKeepThreshold,
+			recover:       state.judgeRecover,
+		})
+		if ok {
+			chosen = judged
+			judgeArtifacts = artifacts
+		}
+	}
+	// reclaimed is the chosen history's true token reduction, so the two stages
+	// cannot disagree about whether the history actually shrank.
+	reclaimed := estimateTokens(messages) - estimateTokens(chosen)
+	if reclaimed < 0 {
+		reclaimed = 0
+	}
+	messages = chosen
+	if reclaimed > 0 {
 		size = state.calibratedTokens(estimateTokens(messages) + toolTokens)
 		if size <= state.threshold {
 			state.lowWaterMark = size
@@ -666,11 +772,16 @@ func (state *compactionState) maybeCompact(
 		ContextWindow:   state.window,
 		Summarize:       summarizeClosure(ctx, provider, state.onUsage),
 		taskState:       state.task.snapshotForCompaction(messages),
+		artifacts:       judgeArtifacts,
 	})
 	if err != nil {
-		// Summarizer failed: keep the original history. The reactive path (or a
-		// later turn) can try again; we never drop messages on failure here.
-		return messages, false
+		// Summarizer failed. Return the deterministic prune floor rather than the
+		// judged slice: the free prune already reclaimed most of the context, and
+		// falling back to it guarantees a judge-ON failure is never worse than the
+		// judge-off path (a judged slice can be materially larger, because the
+		// judge keeps bodies the prune drops). The reactive path (or a later turn)
+		// can retry; we never drop messages here.
+		return pruned, false
 	}
 	compacted := result.Messages
 	newSize := state.calibratedTokens(estimateTokens(compacted) + toolTokens)
@@ -971,10 +1082,17 @@ func renderTranscript(messages []kajicoderuntime.Message) string {
 			lines = append(lines, line)
 		case kajicoderuntime.MessageRoleTool:
 			// An already-pruned body means the model long since acted on it; the
-			// placeholder carries everything compressible. Otherwise bound the body.
+			// placeholder carries everything compressible. A placeholder that names
+			// a recovery file keeps that path, so the summarizer can carry it into
+			// ## Relevant Files and the pruned output stays reachable. Otherwise
+			// bound the body.
 			body := message.Content
 			if isPrunedPlaceholder(body) {
-				body = "[Old tool result content cleared to reclaim context]"
+				if path := recoveryPathOf(body); path != "" {
+					body = "[Old tool result cleared to reclaim context; full output saved to " + path + "]"
+				} else {
+					body = "[Old tool result content cleared to reclaim context]"
+				}
 			} else {
 				body = truncateTranscriptBytes(body)
 			}

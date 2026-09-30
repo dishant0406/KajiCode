@@ -979,7 +979,7 @@ func truncateExecOutputSpill(output string, maxOutputTokens int, toolName string
 		return output, false
 	}
 	notice := "\n[kajicode] output truncated\n"
-	if spillPath := spillTruncatedOutput(toolName, output); spillPath != "" {
+	if spillPath := SpillOutput(toolName, output); spillPath != "" {
 		notice = "\n[kajicode] output truncated — full output saved to " + spillPath + " (grep or read_file it instead of re-running)\n"
 	}
 	head := maxBytes / 2

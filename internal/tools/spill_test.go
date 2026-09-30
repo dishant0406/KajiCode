@@ -71,7 +71,7 @@ func TestSpillTruncatedOutputScrubsPatternSecrets(t *testing.T) {
 	githubToken := "ghp_" + strings.Repeat("a", 36)
 	body := "before\nAKIAIOSFODNN7EXAMPLE\n" + githubToken + "\nafter"
 
-	path := spillTruncatedOutput("bash", body)
+	path := SpillOutput("bash", body)
 	if path == "" {
 		t.Fatal("spill must return a file path")
 	}
@@ -92,7 +92,7 @@ func TestSpillTruncatedOutputScrubsPatternSecrets(t *testing.T) {
 
 func TestSpillTruncatedOutputWritesFile(t *testing.T) {
 	t.Setenv("TMPDIR", t.TempDir())
-	path := spillTruncatedOutput("exec_command", "some output body")
+	path := SpillOutput("exec_command", "some output body")
 	if path == "" {
 		t.Fatal("spill must return a file path")
 	}
@@ -105,5 +105,20 @@ func TestSpillTruncatedOutputWritesFile(t *testing.T) {
 	}
 	if string(content) != "some output body" {
 		t.Fatalf("unexpected spill content: %q", content)
+	}
+}
+
+// TestSpillOutputIsAcceptedByTheReadPath proves the spill produced for a pruned
+// compaction body is one the scoped read tools will open, so the recovery net is
+// actually usable (not just a named path).
+func TestSpillOutputIsAcceptedByTheReadPath(t *testing.T) {
+	setTestTempDir(t)
+	path := SpillOutput("grep", "recoverable pruned body")
+	if path == "" {
+		t.Fatal("SpillOutput must produce a path")
+	}
+	defer os.Remove(path)
+	if _, ok := resolveSpillReadPath(path); !ok {
+		t.Fatalf("the scoped read path must accept a spill file: %s", path)
 	}
 }

@@ -486,7 +486,14 @@ type model struct {
 	providerWizard *providerWizardState
 	mcpManager     *mcpManagerState
 	mcpAddWizard   *mcpAddWizardState
-	favoriteModels map[string]bool
+	// classifierCommand runs `/classifier` actions through the CLI bridge, and
+	// classifierAddWizard drives the interactive add flow. Both mirror their MCP
+	// counterparts.
+	classifierCommand       func(context.Context, []string, string) ClassifierCommandResult
+	classifierAddWizard     *classifierAddWizardState
+	classifierCommandSeq    int
+	classifierCommandCancel context.CancelFunc
+	favoriteModels          map[string]bool
 	// recentModels is the automatic history of provider+model switches, newest
 	// first, capped to config.MaxRecentModels. Unlike favoriteModels (manual
 	// pins), this is maintained by recordRecentModel on every successful
@@ -895,6 +902,7 @@ func newModel(ctx context.Context, options Options) model {
 		mcpPermissionStore:          options.MCPPermissionStore,
 		mcpTokenStore:               options.MCPTokenStore,
 		mcpCommand:                  options.MCPCommand,
+		classifierCommand:           options.ClassifierCommand,
 		sandboxSetupCommand:         options.SandboxSetupCommand,
 		agentOptions:                options.AgentOptions,
 		sessionCompactor:            options.SessionCompactor,
@@ -1076,7 +1084,7 @@ func (m *model) stopPRWatcher() {
 func (m model) noBlockingModal() bool {
 	return m.pendingPermission == nil && m.pendingAskUser == nil &&
 		m.providerWizard == nil && m.mcpAddWizard == nil && m.mcpManager == nil && m.picker == nil &&
-		m.promptEditor == nil && m.styleEditor == nil
+		m.promptEditor == nil && m.styleEditor == nil && m.classifierAddWizard == nil
 }
 
 func (m model) quit() (tea.Model, tea.Cmd) {
@@ -1474,6 +1482,10 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.fileView.active && m.noBlockingModal() {
 				return m.exitFileView(), nil
 			}
+			if m.classifierCommandCancel != nil {
+				m.cancelClassifierCommand()
+				return m, nil
+			}
 			if m.mcpCommandCancel != nil {
 				m.cancelMCPCommand()
 				if m.mcpAddWizard != nil {
@@ -1503,6 +1515,10 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// field, manage-key step) can walk BACK one level; the wizard's own
 				// handler closes the overlay for the single-level steps.
 				return m.handleProviderWizardKey(msg)
+			}
+			if m.classifierAddWizard != nil {
+				m.classifierAddWizard = nil
+				return m, nil
 			}
 			if m.mcpAddWizard != nil {
 				m.mcpAddWizard = nil
@@ -1579,6 +1595,10 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.providerWizard != nil {
 				m.burstCount = 0
 				return m.handleProviderWizardKey(msg)
+			}
+			if m.classifierAddWizard != nil {
+				m.burstCount = 0
+				return m.handleClassifierAddWizardKey(msg)
 			}
 			if m.mcpAddWizard != nil {
 				m.burstCount = 0
@@ -1737,6 +1757,10 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.burstCount = 0
 				return m.handleProviderWizardKey(msg)
 			}
+			if m.classifierAddWizard != nil {
+				m.burstCount = 0
+				return m.handleClassifierAddWizardKey(msg)
+			}
 			if m.mcpAddWizard != nil {
 				m.burstCount = 0
 				return m.handleMCPAddWizardKey(msg)
@@ -1843,7 +1867,7 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.pendingAskUser != nil {
 				return m.moveAskUserCursor(-1), nil
 			}
-			if m.providerWizard != nil || m.mcpAddWizard != nil || m.mcpManager != nil || m.picker != nil {
+			if m.providerWizard != nil || m.mcpAddWizard != nil || m.mcpManager != nil || m.picker != nil || m.classifierAddWizard != nil {
 				break
 			}
 			if m.composerValue() != "" {
@@ -1864,7 +1888,7 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.pendingAskUser != nil {
 				return m.moveAskUserCursor(1), nil
 			}
-			if m.providerWizard != nil || m.mcpAddWizard != nil || m.mcpManager != nil || m.picker != nil {
+			if m.providerWizard != nil || m.mcpAddWizard != nil || m.mcpManager != nil || m.picker != nil || m.classifierAddWizard != nil {
 				break
 			}
 			if m.composerValue() != "" {
@@ -1902,6 +1926,10 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.providerWizard != nil {
 			m.burstCount = 0
 			return m.handleProviderWizardKey(msg)
+		}
+		if m.classifierAddWizard != nil {
+			m.burstCount = 0
+			return m.handleClassifierAddWizardKey(msg)
 		}
 		if m.mcpAddWizard != nil {
 			m.burstCount = 0
@@ -2612,6 +2640,8 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case mcpCommandResultMsg:
 		return m.applyMCPCommandResultMessage(msg), nil
+	case classifierCommandResultMsg:
+		return m.applyClassifierCommandResultMessage(msg), nil
 	}
 
 	var cmd tea.Cmd
@@ -2690,7 +2720,8 @@ func (m model) homePresentationActive() bool {
 	return m.transcriptEmpty() && !m.pending && m.pendingAskUser == nil &&
 		!m.helpOverlay && !m.leaderHelpOverlay && m.providerWizard == nil &&
 		m.mcpAddWizard == nil && m.mcpManager == nil && m.picker == nil &&
-		m.promptEditor == nil && m.styleEditor == nil && !m.suggestionsActive() && !m.transcriptDetailed
+		m.promptEditor == nil && m.styleEditor == nil && m.classifierAddWizard == nil &&
+		!m.suggestionsActive() && !m.transcriptDetailed
 }
 
 // transcriptView renders the visible chat surface: in inline mode this is the
@@ -2737,6 +2768,7 @@ func (m model) transcriptView() string {
 	providerOverlay := m.providerWizardOverlay(width)
 	mcpAddOverlay := m.mcpAddWizardOverlay(width)
 	mcpOverlay := m.mcpManagerOverlay(width)
+	classifierAddOverlay := m.classifierAddWizardOverlay(width)
 	pickerOverlay := m.pickerOverlay(width)
 	webSearchOverlay := m.webSearchFormOverlay(width)
 	promptEditorOverlay := m.promptEditorOverlay(width, overlayMaxHeight)
@@ -2755,6 +2787,8 @@ func (m model) transcriptView() string {
 		viewportOverlay = leaderHelpOverlayContent
 	case providerOverlay != "":
 		viewportOverlay = providerOverlay
+	case classifierAddOverlay != "":
+		viewportOverlay = classifierAddOverlay
 	case mcpAddOverlay != "":
 		viewportOverlay = mcpAddOverlay
 	case mcpOverlay != "":
@@ -4542,6 +4576,11 @@ func (m model) dispatchCommand(command parsedCommand) (tea.Model, tea.Cmd) {
 			return m.openMCPManager(), nil
 		}
 		return m.startMCPTranscriptCommand(command.text)
+	case commandClassifier:
+		if strings.ToLower(strings.TrimSpace(command.text)) == "add" {
+			return m.openClassifierAddWizard(), nil
+		}
+		return m.startClassifierTranscriptCommand(command.text)
 	case commandPermissions:
 		m.picker = m.newPermissionsPicker()
 		return m, nil

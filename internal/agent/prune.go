@@ -40,6 +40,52 @@ func prunedPlaceholder(toolName string, originalTokens int) string {
 	return fmt.Sprintf("[pruned %s output (~%d tokens) to reclaim context — re-run the tool if you need it again]", toolLabel(toolName), originalTokens)
 }
 
+// spillPathMarker introduces the recovery path in a pruned placeholder. It is a
+// constant so the writer (prunedPlaceholderWithPath) and the reader
+// (recoveryPathOf) cannot drift.
+const spillPathMarker = " full output saved to "
+
+// prunedPlaceholderWithPath is prunedPlaceholder for a body that was spilled to a
+// readable file first. It names the file so "dropped" is not "lost": the model
+// reads or greps the spill instead of re-running a tool that may be expensive or
+// non-idempotent. It keeps the "[pruned " prefix so an already-pruned body is
+// still recognized (and never re-pruned) on a later pass.
+func prunedPlaceholderWithPath(toolName string, originalTokens int, path string) string {
+	return fmt.Sprintf("[pruned %s output (~%d tokens) to reclaim context —%s%s; read_file or grep it, or re-run the tool if you need it again]", toolLabel(toolName), originalTokens, spillPathMarker, path)
+}
+
+// recoveryPathOf returns the spill path a pruned placeholder names, or "" when
+// the placeholder carries no recovery path. It is the inverse of
+// prunedPlaceholderWithPath and reads only what that function wrote, so it
+// requires the same ';' terminator: a malformed or truncated placeholder yields
+// "" rather than a garbage "path".
+func recoveryPathOf(placeholder string) string {
+	idx := strings.Index(placeholder, spillPathMarker)
+	if idx < 0 {
+		return ""
+	}
+	rest := placeholder[idx+len(spillPathMarker):]
+	end := strings.IndexByte(rest, ';')
+	if end < 0 {
+		return ""
+	}
+	return strings.TrimSpace(rest[:end])
+}
+
+// prunedBodyRewriter builds the placeholder that replaces a stale tool-result
+// body when it is dropped. It is the seam that makes a drop recoverable without
+// touching the pure prune: the default rewriter returns today's re-run hint, and
+// a spill-backed rewriter stores the body and returns a placeholder naming the
+// file. It is only ever called on the drop path, so nothing is spilled for a
+// body the judge keeps.
+type prunedBodyRewriter func(tool string, tokens int, body string) string
+
+// defaultPrunedBodyRewriter is the no-op recovery net: it returns the plain
+// re-run hint, so a drop with no configured recovery writes nothing to disk.
+func defaultPrunedBodyRewriter(tool string, tokens int, _ string) string {
+	return prunedPlaceholder(tool, tokens)
+}
+
 // duplicatePlaceholder is the body an older duplicate tool result is replaced
 // with. It points at the kept (newer) copy still in context.
 func duplicatePlaceholder(toolName string, originalTokens int) string {
@@ -165,3 +211,17 @@ func toolNamesByCallID(messages []kajicoderuntime.Message) map[string]string {
 func isPrunedPlaceholder(content string) bool {
 	return strings.HasPrefix(strings.TrimSpace(content), "[pruned ")
 }
+
+// Pruned-body spill bounds. The spill runs synchronously on the turn path, so a
+// single compaction must not write an unbounded number or size of files before
+// the provider request.
+const (
+	// maxPrunedSpillsPerCompaction caps how many dropped bodies one compaction
+	// spills. Beyond it the drop keeps today's re-run hint, so the worst case
+	// (a pass dropping up to judgeMaxWork bodies) stays bounded.
+	maxPrunedSpillsPerCompaction = 64
+	// maxPrunedSpillBytes skips spilling an individual body larger than this
+	// (2 MiB). A body that large is rare and re-runnable; the cap keeps one
+	// drop from writing a large file on the turn path.
+	maxPrunedSpillBytes = 2 << 20
+)

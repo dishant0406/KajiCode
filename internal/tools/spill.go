@@ -88,14 +88,25 @@ func spillDir() (string, error) {
 	return dir, nil
 }
 
-// spillTruncatedOutput writes the full pre-truncation output to the spill
-// directory and returns the file path, or "" when spilling fails. Output is
-// scrubbed with the same configured-key redaction the registry applies at the
-// tool boundary PLUS the pattern-based secret scanner (AWS keys, tokens, PEM
-// blocks, JWTs) that bash applies to its model-visible output — a spill runs
-// before that formatter, so without the scan here a spilled file would hold
+// SpillOutput writes a full tool body to the per-user spill directory and
+// returns the file path, or "" when it cannot be stored. It backs two
+// best-effort recovery nets that both fail open on any error:
+//
+//   - truncated tool output (bash/exec_command): the model greps or reads the
+//     spill instead of re-running a possibly expensive command;
+//   - a tool result compaction pruned: the placeholder names the spill path, so
+//     a body the judge judged irrelevant is still recoverable with read_file or
+//     grep rather than by re-running a tool that may be non-idempotent (a
+//     web_fetch, a read of a since-deleted file).
+//
+// Spill files are already readable by every scoped read tool
+// (resolveScopedReadPath), so no new read path is needed. Output is scrubbed
+// with the same configured-key redaction the registry applies at the tool
+// boundary PLUS the pattern-based secret scanner (AWS keys, tokens, PEM blocks,
+// JWTs) that bash applies to its model-visible output — a spill runs before
+// that formatter, so without the scan here a spilled file would hold
 // pattern-matched credentials in cleartext that the transcript hides.
-func spillTruncatedOutput(toolName, output string) string {
+func SpillOutput(toolName, output string) string {
 	dir, err := spillDir()
 	if err != nil {
 		return ""

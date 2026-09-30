@@ -31,7 +31,7 @@ func TestSpillDirRejectsSymlink(t *testing.T) {
 	if err := os.Symlink(elsewhere, filepath.Join(tmp, spillDirName())); err != nil {
 		t.Fatal(err)
 	}
-	if path := spillTruncatedOutput("bash", "sensitive output"); path != "" {
+	if path := SpillOutput("bash", "sensitive output"); path != "" {
 		t.Fatalf("spill must refuse a symlinked directory, wrote %s", path)
 	}
 	entries, _ := os.ReadDir(elsewhere)
@@ -42,14 +42,14 @@ func TestSpillDirRejectsSymlink(t *testing.T) {
 
 func TestSpillDirAcceptsOwnedDirectory(t *testing.T) {
 	t.Setenv("TMPDIR", t.TempDir())
-	if path := spillTruncatedOutput("bash", "ok"); path == "" {
+	if path := SpillOutput("bash", "ok"); path == "" {
 		t.Fatal("spill must work in a clean per-user temp dir")
 	}
 }
 
 func TestResolveSpillReadPathContainment(t *testing.T) {
 	t.Setenv("TMPDIR", t.TempDir())
-	spillPath := spillTruncatedOutput("exec_command", "spilled body")
+	spillPath := SpillOutput("exec_command", "spilled body")
 	if spillPath == "" {
 		t.Fatal("spill must succeed in a clean temp dir")
 	}
@@ -79,7 +79,7 @@ func TestResolveSpillReadPathContainment(t *testing.T) {
 
 func TestReadFileCanReadSpillFile(t *testing.T) {
 	t.Setenv("TMPDIR", t.TempDir())
-	spillPath := spillTruncatedOutput("exec_command", "line one\nline two\n")
+	spillPath := SpillOutput("exec_command", "line one\nline two\n")
 	if spillPath == "" {
 		t.Fatal("spill must succeed")
 	}

@@ -59,6 +59,7 @@ func validateSemantics(cfg FileConfig) []Issue {
 	issues := validateHarnessConfig(cfg.Harness)
 	issues = append(issues, validateLearningConfig(cfg.Learning)...)
 	issues = append(issues, validateImagesConfig(cfg)...)
+	issues = append(issues, validateClassifierConfig(cfg.Classifier)...)
 	return issues
 }
 

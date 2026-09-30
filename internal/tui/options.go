@@ -50,6 +50,7 @@ type Options struct {
 	MCPPermissionStore          *mcp.PermissionStore
 	MCPTokenStore               *mcp.TokenStore
 	MCPCommand                  func(context.Context, []string) MCPCommandResult
+	ClassifierCommand           func(context.Context, []string, string) ClassifierCommandResult
 	SandboxSetupCommand         func(context.Context) SandboxSetupCommandResult
 	UsageTracker                *usage.Tracker
 	SessionCompactor            SessionCompactor
@@ -95,6 +96,14 @@ type Options struct {
 
 type MCPCommandResult struct {
 	Config   config.MCPConfig
+	Output   string
+	Error    string
+	ExitCode int
+}
+
+// ClassifierCommandResult is the outcome of a `/classifier` action routed through
+// the CLI. Output is already the human-readable CLI stdout.
+type ClassifierCommandResult struct {
 	Output   string
 	Error    string
 	ExitCode int

@@ -449,6 +449,8 @@ func runWithDeps(args []string, stdout io.Writer, stderr io.Writer, deps appDeps
 		return runHooks(args[1:], stdout, stderr, deps)
 	case "mcp":
 		return runMCP(args[1:], stdout, stderr, deps)
+	case "classifier":
+		return runClassifier(args[1:], stdout, stderr, deps)
 	case "auth":
 		return runAuth(args[1:], stdout, stderr, deps)
 	case "sandbox":
@@ -908,21 +910,45 @@ func runInteractiveTUIWithSetup(stderr io.Writer, deps appDeps, permissionMode a
 				ExitCode: exitCode,
 			}
 		},
+		ClassifierCommand: func(ctx context.Context, args []string, stdin string) tui.ClassifierCommandResult {
+			if ctx == nil {
+				ctx = context.Background()
+			}
+			runDeps := deps
+			// A wizard-supplied API key travels on stdin (never argv) so it stays
+			// out of shell history and the transcript.
+			if stdin != "" {
+				runDeps.stdin = strings.NewReader(stdin)
+			}
+			var stdout, stderr bytes.Buffer
+			exitCode := runClassifierWithContext(ctx, args, &stdout, &stderr, runDeps)
+			return tui.ClassifierCommandResult{
+				Output:   strings.TrimSpace(stdout.String()),
+				Error:    strings.TrimSpace(stderr.String()),
+				ExitCode: exitCode,
+			}
+		},
 		SandboxSetupCommand: tuiSandboxSetupCommand(sandboxBackend, deps),
 		AgentOptions: agent.Options{
-			MaxTurns:        resolved.MaxTurns,
-			Registry:        registry,
-			PermissionMode:  permissionMode,
-			Autonomy:        "low",
-			Harness:         resolved.Harness,
-			Learning:        learning,
-			Sandbox:         sandboxEngine,
-			FileTracker:     fileTracker,
-			Hooks:           hookDispatcher,
-			DeferThreshold:  resolved.Tools.DeferThreshold,
-			Agents:          agentRuntime.agentInfos(),
-			MCPInstructions: mcpInstructionInfos(mcpRuntime),
-			Skills:          pluginActivation.skillInfos(deps.skillsDir(), workspaceRoot),
+			MaxTurns:       resolved.MaxTurns,
+			Registry:       registry,
+			PermissionMode: permissionMode,
+			Autonomy:       "low",
+			Harness:        resolved.Harness,
+			Learning:       learning,
+			Sandbox:        sandboxEngine,
+			FileTracker:    fileTracker,
+			Hooks:          hookDispatcher,
+			// Optional relevance judge for compaction, identical to the exec
+			// surface. nil (capability or feature off) leaves compaction
+			// byte-identical to the free prune + summarizer path.
+			CompactionJudge:              classifierForRun(resolved.Classifier, deps),
+			CompactionJudgeKeepThreshold: resolved.Classifier.Features.Compaction.EffectiveKeepResultThreshold(),
+			CompactionJudgeDropThreshold: resolved.Classifier.Features.Compaction.EffectiveDropResultThreshold(),
+			DeferThreshold:               resolved.Tools.DeferThreshold,
+			Agents:                       agentRuntime.agentInfos(),
+			MCPInstructions:              mcpInstructionInfos(mcpRuntime),
+			Skills:                       pluginActivation.skillInfos(deps.skillsDir(), workspaceRoot),
 			// Background sub-agent completion push: the interactive run learns a
 			// finished task's result on its next turn instead of polling TaskOutput.
 			TaskCompletions: agentRuntime.completions(),

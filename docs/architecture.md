@@ -47,6 +47,7 @@ the next model turn.
 | Sandbox/permissions | `internal/sandbox` | Path scope, network policy, command risk, grants, permission decisions, and platform isolation backends. |
 | Sessions | `internal/sessions` | Local metadata, append-only event logs, replay, checkpoint, rewind, fork, and lineage. |
 | Extensions | `internal/mcp`, `internal/plugins`, `internal/skills`, `internal/agents`, `internal/hooks` | External tools, plugin activation, skill discovery, sub-agents, and lifecycle hooks. |
+| Fast classifier | `internal/classifier` | The pluggable fast-classifier capability: a provider-agnostic `Classifier` seam, a Jev-shaped HTTP backend ({state,questions}→{answers}), and the profile/config types. Consumed by `internal/agent` (the optional compaction judge, whose drops are made recoverable through the tool-output spill) and managed by the `kajicode classifier` CLI and `/classifier` TUI command. It is not a model provider and never generates text. |
 | Local control | `internal/localcontrol`, `internal/browser`, `internal/background`, `internal/daemon` | Optional browser, terminal, desktop, and daemon-backed helpers. |
 | Release | `cmd/kajicode-release`, `internal/release`, `scripts/install.*`, `scripts/npm/*`, `.github/workflows/publish-npm.yml` | Binary archives, checksums, installers, npm wrapper/platform packages, tags, and GitHub releases. |
 

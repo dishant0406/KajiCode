@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	"github.com/dishant0406/KajiCode/internal/classifier"
 )
 
 const OpenAIBaseURL = "https://api.openai.com/v1"
@@ -295,6 +297,11 @@ type FileConfig struct {
 	KeyBindings  KeyBindingsConfig  `json:"keybindings,omitempty"`
 	LocalControl LocalControlConfig `json:"localControl,omitempty"`
 	Images       ImagesConfig       `json:"images,omitempty"`
+	// Classifier is the fast-classifier capability: a registry of Jev-shaped
+	// classifier profiles plus per-feature switches. The types live in
+	// internal/classifier (one definition, shared by config, the CLI writer, and
+	// the runtime builder) rather than being re-declared here.
+	Classifier classifier.Config `json:"classifier,omitempty"`
 }
 
 type ImagesConfig struct {
@@ -335,6 +342,7 @@ func (cfg FileConfig) MarshalJSON() ([]byte, error) {
 		KeyBindings    KeyBindingsConfig   `json:"keybindings,omitempty"`
 		LocalControl   *LocalControlConfig `json:"localControl,omitempty"`
 		Images         *ImagesConfig       `json:"images,omitempty"`
+		Classifier     *classifier.Config  `json:"classifier,omitempty"`
 	}
 	raw := rawConfig{
 		ActiveProvider: cfg.ActiveProvider,
@@ -360,6 +368,9 @@ func (cfg FileConfig) MarshalJSON() ([]byte, error) {
 	}
 	if !cfg.Images.Empty() {
 		raw.Images = &cfg.Images
+	}
+	if !cfg.Classifier.IsZero() {
+		raw.Classifier = &cfg.Classifier
 	}
 	return json.Marshal(raw)
 }
@@ -392,6 +403,7 @@ type Overrides struct {
 	KeyBindings    KeyBindingsConfig
 	LocalControl   LocalControlConfig
 	Images         ImagesConfig
+	Classifier     classifier.Config
 }
 
 type ResolvedConfig struct {
@@ -411,6 +423,7 @@ type ResolvedConfig struct {
 	KeyBindings    KeyBindingsConfig
 	LocalControl   LocalControlConfig
 	Images         ImagesConfig
+	Classifier     classifier.Config
 }
 
 type MCPConfig struct {
@@ -502,6 +515,7 @@ func (cfg *FileConfig) UnmarshalJSON(data []byte) error {
 		Preferences     PreferencesConfig          `json:"preferences"`
 		KeyBindings     KeyBindingsConfig          `json:"keybindings"`
 		LocalControl    LocalControlConfig         `json:"localControl"`
+		Classifier      classifier.Config          `json:"classifier"`
 		MCPServers      map[string]MCPServerConfig `json:"mcpServers"`
 		MCPServersSnake map[string]MCPServerConfig `json:"mcp_servers"`
 		// Swarm is the legacy multi-agent block, renamed to Agents. It carries
@@ -541,6 +555,7 @@ func (cfg *FileConfig) UnmarshalJSON(data []byte) error {
 	cfg.Preferences = raw.Preferences
 	cfg.KeyBindings = raw.KeyBindings
 	cfg.LocalControl = raw.LocalControl
+	cfg.Classifier = raw.Classifier
 	if cfg.MCP.Servers == nil && (len(raw.MCPServers) > 0 || len(raw.MCPServersSnake) > 0) {
 		cfg.MCP.Servers = map[string]MCPServerConfig{}
 	}

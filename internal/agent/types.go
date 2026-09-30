@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 
+	"github.com/dishant0406/KajiCode/internal/classifier"
 	"github.com/dishant0406/KajiCode/internal/config"
 	"github.com/dishant0406/KajiCode/internal/hooks"
 	"github.com/dishant0406/KajiCode/internal/imageinput"
@@ -359,10 +360,29 @@ type Options struct {
 	// context windows (>= 32k tokens) and the legacy message-count tail is used
 	// below that.
 	CompactionTailTurns int
-	Registry            *tools.Registry
-	PermissionMode      PermissionMode
-	Autonomy            string
-	Sandbox             *sandbox.Engine
+	// CompactionJudge, when non-nil, is an optional fast classifier that decides
+	// which stale history items are still relevant during compaction: it keeps the
+	// relevant tool-result bodies verbatim and reduces the irrelevant ones to a
+	// compact placeholder, reduces irrelevant tool-call arguments to "{}", and
+	// clears irrelevant assistant narration before the paid summarizer runs (and
+	// skips the summarizer entirely when that alone clears the threshold). nil
+	// leaves compaction byte-identical to the free positional prune + summarizer
+	// path.
+	CompactionJudge classifier.Classifier
+	// CompactionJudgeKeepThreshold is the top of the judge's uncertain band: a
+	// result at or above it is confidently kept. <= 0 uses
+	// classifier.DefaultKeepResultThreshold.
+	CompactionJudgeKeepThreshold float64
+	// CompactionJudgeDropThreshold is the bottom of the judge's uncertain band: a
+	// result below it is dropped, and one inside the band is KEPT. <= 0 (the
+	// default) makes the band EMPTY, so the decision is the plain keep threshold
+	// — unchanged from the shipped behavior. Ignored when CompactionJudge is nil.
+	// See classifier.EffectiveDropResultThreshold for why the band is opt-in.
+	CompactionJudgeDropThreshold float64
+	Registry                     *tools.Registry
+	PermissionMode               PermissionMode
+	Autonomy                     string
+	Sandbox                      *sandbox.Engine
 	// FileTracker records per-session file read/write versions so the write tools
 	// can detect a file changed on disk outside KajiCode since it was last read. nil
 	// disables the check. Created once per session and threaded into every tool run.

@@ -668,14 +668,19 @@ func runExec(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) in
 		// --no-completion-gate lets conversational exec callers (a chat frontend
 		// with an operator present) opt out the same way.
 		RequireCompletionSignal: !options.noCompletionGate,
-		Sandbox:                 sandboxEngine,
-		FileTracker:             fileTracker,
-		SessionStore:            execSessionStoreFor(preparedSession.Store, preparedSession.Session.SessionID),
-		Hooks:                   hookDispatcher,
-		EnabledTools:            options.enabledTools,
-		DisabledTools:           options.disabledTools,
-		OnText:                  writer.text,
-		OnReasoning:             writer.reasoning,
+		// Optional relevance judge for compaction. nil (capability or feature off)
+		// leaves compaction byte-identical to the free prune + summarizer path.
+		CompactionJudge:              classifierForRun(resolved.Classifier, deps),
+		CompactionJudgeKeepThreshold: resolved.Classifier.Features.Compaction.EffectiveKeepResultThreshold(),
+		CompactionJudgeDropThreshold: resolved.Classifier.Features.Compaction.EffectiveDropResultThreshold(),
+		Sandbox:                      sandboxEngine,
+		FileTracker:                  fileTracker,
+		SessionStore:                 execSessionStoreFor(preparedSession.Store, preparedSession.Session.SessionID),
+		Hooks:                        hookDispatcher,
+		EnabledTools:                 options.enabledTools,
+		DisabledTools:                options.disabledTools,
+		OnText:                       writer.text,
+		OnReasoning:                  writer.reasoning,
 		OnToolCall: func(call agent.ToolCall) {
 			writer.toolCall(call, registry)
 			sessionRecorder.append(sessions.EventToolCall, map[string]any{

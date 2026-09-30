@@ -143,6 +143,9 @@ func Resolve(options ResolveOptions) (ResolvedConfig, error) {
 	if issues := validateLearningConfig(cfg.Learning); len(issues) > 0 {
 		return ResolvedConfig{}, fmt.Errorf("%s: %s", issues[0].FieldPath, issues[0].Message)
 	}
+	if issues := validateClassifierConfig(cfg.Classifier); len(issues) > 0 {
+		return ResolvedConfig{}, fmt.Errorf("%s: %s", issues[0].FieldPath, issues[0].Message)
+	}
 
 	providers, active, err := normalizeProviders(cfg.Providers, cfg.ActiveProvider, options.Env)
 	if err != nil {
@@ -170,6 +173,7 @@ func Resolve(options ResolveOptions) (ResolvedConfig, error) {
 		KeyBindings:    cfg.KeyBindings,
 		LocalControl:   cfg.LocalControl,
 		Images:         cfg.Images,
+		Classifier:     cfg.Classifier,
 	}, nil
 }
 
@@ -229,6 +233,7 @@ func mergeConfig(dst *FileConfig, src FileConfig) {
 		mergeProvider(dst, provider)
 	}
 	mergeMCPConfig(&dst.MCP, src.MCP, true)
+	mergeClassifierConfig(&dst.Classifier, src.Classifier)
 	if network := strings.TrimSpace(src.Sandbox.Network); network != "" {
 		dst.Sandbox.Network = network
 	}
@@ -336,6 +341,10 @@ func mergeProjectConfig(dst *FileConfig, src FileConfig) error {
 	// Local control is intentionally user-config/override only. A cloned project
 	// must not be able to make browser, desktop, or terminal automation tools
 	// appear in the model's tool surface.
+	//
+	// classifier is likewise user-config/override only: a project must not be
+	// able to register a classifier endpoint (which would point the user's stored
+	// key, or the user's task text, at an arbitrary host).
 	return nil
 }
 
@@ -765,6 +774,7 @@ func applyOverrides(cfg *FileConfig, overrides Overrides) {
 		mergeProvider(cfg, overrides.Provider)
 	}
 	mergeMCPConfig(&cfg.MCP, overrides.MCP, true)
+	mergeClassifierConfig(&cfg.Classifier, overrides.Classifier)
 }
 
 func mergeLocalControlConfig(dst *LocalControlConfig, src LocalControlConfig) {
