@@ -40,7 +40,7 @@ events when present.
 `kajicode exec --output-format stream-json` emits schema-versioned JSONL events.
 
 ```json
-{ "schemaVersion": 2, "type": "run_start", "runId": "run_20260603_abc123", "sessionId": "kajicode_20260603100000_abc123", "cwd": "/repo", "provider": "openai", "model": "gpt-4.1", "apiModel": "gpt-4.1" }
+{ "schemaVersion": 2, "type": "run_start", "runId": "run_20260603_abc123", "sessionId": "kaji_20260603100000_a1b2c3d4", "cwd": "/repo", "provider": "openai", "model": "gpt-4.1", "apiModel": "gpt-4.1" }
 { "schemaVersion": 2, "type": "reasoning", "runId": "run_20260603_abc123", "delta": "Thinking..." }
 { "schemaVersion": 2, "type": "text", "runId": "run_20260603_abc123", "delta": "..." }
 { "schemaVersion": 2, "type": "tool_call", "runId": "run_20260603_abc123", "id": "call_1", "name": "read_file", "args": { "path": "README.md" }, "sideEffect": "read" }

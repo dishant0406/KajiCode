@@ -479,6 +479,12 @@ func TestStoreGeneratesUniqueIDsWithFixedClock(t *testing.T) {
 	if first.SessionID == second.SessionID {
 		t.Fatalf("generated session ids collided: %q", first.SessionID)
 	}
+	if !strings.HasPrefix(first.SessionID, "kaji_20260604123000_") {
+		t.Fatalf("generated session id = %q, want kaji_<timestamp>_<random>", first.SessionID)
+	}
+	if !ValidSessionID(first.SessionID) {
+		t.Fatalf("generated session id %q is not valid", first.SessionID)
+	}
 }
 
 func TestStoreAppendEventSerializesConcurrentWriters(t *testing.T) {

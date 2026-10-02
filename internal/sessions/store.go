@@ -3,6 +3,8 @@ package sessions
 import (
 	"bufio"
 	"bytes"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -774,9 +776,18 @@ func (store *Store) timestamp() string {
 	return store.now().UTC().Format(time.RFC3339)
 }
 
+// createID returns a sortable, collision-resistant session id of the form
+// kaji_<UTC timestamp>_<random hex>, mirroring streamjson.CreateRunID so the
+// CLI emits one consistent id shape across sessions and runs.
 func (store *Store) createID() string {
-	timestamp := store.now().UTC()
-	return fmt.Sprintf("zero_%s_%d_%d", timestamp.Format("20060102150405"), timestamp.UnixNano(), store.idCounter.Add(1))
+	timestamp := store.now().UTC().Format("20060102150405")
+	random := make([]byte, 4)
+	if _, err := rand.Read(random); err != nil {
+		// crypto/rand does not fail on supported platforms; fall back to the
+		// process-local counter so Create never fails on entropy alone.
+		return fmt.Sprintf("kaji_%s_%d", timestamp, store.idCounter.Add(1))
+	}
+	return fmt.Sprintf("kaji_%s_%s", timestamp, hex.EncodeToString(random))
 }
 
 func (store *Store) sessionLock(sessionID string) *sync.Mutex {
