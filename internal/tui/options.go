@@ -6,6 +6,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/dishant0406/KajiCode/internal/agent"
+	"github.com/dishant0406/KajiCode/internal/classifier"
 	"github.com/dishant0406/KajiCode/internal/config"
 	"github.com/dishant0406/KajiCode/internal/imageinput"
 	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
@@ -51,10 +52,13 @@ type Options struct {
 	MCPTokenStore               *mcp.TokenStore
 	MCPCommand                  func(context.Context, []string) MCPCommandResult
 	ClassifierCommand           func(context.Context, []string, string) ClassifierCommandResult
-	SandboxSetupCommand         func(context.Context) SandboxSetupCommandResult
-	UsageTracker                *usage.Tracker
-	SessionCompactor            SessionCompactor
-	PrService                   *PrService
+	// ClassifierConfig is the resolved classifier capability, used to prefill the
+	// `/classifier` configuration form.
+	ClassifierConfig    classifier.Config
+	SandboxSetupCommand func(context.Context) SandboxSetupCommandResult
+	UsageTracker        *usage.Tracker
+	SessionCompactor    SessionCompactor
+	PrService           *PrService
 
 	AgentOptions agent.Options
 	// LoadSkills returns the installed skills (default skills dir merged with any

@@ -142,3 +142,56 @@ func TestACPAddProviderViaElicitation(t *testing.T) {
 		t.Fatal("apiKey must never be collected over the wire")
 	}
 }
+
+func TestACPConfigureClassifierViaElicitation(t *testing.T) {
+	deps := testDeps(t)
+	var got map[string]string
+	deps.ClassifierConfigure = func(_ context.Context, fields map[string]string) (string, error) {
+		got = fields
+		return "Configured classifier jev", nil
+	}
+	h := newHarness(t, deps)
+	defer h.stop()
+	h.client.Handle(MethodElicitationCreate, func(_ context.Context, params json.RawMessage) (any, error) {
+		var p CreateElicitationParams
+		if err := json.Unmarshal(params, &p); err != nil {
+			return nil, err
+		}
+		if p.SessionID == "" {
+			t.Error("classifier elicitation must be session-scoped")
+		}
+		if strings.Contains(string(p.RequestedSchema), "apiKey") || strings.Contains(string(p.RequestedSchema), "api-key") {
+			t.Errorf("form must not request secrets: %s", p.RequestedSchema)
+		}
+		return CreateElicitationResult{
+			Action: "accept",
+			Content: map[string]json.RawMessage{
+				"name":       json.RawMessage(`"jev"`),
+				"endpoint":   json.RawMessage(`"https://openrouter.ai/api/v1/systemone"`),
+				"toolResult": json.RawMessage(`"true"`),
+				"toolShadow": json.RawMessage(`"true"`),
+			},
+		}, nil
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := h.client.Call(ctx, MethodInitialize, InitializeParams{
+		ProtocolVersion:    ProtocolVersion,
+		ClientCapabilities: ClientCapabilities{Elicitation: &ElicitationCapabilities{Form: &struct{}{}}},
+	}, &InitializeResult{}); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+	var newRes NewSessionResult
+	if err := h.client.Call(ctx, MethodSessionNew, NewSessionParams{Cwd: t.TempDir(), McpServers: []McpServer{}}, &newRes); err != nil {
+		t.Fatalf("session/new: %v", err)
+	}
+	if err := h.client.Call(ctx, MethodSessionPrompt, PromptParams{SessionID: newRes.SessionID, Prompt: []ContentBlock{TextBlock("/classifier")}}, &PromptResult{}); err != nil {
+		t.Fatalf("session/prompt /classifier: %v", err)
+	}
+	if got["name"] != "jev" || got["endpoint"] != "https://openrouter.ai/api/v1/systemone" {
+		t.Fatalf("ClassifierConfigure got %#v", got)
+	}
+	if got["toolResult"] != "true" || got["toolShadow"] != "true" {
+		t.Fatalf("feature switches not forwarded: %#v", got)
+	}
+}

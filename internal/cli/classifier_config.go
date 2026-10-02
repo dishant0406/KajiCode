@@ -23,7 +23,7 @@ func runClassifier(args []string, stdout io.Writer, stderr io.Writer, deps appDe
 
 func runClassifierWithContext(ctx context.Context, args []string, stdout io.Writer, stderr io.Writer, deps appDeps) int {
 	if len(args) == 0 {
-		return writeExecUsageError(stderr, "classifier expects a subcommand: list, add, remove, use, or check")
+		return writeExecUsageError(stderr, "classifier expects a subcommand: list, add, configure, remove, use, or check")
 	}
 	sub := args[0]
 	rest := args[1:]
@@ -34,6 +34,8 @@ func runClassifierWithContext(ctx context.Context, args []string, stdout io.Writ
 		return runClassifierList(rest, stdout, stderr, deps)
 	case "add":
 		return runClassifierAdd(rest, stdout, stderr, deps)
+	case "configure", "config", "set":
+		return runClassifierConfigure(rest, stdout, stderr, deps)
 	case "remove", "rm":
 		return runClassifierRemove(rest, stdout, stderr, deps)
 	case "use", "activate":
@@ -112,17 +114,15 @@ func runClassifierAdd(args []string, stdout io.Writer, stderr io.Writer, deps ap
 	// stored is a hard error, so the secret is never written where a plain read
 	// would leak it.
 	profile := options.profile
-	if key := strings.TrimSpace(profile.APIKey); key != "" {
-		if err := storeClassifierKey(configPath, profile.Name, key); err != nil {
-			return writeAppError(stderr, redaction.ErrorMessage(err, redaction.Options{}), exitCrash)
-		}
-		profile.APIKey = ""
-		profile.APIKeyStored = true
-	}
-	updated, err := cfg.upsertProfile(profile)
+	updated, err := storeAndUpsertClassifier(configPath, &cfg, profile)
 	if err != nil {
 		return writeAppError(stderr, redaction.ErrorMessage(err, redaction.Options{}), exitCrash)
 	}
+	stored, ok := cfg.file.Classifier.Profile(profile.Name)
+	if !ok {
+		return writeAppError(stderr, fmt.Sprintf("classifier profile %q was not stored", profile.Name), exitCrash)
+	}
+	profile = stored
 	// The first registered profile becomes active automatically so `check` works
 	// immediately; --set-active forces it for later profiles.
 	if options.setActive || strings.TrimSpace(cfg.file.Classifier.Active) == "" {
@@ -152,6 +152,20 @@ func runClassifierAdd(args []string, stdout io.Writer, stderr io.Writer, deps ap
 		return exitCrash
 	}
 	return exitSuccess
+}
+
+// storeAndUpsertClassifier moves an inline key into the encrypted credential
+// store and writes the profile into the writable config, shared by `add` and
+// `configure`. It returns whether an existing profile was updated.
+func storeAndUpsertClassifier(configPath string, cfg *classifierWritableConfig, profile classifier.Profile) (bool, error) {
+	if key := strings.TrimSpace(profile.APIKey); key != "" {
+		if err := storeClassifierKey(configPath, profile.Name, key); err != nil {
+			return false, err
+		}
+		profile.APIKey = ""
+		profile.APIKeyStored = true
+	}
+	return cfg.upsertProfile(profile)
 }
 
 func runClassifierRemove(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) int {
@@ -400,6 +414,7 @@ func writeClassifierHelp(w io.Writer) int {
 	_, err := fmt.Fprint(w, `Usage:
   kajicode classifier list [--json]
   kajicode classifier add <name> [flags]
+  kajicode classifier configure <name> [flags]
   kajicode classifier remove <name> [--json]
   kajicode classifier use <name> [--json]
   kajicode classifier check [name] [--json]
@@ -421,6 +436,21 @@ Flags for add:
       --set-active            Make this the active profile
       --json                  Print the result as JSON
   -h, --help                  Show this help
+
+configure edits a registered profile and its feature switches in one step. It
+accepts the add flags above, plus:
+      --enable[=true|false]   Turn the classifier capability on or off
+      --disable               Turn the classifier capability off
+      --compaction[=bool]     Enable/disable the compaction keep/drop judge
+      --compaction-keep <p>   Compaction keep threshold in [0,1]
+      --tool-result[=bool]    Enable/disable the live tool-result gate
+      --tool-keep <p>         Gate keep threshold in [0,1]
+      --tool-drop <p>         Gate drop threshold in [0,1]
+      --tool-min-prune-ratio <p>  Gate minimum hidden share in [0,1]
+      --tool-min-bytes <n>    Gate minimum result size in bytes
+      --tool-shadow[=bool]    Gate shadow mode (decide but never rewrite)
+Flags are value=`+"`=value`"+` or a following token; a bare bool flag means true.
+Unpassed fields are left unchanged.
 `)
 	if err != nil {
 		return exitCrash

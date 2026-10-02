@@ -928,6 +928,7 @@ func runInteractiveTUIWithSetup(stderr io.Writer, deps appDeps, permissionMode a
 				ExitCode: exitCode,
 			}
 		},
+		ClassifierConfig:    resolved.Classifier,
 		SandboxSetupCommand: tuiSandboxSetupCommand(sandboxBackend, deps),
 		AgentOptions: agent.Options{
 			MaxTurns:       resolved.MaxTurns,

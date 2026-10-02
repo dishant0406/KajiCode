@@ -227,9 +227,9 @@ var commandDefinitions = []commandDefinition{
 	{
 		name:        "/classifier",
 		aliases:     []string{"/classifier-status"},
-		usage:       "/classifier [add|list|remove|use|check]",
+		usage:       "/classifier [configure|list|add|remove|use|check]",
 		group:       commandGroupTools,
-		description: "Manage the pluggable fast-classifier capability.",
+		description: "Configure the fast-classifier capability (opens a form with no argument).",
 		kind:        commandClassifier,
 	},
 	{

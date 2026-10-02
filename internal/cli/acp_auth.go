@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/dishant0406/KajiCode/internal/acp"
@@ -106,8 +107,64 @@ func acpProviderAdd(deps appDeps) func(ctx context.Context, fields map[string]st
 	}
 }
 
+// acpClassifierConfigure registers/updates a classifier profile and its feature
+// switches from the fields the editor collected, reusing `classifier configure`
+// and the shared credential store. Secrets are never among the fields.
+func acpClassifierConfigure(deps appDeps) func(ctx context.Context, fields map[string]string) (string, error) {
+	return func(_ context.Context, fields map[string]string) (string, error) {
+		name := strings.TrimSpace(fields["name"])
+		if name == "" {
+			return "", fmt.Errorf("a classifier name is required")
+		}
+		args := []string{name}
+		appendFlag := func(flag, value string) {
+			if v := strings.TrimSpace(value); v != "" {
+				args = append(args, flag, v)
+			}
+		}
+		appendFlag("--endpoint", fields["endpoint"])
+		appendFlag("--model", fields["model"])
+		appendFlag("--auth-header", fields["authHeader"])
+		appendFlag("--auth-scheme", fields["authScheme"])
+		appendFlag("--timeout", fields["timeoutMs"])
+		for _, header := range strings.Split(fields["headers"], "\n") {
+			if trimmed := strings.TrimSpace(header); trimmed != "" {
+				args = append(args, "--header", trimmed)
+			}
+		}
+		appendBoolFlag(&args, "--enable", fields["enable"])
+		appendBoolFlag(&args, "--compaction", fields["compaction"])
+		appendFlag("--compaction-keep", fields["compactionKeep"])
+		appendBoolFlag(&args, "--tool-result", fields["toolResult"])
+		appendFlag("--tool-drop", fields["toolDrop"])
+		appendFlag("--tool-keep", fields["toolKeep"])
+		appendBoolFlag(&args, "--tool-shadow", fields["toolShadow"])
+
+		var out strings.Builder
+		if code := runClassifierConfigure(args, &out, &out, deps); code != exitSuccess {
+			return "", errFromWriter(out.String())
+		}
+		summary := strings.TrimSpace(out.String())
+		if summary == "" {
+			summary = "Configured classifier " + name
+		}
+		return summary, nil
+	}
+}
+
+// appendBoolFlag appends `--flag=<bool>` only when the field is a parseable bool,
+// so a blank field leaves the stored value unchanged rather than erroring.
+func appendBoolFlag(args *[]string, flag, value string) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return
+	}
+	if parsed, err := strconv.ParseBool(value); err == nil {
+		*args = append(*args, flag+"="+strconv.FormatBool(parsed))
+	}
+}
+
 // resolveProviderCatalogID maps a user-supplied provider name to the catalog id
-// `providers add` expects. It uses an exact catalog match when one exists,
 // otherwise the explicit custom-compatible entry named by customKind (chosen by
 // the caller from the custom transport), so an unknown name never silently
 // becomes an OpenAI-compatible profile.

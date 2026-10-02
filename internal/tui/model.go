@@ -18,6 +18,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/dishant0406/KajiCode/internal/agent"
+	"github.com/dishant0406/KajiCode/internal/classifier"
 	"github.com/dishant0406/KajiCode/internal/config"
 	"github.com/dishant0406/KajiCode/internal/doctor"
 	"github.com/dishant0406/KajiCode/internal/errhint"
@@ -487,10 +488,12 @@ type model struct {
 	mcpManager     *mcpManagerState
 	mcpAddWizard   *mcpAddWizardState
 	// classifierCommand runs `/classifier` actions through the CLI bridge, and
-	// classifierAddWizard drives the interactive add flow. Both mirror their MCP
-	// counterparts.
+	// classifierConfig/classifierForm back the interactive configuration form:
+	// classifierConfig is the resolved classifier the form is prefilled from, and
+	// classifierForm is the live form state. Both mirror their MCP counterparts.
 	classifierCommand       func(context.Context, []string, string) ClassifierCommandResult
-	classifierAddWizard     *classifierAddWizardState
+	classifierConfig        classifier.Config
+	classifierForm          *classifierFormState
 	classifierCommandSeq    int
 	classifierCommandCancel context.CancelFunc
 	favoriteModels          map[string]bool
@@ -903,6 +906,7 @@ func newModel(ctx context.Context, options Options) model {
 		mcpTokenStore:               options.MCPTokenStore,
 		mcpCommand:                  options.MCPCommand,
 		classifierCommand:           options.ClassifierCommand,
+		classifierConfig:            options.ClassifierConfig,
 		sandboxSetupCommand:         options.SandboxSetupCommand,
 		agentOptions:                options.AgentOptions,
 		sessionCompactor:            options.SessionCompactor,
@@ -1084,7 +1088,7 @@ func (m *model) stopPRWatcher() {
 func (m model) noBlockingModal() bool {
 	return m.pendingPermission == nil && m.pendingAskUser == nil &&
 		m.providerWizard == nil && m.mcpAddWizard == nil && m.mcpManager == nil && m.picker == nil &&
-		m.promptEditor == nil && m.styleEditor == nil && m.classifierAddWizard == nil
+		m.promptEditor == nil && m.styleEditor == nil && m.classifierForm == nil
 }
 
 func (m model) quit() (tea.Model, tea.Cmd) {
@@ -1516,8 +1520,8 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// handler closes the overlay for the single-level steps.
 				return m.handleProviderWizardKey(msg)
 			}
-			if m.classifierAddWizard != nil {
-				m.classifierAddWizard = nil
+			if m.classifierForm != nil {
+				m.classifierForm = nil
 				return m, nil
 			}
 			if m.mcpAddWizard != nil {
@@ -1596,9 +1600,9 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.burstCount = 0
 				return m.handleProviderWizardKey(msg)
 			}
-			if m.classifierAddWizard != nil {
+			if m.classifierForm != nil {
 				m.burstCount = 0
-				return m.handleClassifierAddWizardKey(msg)
+				return m.handleClassifierFormKey(msg)
 			}
 			if m.mcpAddWizard != nil {
 				m.burstCount = 0
@@ -1757,9 +1761,9 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.burstCount = 0
 				return m.handleProviderWizardKey(msg)
 			}
-			if m.classifierAddWizard != nil {
+			if m.classifierForm != nil {
 				m.burstCount = 0
-				return m.handleClassifierAddWizardKey(msg)
+				return m.handleClassifierFormKey(msg)
 			}
 			if m.mcpAddWizard != nil {
 				m.burstCount = 0
@@ -1867,7 +1871,7 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.pendingAskUser != nil {
 				return m.moveAskUserCursor(-1), nil
 			}
-			if m.providerWizard != nil || m.mcpAddWizard != nil || m.mcpManager != nil || m.picker != nil || m.classifierAddWizard != nil {
+			if m.providerWizard != nil || m.mcpAddWizard != nil || m.mcpManager != nil || m.picker != nil || m.classifierForm != nil {
 				break
 			}
 			if m.composerValue() != "" {
@@ -1888,7 +1892,7 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.pendingAskUser != nil {
 				return m.moveAskUserCursor(1), nil
 			}
-			if m.providerWizard != nil || m.mcpAddWizard != nil || m.mcpManager != nil || m.picker != nil || m.classifierAddWizard != nil {
+			if m.providerWizard != nil || m.mcpAddWizard != nil || m.mcpManager != nil || m.picker != nil || m.classifierForm != nil {
 				break
 			}
 			if m.composerValue() != "" {
@@ -1927,9 +1931,9 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.burstCount = 0
 			return m.handleProviderWizardKey(msg)
 		}
-		if m.classifierAddWizard != nil {
+		if m.classifierForm != nil {
 			m.burstCount = 0
-			return m.handleClassifierAddWizardKey(msg)
+			return m.handleClassifierFormKey(msg)
 		}
 		if m.mcpAddWizard != nil {
 			m.burstCount = 0
@@ -2720,7 +2724,7 @@ func (m model) homePresentationActive() bool {
 	return m.transcriptEmpty() && !m.pending && m.pendingAskUser == nil &&
 		!m.helpOverlay && !m.leaderHelpOverlay && m.providerWizard == nil &&
 		m.mcpAddWizard == nil && m.mcpManager == nil && m.picker == nil &&
-		m.promptEditor == nil && m.styleEditor == nil && m.classifierAddWizard == nil &&
+		m.promptEditor == nil && m.styleEditor == nil && m.classifierForm == nil &&
 		!m.suggestionsActive() && !m.transcriptDetailed
 }
 
@@ -2768,7 +2772,7 @@ func (m model) transcriptView() string {
 	providerOverlay := m.providerWizardOverlay(width)
 	mcpAddOverlay := m.mcpAddWizardOverlay(width)
 	mcpOverlay := m.mcpManagerOverlay(width)
-	classifierAddOverlay := m.classifierAddWizardOverlay(width)
+	classifierAddOverlay := m.classifierFormOverlay(width)
 	pickerOverlay := m.pickerOverlay(width)
 	webSearchOverlay := m.webSearchFormOverlay(width)
 	promptEditorOverlay := m.promptEditorOverlay(width, overlayMaxHeight)
@@ -4577,8 +4581,9 @@ func (m model) dispatchCommand(command parsedCommand) (tea.Model, tea.Cmd) {
 		}
 		return m.startMCPTranscriptCommand(command.text)
 	case commandClassifier:
-		if strings.ToLower(strings.TrimSpace(command.text)) == "add" {
-			return m.openClassifierAddWizard(), nil
+		arg := strings.ToLower(strings.TrimSpace(command.text))
+		if arg == "" || arg == "add" || arg == "configure" || arg == "config" || arg == "edit" {
+			return m.openClassifierForm(), nil
 		}
 		return m.startClassifierTranscriptCommand(command.text)
 	case commandPermissions:

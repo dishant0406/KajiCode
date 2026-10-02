@@ -67,6 +67,7 @@ func runACP(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) int
 		Authenticate:         acpAuthenticate(),
 		Logout:               acpLogout(deps),
 		ProviderAdd:          acpProviderAdd(deps),
+		ClassifierConfigure:  acpClassifierConfigure(deps),
 		DiscoverModels:       acpDiscoverModels(deps),
 		Providers:            acpUsableProviders(deps),
 		ResolveContextWindow: acpResolveContextWindow(),

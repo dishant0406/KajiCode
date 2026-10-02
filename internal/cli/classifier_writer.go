@@ -21,6 +21,14 @@ type classifierWritableConfig struct {
 	raw        map[string]json.RawMessage
 	nested     map[string]json.RawMessage
 	profileRaw map[string]json.RawMessage
+
+	// enabled records an explicit capability switch written by `configure`, so a
+	// report can echo what was persisted rather than what the file held.
+	enabled *bool
+	// features holds the classifier.features block as raw per-key JSON, parsed
+	// lazily so `configure` can set one feature key while every unknown key and
+	// every unknown feature survives verbatim.
+	features map[string]map[string]json.RawMessage
 }
 
 func readClassifierWritableConfig(path string) (classifierWritableConfig, error) {
@@ -159,6 +167,62 @@ func (cfg *classifierWritableConfig) removeProfile(name string) bool {
 	return removed
 }
 
+// setEnabled records the capability switch for marshalJSON to persist.
+func (cfg *classifierWritableConfig) setEnabled(enabled bool) {
+	cfg.enabled = &enabled
+}
+
+// setFeatureKey sets one key of one feature block, preserving every other key.
+func (cfg *classifierWritableConfig) setFeatureKey(feature, key string, value any) error {
+	if cfg.features == nil {
+		cfg.features = map[string]map[string]json.RawMessage{}
+	}
+	block := cfg.features[feature]
+	if block == nil {
+		block = map[string]json.RawMessage{}
+		if raw, ok := cfg.nested["features"]; ok && len(raw) > 0 && string(raw) != "null" {
+			var blocks map[string]json.RawMessage
+			if err := json.Unmarshal(raw, &blocks); err != nil {
+				return err
+			}
+			if featureRaw, ok := blocks[feature]; ok && len(featureRaw) > 0 && string(featureRaw) != "null" {
+				if err := json.Unmarshal(featureRaw, &block); err != nil {
+					return err
+				}
+			}
+		}
+		cfg.features[feature] = block
+	}
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	block[key] = encoded
+	return nil
+}
+
+// featureBlocksRaw serializes the feature blocks this command touched, parsing
+// any untouched block straight through so it is byte-preserved on write.
+func (cfg *classifierWritableConfig) featureBlocksRaw() (map[string]json.RawMessage, error) {
+	if len(cfg.features) == 0 {
+		return nil, nil
+	}
+	blocks := map[string]json.RawMessage{}
+	if raw, ok := cfg.nested["features"]; ok && len(raw) > 0 && string(raw) != "null" {
+		if err := json.Unmarshal(raw, &blocks); err != nil {
+			return nil, err
+		}
+	}
+	for feature, block := range cfg.features {
+		encoded, err := json.Marshal(block)
+		if err != nil {
+			return nil, err
+		}
+		blocks[feature] = encoded
+	}
+	return blocks, nil
+}
+
 func (cfg *classifierWritableConfig) marshalJSON() ([]byte, error) {
 	cfg.ensureRaw()
 	profiles := make([]json.RawMessage, 0, len(cfg.file.Classifier.Profiles))
@@ -182,9 +246,9 @@ func (cfg *classifierWritableConfig) marshalJSON() ([]byte, error) {
 	} else {
 		delete(cfg.nested, "profiles")
 	}
-	// Only `active` and `profiles` are owned here. `enabled` and `features` are
-	// left exactly as they were in the file — these commands never change them, and
-	// rewriting them would drop feature keys this version does not model.
+	// Only `active`, `profiles`, `enabled`, and the touched `features` keys are
+	// owned here; every other key (including unknown feature blocks) is carried
+	// through verbatim.
 	if active := strings.TrimSpace(cfg.file.Classifier.Active); active != "" {
 		activeRaw, err := json.Marshal(active)
 		if err != nil {
@@ -193,6 +257,22 @@ func (cfg *classifierWritableConfig) marshalJSON() ([]byte, error) {
 		cfg.nested["active"] = activeRaw
 	} else {
 		delete(cfg.nested, "active")
+	}
+	if cfg.enabled != nil {
+		enabledRaw, err := json.Marshal(*cfg.enabled)
+		if err != nil {
+			return nil, err
+		}
+		cfg.nested["enabled"] = enabledRaw
+	}
+	if features, err := cfg.featureBlocksRaw(); err != nil {
+		return nil, err
+	} else if len(features) > 0 {
+		featuresRaw, err := json.Marshal(features)
+		if err != nil {
+			return nil, err
+		}
+		cfg.nested["features"] = featuresRaw
 	}
 
 	if len(cfg.nested) > 0 {

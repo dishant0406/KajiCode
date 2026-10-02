@@ -81,7 +81,7 @@ func (m model) applyClassifierCommandResultMessage(msg classifierCommandResultMs
 	m.classifierCommandCancel = nil
 	switch msg.request.origin {
 	case classifierCommandOriginWizard:
-		m = m.applyClassifierAddWizardSaveResult(msg.result)
+		m = m.applyClassifierFormSaveResult(msg.result)
 	default:
 		text := m.classifierResultText(msg.request.raw, msg.result)
 		m.transcript = appendTranscriptRow(m.transcript, transcriptRow{kind: rowSystem, tool: "classifier", text: text})

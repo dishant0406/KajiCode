@@ -89,6 +89,12 @@ type Deps struct {
 	// passed here (form elicitation must not carry secrets). It returns a
 	// human-readable summary. nil disables the provider-add flow.
 	ProviderAdd func(ctx context.Context, fields map[string]string) (string, error)
+	// ClassifierConfigure registers/updates a classifier profile and its feature
+	// switches from NON-SECRET fields (name, endpoint, model, authHeader,
+	// authScheme, headers, timeout, enable, compaction, tool-result, ...). Like
+	// ProviderAdd it never carries a secret. It returns a human-readable summary.
+	// nil disables the classifier-configuration flow.
+	ClassifierConfigure func(ctx context.Context, fields map[string]string) (string, error)
 	// DiscoverModels lists the models a provider actually serves (live discovery,
 	// catalog fallback), for the model config selector. nil falls back to the
 	// session's resolved model set.
@@ -691,6 +697,21 @@ func (a *Agent) handleSessionPrompt(ctx context.Context, params json.RawMessage)
 			note.text(output)
 			return PromptResult{StopReason: StopEndTurn}, nil
 		}
+		// `/classifier` registers a classifier profile and its feature switches
+		// through an elicitation form (the native editor UI), then writes them
+		// through the shared CLI path. Secrets are never collected here.
+		if strings.EqualFold(name, "classifier") {
+			if a.deps.ClassifierConfigure == nil {
+				note.text("Classifier configuration is not available in this session.")
+				return PromptResult{StopReason: StopEndTurn}, nil
+			}
+			output, classifyErr := a.runConfigureClassifier(turnCtx, sess.id)
+			if classifyErr != nil {
+				return nil, RPCError(codeInternalError, "classifier: "+classifyErr.Error())
+			}
+			note.text(output)
+			return PromptResult{StopReason: StopEndTurn}, nil
+		}
 		// `/prompt` creates a reusable prompt snippet (slug + body) via a form;
 		// saving re-emits the command catalog so the new /name appears in the
 		// client's palette.
@@ -804,6 +825,64 @@ func (a *Agent) runCreatePrompt(ctx context.Context, workspaceRoot, sessionID, a
 		return "", false, err
 	}
 	return "Saved prompt /" + name + ". It now appears in the command list; run it as /" + name + " <args>.", true, nil
+}
+
+// runConfigureClassifier collects a classifier profile's NON-SECRET configuration
+// and its feature switches through an elicitation form and writes them via
+// Deps.ClassifierConfigure. Credentials are never requested over ACP: form
+// elicitation MUST NOT carry secrets, so the API key is set separately in a
+// terminal (`kajicode classifier configure <name> --api-key-stdin`) or via an
+// environment variable.
+func (a *Agent) runConfigureClassifier(ctx context.Context, sessionID string) (string, error) {
+	fields, supported, err := a.elicitForm(ctx, sessionID, "Configure a classifier (no secrets)", classifierConfigureSchema())
+	if err != nil {
+		return "", err
+	}
+	if !supported {
+		return "Configuring a classifier needs form input this editor does not support.\n" +
+			"Run `kajicode classifier configure <name> --endpoint <url>` in a terminal instead.", nil
+	}
+	if len(fields) == 0 {
+		return "Classifier not configured (cancelled).", nil
+	}
+	if strings.TrimSpace(fields["name"]) == "" {
+		return "Classifier not configured: a name is required.", nil
+	}
+	if strings.TrimSpace(fields["endpoint"]) == "" {
+		return "Classifier not configured: an endpoint is required.", nil
+	}
+	summary, err := a.deps.ClassifierConfigure(ctx, fields)
+	if err != nil {
+		return "", err
+	}
+	return summary + "\nSet the API key in a terminal with: kajicode classifier configure " +
+		strings.TrimSpace(fields["name"]) + " --api-key-stdin", nil
+}
+
+// classifierConfigureSchema is the /classifier form: the profile's routing fields
+// plus the feature switches. It carries only non-secret fields — no API key, per
+// the spec's form-mode prohibition.
+func classifierConfigureSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"name":           map[string]any{"type": "string", "title": "Name (unique id for this classifier)"},
+			"endpoint":       map[string]any{"type": "string", "title": "Endpoint URL (e.g. https://openrouter.ai/api/v1/systemone)"},
+			"model":          map[string]any{"type": "string", "title": "Model (e.g. jev-1.13, optional)"},
+			"authHeader":     map[string]any{"type": "string", "title": "Auth header name (optional, default Authorization)"},
+			"authScheme":     map[string]any{"type": "string", "title": "Auth scheme, e.g. Bearer (optional; raw sends the key bare)"},
+			"headers":        map[string]any{"type": "string", "title": "Extra headers, one KEY=VALUE per line (optional)"},
+			"timeoutMs":      map[string]any{"type": "string", "title": "Per-request timeout in ms (optional, default 8000)"},
+			"enable":         map[string]any{"type": "string", "title": "Enable the classifier capability (true/false)"},
+			"compaction":     map[string]any{"type": "string", "title": "Enable the compaction judge (true/false)"},
+			"compactionKeep": map[string]any{"type": "string", "title": "Compaction keep threshold 0-1 (optional)"},
+			"toolResult":     map[string]any{"type": "string", "title": "Enable the tool-result gate (true/false)"},
+			"toolDrop":       map[string]any{"type": "string", "title": "Gate drop threshold 0-1 (optional)"},
+			"toolKeep":       map[string]any{"type": "string", "title": "Gate keep threshold 0-1 (optional)"},
+			"toolShadow":     map[string]any{"type": "string", "title": "Gate shadow mode — decide but never rewrite (true/false)"},
+		},
+		"required": []string{"name", "endpoint"},
+	}
 }
 
 // promptCreateSchema is the /prompt form: a slug and the reusable body text.
