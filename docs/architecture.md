@@ -47,7 +47,7 @@ the next model turn.
 | Sandbox/permissions | `internal/sandbox` | Path scope, network policy, command risk, grants, permission decisions, and platform isolation backends. |
 | Sessions | `internal/sessions` | Local metadata, append-only event logs, replay, checkpoint, rewind, fork, and lineage. |
 | Extensions | `internal/mcp`, `internal/plugins`, `internal/skills`, `internal/agents`, `internal/hooks` | External tools, plugin activation, skill discovery, sub-agents, and lifecycle hooks. |
-| Fast classifier | `internal/classifier` | The pluggable fast-classifier capability: a provider-agnostic `Classifier` seam, a Jev-shaped HTTP backend ({state,questions}→{answers}), and the profile/config types. Consumed by `internal/agent` (the optional compaction judge, whose drops are made recoverable through the tool-output spill) and managed by the `kajicode classifier` CLI and `/classifier` TUI command. It is not a model provider and never generates text. |
+| Fast classifier | `internal/classifier` | The pluggable fast-classifier capability: a provider-agnostic `Classifier` seam, a Jev-shaped HTTP backend ({state,questions}→{answers}), and the profile/config types. Consumed by `internal/agent` (the optional compaction judge, whose drops are made recoverable through the tool-output spill, and the optional tool-result relevance gate at the tool boundary, plus its bounded read-only re-query loop) and managed by the `kajicode classifier` CLI and `/classifier` TUI command. It is not a model provider and never generates text. |
 | Local control | `internal/localcontrol`, `internal/browser`, `internal/background`, `internal/daemon` | Optional browser, terminal, desktop, and daemon-backed helpers. |
 | Release | `cmd/kajicode-release`, `internal/release`, `scripts/install.*`, `scripts/npm/*`, `.github/workflows/publish-npm.yml` | Binary archives, checksums, installers, npm wrapper/platform packages, tags, and GitHub releases. |
 
@@ -239,6 +239,16 @@ is shown in the TUI.
 Sandbox decisions are centralized in `internal/sandbox`. The sandbox evaluates
 path scope, network access, shell command risk, explicit escalation, persistent
 or session grants, and platform backend availability.
+
+The native file/search tools (`read_file`, `grep`, `glob`, `ls`, `edit_file`,
+`write_file`, and siblings) resolve model-supplied paths through
+`internal/tools/workspace.go`. When a path lies outside every scope root they
+consult the run's active permission mode — the same mode the sandbox engine
+already uses. `bypass-all` lifts the boundary for reads and writes; `read-only`
+lifts reads only; `read-write` lifts both; `ask-all` (and the default) keep the
+workspace containment unchanged. This keeps the native tools' reach consistent
+with the sandbox engine's, so the model has no reason to substitute `bash` for
+them.
 
 Hooks in `internal/hooks` run around tool lifecycle events. Hooks may annotate or
 block execution, but they should not bypass the sandbox or mutate unrelated

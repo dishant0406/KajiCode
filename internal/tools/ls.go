@@ -76,7 +76,7 @@ func NewScopedLsTool(workspaceRoot string, scope PathScope) Tool {
 	return lsTool{
 		baseTool: baseTool{
 			name:         "ls",
-			description:  "List a directory tree (directories first, indented) with default ignore globs, mirroring `tree`.",
+			description:  "List a directory tree (directories first, indented) with default ignore globs. Use this instead of `tree`/`ls -R`." + boundaryNote,
 			parameters:   SpecsToSchema(lsSpecs()),
 			safety:       readOnlySafety("Lists directory entries without modifying files."),
 			capabilities: ToolCapabilities{Effect: EffectReadOnly, ThreadSafe: true, ResourceKeys: directoryResourceKeys},
@@ -88,7 +88,7 @@ func NewScopedLsTool(workspaceRoot string, scope PathScope) Tool {
 }
 
 func (t lsTool) Run(ctx context.Context, args map[string]any) Result {
-	return t.run(ctx, args, readExcluder{})
+	return t.run(ctx, args, readExcluder{}, RunOptions{})
 }
 
 func (t lsTool) RunWithOptions(ctx context.Context, args map[string]any, options RunOptions) Result {
@@ -96,14 +96,14 @@ func (t lsTool) RunWithOptions(ctx context.Context, args map[string]any, options
 	if options.Sandbox != nil {
 		exclude = sandboxReadExcluder(options.Sandbox)
 	}
-	return t.run(ctx, args, exclude)
+	return t.run(ctx, args, exclude, options)
 }
 
 func (t lsTool) RunWithSandbox(ctx context.Context, args map[string]any, engine *sandbox.Engine) Result {
-	return t.run(ctx, args, sandboxReadExcluder(engine))
+	return t.run(ctx, args, sandboxReadExcluder(engine), RunOptions{})
 }
 
-func (t lsTool) run(ctx context.Context, args map[string]any, exclude readExcluder) Result {
+func (t lsTool) run(ctx context.Context, args map[string]any, exclude readExcluder, options RunOptions) Result {
 	parsed, err := ParseArgs(t.specs, args)
 	if err != nil {
 		return errorResult("Error: Invalid arguments for ls: " + err.Error())
@@ -127,7 +127,7 @@ func (t lsTool) run(ctx context.Context, args map[string]any, exclude readExclud
 		}
 	}
 
-	absolutePath, displayRoot, err := resolveScopedReadPath(t.workspaceRoot, t.scope, requestedPath)
+	absolutePath, displayRoot, err := resolveScopedReadPath(t.workspaceRoot, t.scope, options.PermissionMode, requestedPath)
 	if err != nil {
 		return errorResult("Error listing directory " + requestedPath + ": " + err.Error())
 	}

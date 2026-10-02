@@ -269,6 +269,10 @@ func runClassifierCheck(ctx context.Context, args []string, stdout io.Writer, st
 			"endpoint":    active.URL(),
 			"reachable":   classifyErr == nil,
 			"probability": result.Probability("reachable", 0),
+			"features": map[string]any{
+				"compaction": cfg.Classifier.Features.Compaction.Enabled,
+				"toolResult": cfg.Classifier.Features.ToolResult.Enabled,
+			},
 		}
 		if classifyErr != nil {
 			payload["error"] = redaction.ErrorMessage(classifyErr, redaction.Options{})
@@ -289,6 +293,12 @@ func runClassifierCheck(ctx context.Context, args []string, stdout io.Writer, st
 		return exitCrash
 	}
 	if _, err := fmt.Fprintf(stdout, "Classifier %s is reachable (%s). Probe probability: %.3f\n", active.Name, active.URL(), result.Probability("reachable", 0)); err != nil {
+		return exitCrash
+	}
+	// Connecting a classifier enables nothing: each feature is a separate opt-in.
+	// Report their state so "reachable" is not mistaken for "in effect".
+	if _, err := fmt.Fprintf(stdout, "Features: compaction=%s toolResult=%s (set classifier.features.<name>.enabled in config to turn one on)\n",
+		onOff(cfg.Classifier.Features.Compaction.Enabled), onOff(cfg.Classifier.Features.ToolResult.Enabled)); err != nil {
 		return exitCrash
 	}
 	return exitSuccess

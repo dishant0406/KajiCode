@@ -89,6 +89,7 @@ type Config struct {
 // classifier changes no agent behavior until a feature is explicitly enabled.
 type Features struct {
 	Compaction CompactionFeature `json:"compaction,omitempty"`
+	ToolResult ToolResultFeature `json:"toolResult,omitempty"`
 }
 
 // CompactionFeature controls the compaction keep/drop judge.
@@ -150,6 +151,142 @@ func (f CompactionFeature) EffectiveDropResultThreshold() float64 {
 		return keep
 	}
 	return drop
+}
+
+// ToolResultFeature controls the live tool-result relevance gate. It judges a
+// large, non-error tool result as it is produced and hides the blocks the
+// classifier is confident are irrelevant, behind a recall stub. It is a
+// consumer of the same classifier the compaction judge uses; enabling it is a
+// separate explicit step from connecting the classifier.
+type ToolResultFeature struct {
+	Enabled bool `json:"enabled,omitempty"`
+	// KeepThreshold is the noul probability at or above which a block is
+	// confidently kept. It is the top of the uncertain band. <= 0 uses
+	// DefaultGateKeepThreshold.
+	KeepThreshold float64 `json:"keepThreshold,omitempty"`
+	// DropThreshold is the noul probability below which a block is hidden. A
+	// probability in [DropThreshold, KeepThreshold) is KEPT: the classifier is
+	// uncertain, and keeping is cheap and safe. <= 0 uses
+	// DefaultGateDropThreshold, which is calibrated on KajiCode's own workload
+	// (see that constant), not borrowed from winnow's 0.1.
+	DropThreshold float64 `json:"dropThreshold,omitempty"`
+	// MinPruneRatio is the share of the body that must be hidden for the gate to
+	// act at all. Below it the whole result is kept verbatim, so a gate that would
+	// shave a few bytes never pays its stub overhead or risks the recall round
+	// trip. <= 0 uses DefaultGateMinPruneRatio (0.2).
+	MinPruneRatio float64 `json:"minPruneRatio,omitempty"`
+	// MinBytes is the smallest result the gate considers. Below it a stub saves
+	// nothing. <= 0 uses DefaultGateMinBytes (1500).
+	MinBytes int `json:"minBytes,omitempty"`
+	// ShadowMode, when true, judges and records the decision but never rewrites
+	// the result. It is how the gate is measured on real traffic before it is
+	// trusted to change what the model sees.
+	ShadowMode bool `json:"shadowMode,omitempty"`
+	// CoverageThreshold is the kept-text sufficiency trigger: a coverage
+	// probability below it means the filtered result is not enough to proceed. It
+	// is only read when Requery is enabled. <= 0 uses
+	// DefaultGateCoverageThreshold.
+	CoverageThreshold float64 `json:"coverageThreshold,omitempty"`
+	// Requery, when true, enables the bounded re-query loop: on a result the
+	// filter left insufficient, a tool-less out-of-band model call writes a
+	// narrower read-only call, it is executed, and the improved text is appended
+	// to the stub. Off by default — the parent model can always re-query itself.
+	Requery bool `json:"requery,omitempty"`
+	// MaxRequery bounds the re-query rounds for one result. <= 0 uses
+	// DefaultGateMaxRequery.
+	MaxRequery int `json:"maxRequery,omitempty"`
+}
+
+const (
+	// DefaultGateKeepThreshold is the gate's keep threshold (the top of the
+	// uncertain band): at or above it a block is confidently relevant.
+	DefaultGateKeepThreshold = 0.5
+	// DefaultGateDropThreshold is the gate's drop threshold (the bottom of the
+	// band): only a confident-no below it hides a block.
+	//
+	// It is 0.2, not winnow's 0.1, because it is calibrated on KajiCode's own
+	// workload. Measured live over four real sessions (975 judged blocks, jev-1.13):
+	// the classifier's block probabilities cluster in 0.3–0.7 (median 0.47–0.55),
+	// and the p<0.1 bin is EMPTY — a 0.1 floor hides nothing. The lowest floor with
+	// near-zero regret (a needed block hidden) is 0.2: below it, 2.1% of blocks are
+	// hidden for 1 of 405 needed lost; 0.3 hides 6.8% for 2 lost; 0.4 hides 17.3%
+	// for 14 lost. 0.2 keeps the gate honest and safe; raising it trades more
+	// hiding for more regret. This is winnow's own finding (~5% hidden, ~0 regret),
+	// shifted for this distribution.
+	DefaultGateDropThreshold = 0.2
+	// DefaultGateMinPruneRatio is the minimum hidden share that justifies a stub.
+	DefaultGateMinPruneRatio = 0.2
+	// DefaultGateMinBytes is the minimum result size the gate will consider.
+	DefaultGateMinBytes = 1500
+	// DefaultGateCoverageThreshold is the kept-text sufficiency trigger: a
+	// coverage probability below it means the filtered result is not enough to
+	// proceed, so a re-query is considered. It is high because the question
+	// only fires the loop for a result the filter already gutted — the cost of a
+	// wasted "let me look again" is bounded and the cost of a silent bad answer
+	// is not.
+	DefaultGateCoverageThreshold = 0.6
+	// DefaultGateMaxRequery bounds the re-query rounds for one result.
+	DefaultGateMaxRequery = 2
+)
+
+// EffectiveKeepThreshold returns the configured keep threshold or its default.
+func (f ToolResultFeature) EffectiveKeepThreshold() float64 {
+	if f.KeepThreshold > 0 {
+		return f.KeepThreshold
+	}
+	return DefaultGateKeepThreshold
+}
+
+// EffectiveDropThreshold returns the configured drop threshold or its default,
+// clamped to the keep threshold so the band can never invert. The default is the
+// conservative clean-tail bin (DefaultGateDropThreshold), so an unconfigured
+// gate only hides what the classifier is confident is irrelevant.
+func (f ToolResultFeature) EffectiveDropThreshold() float64 {
+	keep := f.EffectiveKeepThreshold()
+	drop := f.DropThreshold
+	if drop <= 0 {
+		drop = DefaultGateDropThreshold
+	}
+	if drop > keep {
+		return keep
+	}
+	return drop
+}
+
+// EffectiveMinPruneRatio returns the configured minimum hidden share or its
+// default, clamped to [0,1].
+func (f ToolResultFeature) EffectiveMinPruneRatio() float64 {
+	if f.MinPruneRatio <= 0 {
+		return DefaultGateMinPruneRatio
+	}
+	return min(f.MinPruneRatio, 1)
+}
+
+// EffectiveMinBytes returns the configured minimum result size or its default.
+func (f ToolResultFeature) EffectiveMinBytes() int {
+	if f.MinBytes > 0 {
+		return f.MinBytes
+	}
+	return DefaultGateMinBytes
+}
+
+// EffectiveCoverageThreshold returns the configured coverage trigger or its
+// default, clamped to [0,1].
+func (f ToolResultFeature) EffectiveCoverageThreshold() float64 {
+	if f.CoverageThreshold <= 0 {
+		return DefaultGateCoverageThreshold
+	}
+	return min(f.CoverageThreshold, 1)
+}
+
+// EffectiveMaxRequery returns the configured re-query round cap or its default.
+// It is clamped to a small ceiling: the loop exists to recover a gutted result,
+// not to search, so an oversized cap is always a configuration mistake.
+func (f ToolResultFeature) EffectiveMaxRequery() int {
+	if f.MaxRequery <= 0 {
+		return DefaultGateMaxRequery
+	}
+	return min(f.MaxRequery, 5)
 }
 
 // IsZero reports whether the classifier config holds nothing worth persisting.

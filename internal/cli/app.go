@@ -945,10 +945,12 @@ func runInteractiveTUIWithSetup(stderr io.Writer, deps appDeps, permissionMode a
 			CompactionJudge:              classifierForRun(resolved.Classifier, deps),
 			CompactionJudgeKeepThreshold: resolved.Classifier.Features.Compaction.EffectiveKeepResultThreshold(),
 			CompactionJudgeDropThreshold: resolved.Classifier.Features.Compaction.EffectiveDropResultThreshold(),
-			DeferThreshold:               resolved.Tools.DeferThreshold,
-			Agents:                       agentRuntime.agentInfos(),
-			MCPInstructions:              mcpInstructionInfos(mcpRuntime),
-			Skills:                       pluginActivation.skillInfos(deps.skillsDir(), workspaceRoot),
+			// Optional live tool-result relevance gate, identical to exec.
+			ToolResultGate:  toolResultGateForRun(resolved.Classifier, deps),
+			DeferThreshold:  resolved.Tools.DeferThreshold,
+			Agents:          agentRuntime.agentInfos(),
+			MCPInstructions: mcpInstructionInfos(mcpRuntime),
+			Skills:          pluginActivation.skillInfos(deps.skillsDir(), workspaceRoot),
 			// Background sub-agent completion push: the interactive run learns a
 			// finished task's result on its next turn instead of polling TaskOutput.
 			TaskCompletions: agentRuntime.completions(),

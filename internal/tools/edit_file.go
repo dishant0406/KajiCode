@@ -22,8 +22,9 @@ func NewEditFileTool(workspaceRoot string) Tool {
 func NewScopedEditFileTool(workspaceRoot string, scope PathScope) Tool {
 	return editFileTool{
 		baseTool: baseTool{
-			name:        "edit_file",
-			description: "Replace an exact string in an existing file with uniqueness protection by default.",
+			name: "edit_file",
+			description: "Replace an exact string in an existing file with uniqueness protection by default." +
+				boundaryNote,
 			parameters: Schema{
 				Type: "object",
 				Properties: map[string]PropertySchema{
@@ -65,7 +66,7 @@ func (tool editFileTool) RunWithOptions(ctx context.Context, args map[string]any
 		return errorResult("Error: Invalid arguments for edit_file: " + err.Error())
 	}
 
-	absolutePath, relativePath, err := resolveScopedPath(tool.workspaceRoot, tool.scope, requestedPath)
+	absolutePath, relativePath, err := resolveScopedPath(tool.workspaceRoot, tool.scope, options.PermissionMode, true, requestedPath)
 	if err != nil {
 		return errorResult("Error reading " + requestedPath + ": " + err.Error())
 	}
@@ -149,7 +150,7 @@ func (tool editFileTool) RunWithOptions(ctx context.Context, args map[string]any
 	if updated == content {
 		return okResult("No changes: new_string is identical to old_string.")
 	}
-	if err := recheckScopedWriteTarget(tool.workspaceRoot, tool.scope, requestedPath); err != nil {
+	if err := recheckScopedWriteTarget(tool.workspaceRoot, tool.scope, options.PermissionMode, requestedPath); err != nil {
 		return errorResult("Error writing " + relativePath + ": " + err.Error())
 	}
 	if err := os.WriteFile(absolutePath, []byte(updated), 0o644); err != nil {

@@ -25,7 +25,7 @@ func NewScopedApplyPatchTool(workspaceRoot string, scope PathScope) Tool {
 	return applyPatchTool{
 		baseTool: baseTool{
 			name:        "apply_patch",
-			description: "Apply a unified diff patch inside the workspace or an explicitly granted extra write root.",
+			description: "Apply a unified diff patch inside the workspace or an explicitly granted extra write root." + boundaryNote,
 			parameters: Schema{
 				Type: "object",
 				Properties: map[string]PropertySchema{
@@ -57,7 +57,7 @@ func (tool applyPatchTool) RunWithOptions(ctx context.Context, args map[string]a
 		return errorResult("Error: Invalid arguments for apply_patch: " + err.Error())
 	}
 
-	applyRoot, relativeRoot, err := resolveScopedPath(tool.workspaceRoot, tool.scope, cwd)
+	applyRoot, relativeRoot, err := resolveScopedPath(tool.workspaceRoot, tool.scope, options.PermissionMode, true, cwd)
 	if err != nil {
 		return errorResult("Error applying patch: " + err.Error())
 	}
@@ -118,7 +118,7 @@ func (tool applyPatchTool) RunWithOptions(ctx context.Context, args map[string]a
 	// subsequent edit_file/write_file re-reads instead of false-flagging the
 	// patch's own change as an external modification.
 	for _, changed := range result.ChangedFiles {
-		if absolute, _, rerr := resolveScopedPath(tool.workspaceRoot, tool.scope, changed); rerr == nil {
+		if absolute, _, rerr := resolveScopedPath(tool.workspaceRoot, tool.scope, options.PermissionMode, true, changed); rerr == nil {
 			options.FileTracker.Forget(absolute)
 		}
 	}

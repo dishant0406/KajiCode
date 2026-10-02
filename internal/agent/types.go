@@ -379,10 +379,16 @@ type Options struct {
 	// — unchanged from the shipped behavior. Ignored when CompactionJudge is nil.
 	// See classifier.EffectiveDropResultThreshold for why the band is opt-in.
 	CompactionJudgeDropThreshold float64
-	Registry                     *tools.Registry
-	PermissionMode               PermissionMode
-	Autonomy                     string
-	Sandbox                      *sandbox.Engine
+	// ToolResultGate, when non-nil, is an optional fast classifier that filters
+	// each tool result as it is produced: it judges the result's blocks and hides
+	// the ones it is confident are irrelevant, behind a stub naming a readable
+	// spill file, BEFORE the result enters the transcript. nil leaves the tool
+	// path byte-identical (see tool_gate.go).
+	ToolResultGate *ToolResultGate
+	Registry       *tools.Registry
+	PermissionMode PermissionMode
+	Autonomy       string
+	Sandbox        *sandbox.Engine
 	// FileTracker records per-session file read/write versions so the write tools
 	// can detect a file changed on disk outside KajiCode since it was last read. nil
 	// disables the check. Created once per session and threaded into every tool run.

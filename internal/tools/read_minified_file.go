@@ -28,8 +28,9 @@ func NewReadMinifiedFileTool(workspaceRoot string) Tool {
 func NewScopedReadMinifiedFileTool(workspaceRoot string, scope PathScope) Tool {
 	return readMinifiedFileTool{
 		baseTool: baseTool{
-			name:        "read_minified_file",
-			description: "Read a source file in a dense, token-cheap form: comments and redundant whitespace removed, no line numbers. Use it to scan or understand code for far fewer tokens than read_file. For exact text, comments, line numbers, or before editing, use read_file instead.",
+			name: "read_minified_file",
+			description: "Read a source file in a dense, token-cheap form: comments and redundant whitespace removed, no line numbers. Use it to scan or understand code for far fewer tokens than read_file. For exact text, comments, line numbers, or before editing, use read_file instead." +
+				boundaryNote,
 			parameters: Schema{
 				Type: "object",
 				Properties: map[string]PropertySchema{
@@ -60,7 +61,7 @@ func (tool readMinifiedFileTool) run(args map[string]any, options RunOptions, di
 		return errorResult("Error: Invalid arguments for read_minified_file: " + err.Error())
 	}
 
-	absolutePath, relativePath, err := resolveScopedReadPath(tool.workspaceRoot, tool.scope, requestedPath)
+	absolutePath, relativePath, err := resolveScopedReadPath(tool.workspaceRoot, tool.scope, options.PermissionMode, requestedPath)
 	if err != nil {
 		return errorResult("Error reading file " + requestedPath + ": " + err.Error())
 	}

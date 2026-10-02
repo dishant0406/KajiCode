@@ -892,6 +892,19 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 			}
 			emitPhase(options, PhaseToolDone, call.Name)
 			options.Trace.Counter(trace.CounterToolCalls, 1)
+			// Relevance gate: judge a large, non-error result as it is produced and
+			// hide the blocks the classifier is confident are irrelevant BEFORE the
+			// result is displayed, persisted, observed, or appended. Running it here
+			// (not at the append) is deliberate: the session event log must record
+			// exactly what the model saw, or a resumed session would replay the
+			// ungated body. Off by default: a nil gate returns the result unchanged,
+			// and a gated body is only what the MODEL sees.
+			toolResult = maybeGateToolResult(ctx, options, gateRun{
+				provider:       provider,
+				registry:       registry,
+				permissionMode: permissionMode,
+				messages:       messages,
+			}, call, toolResult)
 			recordOutputBudgetTrace(options.Trace, toolResult)
 			task.observe(taskStateEvent{kind: taskStateEventToolResult, toolResult: toolResult})
 			if options.OnToolResult != nil {

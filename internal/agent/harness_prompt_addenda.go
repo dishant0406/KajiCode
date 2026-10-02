@@ -36,6 +36,11 @@ Provider posture: open-weight coding model.
   unclear, or deferred, call tool_search instead of inventing a call.
 - Prefer small, verifiable tool calls over broad shell commands. Summarize noisy
   output before continuing so context does not drift.
+- Reach for the native tools by what they replace: read_file for shell file
+  reads (cat/head/sed), grep for shell text search (grep/rg), glob for finding
+  files, ls for listing directories, write_file for heredoc/redirect writes.
+  They work for paths outside the workspace too when the active permission mode
+  allows it.
 - Do not guess file contents, command results, git state, or validation status.
 - After editing, run the narrowest meaningful check and fix failures before final.
 </model_guidance>`

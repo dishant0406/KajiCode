@@ -543,7 +543,7 @@ func (tool execCommandTool) run(ctx context.Context, args map[string]any, engine
 	if interactive := zeroSandbox.DetectInteractiveCommand(commandText, runtimeGOOS()); interactive.Interactive {
 		return interactiveBlockResult(interactive)
 	}
-	absoluteCwd, relativeCwd, err := resolveScopedPath(tool.workspaceRoot, tool.scope, workdir)
+	absoluteCwd, relativeCwd, err := resolveScopedPath(tool.workspaceRoot, tool.scope, runOpts.PermissionMode, false, workdir)
 	if err != nil {
 		return errorResult("Error running exec_command: " + err.Error())
 	}

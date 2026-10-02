@@ -30,6 +30,27 @@ func mergeClassifierConfig(dst *classifier.Config, src classifier.Config) {
 	if src.Features.Compaction.DropResultThreshold > 0 {
 		dst.Features.Compaction.DropResultThreshold = src.Features.Compaction.DropResultThreshold
 	}
+	dst.Features.ToolResult.Enabled = dst.Features.ToolResult.Enabled || src.Features.ToolResult.Enabled
+	if src.Features.ToolResult.KeepThreshold > 0 {
+		dst.Features.ToolResult.KeepThreshold = src.Features.ToolResult.KeepThreshold
+	}
+	if src.Features.ToolResult.DropThreshold > 0 {
+		dst.Features.ToolResult.DropThreshold = src.Features.ToolResult.DropThreshold
+	}
+	if src.Features.ToolResult.MinPruneRatio > 0 {
+		dst.Features.ToolResult.MinPruneRatio = src.Features.ToolResult.MinPruneRatio
+	}
+	if src.Features.ToolResult.MinBytes > 0 {
+		dst.Features.ToolResult.MinBytes = src.Features.ToolResult.MinBytes
+	}
+	dst.Features.ToolResult.ShadowMode = dst.Features.ToolResult.ShadowMode || src.Features.ToolResult.ShadowMode
+	if src.Features.ToolResult.CoverageThreshold > 0 {
+		dst.Features.ToolResult.CoverageThreshold = src.Features.ToolResult.CoverageThreshold
+	}
+	dst.Features.ToolResult.Requery = dst.Features.ToolResult.Requery || src.Features.ToolResult.Requery
+	if src.Features.ToolResult.MaxRequery > 0 {
+		dst.Features.ToolResult.MaxRequery = src.Features.ToolResult.MaxRequery
+	}
 }
 
 // validateClassifierConfig checks the classifier block's structural rules. It

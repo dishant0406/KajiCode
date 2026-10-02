@@ -4,6 +4,15 @@ package tools
 // so the session layer can snapshot their before-state for safe rewind. It is a
 // pure helper (no I/O beyond path resolution) and returns nil for read-only tools
 // and for bash (whose affected paths are not knowable before execution).
+//
+// Deliberately WORKSPACE-ONLY, even though the tool itself may write outside the
+// workspace under a boundary-lifting mode (bypass-all/read-write). The session
+// checkpoint/rewind layer is workspace-confined: sessions.resolveWithinWorkspace
+// does filepath.Join(root, rel), which maps an absolute path onto "<root>/<abs>"
+// rather than rejecting it — so returning an outside path here would record a
+// phantom in-workspace file and could make rewind touch the wrong path. Rewinding
+// an outside write is therefore unsupported; outside writes are simply not
+// snapshotted.
 func MutationTargets(workspaceRoot string, name string, args map[string]any) []string {
 	switch name {
 	case "write_file", "edit_file":

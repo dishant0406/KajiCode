@@ -63,6 +63,15 @@ func resolveSpillReadPath(requestedPath string) (string, bool) {
 	return resolved, true
 }
 
+// ResolveSpillReadPath reports whether requestedPath names a file inside the
+// per-user spill directory and, if so, returns its verified absolute path. It is
+// the exported form of the scoped read tools' check: a caller that wants to point
+// a reader at an existing spill file (the tool gate reusing a budget's spill
+// pointer) can only advertise a path the read tools will actually open.
+func ResolveSpillReadPath(requestedPath string) (string, bool) {
+	return resolveSpillReadPath(requestedPath)
+}
+
 // spillDir returns the per-user spill directory, creating it on first use.
 // Hardened for shared temp dirs (Linux /tmp): the name carries the uid so
 // users cannot collide, and a pre-existing path is only accepted when it is a

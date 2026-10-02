@@ -27,7 +27,7 @@ func NewScopedListDirectoryTool(workspaceRoot string, scope PathScope) Tool {
 	return listDirectoryTool{
 		baseTool: baseTool{
 			name:        "list_directory",
-			description: "List files and directories in a workspace path with optional recursion.",
+			description: "List files and directories in a path with optional recursion. Use this instead of `ls` for a single directory." + boundaryNote,
 			parameters: Schema{
 				Type: "object",
 				Properties: map[string]PropertySchema{
@@ -46,14 +46,14 @@ func NewScopedListDirectoryTool(workspaceRoot string, scope PathScope) Tool {
 }
 
 func (tool listDirectoryTool) Run(_ context.Context, args map[string]any) Result {
-	return tool.run(args, true)
+	return tool.run(args, RunOptions{}, true)
 }
 
-func (tool listDirectoryTool) RunWithOptions(_ context.Context, args map[string]any, _ RunOptions) Result {
-	return tool.run(args, false)
+func (tool listDirectoryTool) RunWithOptions(_ context.Context, args map[string]any, options RunOptions) Result {
+	return tool.run(args, options, false)
 }
 
-func (tool listDirectoryTool) run(args map[string]any, directBudget bool) Result {
+func (tool listDirectoryTool) run(args map[string]any, options RunOptions, directBudget bool) Result {
 	// Optional with a "." default: treat an explicit empty path (a common
 	// weak-model quirk) the same as the key being absent rather than erroring.
 	requestedPath, err := aliasedStringArg(args, []string{"path", "directory", "dir"}, ".", false, true)
@@ -75,7 +75,7 @@ func (tool listDirectoryTool) run(args map[string]any, directBudget bool) Result
 		maxDepth = 0
 	}
 
-	absolutePath, relativePath, err := resolveScopedReadPath(tool.workspaceRoot, tool.scope, requestedPath)
+	absolutePath, relativePath, err := resolveScopedReadPath(tool.workspaceRoot, tool.scope, options.PermissionMode, requestedPath)
 	if err != nil {
 		return errorResult("Error listing directory " + requestedPath + ": " + err.Error())
 	}

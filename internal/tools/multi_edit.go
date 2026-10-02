@@ -32,7 +32,8 @@ func NewScopedMultiEditTool(workspaceRoot string, scope PathScope) Tool {
 			name: "multi_edit",
 			description: "Apply multiple find/replace edits to a single file atomically: " +
 				"all edits are validated and applied to an in-memory copy first, and the file is " +
-				"written only once if every edit succeeds. No partial writes.",
+				"written only once if every edit succeeds. No partial writes." +
+				boundaryNote,
 			parameters: SpecsToSchema([]*ArgSpec{
 				{Name: "path", Kind: ArgString, Required: true, Aliases: []string{"file", "file_path", "filepath", "filename"}, Description: "Path of the file to edit."},
 				{
@@ -96,7 +97,7 @@ func (tool multiEditTool) RunWithOptions(ctx context.Context, args map[string]an
 		})
 	}
 
-	absolutePath, relativePath, err := resolveScopedPath(tool.workspaceRoot, tool.scope, requestedPath)
+	absolutePath, relativePath, err := resolveScopedPath(tool.workspaceRoot, tool.scope, options.PermissionMode, true, requestedPath)
 	if err != nil {
 		return errorResult("Error editing " + requestedPath + ": " + err.Error())
 	}
@@ -126,7 +127,7 @@ func (tool multiEditTool) RunWithOptions(ctx context.Context, args map[string]an
 		return okResult(fmt.Sprintf("No changes to %s: all new_string values were identical to old_string.", relativePath))
 	}
 
-	if err := recheckScopedWriteTarget(tool.workspaceRoot, tool.scope, requestedPath); err != nil {
+	if err := recheckScopedWriteTarget(tool.workspaceRoot, tool.scope, options.PermissionMode, requestedPath); err != nil {
 		return errorResult("Error writing " + relativePath + ": " + err.Error())
 	}
 	if err := os.WriteFile(absolutePath, []byte(content), 0o644); err != nil {

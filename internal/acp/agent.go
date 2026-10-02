@@ -114,6 +114,9 @@ type Deps struct {
 	// matching exec/TUI. nil (or a nil return) leaves compaction byte-identical to
 	// the free prune + summarizer path.
 	BuildCompactionJudge func(resolved config.ResolvedConfig) classifier.Classifier
+	// BuildToolResultGate builds the live tool-result relevance gate, matching
+	// exec/TUI. nil (or a nil return) leaves the tool path byte-identical.
+	BuildToolResultGate func(resolved config.ResolvedConfig) *agent.ToolResultGate
 	// SuggestNes produces a next-edit suggestion for one buffered document.
 	// nil means nes/suggest returns an empty suggestion list.
 	SuggestNes func(ctx context.Context, input NesSuggestInput) (*NesEditSuggestion, error)
@@ -217,6 +220,11 @@ type acpSession struct {
 	// mid-session /classifier change rebuilds it.
 	judge    classifier.Classifier
 	judgeKey string
+
+	// gate is the live tool-result relevance gate, cached on the same key as the
+	// judge (it is built from the same resolved classifier config).
+	gate    *agent.ToolResultGate
+	gateKey string
 
 	cancel  context.CancelFunc
 	history []turnRecord
@@ -950,19 +958,22 @@ func (a *Agent) runTurn(ctx context.Context, sess *acpSession, userText string, 
 		CompactionJudge:              a.compactionJudgeFor(sess, resolved),
 		CompactionJudgeKeepThreshold: resolved.Classifier.Features.Compaction.EffectiveKeepResultThreshold(),
 		CompactionJudgeDropThreshold: resolved.Classifier.Features.Compaction.EffectiveDropResultThreshold(),
-		ContextWindow:                modelregistry.AgentContextWindow(contextWindow),
-		DeferThreshold:               workspace.DeferThreshold,
-		Harness:                      workspace.Harness,
-		Agents:                       workspace.Agents,
-		MCPInstructions:              workspace.MCPInstructions,
-		FileTracker:                  workspace.FileTracker,
-		SessionStore:                 workspace.SessionStore,
-		Hooks:                        workspace.Hooks,
-		Images:                       images,
-		ImageLimits:                  imageinput.LimitsFrom(resolved.Images.MaxWidth, resolved.Images.MaxHeight, resolved.Images.MaxBytes, resolved.Images.AutoResize),
-		Skills:                       workspace.Skills,
-		OnText:                       note.text,
-		OnReasoning:                  note.thought,
+		// Live tool-result relevance gate, matching exec/TUI. nil (no builder or
+		// feature off) leaves the tool path byte-identical.
+		ToolResultGate:  a.toolResultGateFor(sess, resolved),
+		ContextWindow:   modelregistry.AgentContextWindow(contextWindow),
+		DeferThreshold:  workspace.DeferThreshold,
+		Harness:         workspace.Harness,
+		Agents:          workspace.Agents,
+		MCPInstructions: workspace.MCPInstructions,
+		FileTracker:     workspace.FileTracker,
+		SessionStore:    workspace.SessionStore,
+		Hooks:           workspace.Hooks,
+		Images:          images,
+		ImageLimits:     imageinput.LimitsFrom(resolved.Images.MaxWidth, resolved.Images.MaxHeight, resolved.Images.MaxBytes, resolved.Images.AutoResize),
+		Skills:          workspace.Skills,
+		OnText:          note.text,
+		OnReasoning:     note.thought,
 		// Report real token counts with the resolved context window as size, so the
 		// client's context gauge has a denominator (matches the TUI's used/window).
 		OnUsage: func(u agent.Usage) { note.usage(u.TotalTokens(), contextWindow) },
@@ -1824,10 +1835,7 @@ func (a *Agent) compactionJudgeFor(sess *acpSession, resolved config.ResolvedCon
 	if a.deps.BuildCompactionJudge == nil {
 		return nil
 	}
-	cfg := resolved.Classifier
-	key := cfg.Active + "\x00" + strconv.FormatBool(cfg.Enabled) + "\x00" +
-		strconv.FormatBool(cfg.Features.Compaction.Enabled) + "\x00" +
-		strconv.FormatFloat(cfg.Features.Compaction.EffectiveKeepResultThreshold(), 'g', -1, 64)
+	key := classifierConfigKey(resolved.Classifier)
 	sess.mu.Lock()
 	if sess.judge != nil && sess.judgeKey == key {
 		judge := sess.judge
@@ -1840,6 +1848,99 @@ func (a *Agent) compactionJudgeFor(sess *acpSession, resolved config.ResolvedCon
 	sess.judge, sess.judgeKey = judge, key
 	sess.mu.Unlock()
 	return judge
+}
+
+// toolResultGateFor returns the session's cached tool-result gate, rebuilding it
+// only when the resolved classifier config changed. A nil builder (capability
+// off) or a nil build result means "no gate", which leaves the tool path
+// unchanged.
+func (a *Agent) toolResultGateFor(sess *acpSession, resolved config.ResolvedConfig) *agent.ToolResultGate {
+	if a.deps.BuildToolResultGate == nil {
+		return nil
+	}
+	key := classifierConfigKey(resolved.Classifier)
+	sess.mu.Lock()
+	if sess.gate != nil && sess.gateKey == key {
+		gate := sess.gate
+		sess.mu.Unlock()
+		return gate
+	}
+	sess.mu.Unlock()
+	gate := a.deps.BuildToolResultGate(resolved)
+	sess.mu.Lock()
+	sess.gate, sess.gateKey = gate, key
+	sess.mu.Unlock()
+	return gate
+}
+
+// classifierConfigKey fingerprints the resolved classifier config so a cached
+// client is rebuilt when (and only when) it changes. It includes the profiles,
+// because classifier.New derives the endpoint, model, auth, and key from the
+// active profile — editing one mid-session must rebuild the client.
+func classifierConfigKey(cfg classifier.Config) string {
+	var builder strings.Builder
+	builder.WriteString(cfg.Active)
+	builder.WriteString("\x00")
+	builder.WriteString(strconv.FormatBool(cfg.Enabled))
+	for _, profile := range cfg.Profiles {
+		builder.WriteString("\x00")
+		builder.WriteString(profile.Name)
+		builder.WriteString("\x01")
+		builder.WriteString(profile.URL())
+		builder.WriteString("\x01")
+		builder.WriteString(profile.Adapter())
+		builder.WriteString("\x01")
+		builder.WriteString(profile.Model)
+		builder.WriteString("\x01")
+		builder.WriteString(profile.AuthHeader)
+		builder.WriteString("\x01")
+		builder.WriteString(profile.AuthScheme)
+		builder.WriteString("\x01")
+		builder.WriteString(profile.APIKeyEnv)
+		builder.WriteString("\x01")
+		builder.WriteString(strconv.FormatBool(profile.APIKeyStored))
+		builder.WriteString("\x01")
+		builder.WriteString(strconv.Itoa(profile.TimeoutMS))
+		// Header keys are sorted: Go map iteration order is random, so an
+		// unsorted walk would produce a different key on every call and defeat
+		// the cache (rebuilding the client and reopening the credential store
+		// each turn) whenever a profile carries more than one header.
+		headerNames := make([]string, 0, len(profile.Headers))
+		for key := range profile.Headers {
+			headerNames = append(headerNames, key)
+		}
+		sort.Strings(headerNames)
+		for _, key := range headerNames {
+			builder.WriteString("\x02")
+			builder.WriteString(key)
+			builder.WriteString("=")
+			builder.WriteString(profile.Headers[key])
+		}
+	}
+	feature := cfg.Features.ToolResult
+	builder.WriteString("\x00")
+	builder.WriteString(strconv.FormatBool(cfg.Features.Compaction.Enabled))
+	builder.WriteString("\x00")
+	builder.WriteString(strconv.FormatFloat(cfg.Features.Compaction.EffectiveKeepResultThreshold(), 'g', -1, 64))
+	builder.WriteString("\x00")
+	builder.WriteString(strconv.FormatBool(feature.Enabled))
+	builder.WriteString("\x00")
+	builder.WriteString(strconv.FormatFloat(feature.EffectiveKeepThreshold(), 'g', -1, 64))
+	builder.WriteString("\x00")
+	builder.WriteString(strconv.FormatFloat(feature.EffectiveDropThreshold(), 'g', -1, 64))
+	builder.WriteString("\x00")
+	builder.WriteString(strconv.FormatFloat(feature.EffectiveMinPruneRatio(), 'g', -1, 64))
+	builder.WriteString("\x00")
+	builder.WriteString(strconv.Itoa(feature.EffectiveMinBytes()))
+	builder.WriteString("\x00")
+	builder.WriteString(strconv.FormatBool(feature.ShadowMode))
+	builder.WriteString("\x00")
+	builder.WriteString(strconv.FormatBool(feature.Requery))
+	builder.WriteString("\x00")
+	builder.WriteString(strconv.Itoa(feature.EffectiveMaxRequery()))
+	builder.WriteString("\x00")
+	builder.WriteString(strconv.FormatFloat(feature.EffectiveCoverageThreshold(), 'g', -1, 64))
+	return builder.String()
 }
 
 // learningFor returns the session's cached self-learning engine, rebuilding it

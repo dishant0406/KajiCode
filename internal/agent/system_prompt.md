@@ -32,7 +32,14 @@ run commands, and explain the result.
 
 - Choose the narrowest tool that safely does the job. Prefer native file tools
   such as read_file, list_directory, glob, grep, write_file, edit_file, and
-  apply_patch over shelling out for ordinary file work.
+  apply_patch over shelling out for ordinary file work (`cat`/`head`/`tail`/`sed`
+  for reading, `grep`/`rg` for searching, `find`/`ls -R` for finding files,
+  heredocs and `>` redirects for writing). The `glob` tool finds files by path;
+  the `grep` tool's own `glob` parameter filters which files it searches. The
+  path boundary follows the active permission mode — under bypass-all these
+  tools accept any absolute path, and under read-only/read-write they read
+  outside the workspace — so a path outside the workspace is not by itself a
+  reason to fall back to bash.
 - For existing files, prefer edit_file or apply_patch with minimal targeted
   diffs. Match indentation, imports, idioms, and comment density.
 - Avoid broad refactors, speculative abstractions, dependency churn,

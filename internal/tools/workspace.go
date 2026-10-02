@@ -201,6 +201,25 @@ func outsideWorkspaceError(requestedPath string) error {
 	return fmt.Errorf("%s must stay inside the workspace", requestedPath)
 }
 
+// resolveOutsidePath resolves requestedPath with the workspace boundary lifted
+// (a mode that grants unrestricted filesystem reach). Callers only reach this
+// with an absolute path; a relative path is refused rather than resolved against
+// the process CWD, which would be inconsistent with every other resolver's
+// workspace-rooted relative semantics. Symlinks are resolved so the caller reads
+// the canonical path and a symlink swap after resolution cannot change which file
+// is read. The path must exist; the second return value is the absolute path
+// because there is no single root to be relative to.
+func resolveOutsidePath(requestedPath string) (string, string, error) {
+	if !filepath.IsAbs(requestedPath) {
+		return "", "", fmt.Errorf("%s must be an absolute path", requestedPath)
+	}
+	resolved, err := filepath.EvalSymlinks(requestedPath)
+	if err != nil {
+		return "", "", err
+	}
+	return resolved, resolved, nil
+}
+
 // observeProjectGuideline forwards absDir to the run's ProjectGuidelineObserver
 // (if any). It is a nil-safe no-op when no observer is wired, so tools keep
 // their exact prior behavior when the feature is disabled. The absolute
@@ -268,7 +287,39 @@ func scopedReadRoots(workspaceRoot string, scope PathScope) ([]string, error) {
 	return scopedRoots(workspaceRoot, scope)
 }
 
-func resolveScopedReadPath(workspaceRoot string, scope PathScope, requestedPath string) (string, string, error) {
+// modeLiftsBoundary reports whether the active permission mode lifts the
+// workspace boundary for a read or a write. It mirrors the sandbox engine's own
+// mode handling (internal/sandbox/engine.go), which disables the policy for
+// bypass-all and clears enforceWorkspace for reads under read-only/read-write —
+// the native tools must not impose a stricture the engine does not, or the model
+// routes around them with bash, which runs unsandboxed.
+//
+// ask-all (and empty/unknown) return false so their containment is unchanged.
+func modeLiftsBoundary(mode string, write bool) bool {
+	switch sandbox.NormalizePermissionMode(sandbox.PermissionMode(mode)) {
+	case sandbox.PermissionModeBypassAll:
+		return true
+	case sandbox.PermissionModeReadOnly:
+		return !write
+	case sandbox.PermissionModeReadWrite:
+		return true
+	default:
+		return false
+	}
+}
+
+// boundaryNote is appended to the description of every path-taking tool. The
+// path boundary is decided by the ACTIVE PERMISSION MODE, not by the tool (see
+// modeLiftsBoundary). Without this note the descriptions read as workspace-only,
+// so a model handed an outside path reaches for bash — the one tool that always
+// reaches — instead of the native tool that would have worked. Keep it a single
+// constant so the wording cannot drift between tools.
+const boundaryNote = " The path boundary follows the active permission mode:" +
+	" under bypass-all any absolute path is allowed, and under read-only/read-write" +
+	" reads outside the workspace are allowed; under ask-all the path must stay" +
+	" inside the workspace or a granted extra root."
+
+func resolveScopedReadPath(workspaceRoot string, scope PathScope, mode string, requestedPath string) (string, string, error) {
 	// Spill files (truncated tool output saved under the per-uid temp dir) are
 	// readable regardless of scope: the truncation notice tells the model to
 	// read_file/grep them, which must actually work. resolveSpillReadPath
@@ -298,7 +349,52 @@ func resolveScopedReadPath(workspaceRoot string, scope PathScope, requestedPath 
 			firstErr = err
 		}
 	}
+	if modeLiftsBoundary(mode, false) {
+		// An explicit relative path still resolves against the workspace; only an
+		// absolute path can meaningfully leave it.
+		if absolute, relative, err := resolveWorkspacePath(workspaceRoot, requestedPath); err == nil {
+			return absolute, relative, nil
+		}
+		return resolveOutsidePath(requestedPath)
+	}
 	return "", "", firstErr
+}
+
+// resolveOutsideTargetPath mirrors resolveOutsidePath for a write target that may
+// not exist yet: the nearest existing ancestor is symlink-resolved and the
+// missing tail is re-appended, so a create-through-missing-dirs write lands on
+// the canonical path.
+func resolveOutsideTargetPath(requestedPath string) (string, string, error) {
+	if !filepath.IsAbs(requestedPath) {
+		return "", "", fmt.Errorf("%s must be an absolute path", requestedPath)
+	}
+
+	existing := requestedPath
+	var missing []string
+	for {
+		if _, err := os.Lstat(existing); err == nil {
+			break
+		} else if os.IsNotExist(err) {
+			parent := filepath.Dir(existing)
+			if parent == existing {
+				return "", "", err
+			}
+			missing = append([]string{filepath.Base(existing)}, missing...)
+			existing = parent
+			continue
+		} else {
+			return "", "", err
+		}
+	}
+
+	resolved, err := filepath.EvalSymlinks(existing)
+	if err != nil {
+		return "", "", err
+	}
+	for _, segment := range missing {
+		resolved = filepath.Join(resolved, segment)
+	}
+	return resolved, resolved, nil
 }
 
 // resolveScopedPath is resolveWorkspacePath generalized to a scope: relative
@@ -316,7 +412,7 @@ func resolveScopedReadPath(workspaceRoot string, scope PathScope, requestedPath 
 // When all roots deny, the workspace root's error is returned; unlike
 // sandbox.Scope.validate this does not prefer traversal blocks — the
 // engine layer reports those with full fidelity before tools run.
-func resolveScopedPath(workspaceRoot string, scope PathScope, requestedPath string) (string, string, error) {
+func resolveScopedPath(workspaceRoot string, scope PathScope, mode string, write bool, requestedPath string) (string, string, error) {
 	if requestedPath == "" || !filepath.IsAbs(requestedPath) || scope == nil {
 		return resolveWorkspacePath(workspaceRoot, requestedPath)
 	}
@@ -344,6 +440,9 @@ func resolveScopedPath(workspaceRoot string, scope PathScope, requestedPath stri
 			firstErr = err
 		}
 	}
+	if modeLiftsBoundary(mode, write) {
+		return resolveOutsidePath(requestedPath)
+	}
 	return "", "", firstErr
 }
 
@@ -356,7 +455,7 @@ func resolveScopedPath(workspaceRoot string, scope PathScope, requestedPath stri
 // When all roots deny, the workspace root's error is returned; unlike
 // sandbox.Scope.validate this does not prefer traversal blocks — the
 // engine layer reports those with full fidelity before tools run.
-func resolveScopedTargetPath(workspaceRoot string, scope PathScope, requestedPath string) (string, string, error) {
+func resolveScopedTargetPath(workspaceRoot string, scope PathScope, mode string, requestedPath string) (string, string, error) {
 	if requestedPath == "" || !filepath.IsAbs(requestedPath) || scope == nil {
 		return resolveWorkspaceTargetPath(workspaceRoot, requestedPath)
 	}
@@ -384,6 +483,9 @@ func resolveScopedTargetPath(workspaceRoot string, scope PathScope, requestedPat
 			firstErr = err
 		}
 	}
+	if modeLiftsBoundary(mode, true) {
+		return resolveOutsideTargetPath(requestedPath)
+	}
 	return "", "", firstErr
 }
 
@@ -393,7 +495,7 @@ func resolveScopedTargetPath(workspaceRoot string, scope PathScope, requestedPat
 // target may resolve through a symlink only when its final location lies
 // inside a DIFFERENT granted root — mirroring sandbox.Scope.validate's
 // documented widening.
-func recheckScopedWriteTarget(workspaceRoot string, scope PathScope, requestedPath string) error {
+func recheckScopedWriteTarget(workspaceRoot string, scope PathScope, mode string, requestedPath string) error {
 	if requestedPath == "" || !filepath.IsAbs(requestedPath) || scope == nil {
 		return recheckWorkspaceWriteTarget(workspaceRoot, requestedPath)
 	}
@@ -411,6 +513,9 @@ func recheckScopedWriteTarget(workspaceRoot string, scope PathScope, requestedPa
 		if firstErr == nil {
 			firstErr = err
 		}
+	}
+	if modeLiftsBoundary(mode, true) {
+		return nil
 	}
 	return firstErr
 }

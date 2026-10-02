@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/dishant0406/KajiCode/internal/agent"
+	"github.com/dishant0406/KajiCode/internal/classifier"
 	"github.com/dishant0406/KajiCode/internal/config"
 	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
 	"github.com/dishant0406/KajiCode/internal/sandbox"
@@ -450,5 +451,32 @@ func drainTextUntil(t *testing.T, ch <-chan string, done func(string) bool) stri
 		case <-deadline:
 			return b.String()
 		}
+	}
+}
+
+// TestClassifierConfigKeyIsStableAcrossHeaderOrder guards the ACP cache key's
+// determinism: Go map iteration order is random, so a profile with extra headers
+// must still fingerprint to the SAME key on every call, or the cached judge/gate
+// would be rebuilt (and the credential store reopened) every turn.
+func TestClassifierConfigKeyIsStableAcrossHeaderOrder(t *testing.T) {
+	cfg := classifier.Config{
+		Active:  "jev",
+		Enabled: true,
+		Profiles: []classifier.Profile{{
+			Name:    "jev",
+			Model:   "jev-1.13",
+			Headers: map[string]string{"X-Router-Tier": "fast", "X-Tenant": "acme", "X-Trace": "on"},
+		}},
+	}
+	first := classifierConfigKey(cfg)
+	for i := 0; i < 50; i++ {
+		if got := classifierConfigKey(cfg); got != first {
+			t.Fatalf("cache key changed between calls (map order leaked):\n%q\n%q", first, got)
+		}
+	}
+	// A real change to the feature set must still change the key.
+	cfg.Features.ToolResult.Requery = true
+	if classifierConfigKey(cfg) == first {
+		t.Fatalf("a feature change must change the cache key")
 	}
 }

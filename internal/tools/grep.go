@@ -40,8 +40,9 @@ func NewGrepTool(workspaceRoot string) Tool {
 func NewScopedGrepTool(workspaceRoot string, scope PathScope) Tool {
 	return grepTool{
 		baseTool: baseTool{
-			name:        "grep",
-			description: "Search file contents with a regular expression inside the workspace or an explicitly granted extra root.",
+			name: "grep",
+			description: "Search file contents with a regular expression. Use this instead of `grep`/`rg`. " +
+				"Use the glob parameter to filter by path." + boundaryNote,
 			parameters: Schema{
 				Type: "object",
 				Properties: map[string]PropertySchema{
@@ -130,7 +131,7 @@ func (tool grepTool) runWith(ctx context.Context, args map[string]any, exclude r
 		return errorResult("Error running grep: " + err.Error())
 	}
 
-	target, displayRoot, err := resolveScopedReadPath(tool.workspaceRoot, tool.scope, targetPath)
+	target, displayRoot, err := resolveScopedReadPath(tool.workspaceRoot, tool.scope, options.PermissionMode, targetPath)
 	if err != nil {
 		return errorResult("Error running grep: " + err.Error())
 	}
@@ -142,7 +143,7 @@ func (tool grepTool) runWith(ctx context.Context, args map[string]any, exclude r
 	// macOS /tmp -> /private/tmp) and would not catch files that resolve outside.
 	// When a scope is present, pick the scope root that contains the resolved
 	// target so that confineGrepFile computes correct relative paths.
-	resolvedRoot, err := resolveGrepRoot(tool.workspaceRoot, tool.scope, target)
+	resolvedRoot, err := resolveGrepRoot(tool.workspaceRoot, tool.scope, options.PermissionMode, target)
 	if err != nil {
 		return errorResult("Error running grep: " + err.Error())
 	}
@@ -201,7 +202,7 @@ func applyDirectSearchBudget(result Result, directBudget bool, hint string) Resu
 // the already-resolved target, so that confineGrepFile computes correct
 // workspace-relative paths even when the target lives in an extra root.
 // Falls back to EvalSymlinks(workspaceRoot) when no scoped root matches.
-func resolveGrepRoot(workspaceRoot string, scope PathScope, resolvedTarget string) (string, error) {
+func resolveGrepRoot(workspaceRoot string, scope PathScope, mode string, resolvedTarget string) (string, error) {
 	roots, err := scopedRoots(workspaceRoot, scope)
 	if err != nil {
 		return "", err
@@ -218,6 +219,12 @@ func resolveGrepRoot(workspaceRoot string, scope PathScope, resolvedTarget strin
 		if rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)) {
 			return resolved, nil
 		}
+	}
+	if modeLiftsBoundary(mode, false) {
+		// The search target lies outside every scope root; anchor confinement at
+		// the resolved target itself (already symlink-resolved by
+		// resolveScopedReadPath) so its own files are not treated as escapes.
+		return resolvedTarget, nil
 	}
 	// Fall back to the workspace root.
 	return filepath.EvalSymlinks(workspaceRoot)

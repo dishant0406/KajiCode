@@ -21,8 +21,9 @@ func NewWriteFileTool(workspaceRoot string) Tool {
 func NewScopedWriteFileTool(workspaceRoot string, scope PathScope) Tool {
 	return writeFileTool{
 		baseTool: baseTool{
-			name:        "write_file",
-			description: "Create a new file, refusing to overwrite existing files unless overwrite is true.",
+			name: "write_file",
+			description: "Create a new file, refusing to overwrite existing files unless overwrite is true. Use this instead of a shell heredoc or `>` redirect for writing files." +
+				boundaryNote,
 			parameters: Schema{
 				Type: "object",
 				Properties: map[string]PropertySchema{
@@ -59,7 +60,7 @@ func (tool writeFileTool) RunWithOptions(ctx context.Context, args map[string]an
 		return errorResult("Error: Invalid arguments for write_file: " + err.Error())
 	}
 
-	absolutePath, relativePath, err := resolveScopedTargetPath(tool.workspaceRoot, tool.scope, requestedPath)
+	absolutePath, relativePath, err := resolveScopedTargetPath(tool.workspaceRoot, tool.scope, options.PermissionMode, requestedPath)
 	if err != nil {
 		return errorResult("Error writing file " + requestedPath + ": " + err.Error())
 	}
@@ -108,7 +109,7 @@ func (tool writeFileTool) RunWithOptions(ctx context.Context, args map[string]an
 	if err := os.MkdirAll(filepath.Dir(absolutePath), 0o755); err != nil {
 		return errorResult("Error writing file " + relativePath + ": " + err.Error())
 	}
-	if err := recheckScopedWriteTarget(tool.workspaceRoot, tool.scope, requestedPath); err != nil {
+	if err := recheckScopedWriteTarget(tool.workspaceRoot, tool.scope, options.PermissionMode, requestedPath); err != nil {
 		return errorResult("Error writing file " + relativePath + ": " + err.Error())
 	}
 	if err := os.WriteFile(absolutePath, []byte(content), 0o644); err != nil {

@@ -34,10 +34,12 @@ func NewScopedReadFileTool(workspaceRoot string, scope PathScope) Tool {
 		baseTool: baseTool{
 			name: "read_file",
 			description: "Read a file with optional line range and max line cap. " +
+				"Use this instead of `cat`/`head`/`tail`/`sed -n` for reading files. " +
 				"Prefer reading the whole file and read several files in a single response. " +
 				"Use start_line/end_line (1-based, inclusive) only for long files. " +
 				"Raster images and PDFs are returned as base64 media; binary files are rejected. " +
-				"If a path is missing, near-miss suggestions are returned.",
+				"If a path is missing, near-miss suggestions are returned." +
+				boundaryNote,
 			parameters: SpecsToSchema([]*ArgSpec{
 				{Name: "path", Kind: ArgString, Required: true, Aliases: []string{"file_path", "filepath", "filename"}, Description: "Path of the file to read."},
 				{Name: "start_line", Kind: ArgInt, Aliases: []string{"offset"}, Min: intPtr(1), Description: "1-based inclusive line number to start reading from."},
@@ -79,7 +81,7 @@ func (tool readFileTool) run(args map[string]any, options RunOptions, directBudg
 	endLine := parsed["end_line"].(int)
 	maxLines := parsed["max_lines"].(int)
 
-	absolutePath, relativePath, err := resolveScopedReadPath(tool.workspaceRoot, tool.scope, requestedPath)
+	absolutePath, relativePath, err := resolveScopedReadPath(tool.workspaceRoot, tool.scope, options.PermissionMode, requestedPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return readFileNotExist(requestedPath, missingReadPath(tool.workspaceRoot, requestedPath))

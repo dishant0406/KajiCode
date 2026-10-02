@@ -122,3 +122,26 @@ func TestSpillOutputIsAcceptedByTheReadPath(t *testing.T) {
 		t.Fatalf("the scoped read path must accept a spill file: %s", path)
 	}
 }
+
+// TestResolveSpillReadPathExportedMatchesScopedCheck proves the exported helper
+// the tool gate reuses to validate an existing spill pointer agrees with the
+// scoped read tools: a real spill is accepted, a file outside the spill root is
+// not.
+func TestResolveSpillReadPathExportedMatchesScopedCheck(t *testing.T) {
+	setTestTempDir(t)
+	path := SpillOutput("bash", "a body")
+	if path == "" {
+		t.Fatal("SpillOutput must produce a path")
+	}
+	defer os.Remove(path)
+	if _, ok := ResolveSpillReadPath(path); !ok {
+		t.Fatalf("exported resolver must accept a real spill file: %s", path)
+	}
+	foreign := filepath.Join(t.TempDir(), "foreign.txt")
+	if err := os.WriteFile(foreign, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := ResolveSpillReadPath(foreign); ok {
+		t.Fatalf("exported resolver must reject a file outside the spill root: %s", foreign)
+	}
+}
