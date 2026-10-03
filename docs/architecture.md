@@ -170,9 +170,11 @@ enforced in two layers:
 mode is active (`partitionToolsCached` in `internal/agent/tool_partition.go`), so
 a normal run's tool list is unchanged. Its call is intercepted in the loop and
 routed to the interactive `OnAskUser` channel; on approval the run ends with
-`Result.PlanApproved`, the surface clears plan mode, and the TUI queues a
-synthetic execution turn. Because the run is rebuilt every turn, toggling plan
-mode (`/plan`, `Ctrl+G`) takes effect on the next run.
+`Result.PlanApproved`, the surface clears plan mode, and runs a synthetic
+execution turn (`agent.PlanExecutionPrompt`) — the TUI queues it, ACP runs it
+inline. Because the run is rebuilt every turn, toggling plan
+mode (`/plan`, `Ctrl+G`; the `plan` config option over ACP) takes effect on the
+next run.
 
 ### Wire Protocol Routing
 

@@ -811,7 +811,8 @@ restricted so a repository cannot silently grant itself more authority.
 
 Plan mode is a read-only planning phase, separate from the permission profile
 cycled by `Shift+Tab`. It is toggled per session (`/plan [on|off|status]`, or the
-`Ctrl+G` chord) and carried on `agent.Options.PlanMode` for the next run.
+`Ctrl+G` chord in the TUI; the `plan` config option over ACP) and carried on
+`agent.Options.PlanMode` for the next run.
 
 While plan mode is active:
 
@@ -827,8 +828,9 @@ While plan mode is active:
   to arbitrary sub-calls.
 - `exit_plan_mode` is advertised only in plan mode. Its call is routed to the
   same interactive prompt `ask_user` uses; on approval the run ends with
-  `Result.PlanApproved`, the TUI clears plan mode, and a synthetic "execute the
-  plan" turn starts. Headless runs have no interactive user, so `exit_plan_mode`
+  `Result.PlanApproved`, the surface clears plan mode, and a synthetic "execute
+  the plan" turn starts (`agent.PlanExecutionPrompt`) — the TUI queues it, ACP
+  runs it inline. Headless runs have no interactive user, so `exit_plan_mode`
   declines and the run ends with the plan in the reply.
 
 A blocked call returns a `DenialFiltered` tool result the model can read, so it

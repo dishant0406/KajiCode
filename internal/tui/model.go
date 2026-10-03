@@ -2338,7 +2338,7 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 				kind: actionAppendSystem,
 				text: "Plan approved — plan mode off. Executing the plan.",
 			})
-			m.queuedMessage = planExecutionPrompt
+			m.queuedMessage = agent.PlanExecutionPrompt
 		}
 		// A fully successful turn means the task is done. Weaker models often
 		// forget the final todo_write, leaving the panel stuck mid-progress;

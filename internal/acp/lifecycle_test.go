@@ -481,12 +481,18 @@ func TestACPRejectsUnsafePermissionModeAndAcceptsBypassAll(t *testing.T) {
 // modeConfigOption returns the permissions ("mode") config option.
 func modeConfigOption(t *testing.T, options []SessionConfigOption) *SessionConfigOption {
 	t.Helper()
+	return configOptionByID(t, options, configIDMode)
+}
+
+// configOptionByID finds a config option by id, failing the test when absent.
+func configOptionByID(t *testing.T, options []SessionConfigOption, id string) *SessionConfigOption {
+	t.Helper()
 	for i := range options {
-		if options[i].ID == configIDMode {
+		if options[i].ID == id {
 			return &options[i]
 		}
 	}
-	t.Fatal("no mode option")
+	t.Fatalf("no %s option", id)
 	return nil
 }
 
@@ -841,6 +847,139 @@ func TestACPSelfCorrectAndProfileReachAgentOptions(t *testing.T) {
 	// Unknown values are rejected.
 	if err := h.client.Call(ctx, MethodSessionSetConfigOption, SetSessionConfigOptionParams{SessionID: newRes.SessionID, ConfigID: configIDProfile, Value: "nope"}, &SetSessionConfigOptionResult{}); err == nil {
 		t.Fatal("unknown profile must be rejected")
+	}
+}
+
+// TestACPPlanModeReachesAgentOptions proves the plan-mode dropdown defaults to
+// Agent (loop unchanged), reaches agent.Options.PlanMode when set to Plan, and
+// rejects an unknown value — the same contract as selfcorrect/profile.
+func TestACPPlanModeReachesAgentOptions(t *testing.T) {
+	deps := testDeps(t)
+	var captured agent.Options
+	deps.RunAgent = func(_ context.Context, _ string, _ kajicoderuntime.Provider, opts agent.Options) (agent.Result, error) {
+		captured = opts
+		return agent.Result{FinalAnswer: "ok"}, nil
+	}
+	h := newHarness(t, deps)
+	defer h.stop()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var newRes NewSessionResult
+	if err := h.client.Call(ctx, MethodSessionNew, NewSessionParams{Cwd: t.TempDir(), McpServers: []McpServer{}}, &newRes); err != nil {
+		t.Fatalf("session/new: %v", err)
+	}
+	// The option is advertised with Agent (the default) selected.
+	plan := configOptionByID(t, newRes.ConfigOptions, configIDPlan)
+	if plan.CurrentValue != "agent" {
+		t.Fatalf("default plan option = %q, want agent", plan.CurrentValue)
+	}
+	// Default run leaves plan mode off.
+	if err := h.client.Call(ctx, MethodSessionPrompt, PromptParams{SessionID: newRes.SessionID, Prompt: []ContentBlock{TextBlock("hi")}}, &PromptResult{}); err != nil {
+		t.Fatalf("prompt: %v", err)
+	}
+	if captured.PlanMode {
+		t.Fatal("default run must not enable plan mode")
+	}
+	// Selecting Plan must reach the loop.
+	var setRes SetSessionConfigOptionResult
+	if err := h.client.Call(ctx, MethodSessionSetConfigOption, SetSessionConfigOptionParams{SessionID: newRes.SessionID, ConfigID: configIDPlan, Value: "plan"}, &setRes); err != nil {
+		t.Fatalf("set plan: %v", err)
+	}
+	if got := configOptionByID(t, setRes.ConfigOptions, configIDPlan).CurrentValue; got != "plan" {
+		t.Fatalf("set_config_option returned plan=%q, want plan", got)
+	}
+	if err := h.client.Call(ctx, MethodSessionPrompt, PromptParams{SessionID: newRes.SessionID, Prompt: []ContentBlock{TextBlock("plan it")}}, &PromptResult{}); err != nil {
+		t.Fatalf("second prompt: %v", err)
+	}
+	if !captured.PlanMode {
+		t.Fatal("plan=plan did not reach agent.Options.PlanMode")
+	}
+	// Unknown values are rejected.
+	if err := h.client.Call(ctx, MethodSessionSetConfigOption, SetSessionConfigOptionParams{SessionID: newRes.SessionID, ConfigID: configIDPlan, Value: "bogus"}, &SetSessionConfigOptionResult{}); err == nil {
+		t.Fatal("unknown plan mode must be rejected")
+	}
+}
+
+// TestACPPlanApprovalClearsPlanModeAndExecutes proves that approving a plan
+// (result.PlanApproved) clears plan mode, re-advertises Agent, and immediately
+// runs the execution turn — matching the TUI's queued execution prompt.
+func TestACPPlanApprovalClearsPlanModeAndExecutes(t *testing.T) {
+	deps := testDeps(t)
+	var prompts []string
+	var planModes []bool
+	deps.RunAgent = func(_ context.Context, prompt string, _ kajicoderuntime.Provider, opts agent.Options) (agent.Result, error) {
+		prompts = append(prompts, prompt)
+		planModes = append(planModes, opts.PlanMode)
+		// The first (planning) turn approves; the follow-up must execute.
+		if len(prompts) == 1 {
+			return agent.Result{FinalAnswer: "the plan", PlanApproved: true}, nil
+		}
+		return agent.Result{FinalAnswer: "executed"}, nil
+	}
+	h, updates := newCollectorHarness(t, deps)
+	defer h.stop()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var newRes NewSessionResult
+	if err := h.client.Call(ctx, MethodSessionNew, NewSessionParams{Cwd: t.TempDir(), McpServers: []McpServer{}}, &newRes); err != nil {
+		t.Fatalf("session/new: %v", err)
+	}
+	if err := h.client.Call(ctx, MethodSessionSetConfigOption, SetSessionConfigOptionParams{SessionID: newRes.SessionID, ConfigID: configIDPlan, Value: "plan"}, &SetSessionConfigOptionResult{}); err != nil {
+		t.Fatalf("set plan: %v", err)
+	}
+	if err := h.client.Call(ctx, MethodSessionPrompt, PromptParams{SessionID: newRes.SessionID, Prompt: []ContentBlock{TextBlock("go")}}, &PromptResult{}); err != nil {
+		t.Fatalf("prompt: %v", err)
+	}
+	if len(prompts) != 2 {
+		t.Fatalf("approval must start a second (execution) turn, got %d runs", len(prompts))
+	}
+	if !planModes[0] {
+		t.Fatal("the first run must be in plan mode")
+	}
+	if planModes[1] {
+		t.Fatal("the execution run must not be in plan mode")
+	}
+	if !strings.Contains(prompts[1], agent.PlanExecutionPrompt) {
+		t.Fatalf("execution prompt = %q, want it to carry PlanExecutionPrompt", prompts[1])
+	}
+	// The dropdown flips back to Agent so a client renders the cleared state.
+	updates.waitForVariant(t, UpdateConfigOption)
+}
+
+// TestACPPlanApprovalRunsAtMostOneExecutionTurn pins the handoff bound: even a
+// provider that reports PlanApproved on every run must not recurse, because the
+// continuation enters with plan mode cleared.
+func TestACPPlanApprovalRunsAtMostOneExecutionTurn(t *testing.T) {
+	deps := testDeps(t)
+	runs := 0
+	deps.RunAgent = func(_ context.Context, _ string, _ kajicoderuntime.Provider, opts agent.Options) (agent.Result, error) {
+		runs++
+		if opts.PlanMode {
+			return agent.Result{FinalAnswer: "the plan", PlanApproved: true}, nil
+		}
+		// A buggy loop (or a custom Deps.RunAgent) that keeps claiming approval
+		// must still be called exactly once for the continuation.
+		return agent.Result{FinalAnswer: "executed", PlanApproved: true}, nil
+	}
+	h := newHarness(t, deps)
+	defer h.stop()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var newRes NewSessionResult
+	if err := h.client.Call(ctx, MethodSessionNew, NewSessionParams{Cwd: t.TempDir(), McpServers: []McpServer{}}, &newRes); err != nil {
+		t.Fatalf("session/new: %v", err)
+	}
+	if err := h.client.Call(ctx, MethodSessionSetConfigOption, SetSessionConfigOptionParams{SessionID: newRes.SessionID, ConfigID: configIDPlan, Value: "plan"}, &SetSessionConfigOptionResult{}); err != nil {
+		t.Fatalf("set plan: %v", err)
+	}
+	if err := h.client.Call(ctx, MethodSessionPrompt, PromptParams{SessionID: newRes.SessionID, Prompt: []ContentBlock{TextBlock("go")}}, &PromptResult{}); err != nil {
+		t.Fatalf("prompt: %v", err)
+	}
+	if runs != 2 {
+		t.Fatalf("runs = %d, want exactly 2 (plan + one execution turn)", runs)
 	}
 }
 

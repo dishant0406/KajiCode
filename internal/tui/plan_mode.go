@@ -6,11 +6,6 @@ import (
 	tea "charm.land/bubbletea/v2"
 )
 
-// planExecutionPrompt is the synthetic user turn submitted after the user
-// approves a plan. It carries the model's own plan (recorded with todo_write)
-// into a fresh, non-plan-mode run so execution starts without the user retyping.
-const planExecutionPrompt = "The plan above was approved. Execute it now, following the recorded todo list step by step."
-
 // planModeNotice is the transcript line shown when the user toggles plan mode.
 func planModeNotice(on bool) string {
 	if on {

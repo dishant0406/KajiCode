@@ -13,6 +13,12 @@ import (
 // planModeContext prompt section steers the model, and the planModeDenied gate
 // in executeToolCall is the hard backstop that cannot be talked around.
 
+// PlanExecutionPrompt is the synthetic user turn a surface submits after the
+// user approves a plan. It carries the model's own plan (recorded with
+// todo_write) into a fresh, non-plan-mode run so execution starts without the
+// user retyping.
+const PlanExecutionPrompt = "The plan above was approved. Execute it now, following the recorded todo list step by step."
+
 // planModeAllowedTools are the non-read-only tools that stay available in plan
 // mode. todo_write records the plan; ask_user and request_permissions gather
 // input; escalate_model and exit_plan_mode are control signals. Every other

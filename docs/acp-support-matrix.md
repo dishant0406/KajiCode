@@ -121,7 +121,7 @@ advertises the full capability set; `session/new` returns `configOptions`;
 | 1.10 | `session/prompt` | `[x]` | `agent.go:192` |
 | 1.11 | `session/cancel` (notif) | `[x]` | `agent.go:406` |
 | 1.12 | `session/set_mode` | `[x]` | same profiles as the `mode` config option (unsafe excluded) |
-| 1.13 | `session/set_config_option` | `[x]` | model/mode/effort/turns/style; returns full state |
+| 1.13 | `session/set_config_option` | `[x]` | model/mode/effort/turns/style/selfcorrect/profile/plan; returns full state |
 | 1.14 | `_kajicode/set_model` | `[x]` | `agent.go:393` — vendor ext (keep) |
 
 > There is **no `session/set_model`** in ACP. Model selection = config option
@@ -397,6 +397,7 @@ Source: `internal/tui/commands.go:81-370`. "Mechanism" = simplest correct exposu
 | `/selfcorrect` | text | self-correct depth | `configOptions` `selfcorrect` | `[x]` |
 | `/turns` | text | turn budget | `configOptions` `turns` | `[x]` |
 | `/style` | modal | response style | `configOptions` `style` | `[x]` |
+| `/plan` | toggle | read-only plan mode | `configOptions` `plan` (Agent/Plan; approval clears it and runs the plan) | `[x]` |
 | `/theme` | picker | TUI theme | client-owned (editor theme) | `[n/a]` |
 | `/add-dir` | text | write roots | `sessionCapabilities.additionalDirectories` (confined to cwd) | `[x]` |
 | `/compact` | text | compaction | command `/compact` (session-scoped) | `[x]` |
@@ -443,9 +444,19 @@ All read from `config.PreferencesConfig` / `agent.Options`.
 | self-correct depth | `/selfcorrect` | `selfcorrect` | `_kajicode` | select |
 | turns budget | `agent.Options.MaxTurns` (`types.go:294`) | `turns` | `_kajicode` | select |
 | response style | `agent.Options.ResponseStyle` (`types.go:333`) | `style` | `_kajicode` | select |
+| plan mode | `agent.Options.PlanMode` (`agent/types.go:390`) | `plan` | `_kajicode` | select |
 | recaps | `PreferencesConfig.Recaps` | `recaps` | `_kajicode` | boolean |
 | self-correct depth | `/selfcorrect` | `selfcorrect` | `_kajicode` | select |
 | execution profile | `internal/execprofile` | `profile` | `_kajicode` | select |
+| plan mode | `agent.Options.PlanMode` (`agent/types.go:390`) | `plan` | `_kajicode` | select |
+
+The **plan** selector mirrors the TUI's `/plan` toggle: `Agent` (the default)
+runs normally, while `Plan` arms the read-only plan-mode gate so the model
+investigates and proposes a plan through `exit_plan_mode`. On approval the
+session clears plan mode, re-advertises the selector as `Agent`, and runs the
+execution turn immediately (the same handoff the TUI performs by queueing its
+execution prompt). Clients without form elicitation simply stay in plan mode;
+the operator can flip the selector back to `Agent` manually.
 
 The **model** selector lists every usable provider's full model set, grouped by
 provider, so one selector offers the same cross-provider set the TUI picker
@@ -487,7 +498,7 @@ or command for a subsystem, both are covered.
   commands marked "command" in §12.1. Emit on `session/new` and after `/new`.
   The agent must recognize `/name` in `session/prompt` text and route it.
   (`internal/acp/commands.go`.)
-- [x] **6B. `configOptions` set.** Shipped: model/mode/effort/turns/style. Advertise the §12.2 knobs as select/boolean
+- [x] **6B. `configOptions` set.** Shipped: model/mode/effort/turns/style/selfcorrect/profile/plan. Advertise the §12.2 knobs as select/boolean
   options; accept them in `session/set_config_option`; emit `config_option_update`.
   Gate `type:boolean` on the client's `session.configOptions.boolean`.
 - [~] **6C. Vendor `_kajicode/*` namespace.** Not needed yet: the current feature set maps onto native config options, session methods, and the command catalog. One small file
@@ -543,8 +554,8 @@ operator present — and tracing (`Trace`) has no ACP consumer, so it is off.
 
 - **Real ACP controls** (`[x]`): model (all providers' models, grouped, with
   provider switching + `_kajicode/refresh_models`), permissions, effort, turns,
-  style, self-correct,
-  execution profile, add-dir, session lifecycle (new/list/load/resume/close/
+  response style, self-correct, plan mode, execution profile, add-dir, session
+  lifecycle (new/list/load/resume/close/
   delete/fork), retitle/compact/export, add-provider, `/init`, `/help`.
 - **Informational text commands** (`[=]`): the CLI only prints for these, so they
   stay text: `config`, `context`, `tools`, `skills`, `harness`, `mcp`,

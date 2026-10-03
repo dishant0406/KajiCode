@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+
+	"github.com/dishant0406/KajiCode/internal/agent"
 )
 
 // TestPlanCommandTogglesPlanMode covers the /plan forms: bare toggles, on/off set
@@ -105,7 +107,7 @@ func TestPlanApprovedClearsModeAndQueuesExecution(t *testing.T) {
 	if got.queuedMessage != "" {
 		t.Fatalf("the execution prompt should be consumed by the immediate launch, still queued: %q", got.queuedMessage)
 	}
-	if !transcriptContains(got.transcript, planExecutionPrompt) {
+	if !transcriptContains(got.transcript, agent.PlanExecutionPrompt) {
 		t.Fatalf("expected the execution prompt to start the next turn, got %#v", got.transcript)
 	}
 }

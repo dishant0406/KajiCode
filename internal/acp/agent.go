@@ -201,6 +201,7 @@ type acpSession struct {
 	style            string // response style override; "" => balanced
 	selfCorrectDepth string // post-edit self-correct depth; "" => off
 	execProfileName  string // execution profile name; "" => balanced (empty posture)
+	planMode         bool   // read-only planning phase; false => Agent
 	// modelCache holds per-provider discovered model lists, keyed by provider
 	// name. Populated lazily and cleared by _kajicode/refresh_models.
 	modelCache map[string][]SessionConfigOptionValue
@@ -1031,6 +1032,7 @@ func (a *Agent) runTurn(ctx context.Context, sess *acpSession, userText string, 
 		PermissionMode:  sess.currentMode(),
 		Autonomy:        "low",
 		MaxTurns:        maxTurns,
+		PlanMode:        sess.planModeEnabled(),
 		// Optional relevance judge for compaction, matching exec/TUI. nil (no
 		// builder or feature off) leaves compaction byte-identical to the free
 		// prune + summarizer path.
@@ -1077,6 +1079,10 @@ func (a *Agent) runTurn(ctx context.Context, sess *acpSession, userText string, 
 	}
 
 	agentPrompt := buildPrompt(sess.snapshotHistory(), userText)
+	// Captured before the run so the approval handoff below can only ever
+	// recurse once: a continuation enters with plan mode already cleared, so it
+	// can never satisfy this guard again.
+	wasPlanMode := sess.planModeEnabled()
 	result, runErr := a.deps.RunAgent(ctx, agentPrompt, provider, opts)
 
 	reason, stopErr := stopReasonFor(result, runErr)
@@ -1090,6 +1096,14 @@ func (a *Agent) runTurn(ctx context.Context, sess *acpSession, userText string, 
 			"Could not save session history. This turn is available in memory, but future resume may miss it until storage recovers.",
 			err,
 		)
+	}
+	// The user approved the plan: leave plan mode, re-advertise the dropdown as
+	// Agent, and run the execution turn immediately — the same handoff the TUI
+	// performs by queueing its execution prompt.
+	if wasPlanMode && result.PlanApproved {
+		sess.setPlanMode(false)
+		note.configOptions(a.configOptions(ctx, sess))
+		return a.runTurn(ctx, sess, agent.PlanExecutionPrompt, nil)
 	}
 	return reason, nil
 }
@@ -1207,6 +1221,11 @@ func (a *Agent) handleSetConfigOption(ctx context.Context, params json.RawMessag
 			return nil, RPCError(codeInvalidParams, "unknown execution profile: "+value)
 		}
 		sess.setExecProfile(value)
+	case configIDPlan:
+		if !validPlan(value) {
+			return nil, RPCError(codeInvalidParams, "unknown plan mode: "+value)
+		}
+		sess.setPlanMode(value == "plan")
 	default:
 		return nil, RPCError(codeInvalidParams, "unknown config option: "+p.ConfigID)
 	}
@@ -1382,6 +1401,7 @@ func (a *Agent) configOptions(ctx context.Context, sess *acpSession) []SessionCo
 		selectOption(configIDStyle, "Response style", "Reply style directive.", configCategoryKajicode, styleValue(sess.responseStyle()), styleValues()),
 		selectOption(configIDSelfCorrect, "Self-correction", "Post-edit verify-and-correct depth.", configCategoryKajicode, selfCorrectValue(sess.selfCorrect()), selfCorrectValues()),
 		selectOption(configIDProfile, "Execution profile", "Loop posture: turn budget, effort, self-correction.", configCategoryKajicode, profileValue(sess.execProfile()), profileValues()),
+		selectOption(configIDPlan, "Plan mode", "Plan investigates read-only and proposes a plan to approve; Agent executes.", configCategoryKajicode, planValue(sess.planModeEnabled()), planValues()),
 	}
 }
 
@@ -2187,6 +2207,18 @@ func (s *acpSession) responseStyle() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.style
+}
+
+func (s *acpSession) setPlanMode(on bool) {
+	s.mu.Lock()
+	s.planMode = on
+	s.mu.Unlock()
+}
+
+func (s *acpSession) planModeEnabled() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.planMode
 }
 
 func (s *acpSession) appendHistory(rec turnRecord) {

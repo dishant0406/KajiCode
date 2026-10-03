@@ -116,6 +116,26 @@ func validSelfCorrect(depth string) bool {
 	}
 }
 
+// planValues lists the read-only planning phase. Agent (the default) leaves the
+// loop byte-identical; Plan arms the read-only plan-mode gate.
+func planValues() []SessionConfigOptionValue {
+	return []SessionConfigOptionValue{
+		{Value: "agent", Name: "Agent", Description: "Investigate, edit, and run commands."},
+		{Value: "plan", Name: "Plan", Description: "Investigate read-only and propose a plan to approve."},
+	}
+}
+
+func planValue(planMode bool) string {
+	if planMode {
+		return "plan"
+	}
+	return "agent"
+}
+
+func validPlan(value string) bool {
+	return value == "agent" || value == "plan"
+}
+
 // profileValues lists the execution profiles the loop can adopt.
 func profileValues() []SessionConfigOptionValue {
 	names := execprofile.Names()

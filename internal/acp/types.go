@@ -579,6 +579,7 @@ const (
 	configIDStyle         = "style"
 	configIDSelfCorrect   = "selfcorrect"
 	configIDProfile       = "profile"
+	configIDPlan          = "plan"
 	configCategoryModel   = "model"
 	configCategoryMode    = "mode"
 	configCategoryThought = "thought_level"
