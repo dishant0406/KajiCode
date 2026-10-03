@@ -683,6 +683,56 @@ func TestRunExecStreamJSONProviderErrorEmitsErrorAndRunEnd(t *testing.T) {
 	}
 }
 
+func TestRunExecPersistsPartialProseOnProviderError(t *testing.T) {
+	dataHome := t.TempDir()
+	t.Setenv("XDG_DATA_HOME", dataHome)
+	cwd := t.TempDir()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	exitCode := runWithDeps([]string{"exec", "--output-format", "stream-json", "do the thing"}, &stdout, &stderr, appDeps{
+		getwd: func() (string, error) { return cwd, nil },
+		resolveConfig: func(_ string, _ config.Overrides) (config.ResolvedConfig, error) {
+			return execResolvedConfig(), nil
+		},
+		newProvider: func(config.ProviderProfile) (kajicoderuntime.Provider, error) {
+			return proseThenErrorExecProvider{}, nil
+		},
+	})
+
+	if exitCode != exitProvider {
+		t.Fatalf("expected provider exit %d, got %d: %s", exitProvider, exitCode, stderr.String())
+	}
+	events := decodeJSONLines(t, stdout.String())
+	runStart := events[0]
+	sessionID, _ := runStart["sessionId"].(string)
+	if sessionID == "" {
+		t.Fatalf("expected a session id in run_start, got %#v", runStart)
+	}
+	store := sessions.NewStore(sessions.StoreOptions{
+		RootDir: filepath.Join(dataHome, "kajicode", "sessions"),
+	})
+	recorded, err := store.ReadEvents(sessionID)
+	if err != nil {
+		t.Fatalf("ReadEvents returned error: %v", err)
+	}
+	// user message, the partial assistant prose, then the error — the prose must
+	// survive so a follow-up --resume still sees what the agent had said.
+	if len(recorded) != 3 ||
+		recorded[0].Type != sessions.EventMessage ||
+		recorded[1].Type != sessions.EventMessage ||
+		recorded[2].Type != sessions.EventError {
+		t.Fatalf("recorded events = %#v", recorded)
+	}
+	var assistant map[string]any
+	if err := json.Unmarshal(recorded[1].Payload, &assistant); err != nil {
+		t.Fatal(err)
+	}
+	if assistant["role"] != "assistant" || assistant["content"] != "half an answer" {
+		t.Fatalf("expected the partial assistant prose to be persisted, got %#v", assistant)
+	}
+}
+
 func TestRunExecJSONInterruptedEmitsTerminalEvents(t *testing.T) {
 	cwd := t.TempDir()
 	var stdout bytes.Buffer
@@ -895,6 +945,18 @@ func (provider toolThenErrorExecProvider) StreamCompletion(ctx context.Context, 
 	ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventToolCallDelta, ToolCallID: provider.toolCallID, ArgumentsFragment: provider.arguments}
 	ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventToolCallEnd, ToolCallID: provider.toolCallID}
 	ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventDone}
+	close(ch)
+	return ch, nil
+}
+
+// proseThenErrorExecProvider streams one prose delta then ends the stream with an
+// error, simulating a mid-answer provider failure.
+type proseThenErrorExecProvider struct{}
+
+func (proseThenErrorExecProvider) StreamCompletion(context.Context, kajicoderuntime.CompletionRequest) (<-chan kajicoderuntime.StreamEvent, error) {
+	ch := make(chan kajicoderuntime.StreamEvent, 2)
+	ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventText, Content: "half an answer"}
+	ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventError, Error: "provider stream failed"}
 	close(ch)
 	return ch, nil
 }

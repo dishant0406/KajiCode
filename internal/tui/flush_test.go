@@ -2,11 +2,15 @@ package tui
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/dishant0406/KajiCode/internal/agent"
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
+	"github.com/dishant0406/KajiCode/internal/sessions"
 	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
@@ -225,5 +229,380 @@ func TestTruncateStyledLineClosesOpenHyperlink(t *testing.T) {
 	cut := truncateStyledLine(line, 10)
 	if !strings.Contains(cut, "\x1b]8;;\x1b\\") {
 		t.Fatalf("truncated line must close its hyperlink, got %q", cut)
+	}
+}
+
+// messagesContainAssistant reports whether any assistant message carries want.
+func messagesContainAssistant(messages []kajicoderuntime.Message, want string) bool {
+	for _, message := range messages {
+		if message.Role == kajicoderuntime.MessageRoleAssistant && strings.Contains(message.Content, want) {
+			return true
+		}
+	}
+	return false
+}
+
+// blockingProseProvider streams one prose delta then blocks until the run's
+// context is cancelled, returning WITHOUT closing the stream so the collector
+// observes ctx cancellation rather than a clean end-of-stream.
+type blockingProseProvider struct{}
+
+func (provider *blockingProseProvider) StreamCompletion(
+	ctx context.Context,
+	request kajicoderuntime.CompletionRequest,
+) (<-chan kajicoderuntime.StreamEvent, error) {
+	ch := make(chan kajicoderuntime.StreamEvent)
+	go func() {
+		select {
+		case ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventText, Content: "half an answer"}:
+		case <-ctx.Done():
+			return
+		}
+		<-ctx.Done()
+	}()
+	return ch, nil
+}
+
+// TestInterruptedRunPersistsPartialAssistantProse is the regression for the
+// reported bug: a run that streams prose then fails must persist that prose, so a
+// follow-up "continue" (which rebuilds model context from the store) still knows
+// what the agent already said. Before the fix only an EventError was stored.
+func TestInterruptedRunPersistsPartialAssistantProse(t *testing.T) {
+	store := testSessionStore(t)
+	provider := &fakeProvider{events: []kajicoderuntime.StreamEvent{
+		{Type: kajicoderuntime.StreamEventText, Content: "half an answer"},
+		{Type: kajicoderuntime.StreamEventError, Error: "provider stream failed"},
+	}}
+	m := newModel(context.Background(), Options{
+		Cwd:          "repo",
+		ProviderName: "openai",
+		ModelName:    "gpt-4.1",
+		Provider:     provider,
+		Registry:     tools.NewRegistry(),
+		SessionStore: store,
+	})
+	m.input.SetValue("do the thing")
+
+	updated, cmd := m.Update(testKey(tea.KeyEnter))
+	next := updated.(model)
+	if cmd == nil {
+		t.Fatal("expected prompt submit to start an agent run")
+	}
+	updated, _ = next.Update(execCmd(cmd))
+	_ = updated.(model)
+
+	events := readOnlySessionEvents(t, store)
+	if got := eventTypes(events); !equalEventTypes(got, []sessions.EventType{
+		sessions.EventComposerInput,
+		sessions.EventMessage,
+		sessions.EventMessage,
+		sessions.EventError,
+	}) {
+		t.Fatalf("unexpected event sequence after interruption: %#v", got)
+	}
+	assistant := nthSessionEvent(t, events, sessions.EventMessage, 2)
+	assertPayloadField(t, assistant, "role", "assistant")
+	assertPayloadField(t, assistant, "content", "half an answer")
+
+	if messages := sessions.ModelMessagesFromEvents(events); !messagesContainAssistant(messages, "half an answer") {
+		t.Fatalf("rehydrated model history lost the partial answer: %#v", messages)
+	}
+}
+
+// TestInterruptedRunWithoutProsePersistsNoAssistantMessage guards the no-op: an
+// error before any text streamed must not fabricate an empty assistant message.
+func TestInterruptedRunWithoutProsePersistsNoAssistantMessage(t *testing.T) {
+	store := testSessionStore(t)
+	provider := &fakeProvider{events: []kajicoderuntime.StreamEvent{
+		{Type: kajicoderuntime.StreamEventError, Error: "provider stream failed"},
+	}}
+	m := newModel(context.Background(), Options{
+		Cwd:          "repo",
+		ProviderName: "openai",
+		ModelName:    "gpt-4.1",
+		Provider:     provider,
+		Registry:     tools.NewRegistry(),
+		SessionStore: store,
+	})
+	m.input.SetValue("do the thing")
+
+	updated, cmd := m.Update(testKey(tea.KeyEnter))
+	next := updated.(model)
+	if cmd == nil {
+		t.Fatal("expected prompt submit to start an agent run")
+	}
+	updated, _ = next.Update(execCmd(cmd))
+	_ = updated.(model)
+
+	events := readOnlySessionEvents(t, store)
+	if got := countSessionEvents(events, sessions.EventMessage); got != 1 {
+		t.Fatalf("expected only the user message when nothing streamed, got %d in %#v", got, eventTypes(events))
+	}
+}
+
+// TestCancelMidStreamPersistsPartialAssistantProse covers the Esc cancel path: the
+// partial answer buffered before the cancel must reach the store via the
+// cancelled run's flushed events (flushableSessionEvents keeps everything but the
+// duplicate EventError).
+func TestCancelMidStreamPersistsPartialAssistantProse(t *testing.T) {
+	store := testSessionStore(t)
+	provider := &blockingProseProvider{}
+	runtimeCh := make(chan tea.Msg, 16)
+	m := newModel(context.Background(), Options{
+		Cwd:          "repo",
+		ProviderName: "openai",
+		ModelName:    "gpt-4.1",
+		Provider:     provider,
+		Registry:     tools.NewRegistry(),
+		SessionStore: store,
+		RuntimeMessageSink: func(msg tea.Msg) {
+			runtimeCh <- msg
+		},
+	})
+	m.input.SetValue("long task")
+
+	updated, cmd := m.Update(testKey(tea.KeyEnter))
+	next := updated.(model)
+	if cmd == nil {
+		t.Fatal("expected prompt submit to start an agent run")
+	}
+
+	finalCh := make(chan tea.Msg, 1)
+	go func() {
+		finalCh <- execCmd(cmd)
+	}()
+
+	// Apply live messages until the prose delta has been forwarded (the goroutine's
+	// prose buffer already holds it at that point).
+	for {
+		msg := receiveRuntimeMessage(t, runtimeCh)
+		updated, _ = next.Update(msg)
+		next = updated.(model)
+		if textMsg, ok := msg.(agentTextMsg); ok && strings.Contains(textMsg.delta, "half an answer") {
+			break
+		}
+	}
+	// Keep draining so the run goroutine never blocks on the sink once we stop
+	// applying messages to the model.
+	drained := make(chan struct{})
+	defer close(drained)
+	go func() {
+		for {
+			select {
+			case <-runtimeCh:
+			case <-drained:
+				return
+			}
+		}
+	}()
+
+	// Two Esc presses within the confirmation window cancel the in-flight run.
+	updated, _ = next.Update(testKey(tea.KeyEsc))
+	next = updated.(model)
+	updated, _ = next.Update(testKey(tea.KeyEsc))
+	next = updated.(model)
+	if next.pending {
+		t.Fatal("expected Esc to clear pending state")
+	}
+
+	finalMsg := receiveFinalMessage(t, finalCh)
+	updated, _ = next.Update(finalMsg)
+	next = updated.(model)
+	if len(next.flushRunIDs) != 0 {
+		t.Fatalf("expected flush set to clear after draining cancelled run, got %v", next.flushRunIDs)
+	}
+
+	events := readOnlySessionEvents(t, store)
+	if got := countSessionEvents(events, sessions.EventError); got != 1 {
+		t.Fatalf("expected exactly one cancellation error, got %d in %#v", got, eventTypes(events))
+	}
+	assistant := nthSessionEvent(t, events, sessions.EventMessage, 2)
+	assertPayloadField(t, assistant, "role", "assistant")
+	assertPayloadField(t, assistant, "content", "half an answer")
+}
+
+// TestPlanApprovalDoesNotDuplicateFinalAnswer guards the plan-exit path: the run
+// ends on a tool-call turn whose streamed text IS result.FinalAnswer. That prose is
+// flushed at the tool boundary, so the success branch must not store it again.
+func TestPlanApprovalDoesNotDuplicateFinalAnswer(t *testing.T) {
+	store := testSessionStore(t)
+	provider := &scriptedProvider{scripts: [][]kajicoderuntime.StreamEvent{
+		{
+			{Type: kajicoderuntime.StreamEventText, Content: "Here is the plan."},
+			{Type: kajicoderuntime.StreamEventToolCallStart, ToolCallID: "call_plan", ToolName: tools.ExitPlanModeToolName},
+			{Type: kajicoderuntime.StreamEventToolCallDelta, ToolCallID: "call_plan", ArgumentsFragment: "{}"},
+			{Type: kajicoderuntime.StreamEventToolCallEnd, ToolCallID: "call_plan"},
+			{Type: kajicoderuntime.StreamEventDone},
+		},
+	}}
+	registry := tools.NewRegistry()
+	registry.Register(tools.NewExitPlanModeTool())
+	m := newModel(context.Background(), Options{
+		Cwd:            "repo",
+		ProviderName:   "openai",
+		ModelName:      "gpt-4.1",
+		Provider:       provider,
+		Registry:       registry,
+		SessionStore:   store,
+		PermissionMode: agent.PermissionModeAuto,
+		RuntimeMessageSink: func(msg tea.Msg) {
+			if req, ok := msg.(askUserRequestMsg); ok && req.answer != nil {
+				req.answer([]string{"Yes, execute the plan"})
+			}
+		},
+	})
+	m.planMode = true
+	m.input.SetValue("plan it")
+
+	updated, cmd := m.Update(testKey(tea.KeyEnter))
+	_ = updated.(model)
+	if cmd == nil {
+		t.Fatal("expected prompt submit to start an agent run")
+	}
+	resp, ok := execCmd(cmd).(agentResponseMsg)
+	if !ok {
+		t.Fatal("expected an agent response message")
+	}
+	if resp.err != nil {
+		t.Fatalf("plan-approval run errored: %v", resp.err)
+	}
+	if !resp.planApproved {
+		t.Fatal("expected the run to report plan approval")
+	}
+
+	count := 0
+	for _, event := range resp.sessionEvents {
+		if event.Type != sessions.EventMessage {
+			continue
+		}
+		payload, ok := event.Payload.(map[string]any)
+		if !ok {
+			continue
+		}
+		if payload["role"] == "assistant" && payload["content"] == "Here is the plan." {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("expected the plan prose persisted exactly once, got %d", count)
+	}
+}
+
+// TestMaxTurnsSummaryNotDuplicatedWhenPriorProseUnflushed covers the max-turns
+// fallback: a dropped-tool-call turn streams prose then continues (no tool call, so
+// no boundary flush), and the run ends at the turn cap with the loop streaming a
+// final summary via OnText. The summary lands in the same buffer as the prior
+// prose, so result.FinalAnswer is a SUFFIX of the flushed segment — the success
+// guard must suppress it or the answer is stored twice.
+func TestMaxTurnsSummaryNotDuplicatedWhenPriorProseUnflushed(t *testing.T) {
+	store := testSessionStore(t)
+	provider := &scriptedProvider{scripts: [][]kajicoderuntime.StreamEvent{
+		{
+			{Type: kajicoderuntime.StreamEventText, Content: "Working on it."},
+			{Type: kajicoderuntime.StreamEventToolCallDropped},
+			{Type: kajicoderuntime.StreamEventDone},
+		},
+		textScript("Here is the summary."),
+	}}
+	m := newModel(context.Background(), Options{
+		Cwd:          "repo",
+		ProviderName: "openai",
+		ModelName:    "gpt-4.1",
+		Provider:     provider,
+		Registry:     tools.NewRegistry(),
+		SessionStore: store,
+	})
+	m.agentOptions.MaxTurns = 1
+	m.input.SetValue("do it")
+
+	updated, cmd := m.Update(testKey(tea.KeyEnter))
+	next := updated.(model)
+	if cmd == nil {
+		t.Fatal("expected prompt submit to start an agent run")
+	}
+	updated, _ = next.Update(execCmd(cmd))
+	_ = updated.(model)
+
+	events := readOnlySessionEvents(t, store)
+	summaryEvents := 0
+	for _, event := range events {
+		if event.Type != sessions.EventMessage {
+			continue
+		}
+		payload := map[string]any{}
+		if err := json.Unmarshal(event.Payload, &payload); err != nil {
+			t.Fatal(err)
+		}
+		if payload["role"] != "assistant" {
+			continue
+		}
+		if content, _ := payload["content"].(string); strings.Contains(content, "Here is the summary.") {
+			summaryEvents++
+		}
+	}
+	if summaryEvents != 1 {
+		t.Fatalf("expected the max-turns summary persisted exactly once, got %d in %#v", summaryEvents, eventTypes(events))
+	}
+}
+
+// TestSuccessfulMultiTurnRunPersistsEachProseSegmentOnce verifies that narration
+// before a tool call is persisted as its own segment, and the final answer is
+// persisted exactly once (no duplicate from the prose buffer).
+func TestSuccessfulMultiTurnRunPersistsEachProseSegmentOnce(t *testing.T) {
+	store := testSessionStore(t)
+	root := t.TempDir()
+	writeTestFile(t, root, "notes.txt", "file contents")
+	provider := &scriptedProvider{scripts: [][]kajicoderuntime.StreamEvent{
+		{
+			{Type: kajicoderuntime.StreamEventText, Content: "Let me check."},
+			{Type: kajicoderuntime.StreamEventToolCallStart, ToolCallID: "call_1", ToolName: "read_file"},
+			{Type: kajicoderuntime.StreamEventToolCallDelta, ToolCallID: "call_1", ArgumentsFragment: `{"path":"notes.txt"}`},
+			{Type: kajicoderuntime.StreamEventToolCallEnd, ToolCallID: "call_1"},
+			{Type: kajicoderuntime.StreamEventDone},
+		},
+		textScript("read complete"),
+	}}
+	registry := tools.NewRegistry()
+	registry.Register(tools.NewReadFileTool(root))
+	m := newModel(context.Background(), Options{
+		Cwd:          root,
+		ProviderName: "openai",
+		ModelName:    "gpt-4.1",
+		Provider:     provider,
+		Registry:     registry,
+		SessionStore: store,
+	})
+	m.input.SetValue("read notes")
+
+	updated, cmd := m.Update(testKey(tea.KeyEnter))
+	next := updated.(model)
+	if cmd == nil {
+		t.Fatal("expected prompt submit to start an agent run")
+	}
+	updated, _ = next.Update(execCmd(cmd))
+	_ = updated.(model)
+
+	events := readOnlySessionEvents(t, store)
+	if got := eventTypes(events); !equalEventTypes(got, []sessions.EventType{
+		sessions.EventComposerInput,
+		sessions.EventMessage,
+		sessions.EventMessage,
+		sessions.EventToolCall,
+		sessions.EventToolResult,
+		sessions.EventMessage,
+	}) {
+		t.Fatalf("unexpected event sequence: %#v", got)
+	}
+	if got := countSessionEvents(events, sessions.EventMessage); got != 3 {
+		t.Fatalf("expected user + 2 assistant segments (no duplicate final), got %d in %#v", got, eventTypes(events))
+	}
+	intermediate := nthSessionEvent(t, events, sessions.EventMessage, 2)
+	assertPayloadField(t, intermediate, "role", "assistant")
+	assertPayloadField(t, intermediate, "content", "Let me check.")
+	final := nthSessionEvent(t, events, sessions.EventMessage, 3)
+	assertPayloadField(t, final, "content", "read complete")
+
+	if messages := sessions.ModelMessagesFromEvents(events); !messagesContainAssistant(messages, "Let me check.") {
+		t.Fatalf("rehydrated model history lost the intermediate prose: %#v", messages)
 	}
 }

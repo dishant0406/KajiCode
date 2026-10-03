@@ -566,6 +566,24 @@ func runExec(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) in
 		"role":    "user",
 		"content": prompt,
 	})
+	// proseBuf accumulates streamed assistant prose so it can be persisted as one
+	// EventMessage per segment — before each tool call and on an interrupted/errored
+	// exit. Without it only result.FinalAnswer reached the store, so a network drop
+	// or cancellation lost the partial answer entirely and a follow-up --resume
+	// rebuilt context with no idea what the agent had already said.
+	var proseBuf strings.Builder
+	// lastFlushed is the prose most recently written to the store, so the success
+	// branch can avoid re-storing a segment it already persisted.
+	lastFlushed := ""
+	flushProse := func() {
+		content := proseBuf.String()
+		proseBuf.Reset()
+		if strings.TrimSpace(content) == "" {
+			return
+		}
+		lastFlushed = content
+		sessionRecorder.append(sessions.EventMessage, map[string]any{"role": "assistant", "content": content})
+	}
 
 	// OnAskUser is intentionally left unset: headless runs have no interactive
 	// user, so ask_user degrades to a "proceed with your best assumption" result
@@ -682,9 +700,15 @@ func runExec(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) in
 		Hooks:          hookDispatcher,
 		EnabledTools:   options.enabledTools,
 		DisabledTools:  options.disabledTools,
-		OnText:         writer.text,
-		OnReasoning:    writer.reasoning,
+		OnText: func(delta string) {
+			proseBuf.WriteString(delta)
+			writer.text(delta)
+		},
+		OnReasoning: writer.reasoning,
 		OnToolCall: func(call agent.ToolCall) {
+			// Close the current prose segment before the tool call so narration is
+			// persisted in order (assistant-prose → tool_call), matching the agent loop.
+			flushProse()
 			writer.toolCall(call, registry)
 			sessionRecorder.append(sessions.EventToolCall, map[string]any{
 				"id":        call.ID,
@@ -734,6 +758,12 @@ func runExec(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) in
 			}
 			sessionRecorder.append(sessions.EventUsage, payload)
 		},
+		// The loop calls OnContext once per turn on the run goroutine, before the
+		// turn's request — closing the prose segment here captures text-only turns
+		// that continue without a tool call (a completion-gate nudge).
+		OnContext: func(breakdown agent.ContextBreakdown) {
+			flushProse()
+		},
 	})
 	// Finish the trace now that the turn is done, so the snapshot captures exactly
 	// agent.Run's work and nothing the post-run cleanup stamps. The deferred
@@ -749,6 +779,7 @@ func runExec(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) in
 		emitScratchWarning()
 		// A Ctrl+C / SIGTERM cancellation is a clean shutdown, not a provider error.
 		if errors.Is(err, context.Canceled) || runCtx.Err() != nil {
+			flushProse()
 			sessionRecorder.append(sessions.EventError, map[string]any{"message": "interrupted"})
 			switch options.outputFormat {
 			case execOutputStreamJSON:
@@ -778,6 +809,7 @@ func runExec(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) in
 			}
 			return exitInterrupted
 		}
+		flushProse()
 		sessionRecorder.append(sessions.EventError, map[string]any{"message": err.Error()})
 		if options.outputFormat == execOutputStreamJSON {
 			writer.errorEvent("provider_error", err.Error(), false)
@@ -789,10 +821,18 @@ func runExec(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) in
 		}
 		return writeExecProviderError(stdout, stderr, options.outputFormat, "provider_error", err.Error())
 	}
-	sessionRecorder.append(sessions.EventMessage, map[string]any{
-		"role":    "assistant",
-		"content": result.FinalAnswer,
-	})
+	// Persist the run's trailing prose and its final answer exactly once: flushProse
+	// captures the final turn's streamed text, and FinalAnswer is stored only when it
+	// is not already the tail of what was flushed — an exact match (the final turn's
+	// own text) or a suffix (a max-turns summary merged onto an unflushed segment).
+	// A synthetic max-turns answer with no streamed text is still persisted.
+	flushProse()
+	if strings.TrimSpace(result.FinalAnswer) != "" && !strings.HasSuffix(lastFlushed, result.FinalAnswer) {
+		sessionRecorder.append(sessions.EventMessage, map[string]any{
+			"role":    "assistant",
+			"content": result.FinalAnswer,
+		})
+	}
 
 	if notice := result.TruncationNotice(); notice != "" {
 		writer.warning(notice)

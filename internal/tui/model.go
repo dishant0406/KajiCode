@@ -5208,6 +5208,29 @@ func (m model) runAgentWithOptions(runID int, runCtx context.Context, prompt str
 		rows := []transcriptRow{}
 		usageEvents := []kajicoderuntime.Usage{}
 		sessionEvents := []pendingSessionEvent{}
+		// proseBuf accumulates streamed assistant prose so it can be persisted as one
+		// EventMessage per contiguous segment — before each tool call, at each turn
+		// boundary, and on an interrupted/errored exit. Without it only a run's
+		// result.FinalAnswer reached the store (the success branch below), so a
+		// network drop, cancel, or retry exhaustion lost the partial answer entirely:
+		// a follow-up "continue" rebuilds model context from the store, so it had no
+		// idea what the agent already said. Mirrors internal/agents/childRecorder.
+		var proseBuf strings.Builder
+		// lastFlushed is the prose most recently written to sessionEvents, so the
+		// success branch can avoid re-storing a segment it already persisted.
+		lastFlushed := ""
+		flushProse := func() {
+			content := proseBuf.String()
+			proseBuf.Reset()
+			if strings.TrimSpace(content) == "" {
+				return
+			}
+			lastFlushed = content
+			sessionEvents = append(sessionEvents, pendingSessionEvent{
+				Type:    sessions.EventMessage,
+				Payload: map[string]any{"role": "assistant", "content": content},
+			})
+		}
 		usageModelID := m.modelName
 		options := m.agentOptions
 		options.Registry = m.registry
@@ -5313,6 +5336,10 @@ func (m model) runAgentWithOptions(runID int, runCtx context.Context, prompt str
 			if strings.TrimSpace(reasoningText) != "" {
 				flushReasoning(m.now())
 			}
+			// Buffer before notifying the UI: a cancel can arrive between the UI
+			// notification and the write, and proseBuf must already hold the delta for
+			// the error-branch flushProse to persist it.
+			proseBuf.WriteString(delta)
 			m.sendAgentText(runID, delta)
 			if onText != nil {
 				onText(delta)
@@ -5424,6 +5451,12 @@ func (m model) runAgentWithOptions(runID int, runCtx context.Context, prompt str
 		onToolCall := options.OnToolCall
 		options.OnToolCall = func(call agent.ToolCall) {
 			flushReasoning(m.now())
+			// Close the current prose segment before the tool call so the persisted
+			// order is assistant-prose → tool_call, matching the agent loop's in-memory
+			// history (and childRecorder). A run that streams narration between tool
+			// calls then persists each segment instead of dropping all but the final
+			// answer.
+			flushProse()
 			toolCalls++
 			callSeq[call.ID]++
 			row := transcriptRow{
@@ -5657,6 +5690,18 @@ func (m model) runAgentWithOptions(runID int, runCtx context.Context, prompt str
 			}
 		}
 
+		// The loop calls OnContext once per turn, on the run goroutine, before the
+		// turn's request. Closing the prose segment here captures text-only turns
+		// that continue without a tool call (a completion-gate nudge) — their prose
+		// would otherwise merge into the next turn's segment or be dropped on success.
+		onContext := options.OnContext
+		options.OnContext = func(breakdown agent.ContextBreakdown) {
+			flushProse()
+			if onContext != nil {
+				onContext(breakdown)
+			}
+		}
+
 		onPhase := options.OnPhase
 		options.OnPhase = func(event agent.PhaseEvent) {
 			m.sendAgentPhase(runID, event)
@@ -5668,6 +5713,9 @@ func (m model) runAgentWithOptions(runID int, runCtx context.Context, prompt str
 		result, err := agent.Run(runCtx, prompt, m.provider, options)
 		if err != nil {
 			flushReasoning(m.now())
+			// Persist whatever prose streamed before the failure, ahead of the error,
+			// so an interrupted answer survives a resume/continue.
+			flushProse()
 			sessionEvents = append(sessionEvents, pendingSessionEvent{
 				Type:    sessions.EventError,
 				Payload: map[string]any{"message": err.Error()},
@@ -5690,13 +5738,22 @@ func (m model) runAgentWithOptions(runID int, runCtx context.Context, prompt str
 		if notice := result.TruncationNotice(); notice != "" {
 			rows = append(rows, transcriptRow{kind: rowSystem, text: notice})
 		}
-		sessionEvents = append(sessionEvents, pendingSessionEvent{
-			Type: sessions.EventMessage,
-			Payload: map[string]any{
-				"role":    "assistant",
-				"content": result.FinalAnswer,
-			},
-		})
+		// Persist the run's trailing prose and its final answer exactly once.
+		// flushProse captures the final turn's streamed text; FinalAnswer is stored
+		// only when it is not already the tail of what was flushed — an exact match
+		// (a non-streaming provider, or the final turn's own text) or a suffix (a
+		// max-turns summary merged onto an unflushed nudge-turn segment). A synthetic
+		// max-turns answer with no streamed text is still persisted.
+		flushProse()
+		if strings.TrimSpace(result.FinalAnswer) != "" && !strings.HasSuffix(lastFlushed, result.FinalAnswer) {
+			sessionEvents = append(sessionEvents, pendingSessionEvent{
+				Type: sessions.EventMessage,
+				Payload: map[string]any{
+					"role":    "assistant",
+					"content": result.FinalAnswer,
+				},
+			})
+		}
 		return agentResponseMsg{runID: runID, rows: rows, usageEvents: usageEvents, usageModelID: usageModelID, sessionEvents: sessionEvents, turnTools: toolCalls, turnElapsed: elapsed, ttft: ttft, planApproved: result.PlanApproved}
 	}
 }
