@@ -387,8 +387,13 @@ type Options struct {
 	ToolResultGate *ToolResultGate
 	Registry       *tools.Registry
 	PermissionMode PermissionMode
-	Autonomy       string
-	Sandbox        *sandbox.Engine
+	// PlanMode, when true, is a read-only planning phase orthogonal to
+	// PermissionMode: the loop blocks every mutating tool and the system prompt
+	// instructs the model to investigate and record a plan instead of executing
+	// it. Default false leaves the loop byte-identical.
+	PlanMode bool
+	Autonomy string
+	Sandbox  *sandbox.Engine
 	// FileTracker records per-session file read/write versions so the write tools
 	// can detect a file changed on disk outside KajiCode since it was last read. nil
 	// disables the check. Created once per session and threaded into every tool run.
@@ -545,6 +550,10 @@ type Result struct {
 	// marked Incomplete (e.g. "pending plan items remain"). Empty when Incomplete
 	// is false. Surfaced in logs / run_end so an abandoned run is debuggable.
 	IncompleteReason string
+	// PlanApproved reports that a plan-mode run ended because the user approved
+	// the plan (exit_plan_mode returned "approved"). The surface clears plan mode
+	// and starts executing the plan on the next run. False for every other run.
+	PlanApproved bool
 }
 
 // Truncated reports whether the final response ended abnormally (cut off at the

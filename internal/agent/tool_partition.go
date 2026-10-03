@@ -29,6 +29,11 @@ func partitionToolsCached(registry *tools.Registry, options Options, loaded map[
 		if !ToolVisible(tool, options.EnabledTools, options.DisabledTools) {
 			continue
 		}
+		// exit_plan_mode is a plan-mode-only control tool: advertise it solely
+		// while plan mode is active so a normal run's tool list is unchanged.
+		if tool.Name() == tools.ExitPlanModeToolName && !options.PlanMode {
+			continue
+		}
 		visible = append(visible, tool)
 		if tools.IsDeferralEligible(tool) {
 			eligible++

@@ -193,3 +193,22 @@ func TestTaskToolFailsClosedWithoutRegistry(t *testing.T) {
 		t.Fatal("no parent registry must fail closed")
 	}
 }
+
+// TestTaskToolDeniedByPlanModeGate is the regression guard for the plan-mode
+// hole where a read-only delegation could slip through the read-only gate: the
+// agent loop's plan-mode gate classifies Task through CapabilitiesOf (the
+// STATIC interface), which TaskTool does not implement, so every delegation
+// fails closed to EffectUnknown and is denied — a sub-agent can never mutate
+// the workspace during a planning phase. This asserts the capability fact the
+// gate depends on, without importing internal/agent (which would cycle).
+func TestTaskToolDeniedByPlanModeGate(t *testing.T) {
+	supervisor := NewSupervisor(fakeRunner(), ChildRunContext{Registry: parentRegistry()})
+	tool := NewTaskTool(supervisor)
+	// The loop's gate reads the static capability surface.
+	if _, ok := interface{}(tool).(tools.CapabilityProvider); ok {
+		t.Fatal("TaskTool must not expose a static Capabilities(): plan mode relies on the EffectUnknown fallback to deny it")
+	}
+	if caps := tools.CapabilitiesOf(tool); caps.Effect != tools.EffectUnknown {
+		t.Fatalf("CapabilitiesOf(TaskTool) = %v, want unknown so plan mode denies it", caps.Effect)
+	}
+}

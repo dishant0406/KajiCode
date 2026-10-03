@@ -816,6 +816,9 @@ func mergeKeyBindings(dst *KeyBindingsConfig, src KeyBindingsConfig) {
 	if src.TogglePlan != "" {
 		dst.TogglePlan = src.TogglePlan
 	}
+	if src.TogglePlanMode != "" {
+		dst.TogglePlanMode = src.TogglePlanMode
+	}
 	if src.ToggleSidebar != "" {
 		dst.ToggleSidebar = src.ToggleSidebar
 	}

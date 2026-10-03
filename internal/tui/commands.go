@@ -51,6 +51,7 @@ const (
 	commandPromptInspect
 	commandLoop
 	commandWebSearch
+	commandPlan
 	commandUnknown
 )
 
@@ -296,6 +297,13 @@ var commandDefinitions = []commandDefinition{
 		group:       commandGroupSession,
 		description: "Show or set post-edit self-correction depth (LSP-only default; on/tests/full add the project test plan; off/lsp disable tests, LSP-only).",
 		kind:        commandSelfCorrect,
+	},
+	{
+		name:        "/plan",
+		usage:       "/plan [on|off|status]",
+		group:       commandGroupSession,
+		description: "Toggle read-only plan mode: KajiCode investigates and records a plan without editing or running commands until you approve it.",
+		kind:        commandPlan,
 	},
 	{
 		name:        "/turns",

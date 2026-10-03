@@ -313,6 +313,9 @@ func nextPermissionMode(mode agent.PermissionMode) agent.PermissionMode {
 }
 
 func (m model) modeLabel() (string, lipgloss.Style) {
+	if m.planMode {
+		return "plan", kajicodeTheme.amber
+	}
 	switch m.permissionMode {
 	case agent.PermissionModeAuto:
 		return "auto-approve", kajicodeTheme.modeAuto

@@ -408,6 +408,10 @@ func CoreToolsScoped(workspaceRoot string, scope PathScope) []Tool {
 	tools = append(tools, CoreShellToolsScoped(workspaceRoot, scope)...)
 	tools = append(tools, CoreNetworkTools()...)
 	tools = append(tools, NewTodoReadTool(), NewTodoWriteTool())
+	// exit_plan_mode is registered for every run but advertised only while plan
+	// mode is active (see agent.partitionToolsCached), so a normal run's tool list
+	// is unchanged.
+	tools = append(tools, NewExitPlanModeTool())
 	tools = append(tools, NewMultiEditTool(workspaceRoot))
 	return tools
 }

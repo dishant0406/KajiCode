@@ -18,6 +18,7 @@ const (
 	promptSectionSkills          promptSectionRole = "skills"
 	promptSectionLearning        promptSectionRole = "learning"
 	promptSectionResponseStyle   promptSectionRole = "response-style"
+	promptSectionPlanMode        promptSectionRole = "plan-mode"
 	promptSectionConfirmation    promptSectionRole = "confirmation"
 )
 

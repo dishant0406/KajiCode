@@ -937,6 +937,17 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 				result.Messages = copyMessages(messages)
 				return result, abortErr
 			}
+			// Plan approval ends the run: the user accepted the plan, so the
+			// surface clears plan mode and starts a fresh execution run on the next
+			// turn. Closing out the still-advertised calls keeps every tool_use
+			// paired with a tool_result for a strict provider replay.
+			if toolResult.Meta["plan_exit"] == "approved" {
+				messages = appendAbortedToolResults(messages, collected.ToolCalls[index+1:])
+				result.FinalAnswer = collected.Text
+				result.PlanApproved = true
+				result.Messages = copyMessages(messages)
+				return result, nil
+			}
 			// Repeated-failure guard: if a tool keeps failing the same way, hint
 			// once (with its schema) then halt — so no model loops on a bad call.
 			// Only RETRIABLE failures (bad arguments / execution errors) drive it:
@@ -1347,6 +1358,18 @@ func executeToolCall(ctx context.Context, registry *tools.Registry, call ToolCal
 	}
 	tool, toolFound := registry.Get(call.Name)
 	_ = toolFound
+	// Plan mode is a hard read-only gate: it runs before any permission prompt or
+	// sandbox evaluation so a mutating call is refused outright rather than
+	// offered to the user for approval. Read-only tools (and the small control
+	// allowlist in plan_mode.go) pass through unchanged.
+	if options.PlanMode {
+		if !toolFound {
+			return planModeDeniedResult(call), nil
+		}
+		if planModeDenied(call.Name, tool) {
+			return planModeDeniedResult(call), nil
+		}
+	}
 	if toolFound {
 		if rejecter, ok := tool.(tools.PrePermissionRejecter); ok {
 			if result, rejected := rejecter.RejectBeforePermission(args); rejected {
@@ -1382,6 +1405,9 @@ func executeToolCall(ctx context.Context, registry *tools.Registry, call ToolCal
 	}
 	if call.Name == tools.RequestPermissionsToolName {
 		return executeRequestPermissions(ctx, call, args, permissionMode, options)
+	}
+	if call.Name == tools.ExitPlanModeToolName {
+		return executeExitPlanMode(ctx, call, options)
 	}
 
 	permissionGranted := permissionMode == PermissionModeUnsafe || permissionMode == PermissionModeBypassAll

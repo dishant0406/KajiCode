@@ -143,8 +143,11 @@ type model struct {
 	notifier                    *notify.Notifier
 	permissionMode              agent.PermissionMode
 	savePermissionProfile       func(agent.PermissionMode) error
-	selfCorrectTests            bool
-	reasoningEffort             modelregistry.ReasoningEffort
+	// planMode is the read-only planning phase toggle (Ctrl+G / /plan). It is
+	// orthogonal to permissionMode and applies to the next run.
+	planMode         bool
+	selfCorrectTests bool
+	reasoningEffort  modelregistry.ReasoningEffort
 	// Active execution profile (set by /profile; applies to the NEXT run).
 	// The displaced/applied pairs let a switch or /profile balanced restore
 	// exactly what the profile replaced while leaving later manual overrides
@@ -616,6 +619,10 @@ type agentResponseMsg struct {
 	// ttft is time-to-first-token for the turn (0 when nothing streamed — a
 	// tool-only or errored turn). Set only on the success path.
 	ttft time.Duration
+	// planApproved reports that the run ended because the user approved the plan
+	// (the exit_plan_mode tool returned "approved"). The handler clears plan mode
+	// and queues the execution prompt.
+	planApproved bool
 }
 
 type agentRowMsg struct {
@@ -1699,6 +1706,12 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.plan.expanded = !m.plan.expanded
 				return m, nil
 			}
+		case m.keyMatch(m.keyBindings.togglePlanMode, msg, func(tea.KeyMsg) bool { return keyCtrl(msg, 'g') }):
+			// Ctrl+G toggles read-only plan mode. Modal selection is handled before
+			// this switch so menus win over the toggle; the flag applies next run.
+			if m.noBlockingModal() {
+				return m.togglePlanMode()
+			}
 		case m.keyMatch(m.keyBindings.toggleSidebar, msg, func(tea.KeyMsg) bool { return keyCtrl(msg, 'b') }) && canFireComposerGatedToggle(m.keyBindings.toggleSidebar, defaultToggleSidebarChord, m.composerValue() == ""):
 			// Ctrl+B collapses / restores the right context sidebar. The composer-empty
 			// requirement only applies when the binding resolves to the conflicting
@@ -2316,13 +2329,24 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.activeRunID = 0
 		m.runStartIndex = 0
 		m.plan.frozenAt = m.now() // freeze the plan clock while idle (no run in flight)
+		// The user approved the plan: leave plan mode and queue the execution
+		// prompt so the next run (fired by launchQueuedMessageIfReady below)
+		// implements the plan the model just recorded.
+		if msg.planApproved {
+			m.planMode = false
+			m.transcript = reduceTranscript(m.transcript, transcriptAction{
+				kind: actionAppendSystem,
+				text: "Plan approved — plan mode off. Executing the plan.",
+			})
+			m.queuedMessage = planExecutionPrompt
+		}
 		// A fully successful turn means the task is done. Weaker models often
 		// forget the final todo_write, leaving the panel stuck mid-progress;
 		// reconcile it to complete here. Read pendingAskUser/pendingPermission
 		// BEFORE the reset below clears them, and skip spec-draft reviews — those
 		// are legitimate mid-plan err==nil yields where the plan is NOT done.
 		if msg.err == nil &&
-			m.pendingAskUser == nil && m.pendingPermission == nil {
+			m.pendingAskUser == nil && m.pendingPermission == nil && !msg.planApproved {
 			m.plan.completeRemaining(m.now())
 		}
 		m.pendingPermission = nil
@@ -4753,6 +4777,8 @@ func (m model) dispatchCommand(command parsedCommand) (tea.Model, tea.Cmd) {
 		m, text = m.handleSelfCorrectCommand(command.text)
 		m.transcript = reduceTranscript(m.transcript, transcriptAction{kind: actionAppendSystem, text: text})
 		return m, nil
+	case commandPlan:
+		return m.handlePlanCommand(command.text)
 	case commandTurns:
 		// Changing the budget mid-run would mutate the inherited KAJICODE_MAX_TURNS env
 		// that sub-agents spawned later in THIS run read, making the run's budget
@@ -5192,6 +5218,7 @@ func (m model) runAgentWithOptions(runID int, runCtx context.Context, prompt str
 		if runOptions.permissionMode != "" {
 			options.PermissionMode = runOptions.permissionMode
 		}
+		options.PlanMode = m.planMode
 		if runOptions.systemPrompt != "" {
 			options.SystemPrompt = runOptions.systemPrompt
 		}
@@ -5670,7 +5697,7 @@ func (m model) runAgentWithOptions(runID int, runCtx context.Context, prompt str
 				"content": result.FinalAnswer,
 			},
 		})
-		return agentResponseMsg{runID: runID, rows: rows, usageEvents: usageEvents, usageModelID: usageModelID, sessionEvents: sessionEvents, turnTools: toolCalls, turnElapsed: elapsed, ttft: ttft}
+		return agentResponseMsg{runID: runID, rows: rows, usageEvents: usageEvents, usageModelID: usageModelID, sessionEvents: sessionEvents, turnTools: toolCalls, turnElapsed: elapsed, ttft: ttft, planApproved: result.PlanApproved}
 	}
 }
 

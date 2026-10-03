@@ -89,6 +89,11 @@ The TUI flow is:
    and final results back into the Bubble Tea loop.
 5. `model.View` renders transcript, composer, modals, sidebars, and status.
 
+Plan mode is a TUI-level toggle (`/plan`, `Ctrl+G`) that sets `Options.PlanMode`
+on the next run and shows a `plan` status label; the `exit_plan_mode` approval
+clears it and queues an execution turn. It is independent of the permission
+profile cycled by `Shift+Tab`. See [Plan Mode](#plan-mode).
+
 TUI features should be testable through update/view tests and should preserve
 layout across width and height tiers.
 
@@ -140,6 +145,34 @@ Interactive-only assumptions must not leak into exec.
 
 Tool calls and tool results must stay provider-valid as paired conversation
 messages. Any loop change that can affect message pairing needs regression tests.
+
+### Plan Mode
+
+Plan mode is a read-only planning phase that is **orthogonal to
+`PermissionMode`**, not a member of it. It is carried by `Options.PlanMode` and
+enforced in two layers:
+
+- `planModeContext` (`internal/agent/plan_mode.go`) adds the
+  `promptSectionPlanMode` system-prompt section instructing the model to
+  investigate read-only, record the plan with `todo_write`, and end by calling
+  `exit_plan_mode`.
+- `planModeDenied` is the hard backstop in `executeToolCall`
+  (`internal/agent/loop.go`). It runs before any permission prompt or sandbox
+  evaluation and refuses every non-read-only tool outright — including tools whose
+  effect is unknown (MCP, plugin, sub-agent) so they fail closed. A small
+  allowlist keeps `todo_write`, `ask_user`, `request_permissions`,
+  `escalate_model`, and `exit_plan_mode` available; the read-only dispatchers
+  `batch` and `recipe_run` are blocked because their declared effect does not
+  reflect the sub-calls they fan out to. Both the serial and parallel-batch paths
+  funnel through `executeToolCall`, so one gate covers them.
+
+`exit_plan_mode` is registered like any other tool but advertised only while plan
+mode is active (`partitionToolsCached` in `internal/agent/tool_partition.go`), so
+a normal run's tool list is unchanged. Its call is intercepted in the loop and
+routed to the interactive `OnAskUser` channel; on approval the run ends with
+`Result.PlanApproved`, the surface clears plan mode, and the TUI queues a
+synthetic execution turn. Because the run is rebuilt every turn, toggling plan
+mode (`/plan`, `Ctrl+G`) takes effect on the next run.
 
 ### Wire Protocol Routing
 
@@ -270,6 +303,10 @@ tools, the catalog now includes:
   (`CurrentTodos`) so the TUI plan panel, ACP plan updates, and the agent
   guardrails/completion gate all read one source of truth. The former
   `update_plan` tool was removed in favor of this tool.
+- `exit_plan_mode` — the plan-mode control tool (`internal/tools/plan_mode.go`).
+  Registered for every run but advertised only while plan mode is active; the
+  agent loop intercepts it and asks the user to approve the plan. See
+  [Plan Mode](#plan-mode).
 - `batch` — explicit batcher that fans out up to 10 sub-calls to
   `Registry.RunWithOptions`, parallelizing only ReadOnly + ThreadSafe + permitted
   calls with non-conflicting resource keys and serializing the rest

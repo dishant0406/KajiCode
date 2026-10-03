@@ -297,6 +297,7 @@ type keyBindings struct {
 	toggleMouse    parsedBinding
 	cycleReasoning parsedBinding
 	togglePlan     parsedBinding
+	togglePlanMode parsedBinding
 	toggleSidebar  parsedBinding
 }
 
@@ -315,6 +316,7 @@ func resolveKeyBindings(cfg config.KeyBindingsConfig) keyBindings {
 		toggleMouse:    parseBinding(string(cfg.ToggleMouse)),
 		cycleReasoning: parseBinding(string(cfg.CycleReasoning)),
 		togglePlan:     parseBinding(string(cfg.TogglePlan)),
+		togglePlanMode: parseBinding(string(cfg.TogglePlanMode)),
 		toggleSidebar:  parseBinding(string(cfg.ToggleSidebar)),
 	}
 }
@@ -367,6 +369,7 @@ func sanitizeKeyBindings(b keyBindings) (keyBindings, []string) {
 		{"toggleMouse", &b.toggleMouse, parseBinding("ctrl+e")},
 		{"cycleReasoning", &b.cycleReasoning, parseBinding("ctrl+t")},
 		{"togglePlan", &b.togglePlan, parseBinding("ctrl+p")},
+		{"togglePlanMode", &b.togglePlanMode, parseBinding("ctrl+g")},
 		{"toggleSidebar", &b.toggleSidebar, parseBinding("ctrl+b")},
 	}
 

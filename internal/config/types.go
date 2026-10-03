@@ -170,6 +170,8 @@ type KeyBindingsConfig struct {
 	CycleReasoning KeyBindingDef `json:"cycleReasoning,omitempty"`
 	// TogglePlan toggles the plan panel expansion (default: ctrl+p).
 	TogglePlan KeyBindingDef `json:"togglePlan,omitempty"`
+	// TogglePlanMode toggles read-only plan mode (default: ctrl+g).
+	TogglePlanMode KeyBindingDef `json:"togglePlanMode,omitempty"`
 	// ToggleSidebar toggles the right context sidebar (default: ctrl+b).
 	ToggleSidebar KeyBindingDef `json:"toggleSidebar,omitempty"`
 }

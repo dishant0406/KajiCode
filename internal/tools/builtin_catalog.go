@@ -50,6 +50,9 @@ func BuiltinCatalog(workspaceRoot string) []Tool {
 	// registered for every agent). They persist via the wired SessionStore;
 	// todo_write mirrors the list in memory for TUI/ACP plan rendering.
 	all = append(all, NewTodoReadTool(), NewTodoWriteTool())
+	// exit_plan_mode is the control tool that ends a plan-mode run; it is
+	// advertised only while plan mode is active (see agent.partitionToolsCached).
+	all = append(all, NewExitPlanModeTool())
 	// Multi-edit: atomic batch editing of one file.
 	all = append(all, NewMultiEditTool(workspaceRoot))
 	return all

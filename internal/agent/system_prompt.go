@@ -155,6 +155,9 @@ func buildSystemPromptParts(options Options) systemPromptParts {
 	if style := responseStyleContext(options); style != "" {
 		builder.add(promptSectionResponseStyle, style)
 	}
+	if planMode := planModeContext(options); planMode != "" {
+		builder.add(promptSectionPlanMode, planMode)
+	}
 	policy := strings.TrimSpace(confirmationPolicy)
 	if policy != "" {
 		builder.add(promptSectionConfirmation, policy)
