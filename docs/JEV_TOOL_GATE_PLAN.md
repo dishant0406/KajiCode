@@ -413,8 +413,9 @@ When the decision is "gate":
   no new lifecycle**.
 - Append a stub naming the path and the reason, in the winnow shape:
   `[gate] 148 of 210 lines hidden (relevance <= 0.22); full output saved to <path>; read_file or grep it if you need it`.
-- Set `result.Meta`: `gate_decision=pruned|kept|error_present|below_min_prune_ratio`,
-  `gate_hidden_lines`, `gate_relevance_max`, `spill_path`.
+- Set `result.Meta`: `gate_decision=pruned|kept|error_present|below_min_prune_ratio|above_max_hidden_ratio|shadow`,
+  `gate_hidden_lines`, `gate_kept_lines`, `gate_relevance_min`, `gate_relevance_max`
+  (over every judged block), `gate_drop_relevance_max`, `spill_path`.
 - **Fail-open everywhere:** spill failure, classifier error, zero answers, or
   a below-ratio decision all return the **original** result unchanged.
 

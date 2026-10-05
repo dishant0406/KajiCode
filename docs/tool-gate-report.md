@@ -318,16 +318,22 @@ A live `exec` run with the gate ON (`classifier.features.toolResult.enabled`),
 | `read_file` `pkg/big_service.go` | 89,135 B / 1,204 lines | **judged → kept** (0 hidden) |
 | `grep` `TODO` `pkg` (head_limit 900) | 65,506 B / 725 lines | **judged → kept** (0 hidden) |
 | `web_search` `"Go net/http Server timeouts 2026"` | 2,338 B / 15 lines | **judged → kept** (0 hidden) |
-| `web_fetch` `https://go.dev/blog/go1.24` | 7,632 B / 344 lines | **judged → pruned** — 192 hidden / 150 kept, `gate_max_hidden_relevance` 0.190 |
+| `web_fetch` `https://go.dev/blog/go1.24` | 7,632 B / 344 lines | **judged → pruned** — 192 hidden / 150 kept, drop-set max `gate_drop_relevance_max` 0.190 |
 
 The `web_search` and `grep` verdicts are the coverage fix working live: both were
 previously **skipped** (`web_search` on the 50-line rule; `grep` on the
 pre-truncated rule) and now reach the classifier. `web_fetch` was genuinely
 pruned, and its spill file round-tripped: the stub advertises
 `…/web_fetch-508977072.txt`, which is present (7,632 B, 341 lines) and contains
-the hidden tail. `gate_max_hidden_relevance` of 0.190 — just under the 0.2 drop
-floor — is the same threshold-edge fragility §4 already flags; the verdict
-flipped between runs in the earliest live test for the same reason.
+the hidden tail. The drop-set max of 0.190 is *by construction* below the 0.2 drop
+floor — it is computed only over blocks that were already hidden — so it says
+nothing about how the classifier scored the result as a whole. The honest pair
+now recorded for every judged result that produced at least one block answer is
+`gate_relevance_min` / `gate_relevance_max`
+over **all** blocks; see §2.1 for the real distribution (min 0.10–0.19, median
+0.47–0.55, max 0.68–0.73, AUC 0.705). Threshold-edge sensitivity is real (§4);
+"the classifier scores everything ~0.1" was an artifact of reading this key as a
+whole-result maximum.
 
 Provider usage for the run peaked at **77,933** prompt tokens (the compact
 200k-class window is far away, so the compaction judge correctly did not fire).

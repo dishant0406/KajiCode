@@ -68,9 +68,24 @@ carry a `spill_path`; the stub names it, so "dropped ≠ lost" holds.
 
 - **n=1 per arm.** One task, one model, one classifier, one threshold (0.2).
   Directional, not a distribution.
-- **The drop set sits on the threshold edge.** Every `gate_max_hidden_relevance`
-  observed is 0.08–0.19 — just under the 0.2 floor. The gate works, but its
-  decisions are threshold-sensitive, as earlier reports flagged.
+- **The drop set sits on the threshold edge — but that is arithmetic, not a
+  finding.** Every `gate_max_hidden_relevance` observed is 0.08–0.19, "just under
+  the 0.2 floor". That key was computed **only over blocks that were already
+  hidden** (the max was updated inside the `< DropThreshold` branch), so it is
+  *guaranteed* to be below the floor. It measured nothing about the classifier.
+  Reading it as "the classifier scores everything ~0.1" was the error it invited.
+  It has since been replaced by `gate_relevance_min` / `gate_relevance_max`,
+  taken over **every** judged block. Measured with the real binary on the same
+  file (`internal/tui/flush.go`):
+
+  | goal | decision | `gate_relevance_min`–`max` |
+  |---|---|---|
+  | "explain what the flush loop does" | `kept` | **0.31–0.73** |
+  | "…do not discuss the file contents" | `above_max_hidden_ratio` | **0.05–0.07** |
+
+  The classifier separates cleanly and in the right direction. The gate works;
+  its decisions are threshold-sensitive, which is a real property, but the
+  "uniformly low" reading was a metric artifact.
 - **Prompt tokens are not a clean comparison.** Run A peaked at 99,712 prompt
   tokens; Run B at 116,363. But Run B also did more/different work (web research
   into opencode's docs), so this is **not** a gated-vs-ungated token delta and

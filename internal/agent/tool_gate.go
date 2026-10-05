@@ -56,10 +56,29 @@ const (
 	gateMetaDecision     = "gate_decision"
 	gateMetaHiddenLines  = "gate_hidden_lines"
 	gateMetaKeptLines    = "gate_kept_lines"
-	gateMetaMaxRelevance = "gate_max_hidden_relevance"
-	gateMetaCoverage     = "gate_coverage"
-	gateMetaRequery      = "gate_requery"
+	gateMetaRelevanceMin = "gate_relevance_min"
+	gateMetaRelevanceMax = "gate_relevance_max"
+	// gateMetaDropRelevanceMax is the highest score among the HIDDEN blocks. It is
+	// bounded above by DropThreshold by construction, so it can never show whether
+	// the classifier scores everything low — gateMetaRelevanceMin/Max over all
+	// judged blocks exist for that. It is recorded only to explain a decision.
+	gateMetaDropRelevanceMax = "gate_drop_relevance_max"
+	gateMetaCoverage         = "gate_coverage"
+	gateMetaRequery          = "gate_requery"
 )
+
+// gateStats is what the gate measured about one result's block scores. The
+// decision alone cannot show whether the classifier is scoring every block low:
+// the drop-set maximum is always below the drop threshold, so a broken and a
+// healthy classifier look identical from it. relevanceMin/relevanceMax are taken
+// over EVERY judged block and are not fixed by the decision rule, which is what
+// makes an uncalibrated classifier visible.
+type gateStats struct {
+	relevanceMin float64
+	relevanceMax float64
+	dropMax      float64
+	answered     int
+}
 
 // gateDecisions are the gate's outcomes, recorded in result metadata.
 const (
@@ -172,14 +191,15 @@ func maybeGateToolResult(ctx context.Context, options Options, run gateRun, call
 	if len(body) < gate.MinBytes || isPrunedPlaceholder(body) {
 		return result
 	}
+	lines := strings.Split(body, "\n")
 	// Error belt, first half: a structured failure is never gated, because the
 	// one line that explains the failure is the line a relevance filter is most
-	// likely to drop.
+	// likely to drop. The result is returned verbatim, so every line is kept and
+	// no block was judged (answered=0), which keeps the relevance keys absent.
 	if gateErrorSignal.MatchString(body) {
-		return result.withGateMeta(gateDecisionError, 0, 0, 0)
+		return result.withGateMeta(gateDecisionError, 0, len(lines), gateStats{})
 	}
 
-	lines := strings.Split(body, "\n")
 	blocks := gateBlocks(lines)
 	if len(blocks) < gateMinBlocks {
 		return result
@@ -194,43 +214,46 @@ func maybeGateToolResult(ctx context.Context, options Options, run gateRun, call
 
 	hidden := make([]bool, len(blocks))
 	hiddenLines := 0
-	maxRel := 0.0
+	stats := gateStats{relevanceMin: 1}
 	for i, block := range blocks {
 		answer, ok := answers[block.id]
 		if !ok || answer.Type != classifier.KindNoul {
 			// No answer (batch error, missing id): KEEP. Keeping is cheap.
 			continue
 		}
+		// Recorded over EVERY answered block, kept or hidden, so the pair reflects
+		// the classifier's real output rather than the decision rule.
+		stats.answered++
+		stats.relevanceMin = min(stats.relevanceMin, answer.Probability)
+		stats.relevanceMax = max(stats.relevanceMax, answer.Probability)
 		if answer.Probability >= gate.DropThreshold {
 			// Confident keep, or the uncertain band — both keep.
 			continue
 		}
 		hidden[i] = true
 		hiddenLines += block.end - block.start
-		if answer.Probability > maxRel {
-			maxRel = answer.Probability
-		}
+		stats.dropMax = max(stats.dropMax, answer.Probability)
 	}
 	// The shared error belt: a block the classifier marked confidently
 	// irrelevant is only hidden if the result as a whole reports no failure.
 	if errorPresent {
-		return result.withGateMeta(gateDecisionError, 0, len(lines), 0)
+		return result.withGateMeta(gateDecisionError, 0, len(lines), stats)
 	}
 	if hiddenLines == 0 {
 		// Nothing was hidden, so the result is the whole truth and there is
 		// nothing to be insufficient about.
-		return result.withGateMeta(gateDecisionKept, 0, len(lines), 0)
+		return result.withGateMeta(gateDecisionKept, 0, len(lines), stats)
 	}
 	if float64(hiddenLines)/float64(len(lines)) < gate.MinPruneRatio {
-		return result.withGateMeta(gateDecisionBelowMin, hiddenLines, len(lines)-hiddenLines, maxRel)
+		return result.withGateMeta(gateDecisionBelowMin, hiddenLines, len(lines)-hiddenLines, stats)
 	}
 	if float64(hiddenLines)/float64(len(lines)) >= gate.MaxHiddenRatio {
 		// A result the filter would mostly black out is not filtered, it is lost:
 		// the model would see a stub and a spill path and nothing to reason about.
-		return result.withGateMeta(gateDecisionAboveMax, hiddenLines, len(lines)-hiddenLines, maxRel)
+		return result.withGateMeta(gateDecisionAboveMax, hiddenLines, len(lines)-hiddenLines, stats)
 	}
 	if gate.Shadow {
-		return result.withGateMeta(gateDecisionShadow, hiddenLines, len(lines)-hiddenLines, maxRel)
+		return result.withGateMeta(gateDecisionShadow, hiddenLines, len(lines)-hiddenLines, stats)
 	}
 
 	// Spill the body FIRST, so a hidden block is recoverable by reading the file
@@ -250,12 +273,12 @@ func maybeGateToolResult(ctx context.Context, options Options, run gateRun, call
 		path = tools.SpillOutput(call.Name, body)
 	}
 	if path == "" {
-		return result.withGateMeta(gateDecisionKept, 0, len(lines), 0)
+		return result.withGateMeta(gateDecisionKept, 0, len(lines), stats)
 	}
 
 	target := gateTarget(call)
-	kept := renderGated(lines, blocks, hidden, hiddenLines, len(lines), maxRel, path, call.Name, target)
-	meta := gateMeta(result.Meta, gateDecisionPruned, hiddenLines, len(lines)-hiddenLines, maxRel, path)
+	kept := renderGated(lines, blocks, hidden, hiddenLines, len(lines), stats.dropMax, path, call.Name, target)
+	meta := gateMeta(result.Meta, gateDecisionPruned, hiddenLines, len(lines)-hiddenLines, stats, path)
 
 	// Coverage: is what SURVIVED enough to proceed? This is the signal a silent
 	// filter cannot produce and the trigger the re-query loop runs on. It is only
@@ -527,7 +550,7 @@ func gateCoverageInsufficient(ctx context.Context, gate *ToolResultGate, goal st
 // and the recovery file. Naming the tool and target is what lets the model
 // re-issue a better call itself: a stub that only says "N lines hidden" tells it
 // nothing about HOW to ask again.
-func renderGated(lines []string, blocks []gateBlock, hidden []bool, hiddenLines, totalLines int, maxRel float64, path, tool, target string) string {
+func renderGated(lines []string, blocks []gateBlock, hidden []bool, hiddenLines, totalLines int, dropMaxRel float64, path, tool, target string) string {
 	out := make([]string, 0, len(lines))
 	for index := 0; index < len(blocks); {
 		if !hidden[index] {
@@ -547,7 +570,7 @@ func renderGated(lines []string, blocks []gateBlock, hidden []bool, hiddenLines,
 		subject = tool + " " + target
 	}
 	stub := fmt.Sprintf("[gate] %d of %d lines of %s hidden (max hidden relevance %.2f); full output saved to %s; read_file it or re-issue %s with a narrower target if you need it",
-		hiddenLines, totalLines, subject, maxRel, path, tool)
+		hiddenLines, totalLines, subject, dropMaxRel, path, tool)
 	return strings.Join(out, "\n") + "\n" + stub
 }
 
@@ -571,20 +594,26 @@ func gateTarget(call ToolCall) string {
 	return ""
 }
 
-func (r ToolResult) withGateMeta(decision string, hiddenLines, keptLines int, maxRel float64) ToolResult {
-	r.Meta = gateMeta(r.Meta, decision, hiddenLines, keptLines, maxRel, "")
+func (r ToolResult) withGateMeta(decision string, hiddenLines, keptLines int, stats gateStats) ToolResult {
+	r.Meta = gateMeta(r.Meta, decision, hiddenLines, keptLines, stats, "")
 	return r
 }
 
-func gateMeta(meta map[string]string, decision string, hiddenLines, keptLines int, maxRel float64, spillPath string) map[string]string {
+func gateMeta(meta map[string]string, decision string, hiddenLines, keptLines int, stats gateStats, spillPath string) map[string]string {
 	if meta == nil {
 		meta = map[string]string{}
 	}
 	meta[gateMetaDecision] = decision
 	meta[gateMetaHiddenLines] = strconv.Itoa(hiddenLines)
 	meta[gateMetaKeptLines] = strconv.Itoa(keptLines)
+	// Recorded over every answered block, so these two numbers answer "is the
+	// classifier scoring everything low?" — which the decision alone cannot.
+	if stats.answered > 0 {
+		meta[gateMetaRelevanceMin] = strconv.FormatFloat(stats.relevanceMin, 'f', 3, 64)
+		meta[gateMetaRelevanceMax] = strconv.FormatFloat(stats.relevanceMax, 'f', 3, 64)
+	}
 	if hiddenLines > 0 {
-		meta[gateMetaMaxRelevance] = strconv.FormatFloat(maxRel, 'f', 3, 64)
+		meta[gateMetaDropRelevanceMax] = strconv.FormatFloat(stats.dropMax, 'f', 3, 64)
 	}
 	if spillPath != "" {
 		meta["spill_path"] = spillPath

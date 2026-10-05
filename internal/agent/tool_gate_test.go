@@ -193,6 +193,7 @@ func TestGateNoAnswerKeeps(t *testing.T) {
 	if got.Output != body {
 		t.Fatalf("no answers must keep everything")
 	}
+	assertNoRelevanceKeys(t, got)
 }
 
 func TestGateClassifierErrorFailsOpen(t *testing.T) {
@@ -202,6 +203,31 @@ func TestGateClassifierErrorFailsOpen(t *testing.T) {
 	if got.Output != body {
 		t.Fatalf("classifier error must fail open")
 	}
+	assertNoRelevanceKeys(t, got)
+}
+
+// A block with no answer is not evidence about the classifier. Recording a
+// defaulted 0.0 for it would make a batch error look like a uniformly-low
+// classifier, which is the exact misreading these keys exist to prevent.
+func assertNoRelevanceKeys(t *testing.T, got ToolResult) {
+	t.Helper()
+	for _, key := range []string{gateMetaRelevanceMin, gateMetaRelevanceMax} {
+		if v, ok := got.Meta[key]; ok {
+			t.Fatalf("%s = %q recorded with no answered block", key, v)
+		}
+	}
+}
+
+// The structured-error belt returns the result verbatim before any block is
+// judged, so it must not record relevance keys either.
+func TestGateErrorBeltRecordsNoRelevance(t *testing.T) {
+	stub := &stubClassifier{probs: map[string]float64{"b000": 0.9}}
+	got := maybeGateToolResult(context.Background(), Options{ToolResultGate: gateFor(stub, false)},
+		messagesWithGoal(), ToolCall{Name: "bash"}, okResult("panic: boom\n"+bigBody(100)))
+	if got.Meta[gateMetaDecision] != gateDecisionError {
+		t.Fatalf("expected error_present, got %q", got.Meta[gateMetaDecision])
+	}
+	assertNoRelevanceKeys(t, got)
 }
 
 func TestGateSemanticErrorQuestionKeepsWhole(t *testing.T) {
@@ -635,5 +661,61 @@ func TestGateClampsMaxHiddenRatioAboveMinPruneRatio(t *testing.T) {
 	gate := (&ToolResultGate{Classifier: &stubClassifier{}, MinPruneRatio: 0.9}).withDefaults()
 	if gate.MaxHiddenRatio != 0.9 {
 		t.Fatalf("MaxHiddenRatio = %v, want it raised to MinPruneRatio 0.9", gate.MaxHiddenRatio)
+	}
+}
+
+// The decision alone cannot show an uncalibrated classifier: gate_drop_relevance_max
+// is bounded above by DropThreshold by construction. gate_relevance_min/max are
+// taken over every judged block, so a classifier that scores everything low is
+// distinguishable from one that separates — the whole reason these keys exist.
+func TestGateRecordsRelevanceStatsOverAllBlocks(t *testing.T) {
+	// b000 low (hidden), b001 high (kept): the pair must straddle the threshold.
+	// 60 lines / 3 blocks (25+25+10) and >MinBytes, so the gate actually judges.
+	stub := &stubClassifier{probs: map[string]float64{"b000": 0.03, "b001": 0.62}}
+	got := maybeGateToolResult(context.Background(), Options{ToolResultGate: gateFor(stub, true)},
+		messagesWithGoal(), ToolCall{Name: "bash"}, okResult(bigBody(60)))
+
+	if got.Meta[gateMetaRelevanceMin] != "0.030" {
+		t.Fatalf("gate_relevance_min = %q, want 0.030 (the hidden block)", got.Meta[gateMetaRelevanceMin])
+	}
+	if got.Meta[gateMetaRelevanceMax] != "0.620" {
+		t.Fatalf("gate_relevance_max = %q, want 0.620 (the kept block)", got.Meta[gateMetaRelevanceMax])
+	}
+	// The drop-set maximum stays under the threshold; it must never be read as a
+	// whole-result maximum, which is exactly the mistake the old key invited.
+	if got.Meta[gateMetaDropRelevanceMax] != "0.030" {
+		t.Fatalf("gate_drop_relevance_max = %q, want 0.030", got.Meta[gateMetaDropRelevanceMax])
+	}
+	if _, stale := got.Meta["gate_max_hidden_relevance"]; stale {
+		t.Fatal("the misleading gate_max_hidden_relevance key must be gone")
+	}
+}
+
+// A blackout-classifier fixture: every block scores below the floor. The old
+// metric would have reported ~0.05 and read as "fine, just under the floor";
+// the new minimum must expose it as a uniformly-low classifier.
+func TestGateRelevanceMinExposesUniformlyLowClassifier(t *testing.T) {
+	stub := &stubClassifier{probs: map[string]float64{"b000": 0.05, "b001": 0.06}}
+	got := maybeGateToolResult(context.Background(), Options{ToolResultGate: gateFor(stub, true)},
+		messagesWithGoal(), ToolCall{Name: "bash"}, okResult(bigBody(60)))
+
+	if got.Meta[gateMetaRelevanceMin] != "0.050" {
+		t.Fatalf("gate_relevance_min = %q, want 0.050", got.Meta[gateMetaRelevanceMin])
+	}
+	if got.Meta[gateMetaRelevanceMax] != "0.060" {
+		t.Fatalf("gate_relevance_max = %q, want 0.060 — a uniform classifier must not look separated", got.Meta[gateMetaRelevanceMax])
+	}
+}
+
+// An unanswered block is not evidence about the classifier, so it must not drag
+// the recorded minimum to zero.
+func TestGateRelevanceStatsIgnoreUnansweredBlocks(t *testing.T) {
+	stub := &stubClassifier{probs: map[string]float64{"b000": 0.30}}
+	got := maybeGateToolResult(context.Background(), Options{ToolResultGate: gateFor(stub, true)},
+		messagesWithGoal(), ToolCall{Name: "bash"}, okResult(bigBody(60)))
+
+	if got.Meta[gateMetaRelevanceMin] != "0.300" || got.Meta[gateMetaRelevanceMax] != "0.300" {
+		t.Fatalf("stats = min %q max %q, want both 0.300 from the single answered block",
+			got.Meta[gateMetaRelevanceMin], got.Meta[gateMetaRelevanceMax])
 	}
 }
