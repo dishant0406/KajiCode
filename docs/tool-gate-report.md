@@ -331,3 +331,17 @@ flipped between runs in the earliest live test for the same reason.
 
 Provider usage for the run peaked at **77,933** prompt tokens (the compact
 200k-class window is far away, so the compaction judge correctly did not fire).
+
+---
+
+## Follow-up: the threshold-edge caveat was a real defect (fixed)
+
+§4's "threshold-edge fragility" and the `0.190` verdict above were symptoms of a
+missing invariant, not just tight margins: the gate had a **minimum** hidden
+share but **no ceiling**, so a classifier that scored every block low could hide
+**100%** of a result. A live run reproduced it exactly — `44 of 44 lines of
+read_file path="go.sum" hidden (max hidden relevance 0.05)` — and the stub's
+`read_file` recovery pointer was itself gateable, so the recovery read returned
+another stub. See `docs/tool-gate-live-test-2026-10-02.md` ("Follow-up: the
+no-ceiling blackout") for the fix, the verification, and the remaining
+calibration question.

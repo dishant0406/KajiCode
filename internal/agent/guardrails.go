@@ -55,6 +55,24 @@ const (
 	// error, so this only affects true same-error loops.
 	toolFailureStopAt = 6
 
+	// noOpToolCallHintAt injects a one-shot corrective nudge after this many
+	// consecutive turns whose tool calls all repeat an earlier call verbatim and
+	// change nothing. A repeated identical call cannot produce new information, so
+	// the loop tells the model to stop re-issuing it.
+	//
+	// BOUNDARY: this catches *verbatim* repeats only. A model that varies the
+	// arguments each turn ("echo 1", "echo 2", …) issues a new call every time and
+	// is not caught here — that class of loop is bounded by MaxTurns alone. The
+	// guard is deliberately narrow because a broader "same tool + small output"
+	// rule would cut off legitimate iteration, and the blind-agent state that
+	// produced the reported loop is prevented at its source by the gate's
+	// MaxHiddenRatio ceiling (see internal/agent/tool_gate.go).
+	noOpToolCallHintAt = 3
+	// noOpToolCallStopAt halts the run after this many consecutive no-op turns.
+	// Higher than the hint so a model that self-corrects after the nudge is not
+	// cut short.
+	noOpToolCallStopAt = 6
+
 	// maxContinueNudges bounds how many times the headless completion gate
 	// (Options.RequireCompletionSignal) re-prompts a model that stopped without a
 	// tool call while work clearly remained. Once spent, the run finalizes as
@@ -335,6 +353,14 @@ type toolFailureOutcome struct {
 	Count      int
 }
 
+// noOpToolOutcome reports what the no-op guard wants the loop to do after a turn
+// whose tool calls were all verbatim repeats and changed nothing.
+type noOpToolOutcome struct {
+	InjectHint bool
+	Stop       bool
+	Count      int
+}
+
 // errorSignature normalizes a tool error to a short, comparable signature so
 // repeated identical failures are detected while a genuinely different error
 // resets the streak.
@@ -464,10 +490,74 @@ type guardState struct {
 	// toolFailures tracks consecutive same-error failures per tool, keyed by tool
 	// name, so the loop can hint then halt instead of looping forever.
 	toolFailures map[string]*toolFailureRecord
+	// seenToolCalls is the set of call keys (tool name + arguments) issued so far
+	// this run, so a repeat is recognized without keeping the bodies.
+	seenToolCalls map[string]bool
+	// noOpTurns counts consecutive turns whose every tool call was a verbatim
+	// repeat of an earlier call in this run and which changed no file. Such a turn
+	// cannot add information, which is the one runaway pattern the other counters
+	// miss: the model emits a short preamble (resetting emptyTurns) and a call that
+	// succeeds (resetting the failure streak), so it can loop indefinitely without
+	// ever tripping a guard. Hinted at noOpToolCallHintAt, halted at
+	// noOpToolCallStopAt.
+	noOpTurns        int
+	noOpReminderSent bool
 }
 
 func newGuardState() *guardState {
-	return &guardState{toolFailures: map[string]*toolFailureRecord{}}
+	return &guardState{
+		toolFailures:  map[string]*toolFailureRecord{},
+		seenToolCalls: map[string]bool{},
+	}
+}
+
+// toolCallKey identifies a tool call by what makes it the same call: its name and
+// its exact arguments. A repeat of this key cannot return anything the model has
+// not already seen.
+func toolCallKey(call kajicoderuntime.ToolCall) string {
+	return call.Name + "\x00" + call.Arguments
+}
+
+// observeNoOpToolCalls tracks turns whose tool calls are all verbatim repeats of
+// calls already issued in this run and which changed no file, and reports whether
+// to nudge and/or halt.
+//
+// A turn with no tool calls does not touch the counter: stopping there is the
+// model's decision, not a loop. A turn with at least one NEW call, or one that
+// changed a file, resets it — new work is progress even when it is later
+// repeated. `changedFiles` is the turn's mutated-file set, so an edit that
+// happens to repeat a call is still progress.
+func (state *guardState) observeNoOpToolCalls(calls []kajicoderuntime.ToolCall, changedFiles []string) noOpToolOutcome {
+	if state.seenToolCalls == nil {
+		state.seenToolCalls = map[string]bool{}
+	}
+	if len(calls) == 0 {
+		return noOpToolOutcome{}
+	}
+	repeated := len(changedFiles) == 0
+	for _, call := range calls {
+		key := toolCallKey(call)
+		if !state.seenToolCalls[key] {
+			state.seenToolCalls[key] = true
+			repeated = false
+		}
+	}
+	if !repeated {
+		state.noOpTurns = 0
+		state.noOpReminderSent = false
+		return noOpToolOutcome{}
+	}
+	state.noOpTurns++
+	outcome := noOpToolOutcome{Count: state.noOpTurns}
+	if state.noOpTurns >= noOpToolCallStopAt {
+		outcome.Stop = true
+		return outcome
+	}
+	if state.noOpTurns >= noOpToolCallHintAt && !state.noOpReminderSent {
+		state.noOpReminderSent = true
+		outcome.InjectHint = true
+	}
+	return outcome
 }
 
 // observeToolResult tracks repeated identical failures of a tool. A successful
@@ -575,6 +665,23 @@ func (state *guardState) progressReminder() string {
 	}
 	state.toolOnlyReminderSent = true
 	return toolOnlyProgressReminder(state.toolOnlyTurns)
+}
+
+// noOpToolCallReminder tells the model that the calls it just made were verbatim
+// repeats, so it stops re-issuing them and either changes approach or answers.
+func noOpToolCallReminder(turns int) string {
+	return "Your last " + strconv.Itoa(turns) + " turns called tools with arguments identical to earlier calls in this run, " +
+		"so they returned nothing new. Do not repeat a call you have already made: " +
+		"use the results you already have, change the arguments, or state the answer with what you know."
+}
+
+// noOpToolCallStopAnswer is the final answer when the run halts on repeated
+// identical calls. noOpToolCallStopMarker is a stable substring for tests.
+const noOpToolCallStopMarker = "repeated earlier tool calls verbatim"
+
+func noOpToolCallStopAnswer(turns int) string {
+	return "Agent stopped after " + strconv.Itoa(turns) + " turns that " + noOpToolCallStopMarker +
+		", which returned nothing new, to avoid consuming tokens without making progress."
 }
 
 // planReminder returns a one-shot reminder message to inject before the next

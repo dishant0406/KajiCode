@@ -62,6 +62,15 @@ const (
 	// model_switches: a posture escalation changes loop policy knobs, never the
 	// model or session.
 	CounterPostureEscalations = "posture_escalations"
+	// CounterGateStubs counts tool results the relevance gate replaced with a
+	// stub, CounterGateKept counts results the gate judged and left whole, and
+	// CounterGateAboveMax counts results the ceiling saved from being hidden in
+	// full. The last is the signal that matters: a classifier that scores every
+	// block low makes gate_above_max climb, which a stub/kept split alone cannot
+	// show because those results are "kept" either way.
+	CounterGateStubs    = "gate_stubs"
+	CounterGateKept     = "gate_kept"
+	CounterGateAboveMax = "gate_above_max"
 )
 
 // Span is one named wall interval attributed to part of a run. Each stamp is
@@ -301,6 +310,9 @@ func OptionalEventKeys() []string {
 		"counter:" + CounterPrefixStable,
 		"counter:" + CounterPrefixDrift,
 		"counter:" + CounterPostureEscalations,
+		"counter:" + CounterGateStubs,
+		"counter:" + CounterGateKept,
+		"counter:" + CounterGateAboveMax,
 		"event:prefix_hash",
 		"task_state",
 	}

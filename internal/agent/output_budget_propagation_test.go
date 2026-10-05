@@ -111,6 +111,34 @@ func TestRecordOutputBudgetTraceUsesOnlyCompactMetadata(t *testing.T) {
 	}
 }
 
+// A stubbed result must increment gate_stubs so a classifier that hides every
+// tool result is visible in the trace; a result the gate kept counts as kept.
+func TestRecordGateTraceCountsStubsAndKeeps(t *testing.T) {
+	recorder := trace.NewRecorder("session", "run", "")
+	recorder.Start()
+	recordGateTrace(recorder, ToolResult{Meta: map[string]string{gateMetaDecision: gateDecisionPruned}})
+	recordGateTrace(recorder, ToolResult{Meta: map[string]string{gateMetaDecision: gateDecisionAboveMax}})
+	recordGateTrace(recorder, ToolResult{Meta: map[string]string{gateMetaDecision: gateDecisionPruned}})
+	// A result the gate never considered carries no decision and must not count.
+	recordGateTrace(recorder, ToolResult{})
+
+	counters := map[string]int64{}
+	for _, counter := range recorder.Finish().Counters {
+		counters[counter.Name] = counter.Value
+	}
+	if counters[trace.CounterGateStubs] != 2 {
+		t.Fatalf("gate_stubs = %d, want 2 (%v)", counters[trace.CounterGateStubs], counters)
+	}
+	// The ceiling trip is counted as both "kept" (it was not stubbed) and
+	// "above_max" (the classifier wanted to hide it whole).
+	if counters[trace.CounterGateKept] != 1 {
+		t.Fatalf("gate_kept = %d, want 1 (%v)", counters[trace.CounterGateKept], counters)
+	}
+	if counters[trace.CounterGateAboveMax] != 1 {
+		t.Fatalf("gate_above_max = %d, want 1 (%v)", counters[trace.CounterGateAboveMax], counters)
+	}
+}
+
 func TestExecuteToolCallRebudgetsOversizedAfterToolFeedback(t *testing.T) {
 	t.Setenv("KAJICODE_TOOL_OUTPUT_CEILING_TOKENS", "80")
 	registry := tools.NewRegistry()

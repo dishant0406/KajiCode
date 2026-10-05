@@ -837,6 +837,11 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 		}
 
 		failureHint := ""
+		// noOpHint carries the no-op guard's one-shot nudge for this turn, set
+		// after the batch once every call has a result. It outranks the plan
+		// reminders: repeating calls that change nothing matters more than plan
+		// hygiene.
+		noOpHint := ""
 		// turnRequestedModel records the FIRST mid-run escalation target requested
 		// during this turn's tool batch. The actual provider switch happens once,
 		// after the batch, so every tool_result is recorded first and at most one
@@ -906,6 +911,7 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 				messages:       messages,
 			}, call, toolResult)
 			recordOutputBudgetTrace(options.Trace, toolResult)
+			recordGateTrace(options.Trace, toolResult)
 			task.observe(taskStateEvent{kind: taskStateEventToolResult, toolResult: toolResult})
 			if options.OnToolResult != nil {
 				options.OnToolResult(toolResult)
@@ -986,6 +992,22 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 			// injected after the batch so the assistant's tool_results stay
 			// contiguous.
 			batchImages = append(batchImages, toolResult.Images...)
+		}
+
+		// No-op guard: a turn whose every tool call repeated an earlier call
+		// verbatim AND changed no file cannot add information. It is the one
+		// runaway pattern the other counters miss — a short preamble resets the
+		// empty-turn counter and a call that succeeds resets the failure streak,
+		// so a model can loop on the same calls forever. Every call in this turn
+		// already has its tool_result, so the halt needs no aborted placeholders.
+		noOp := guards.observeNoOpToolCalls(collected.ToolCalls, changedFilesThisBatch)
+		if noOp.Stop {
+			result.FinalAnswer = noOpToolCallStopAnswer(noOp.Count)
+			result.Messages = copyMessages(messages)
+			return result, nil
+		}
+		if noOp.InjectHint {
+			noOpHint = noOpToolCallReminder(noOp.Count)
 		}
 
 		// Inject tool-returned images as one synthetic user turn after every
@@ -1091,6 +1113,11 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 			messages = append(messages, kajicoderuntime.Message{
 				Role:    kajicoderuntime.MessageRoleUser,
 				Content: failureHint,
+			})
+		} else if noOpHint != "" {
+			messages = append(messages, kajicoderuntime.Message{
+				Role:    kajicoderuntime.MessageRoleUser,
+				Content: noOpHint,
 			})
 		} else if reminder := guards.progressReminder(); reminder != "" {
 			messages = append(messages, kajicoderuntime.Message{
@@ -1199,6 +1226,27 @@ func recordOutputBudgetTrace(recorder *trace.Recorder, result ToolResult) {
 		Reason:                  result.Meta["output_budget_reason"],
 		SpillCreated:            spillCreated,
 	})
+}
+
+// recordGateTrace counts what the relevance gate decided for one tool result, so
+// a classifier that stubs every result is visible in the trace instead of silent.
+// A result the gate never considered carries no decision and is not counted.
+func recordGateTrace(recorder *trace.Recorder, result ToolResult) {
+	if recorder == nil {
+		return
+	}
+	switch result.Meta[gateMetaDecision] {
+	case gateDecisionPruned:
+		recorder.Counter(trace.CounterGateStubs, 1)
+	case gateDecisionAboveMax:
+		// The ceiling saved this result from a full blackout: the classifier
+		// wanted to hide it entirely. Counted separately because it is the only
+		// trace signal that a uniformly-low classifier is still broken.
+		recorder.Counter(trace.CounterGateAboveMax, 1)
+		recorder.Counter(trace.CounterGateKept, 1)
+	case gateDecisionKept, gateDecisionBelowMin, gateDecisionShadow, gateDecisionError:
+		recorder.Counter(trace.CounterGateKept, 1)
+	}
 }
 
 func finalAnswerAfterMaxTurns(ctx context.Context, provider Provider, messages []kajicoderuntime.Message, toolDefs []kajicoderuntime.ToolDefinition, options Options) (string, []kajicoderuntime.Message, string) {

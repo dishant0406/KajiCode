@@ -286,6 +286,72 @@ func TestSubmitDropsImagesWhenModelSwitchedToNonVision(t *testing.T) {
 	}
 }
 
+// TestSubmitStripsImageTokenWhenVisionDropped pins the orphan-token bug: the
+// prompt text carries "[Image #1]" to select the staged image, but when the
+// active model cannot accept images the attachment is dropped while the token
+// stayed behind — the provider received a literal "[Image #1]" naming nothing.
+// The model-facing prompt must not contain a token whose attachment was dropped.
+func TestSubmitStripsImageTokenWhenVisionDropped(t *testing.T) {
+	root := t.TempDir()
+	writeTestPNG(t, root, "photo.png")
+
+	provider := &fakeProvider{events: []kajicoderuntime.StreamEvent{
+		{Type: kajicoderuntime.StreamEventText, Content: "ok"},
+		{Type: kajicoderuntime.StreamEventDone},
+	}}
+	m := newModel(context.Background(), Options{
+		Cwd:          root,
+		ProviderName: "openai",
+		ModelName:    "gpt-4.1",
+		Provider:     provider,
+		Registry:     tools.NewRegistry(),
+		SessionStore: testSessionStore(t),
+	})
+	m.agentOptions.OnText = func(string) {}
+
+	m.input.SetValue("/image photo.png")
+	updated, _ := m.handleSubmit()
+	m = updated.(model)
+	if len(m.turnImages()) != 1 {
+		t.Fatalf("setup: expected 1 staged image, got %d", len(m.turnImages()))
+	}
+
+	// Switch to a model the catalog does not know, so vision support is false.
+	m.modelName = "totally-unknown-custom"
+	const prompt = "[Image #1] describe this"
+	m.setComposerState(composerState{text: prompt, cursor: len([]rune(prompt))})
+	updated, cmd := m.handleSubmit()
+	next := updated.(model)
+	if cmd == nil {
+		t.Fatal("expected a prompt submit to start a run")
+	}
+	execCmd(cmd)
+
+	if len(provider.requests) == 0 {
+		t.Fatal("expected the provider to receive the request")
+	}
+	for _, message := range provider.requests[0].Messages {
+		if strings.Contains(message.Content, "[Image #1]") {
+			t.Fatalf("dropped image left an orphan token in the provider prompt: %q", message.Content)
+		}
+	}
+	// The user's own words must survive the strip.
+	found := false
+	for _, message := range provider.requests[0].Messages {
+		if strings.Contains(message.Content, "describe this") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("stripping the token must not remove the user's prompt text")
+	}
+	// The recorded session keeps the verbatim composer text, tokens included, so
+	// /resume and /retry can rebuild the identical request.
+	if next.lastPrompt != prompt {
+		t.Fatalf("expected the verbatim prompt to be remembered, got %q", next.lastPrompt)
+	}
+}
+
 // writeTestPDF writes a tiny single-page PDF whose text layer is the given
 // string and returns its path. It mirrors the in-package fixture builder so the
 // TUI test exercises the real LoadDocument path on real PDF bytes.
@@ -646,5 +712,20 @@ func TestRetryResendsAttachments(t *testing.T) {
 	}
 	if !strings.Contains(last.Content, "describe both") {
 		t.Fatalf("retried prompt should include the remembered user text, got:\n%s", last.Content)
+	}
+}
+
+// Only the dropped image's token is stripped: a document still reaches the model
+// as a preamble, so its token must survive the strip.
+func TestStripImageTokensPreservesDocumentTokens(t *testing.T) {
+	got := stripImageTokens("[Image #1] compare with [Doc #1] and [Image #2]")
+	if strings.Contains(got, "[Image #") {
+		t.Fatalf("image tokens must be stripped, got %q", got)
+	}
+	if !strings.Contains(got, "[Doc #1]") {
+		t.Fatalf("a document token is always backed and must survive, got %q", got)
+	}
+	if stripImageTokens("no tokens here") != "no tokens here" {
+		t.Fatal("text without an image token must be unchanged")
 	}
 }

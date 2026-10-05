@@ -175,6 +175,12 @@ type ToolResultFeature struct {
 	// shave a few bytes never pays its stub overhead or risks the recall round
 	// trip. <= 0 uses DefaultGateMinPruneRatio (0.2).
 	MinPruneRatio float64 `json:"minPruneRatio,omitempty"`
+	// MaxHiddenRatio is the ceiling on the share of a result the gate may hide.
+	// At or above it the result is kept whole: a classifier that scores every
+	// block low must not be able to black out an entire result, because the model
+	// is then left with a stub, a spill path, and no way to make progress. <= 0
+	// uses DefaultGateMaxHiddenRatio (0.5).
+	MaxHiddenRatio float64 `json:"maxHiddenRatio,omitempty"`
 	// MinBytes is the smallest result the gate considers. Below it a stub saves
 	// nothing. <= 0 uses DefaultGateMinBytes (1500).
 	MinBytes int `json:"minBytes,omitempty"`
@@ -216,6 +222,13 @@ const (
 	DefaultGateDropThreshold = 0.2
 	// DefaultGateMinPruneRatio is the minimum hidden share that justifies a stub.
 	DefaultGateMinPruneRatio = 0.2
+	// DefaultGateMaxHiddenRatio is the maximum share of a result the gate may
+	// hide. Without a ceiling a classifier that scores every block low hides the
+	// whole result, leaving the model with only a stub and a spill path — it then
+	// re-reads, gets gated again, and burns turns on no-op calls. Half is the
+	// point where a result stops being a result: past it the stub is no longer a
+	// filter but a blackout.
+	DefaultGateMaxHiddenRatio = 0.5
 	// DefaultGateMinBytes is the minimum result size the gate will consider.
 	DefaultGateMinBytes = 1500
 	// DefaultGateCoverageThreshold is the kept-text sufficiency trigger: a
@@ -260,6 +273,15 @@ func (f ToolResultFeature) EffectiveMinPruneRatio() float64 {
 		return DefaultGateMinPruneRatio
 	}
 	return min(f.MinPruneRatio, 1)
+}
+
+// EffectiveMaxHiddenRatio returns the configured ceiling on the hidden share, or
+// its default, clamped to (0,1]. A non-positive value takes the default.
+func (f ToolResultFeature) EffectiveMaxHiddenRatio() float64 {
+	if f.MaxHiddenRatio <= 0 {
+		return DefaultGateMaxHiddenRatio
+	}
+	return min(f.MaxHiddenRatio, 1)
 }
 
 // EffectiveMinBytes returns the configured minimum result size or its default.

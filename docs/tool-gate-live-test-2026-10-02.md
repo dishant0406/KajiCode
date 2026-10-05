@@ -100,3 +100,50 @@ kajicode exec --permissions bypass-all -o json "<query>" > runB.json
 grep -c '"gate_decision"' runB.json      # → 57
 grep -c '"gate_decision"' runA.json      # → 0
 ```
+
+---
+
+## Follow-up: the no-ceiling blackout (fixed)
+
+The caveat above — "the drop set sits on the threshold edge" — turned out to be
+the visible half of a real defect, not just fragility.
+
+**What was wrong.** The only ratio check in the gate was a **minimum**
+(`MinPruneRatio`): hide too little and the result is kept whole. There was **no
+ceiling**, so when the classifier scored every block low the gate legally hid
+**100%** of a result and replaced it with `[…]` markers plus a stub. Reproduced
+with the shipped defaults on a real run:
+
+```
+[gate] 44 of 44 lines of read_file path="go.sum" hidden (max hidden relevance 0.05)
+```
+
+The stub's recovery instruction ("`read_file` it") pointed at the spill file —
+but a `read_file` of that file was itself gateable, so the recovery read was
+answered with another stub and another pointer. The model was left with no
+evidence and looped, re-reading and shelling `echo` until the turn cap.
+
+**The fix.**
+
+- `ToolResultGate.MaxHiddenRatio` (default `classifier.DefaultGateMaxHiddenRatio`
+  = 0.5) caps the hidden share. At or above it the result is kept whole
+  (`gateDecisionAboveMax`), so no classifier can black out a result.
+- A read of a file inside the spill directory (`read_file`,
+  `read_minified_file`) is never gated, so the stub's own recovery pointer always
+  resolves.
+- A repeated-call guard in `internal/agent/guardrails.go` halts a run whose turns
+  only re-issue tool calls that change nothing.
+- `gate_stubs` / `gate_kept` trace counters make a blackout visible instead of
+  silent.
+
+**Verified live.** Same prompt, same classifier, same config:
+
+| binary | `read_file go.sum` | outcome |
+| --- | --- | --- |
+| before | `44 of 44 lines hidden (max hidden relevance 0.05)` | model re-read, then answered |
+| after | full body delivered | answered in one call |
+
+The residual caveat stands: the ceiling makes a uniformly-low classifier **safe**,
+not **correct**. If the backend keeps scoring relevant output near 0.1, the gate
+hides the maximum allowed share on every call. That calibration question is
+unmeasured and remains open.

@@ -48,6 +48,7 @@ func toolResultGateForRun(cfg classifier.Config, deps appDeps) *agent.ToolResult
 		KeepThreshold:     feature.EffectiveKeepThreshold(),
 		DropThreshold:     feature.EffectiveDropThreshold(),
 		MinPruneRatio:     feature.EffectiveMinPruneRatio(),
+		MaxHiddenRatio:    feature.EffectiveMaxHiddenRatio(),
 		MinBytes:          feature.EffectiveMinBytes(),
 		CoverageThreshold: feature.EffectiveCoverageThreshold(),
 		Requery:           feature.Requery,

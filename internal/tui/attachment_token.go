@@ -26,6 +26,23 @@ import (
 // into the composer).
 var attachmentTokenPattern = regexp.MustCompile(`\[(Image|Doc) #(\d+)\]`)
 
+// stripImageTokens removes every `[Image #N]` token from text, leaving `[Doc #N]`
+// tokens alone. It is used where images are dropped for a non-vision model: the
+// image's token must go with it, or the prompt reaches the model as a literal
+// "[Image #1]" naming an attachment that is not there. Documents are never
+// dropped this way (their text rides in the prompt preamble), so a document
+// token is always backed and is deliberately preserved. A no-op when the text
+// has no image token.
+func stripImageTokens(text string) string {
+	if !strings.Contains(text, "[Image") {
+		return text
+	}
+	return imageTokenPattern.ReplaceAllString(text, "")
+}
+
+// imageTokenPattern matches only the image token, so a document token survives.
+var imageTokenPattern = regexp.MustCompile(`\[Image #\d+\]`)
+
 // attachStaged appends a staged attachment and inserts its inline token at the
 // cursor, so attaching always leaves a visible, deletable reference in the
 // prompt. Staged attachments with no live token (e.g. left over from a composer

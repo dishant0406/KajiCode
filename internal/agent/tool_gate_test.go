@@ -104,7 +104,7 @@ func TestGateErrorsAreNeverGated(t *testing.T) {
 // still be gated — the opposite of the earlier over-broad regex, which silently
 // disabled the gate on every code-reading result.
 func TestGateProseWordIsNotAnError(t *testing.T) {
-	stub := &stubClassifier{probs: map[string]float64{"b000": 0.0, "b001": 0.0, "b002": 0.0, "b003": 0.0, "gate_error": 0.01}}
+	stub := &stubClassifier{probs: map[string]float64{"b000": 0.0, "b001": 0.9, "b002": 0.9, "b003": 0.9, "gate_error": 0.01}}
 	body := strings.ReplaceAll(bigBody(100), "line value", "failed := row.status")
 	got := maybeGateToolResult(context.Background(), Options{ToolResultGate: gateFor(stub, false)}, messagesWithGoal(), ToolCall{Name: "read_file"}, okResult(body))
 	if !strings.Contains(got.Output, "hidden") {
@@ -114,12 +114,15 @@ func TestGateProseWordIsNotAnError(t *testing.T) {
 }
 
 func TestGateHidesIrrelevantBlocksKeepsRelevant(t *testing.T) {
-	// 4 blocks of 25 lines: block b001 is relevant (high prob), the rest are
-	// confidently irrelevant (below drop 0.1).
+	// 8 blocks of 25 lines. b000, b002 and b003 are confidently irrelevant
+	// (below drop 0.1); the rest are relevant. Three eighths hidden is inside the
+	// ceiling, so the gate prunes and the relevant blocks survive verbatim.
 	stub := &stubClassifier{probs: map[string]float64{
-		"b000": 0.02, "b001": 0.90, "b002": 0.02, "b003": 0.02, "gate_error": 0.01,
+		"b000": 0.02, "b001": 0.90, "b002": 0.02, "b003": 0.02,
+		"b004": 0.90, "b005": 0.90, "b006": 0.90, "b007": 0.90,
+		"gate_error": 0.01,
 	}}
-	body := bigBody(100)
+	body := bigBody(200)
 	got := maybeGateToolResult(context.Background(), Options{ToolResultGate: gateFor(stub, false)}, messagesWithGoal(), ToolCall{Name: "bash"}, okResult(body))
 
 	if got.Meta[gateMetaDecision] != gateDecisionPruned {
@@ -215,7 +218,7 @@ func TestGateSemanticErrorQuestionKeepsWhole(t *testing.T) {
 }
 
 func TestGateShadowModeNeverRewrites(t *testing.T) {
-	stub := &stubClassifier{probs: map[string]float64{"b000": 0.02, "b001": 0.02, "b002": 0.02, "b003": 0.02, "gate_error": 0.01}}
+	stub := &stubClassifier{probs: map[string]float64{"b000": 0.02, "b001": 0.9, "b002": 0.9, "b003": 0.9, "gate_error": 0.01}}
 	body := bigBody(100)
 	got := maybeGateToolResult(context.Background(), Options{ToolResultGate: gateFor(stub, true)}, messagesWithGoal(), ToolCall{Name: "bash"}, okResult(body))
 	if got.Output != body {
@@ -302,7 +305,9 @@ func TestToolResultGateDefaults(t *testing.T) {
 // already spilled the body the gate reuses that pointer rather than clobbering
 // it with a fresh spill of the smaller budgeted view.
 func TestGateGatesPreTruncatedAndReusesSpill(t *testing.T) {
-	stub := &stubClassifier{probs: map[string]float64{"b000": 0.02, "b001": 0.02, "b002": 0.02, "b003": 0.02, "gate_error": 0.01}}
+	// Half the blocks are relevant, so the gate prunes (inside the ceiling) and
+	// the pre-existing pointer is the one it must reuse.
+	stub := &stubClassifier{probs: map[string]float64{"b000": 0.02, "b001": 0.9, "b002": 0.9, "b003": 0.9, "gate_error": 0.01}}
 	body := bigBody(100)
 	// A real spill file, so the reuse path is the one a reader can follow.
 	priorPath := tools.SpillOutput("bash", body)
@@ -339,7 +344,7 @@ func TestGateForeignSpillPointerIsNotReused(t *testing.T) {
 		"inside but removed":     filepath.Join(t.TempDir(), "swept-away.txt"),
 	} {
 		t.Run(name, func(t *testing.T) {
-			stub := &stubClassifier{probs: map[string]float64{"b000": 0.02, "b001": 0.02, "b002": 0.02, "b003": 0.02, "gate_error": 0.01}}
+			stub := &stubClassifier{probs: map[string]float64{"b000": 0.02, "b001": 0.9, "b002": 0.9, "b003": 0.9, "gate_error": 0.01}}
 			body := bigBody(100)
 			result := okResult(body)
 			result.Truncated = true
@@ -365,7 +370,7 @@ func TestGateForeignSpillPointerIsNotReused(t *testing.T) {
 // pre-truncated body that carries no usable spill gets one, so a hidden block is
 // still recoverable.
 func TestGatePreTruncatedWithoutSpillCreatesOne(t *testing.T) {
-	stub := &stubClassifier{probs: map[string]float64{"b000": 0.02, "b001": 0.02, "b002": 0.02, "b003": 0.02, "gate_error": 0.01}}
+	stub := &stubClassifier{probs: map[string]float64{"b000": 0.02, "b001": 0.9, "b002": 0.9, "b003": 0.9, "gate_error": 0.01}}
 	body := bigBody(100)
 	result := okResult(body)
 	result.Truncated = true
@@ -393,9 +398,9 @@ func TestGatePreTruncatedWithoutSpillCreatesOne(t *testing.T) {
 // several blocks and is gated. This is the web_search / terse-bash case the
 // line-count minimum used to drop before the classifier ever saw it.
 func TestGateByteBoundedBlocksGateShortButLargeBodies(t *testing.T) {
-	lines := make([]string, 18)
+	lines := make([]string, 25)
 	for i := range lines {
-		lines[i] = strings.Repeat("s", 300)
+		lines[i] = strings.Repeat("s", 200)
 	}
 	body := strings.Join(lines, "\n")
 	if len(body) <= gateBlockBytes {
@@ -407,8 +412,12 @@ func TestGateByteBoundedBlocksGateShortButLargeBodies(t *testing.T) {
 		t.Fatalf("a short-but-large body must yield >= %d blocks, got %d", gateMinBlocks, len(blocks))
 	}
 	probs := map[string]float64{"gate_error": 0.01}
-	for _, block := range blocks {
-		probs[block.id] = 0.02
+	for i, block := range blocks {
+		if i == 0 {
+			probs[block.id] = 0.02
+			continue
+		}
+		probs[block.id] = 0.9
 	}
 	stub := &stubClassifier{probs: probs}
 	result := okResult(body)
@@ -519,4 +528,112 @@ func gateLongLines(n int) string {
 		lines[i] = strings.Repeat("z", 200)
 	}
 	return strings.Join(lines, "\n")
+}
+
+func TestGateAboveMaxHiddenRatioKeepsWholeResult(t *testing.T) {
+	// Every block is confidently irrelevant. Without a ceiling the gate would
+	// black out the entire result and leave the model a stub and a spill path.
+	stub := &stubClassifier{probs: map[string]float64{"b000": 0.02, "b001": 0.02, "b002": 0.02, "b003": 0.02, "gate_error": 0.01}}
+	gate := gateFor(stub, false)
+	body := bigBody(100)
+	got := maybeGateToolResult(context.Background(), Options{ToolResultGate: gate}, messagesWithGoal(), ToolCall{Name: "bash"}, okResult(body))
+	if got.Meta[gateMetaDecision] != gateDecisionAboveMax {
+		t.Fatalf("expected above_max_hidden_ratio, got %q", got.Meta[gateMetaDecision])
+	}
+	if got.Output != body {
+		t.Fatalf("a result past the hidden ceiling must be kept verbatim")
+	}
+	if got.Meta["spill_path"] != "" {
+		t.Fatalf("a kept result must not spill")
+	}
+}
+
+func TestGateAtCeilingKeepsWholeResult(t *testing.T) {
+	// Half hidden sits AT the ceiling, and the ceiling is the largest share the
+	// gate may not exceed, so this result is kept whole rather than pruned.
+	stub := &stubClassifier{probs: map[string]float64{"b000": 0.02, "b001": 0.02, "b002": 0.9, "b003": 0.9, "gate_error": 0.01}}
+	gate := gateFor(stub, false)
+	gate.MaxHiddenRatio = 0.5
+	body := bigBody(100)
+	got := maybeGateToolResult(context.Background(), Options{ToolResultGate: gate}, messagesWithGoal(), ToolCall{Name: "bash"}, okResult(body))
+	if got.Meta[gateMetaDecision] != gateDecisionAboveMax {
+		t.Fatalf("expected above_max_hidden_ratio at the ceiling, got %q", got.Meta[gateMetaDecision])
+	}
+	if got.Output != body {
+		t.Fatalf("the ceiling must keep the result verbatim")
+	}
+}
+
+func TestGateNeverGatesReadOfASpillFile(t *testing.T) {
+	// The stub tells the model to read_file the spill path. That read is the
+	// recovery step, so it must never be gated into another stub.
+	stub := &stubClassifier{probs: map[string]float64{"b000": 0.0, "b001": 0.0, "b002": 0.0, "b003": 0.0, "gate_error": 0.01}}
+	gate := gateFor(stub, false)
+	path := tools.SpillOutput("bash", bigBody(100))
+	if path == "" {
+		t.Fatalf("spill must produce a path")
+	}
+	defer os.Remove(path)
+	body := bigBody(100)
+	call := ToolCall{Name: "read_file", Arguments: `{"path":"` + path + `"}`}
+	got := maybeGateToolResult(context.Background(), Options{ToolResultGate: gate}, messagesWithGoal(), call, okResult(body))
+	if got.Meta[gateMetaDecision] != "" {
+		t.Fatalf("a spill read must not be gated, got %q", got.Meta[gateMetaDecision])
+	}
+	if got.Output != body {
+		t.Fatalf("a spill read must return the body verbatim")
+	}
+}
+
+func TestGateStillGatesReadOfANonSpillFile(t *testing.T) {
+	stub := &stubClassifier{probs: map[string]float64{"b000": 0.0, "b001": 0.0, "b002": 0.0, "b003": 0.0, "gate_error": 0.01}}
+	gate := gateFor(stub, false)
+	body := bigBody(100)
+	call := ToolCall{Name: "read_file", Arguments: `{"path":"/tmp/not-a-spill-file.txt"}`}
+	got := maybeGateToolResult(context.Background(), Options{ToolResultGate: gate}, messagesWithGoal(), call, okResult(body))
+	if got.Meta[gateMetaDecision] != gateDecisionAboveMax {
+		t.Fatalf("a normal read is still judged, got %q", got.Meta[gateMetaDecision])
+	}
+}
+
+func TestGateTreatsUnparseableReadArgumentsAsGateable(t *testing.T) {
+	stub := &stubClassifier{probs: map[string]float64{"b000": 0.0, "b001": 0.0, "b002": 0.0, "b003": 0.0, "gate_error": 0.01}}
+	gate := gateFor(stub, false)
+	body := bigBody(100)
+	call := ToolCall{Name: "read_file", Arguments: `{not json`}
+	got := maybeGateToolResult(context.Background(), Options{ToolResultGate: gate}, messagesWithGoal(), call, okResult(body))
+	if got.Meta[gateMetaDecision] == "" {
+		t.Fatalf("a malformed call must still be judged")
+	}
+}
+
+// A recovery read may name the spill file through any of read_file's path
+// aliases. Gating one would answer the stub's pointer with another stub, so
+// every alias must be recognized as a spill read.
+func TestReadsSpillFileRecognizesPathAliases(t *testing.T) {
+	path := tools.SpillOutput("bash", bigBody(80))
+	if path == "" {
+		t.Skip("spill directory unavailable")
+	}
+	for _, key := range []string{"path", "file", "file_path", "filepath", "filename"} {
+		arguments := `{"` + key + `":"` + path + `"}`
+		if !readsSpillFile("read_file", arguments) {
+			t.Errorf("read_file %s of a spill file must be recognized as a spill read", key)
+		}
+	}
+	if readsSpillFile("read_file", `{"path":"/etc/hosts"}`) {
+		t.Error("a read outside the spill directory must not be treated as a spill read")
+	}
+	if readsSpillFile("bash", `{"path":"`+path+`"}`) {
+		t.Error("only the read tools may take the spill-read exemption")
+	}
+}
+
+// A MinPruneRatio above MaxHiddenRatio is unsatisfiable and would silently turn
+// the gate into a no-op; the ceiling must win so results stay visible.
+func TestGateClampsMaxHiddenRatioAboveMinPruneRatio(t *testing.T) {
+	gate := (&ToolResultGate{Classifier: &stubClassifier{}, MinPruneRatio: 0.9}).withDefaults()
+	if gate.MaxHiddenRatio != 0.9 {
+		t.Fatalf("MaxHiddenRatio = %v, want it raised to MinPruneRatio 0.9", gate.MaxHiddenRatio)
+	}
 }

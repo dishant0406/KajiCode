@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -66,6 +67,7 @@ const (
 	gateDecisionKept     = "kept"
 	gateDecisionError    = "error_present"
 	gateDecisionBelowMin = "below_min_prune_ratio"
+	gateDecisionAboveMax = "above_max_hidden_ratio"
 	gateDecisionShadow   = "shadow"
 )
 
@@ -87,7 +89,11 @@ type ToolResultGate struct {
 	KeepThreshold float64
 	DropThreshold float64
 	MinPruneRatio float64
-	MinBytes      int
+	// MaxHiddenRatio is the ceiling on the hidden share. At or above it the
+	// result is kept whole rather than stubbed, so no classifier can black out an
+	// entire result. <= 0 uses classifier.DefaultGateMaxHiddenRatio.
+	MaxHiddenRatio float64
+	MinBytes       int
 	// CoverageThreshold is the kept-text coverage question's trigger: a coverage
 	// probability BELOW it means the text that survived the filter is judged
 	// insufficient to proceed, and a re-query is considered. It is only read when
@@ -157,6 +163,12 @@ func maybeGateToolResult(ctx context.Context, options Options, run gateRun, call
 	if !gateableTool(call.Name) || result.Status != tools.StatusOK || len(result.Images) > 0 {
 		return result
 	}
+	if readsSpillFile(call.Name, call.Arguments) {
+		// The stub's recovery pointer is "read_file this spill file". Gating that
+		// read would answer the pointer with another stub and another pointer, so
+		// the one path the gate tells the model to take is never gated itself.
+		return result
+	}
 	if len(body) < gate.MinBytes || isPrunedPlaceholder(body) {
 		return result
 	}
@@ -211,6 +223,11 @@ func maybeGateToolResult(ctx context.Context, options Options, run gateRun, call
 	}
 	if float64(hiddenLines)/float64(len(lines)) < gate.MinPruneRatio {
 		return result.withGateMeta(gateDecisionBelowMin, hiddenLines, len(lines)-hiddenLines, maxRel)
+	}
+	if float64(hiddenLines)/float64(len(lines)) >= gate.MaxHiddenRatio {
+		// A result the filter would mostly black out is not filtered, it is lost:
+		// the model would see a stub and a spill path and nothing to reason about.
+		return result.withGateMeta(gateDecisionAboveMax, hiddenLines, len(lines)-hiddenLines, maxRel)
 	}
 	if gate.Shadow {
 		return result.withGateMeta(gateDecisionShadow, hiddenLines, len(lines)-hiddenLines, maxRel)
@@ -284,6 +301,15 @@ func (g *ToolResultGate) withDefaults() *ToolResultGate {
 	if out.MinPruneRatio <= 0 {
 		out.MinPruneRatio = classifier.DefaultGateMinPruneRatio
 	}
+	if out.MaxHiddenRatio <= 0 {
+		out.MaxHiddenRatio = classifier.DefaultGateMaxHiddenRatio
+	}
+	if out.MaxHiddenRatio < out.MinPruneRatio {
+		// Min above Max is unsatisfiable (every result is both too small a prune
+		// and too large a hide), which would silently turn the gate into a no-op.
+		// The ceiling wins: hiding too much is the failure that blinds the model.
+		out.MaxHiddenRatio = out.MinPruneRatio
+	}
 	if out.MinBytes <= 0 {
 		out.MinBytes = classifier.DefaultGateMinBytes
 	}
@@ -311,6 +337,39 @@ func gateableTool(name string) bool {
 		return false
 	}
 	return strings.TrimSpace(name) != ""
+}
+
+// spillReadTools are the read tools a gate stub can point the model at when it
+// names a spill file, so a read of one must never be gated.
+var spillReadTools = map[string]bool{"read_file": true, "read_minified_file": true}
+
+// readToolPathKeys are the argument keys a read tool accepts for its path,
+// including the aliases read_file's schema declares. Missing one would let a
+// recovery read slip through and be gated, re-creating the stub loop.
+var readToolPathKeys = []string{"path", "file_path", "filepath", "filename", "file"}
+
+// readsSpillFile reports whether a call is a read of a file inside the spill
+// directory — the recovery step a gated result's stub instructs the model to
+// take. It fails closed: an unparseable argument list is treated as not a spill
+// read, so a malformed call is gated like any other.
+func readsSpillFile(tool string, arguments string) bool {
+	if !spillReadTools[tool] {
+		return false
+	}
+	args := map[string]any{}
+	if err := json.Unmarshal([]byte(arguments), &args); err != nil {
+		return false
+	}
+	for _, key := range readToolPathKeys {
+		path, ok := args[key].(string)
+		if !ok || strings.TrimSpace(path) == "" {
+			continue
+		}
+		if _, ok := tools.ResolveSpillReadPath(path); ok {
+			return true
+		}
+	}
+	return false
 }
 
 // gateBlocks groups lines into judged blocks, closing each block at

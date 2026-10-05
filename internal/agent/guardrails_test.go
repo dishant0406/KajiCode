@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -353,12 +354,16 @@ func TestRunInjectsStalePlanReminderAfterManyToolCalls(t *testing.T) {
 	registry.Register(tools.NewTodoWriteTool())
 
 	// Turn 1 calls update_plan (so the not-called reminder never triggers), then
-	// many read_file turns accumulate without another plan update.
+	// many read_file turns accumulate without another plan update. Each read
+	// targets a DIFFERENT file: repeating one call verbatim is a no-op loop, which
+	// the no-op guard halts before the stale-plan reminder would fire.
 	turns := [][]kajicoderuntime.StreamEvent{
 		toolTurn("plan-1", "todo_write", `{"todos":[{"content":"step one"}]}`),
 	}
 	for i := 0; i < staleToolCallThreshold+2; i++ {
-		turns = append(turns, toolTurn("call", "read_file", `{"path":"notes.txt"}`))
+		path := "notes" + strconv.Itoa(i) + ".txt"
+		writeAgentTestFile(t, root+"/"+path, "alpha")
+		turns = append(turns, toolTurn("call-"+strconv.Itoa(i), "read_file", `{"path":"`+path+`"}`))
 	}
 	turns = append(turns, textTurn("done"))
 
@@ -390,9 +395,12 @@ func TestRunStalePlanReminderIsOneShotPerInterval(t *testing.T) {
 		toolTurn("plan-1", "todo_write", `{"todos":[{"content":"step one"}]}`),
 	}
 	// Enough tool calls to exceed the threshold by a wide margin; the reminder
-	// must fire once for the interval, not on every subsequent turn.
+	// must fire once for the interval, not on every subsequent turn. Each read
+	// targets a different file so the no-op guard does not halt the run first.
 	for i := 0; i < staleToolCallThreshold*2; i++ {
-		turns = append(turns, toolTurn("call", "read_file", `{"path":"notes.txt"}`))
+		path := "notes" + strconv.Itoa(i) + ".txt"
+		writeAgentTestFile(t, root+"/"+path, "alpha")
+		turns = append(turns, toolTurn("call-"+strconv.Itoa(i), "read_file", `{"path":"`+path+`"}`))
 	}
 	turns = append(turns, textTurn("done"))
 
@@ -416,13 +424,16 @@ func TestRunStalePlanReminderIsOneShotPerInterval(t *testing.T) {
 
 func TestRunInjectsToolOnlyProgressReminder(t *testing.T) {
 	root := t.TempDir()
-	writeAgentTestFile(t, root+"/notes.txt", "alpha")
 	registry := tools.NewRegistry()
 	registry.Register(tools.NewReadFileTool(root))
 
+	// Distinct files per turn: the no-op guard must not be the thing under test
+	// here, and repeating one call verbatim would trip it.
 	turns := make([][]kajicoderuntime.StreamEvent, 0, toolOnlyProgressReminderAt+1)
 	for i := 0; i < toolOnlyProgressReminderAt; i++ {
-		turns = append(turns, toolTurn("call", "read_file", `{"path":"notes.txt"}`))
+		path := "notes" + strconv.Itoa(i) + ".txt"
+		writeAgentTestFile(t, root+"/"+path, "alpha")
+		turns = append(turns, toolTurn("call-"+strconv.Itoa(i), "read_file", `{"path":"`+path+`"}`))
 	}
 	turns = append(turns, textTurn("done"))
 
@@ -517,5 +528,115 @@ func TestRunInjectsToolFailureHintWithSchema(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("expected a tool-failure hint on the 3rd turn, messages: %+v", provider.requests[2].Messages)
+	}
+}
+
+// stubTool is a minimal registered tool that always succeeds with a small,
+// changeless result — the shape of a repeated `echo` in a runaway session.
+type stubTool struct{ name string }
+
+func (s stubTool) Name() string        { return s.name }
+func (s stubTool) Description() string { return "stub" }
+func (s stubTool) Parameters() tools.Schema {
+	return tools.Schema{Type: "object", AdditionalProperties: true}
+}
+func (s stubTool) Safety() tools.Safety {
+	return tools.Safety{SideEffect: tools.SideEffectNone, Permission: tools.PermissionAllow}
+}
+func (s stubTool) Run(context.Context, map[string]any) tools.Result {
+	return tools.Result{Status: tools.StatusOK, Output: "ok"}
+}
+
+// A model that re-issues the SAME call verbatim turn after turn, changing no
+// file, gains nothing each time. The run must halt at the no-op ceiling instead
+// of looping to MaxTurns.
+func TestRunStopsOnRepeatedNoOpCalls(t *testing.T) {
+	registry := tools.NewRegistry()
+	registry.Register(stubTool{name: "probe"})
+
+	turns := make([][]kajicoderuntime.StreamEvent, 0, 20)
+	for i := range 20 {
+		turns = append(turns, toolTurn("call-"+strconv.Itoa(i), "probe", `{"n":1}`))
+	}
+	provider := &mockProvider{turns: turns}
+
+	result, err := Run(context.Background(), "go", provider, Options{Registry: registry, MaxTurns: 20})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.FinalAnswer == maxTurnsAnswer {
+		t.Fatal("a repeated no-op loop must halt before MaxTurns, got the max-turns answer")
+	}
+	if !strings.Contains(result.FinalAnswer, noOpToolCallStopMarker) {
+		t.Fatalf("expected the no-op stop answer, got %q", result.FinalAnswer)
+	}
+	// The first turn's call is new; the halt lands on the noOpToolCallStopAt-th
+	// consecutive repeat, so the run makes exactly that many more requests.
+	if want := noOpToolCallStopAt + 1; len(provider.requests) != want {
+		t.Fatalf("expected the run to halt after %d requests, got %d", want, len(provider.requests))
+	}
+}
+
+// The guard must not cut short a run that keeps issuing genuinely NEW calls: a
+// distinct call is progress even when its result is small and nothing changed.
+func TestRunDoesNotStopOnDistinctCalls(t *testing.T) {
+	registry := tools.NewRegistry()
+	registry.Register(stubTool{name: "probe"})
+
+	turns := make([][]kajicoderuntime.StreamEvent, 0, 20)
+	for i := range 20 {
+		turns = append(turns, toolTurn("call-"+strconv.Itoa(i), "probe", `{"n":`+strconv.Itoa(i)+`}`))
+	}
+	provider := &mockProvider{turns: turns}
+
+	result, err := Run(context.Background(), "go", provider, Options{Registry: registry, MaxTurns: 8})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(result.FinalAnswer, noOpToolCallStopMarker) {
+		t.Fatalf("distinct calls must not trip the no-op guard, got %q", result.FinalAnswer)
+	}
+}
+
+// A NEW call is progress even when it is later repeated, and an edit is progress
+// even when its call repeats: neither may accumulate toward the no-op halt.
+func TestObserveNoOpToolCallsResetsOnNewCallAndOnEdit(t *testing.T) {
+	var state guardState
+	first := kajicoderuntime.ToolCall{Name: "read_file", Arguments: `{"path":"a"}`}
+
+	// The first call is new, so it seeds the set rather than counting as a no-op.
+	state.observeNoOpToolCalls([]kajicoderuntime.ToolCall{first}, nil)
+	for range noOpToolCallHintAt {
+		state.observeNoOpToolCalls([]kajicoderuntime.ToolCall{first}, nil)
+	}
+	if state.noOpTurns != noOpToolCallHintAt {
+		t.Fatalf("expected %d no-op turns, got %d", noOpToolCallHintAt, state.noOpTurns)
+	}
+
+	// A call never seen before resets the streak.
+	state.observeNoOpToolCalls([]kajicoderuntime.ToolCall{{Name: "read_file", Arguments: `{"path":"b"}`}}, nil)
+	if state.noOpTurns != 0 {
+		t.Fatalf("a new call must reset the no-op streak, got %d", state.noOpTurns)
+	}
+
+	// A repeated call that changed a file is progress too.
+	state.observeNoOpToolCalls([]kajicoderuntime.ToolCall{first}, nil)
+	state.observeNoOpToolCalls([]kajicoderuntime.ToolCall{first}, []string{"a"})
+	if state.noOpTurns != 0 {
+		t.Fatalf("a turn that changed a file must reset the no-op streak, got %d", state.noOpTurns)
+	}
+}
+
+// A turn with no tool calls is the model's decision to stop, not a loop, so it
+// must not accumulate toward the no-op halt.
+func TestObserveNoOpToolCallsIgnoresEmptyTurn(t *testing.T) {
+	var state guardState
+	for range noOpToolCallStopAt + 2 {
+		if out := state.observeNoOpToolCalls(nil, nil); out.Stop {
+			t.Fatal("a turn with no tool calls must never trip the no-op halt")
+		}
+	}
+	if state.noOpTurns != 0 {
+		t.Fatalf("expected the no-op streak to stay 0, got %d", state.noOpTurns)
 	}
 }

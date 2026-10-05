@@ -5029,6 +5029,12 @@ func (m model) launchPrompt(prompt string) (model, tea.Cmd) {
 			text: fmt.Sprintf("Model %s does not support image input; ignoring %d image(s).", name, len(turnImages)),
 		})
 		turnImages = nil
+		// Take each dropped image's token with it. Leaving the token in the prompt
+		// would send the model a literal "[Image #1]" naming an attachment that is
+		// not there. Documents are still sent as a preamble, so their tokens stay.
+		// The user's composer/transcript text keeps its tokens — only the
+		// model-facing prompt is stripped.
+		prompt = stripImageTokens(prompt)
 	}
 	m.pendingAttachments = nil
 	runCtx, cancel := context.WithCancel(m.ctx)

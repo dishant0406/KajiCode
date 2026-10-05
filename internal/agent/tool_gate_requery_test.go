@@ -35,14 +35,19 @@ func (p *recordingProvider) StreamCompletion(_ context.Context, request kajicode
 	return streamEvents(events), nil
 }
 
-// coverageClassifier answers the block questions as irrelevant and the coverage
-// question with a scripted sequence, so a re-query test controls how many rounds
-// the loop takes (insufficient → sufficient).
+// coverageClassifier answers one block question in four as confidently irrelevant
+// and the coverage question with a scripted sequence, so a re-query test controls
+// how many rounds the loop takes (insufficient → sufficient) while the gate still
+// prunes a quarter of the result.
 type coverageClassifier struct {
-	blockProb float64
 	errorProb float64
 	coverage  []float64
 	calls     int
+	// blocksSeen counts the block questions answered so far. Relevance alternates
+	// by block index so the gate has both hidden and kept blocks: a uniform
+	// probability hides everything, and the hidden-share ceiling then keeps the
+	// result whole instead of pruning, so the re-query layer would never run.
+	blocksSeen int
 }
 
 func (c *coverageClassifier) Name() string { return "coverage-stub" }
@@ -62,14 +67,22 @@ func (c *coverageClassifier) Classify(_ context.Context, req classifier.Request)
 			c.calls++
 			result[id] = classifier.Answer{Type: classifier.KindNoul, Probability: probability}
 		default:
-			result[id] = classifier.Answer{Type: classifier.KindNoul, Probability: c.blockProb}
+			// One block in four is confidently irrelevant, so the gate prunes a
+			// quarter of the result: inside the hidden-share ceiling, but above the
+			// minimum prune ratio.
+			probability := 0.95
+			if c.blocksSeen%4 == 1 {
+				probability = 0.05
+			}
+			c.blocksSeen++
+			result[id] = classifier.Answer{Type: classifier.KindNoul, Probability: probability}
 		}
 	}
 	return result, nil
 }
 
 func TestStubNamesToolAndTarget(t *testing.T) {
-	stub := &stubClassifier{probs: map[string]float64{"b000": 0.0, "b001": 0.0, "b002": 0.0, "b003": 0.0, "gate_error": 0.01}}
+	stub := &stubClassifier{probs: map[string]float64{"b000": 0.0, "b001": 0.9, "b002": 0.9, "b003": 0.9, "gate_error": 0.01}}
 	call := ToolCall{Name: "grep", Arguments: `{"pattern":"TODO","path":"internal/"}`}
 	got := maybeGateToolResult(context.Background(), Options{ToolResultGate: gateFor(stub, false)}, messagesWithGoal(), call, okResult(bigBody(100)))
 	if !strings.Contains(got.Output, "grep") || !strings.Contains(got.Output, `path="internal/"`) {
@@ -85,7 +98,7 @@ func TestCoverageRecordsInsufficiencyWithoutRequery(t *testing.T) {
 	// Requery is off: the gate must record the coverage signal but never rewrite
 	// beyond the stub, and must not spend a generator call.
 	provider := &recordingProvider{text: `{"name":"grep","arguments":{"pattern":"x"}}`}
-	cl := &coverageClassifier{blockProb: 0.0, errorProb: 0.01, coverage: []float64{0.1}}
+	cl := &coverageClassifier{errorProb: 0.01, coverage: []float64{0.1}}
 	gate := gateFor(cl, false)
 	gate.Requery = false
 	got := maybeGateToolResult(context.Background(), Options{ToolResultGate: gate, OnUsage: nil}, gateRun{provider: provider, registry: tools.NewRegistry()}, ToolCall{Name: "bash"}, okResult(bigBody(100)))
@@ -102,7 +115,7 @@ func TestRequeryAppendsImprovedResult(t *testing.T) {
 	// The generator proposes a narrower grep; the re-query executes it against a
 	// real registry and adopts the result once coverage says it is sufficient.
 	provider := &recordingProvider{text: `{"name":"grep","arguments":{"pattern":"TODO"}}`}
-	cl := &coverageClassifier{blockProb: 0.0, errorProb: 0.01, coverage: []float64{0.1, 0.9}}
+	cl := &coverageClassifier{errorProb: 0.01, coverage: []float64{0.1, 0.9}}
 	gate := gateFor(cl, false)
 	gate.Requery = true
 	gate.MaxRequery = 2
@@ -148,7 +161,7 @@ func TestRequeryAdoptsEvenWhenNeverJudgedSufficient(t *testing.T) {
 	// APPENDED after the stub, adopting it can only add information, so a real
 	// re-query result must be kept even when coverage keeps saying "not enough".
 	provider := &recordingProvider{text: `{"name":"read_file","arguments":{"path":"pkg/huge.go"}}`}
-	cl := &coverageClassifier{blockProb: 0.0, errorProb: 0.01, coverage: []float64{0.05}} // always insufficient
+	cl := &coverageClassifier{errorProb: 0.01, coverage: []float64{0.05}} // always insufficient
 	gate := gateFor(cl, false)
 	gate.Requery = true
 	gate.MaxRequery = 2
@@ -173,7 +186,7 @@ func TestRequeryRefusesMutatingCall(t *testing.T) {
 	// A generator that proposes a write must be refused: an unattended re-query
 	// can never mutate the workspace.
 	provider := &recordingProvider{text: `{"name":"bash","arguments":{"command":"rm -rf x"}}`}
-	cl := &coverageClassifier{blockProb: 0.0, errorProb: 0.01, coverage: []float64{0.1}}
+	cl := &coverageClassifier{errorProb: 0.01, coverage: []float64{0.1}}
 	gate := gateFor(cl, false)
 	gate.Requery = true
 
@@ -197,7 +210,7 @@ func TestRequeryRepeatedCallStopsImmediately(t *testing.T) {
 	// A generator that repeats the same call can only return the same bytes; the
 	// loop must stop rather than churn.
 	provider := &recordingProvider{text: `{"name":"grep","arguments":{"pattern":"TODO"}}`}
-	cl := &coverageClassifier{blockProb: 0.0, errorProb: 0.01, coverage: []float64{0.1}}
+	cl := &coverageClassifier{errorProb: 0.01, coverage: []float64{0.1}}
 	gate := gateFor(cl, false)
 	gate.Requery = true
 
@@ -219,7 +232,7 @@ func TestRequeryStripsInteractiveCallbacks(t *testing.T) {
 	// user's hooks, or UI phases, or an invisible retry would look like an extra
 	// tool call to the surface (and could block on a prompt nobody can answer).
 	provider := &recordingProvider{text: `{"name":"grep","arguments":{"pattern":"TODO"}}`}
-	cl := &coverageClassifier{blockProb: 0.0, errorProb: 0.01, coverage: []float64{0.1, 0.9}}
+	cl := &coverageClassifier{errorProb: 0.01, coverage: []float64{0.1, 0.9}}
 	gate := gateFor(cl, false)
 	gate.Requery = true
 
@@ -253,7 +266,7 @@ func TestRequeryStripsInteractiveCallbacks(t *testing.T) {
 
 func TestRequeryProviderFailureLeavesStub(t *testing.T) {
 	provider := &recordingProvider{text: "x", failOn: 1}
-	cl := &coverageClassifier{blockProb: 0.0, errorProb: 0.01, coverage: []float64{0.1}}
+	cl := &coverageClassifier{errorProb: 0.01, coverage: []float64{0.1}}
 	gate := gateFor(cl, false)
 	gate.Requery = true
 

@@ -588,3 +588,18 @@ func TestOptionalEventKeysIncludePostureEscalations(t *testing.T) {
 	}
 	t.Fatalf("posture_escalations missing from OptionalEventKeys: %v", OptionalEventKeys())
 }
+
+// The gate counters are the only signal that a classifier is stubbing every
+// tool result, so they must be declared optional events rather than dropped as
+// unknown keys.
+func TestOptionalEventKeysIncludeGateCounters(t *testing.T) {
+	keys := map[string]bool{}
+	for _, key := range OptionalEventKeys() {
+		keys[key] = true
+	}
+	for _, name := range []string{CounterGateStubs, CounterGateKept, CounterGateAboveMax} {
+		if !keys["counter:"+name] {
+			t.Fatalf("%s missing from OptionalEventKeys: %v", name, OptionalEventKeys())
+		}
+	}
+}
