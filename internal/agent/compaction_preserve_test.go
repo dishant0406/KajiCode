@@ -33,7 +33,7 @@ func compactStateConversation(t *testing.T, messages []kajicoderuntime.Message) 
 	t.Helper()
 	compacted, err := Compact(messages, CompactionOptions{
 		PreserveLast: 2,
-		Summarize:    func([]kajicoderuntime.Message) (string, error) { return "SUMMARY", nil },
+		Summarize:    func([]kajicoderuntime.Message) (string, error) { return validSummary("SUMMARY"), nil },
 	})
 	if err != nil {
 		t.Fatalf("Compact returned error: %v", err)
@@ -67,7 +67,7 @@ func TestCompactPreservesBoundedTaskContext(t *testing.T) {
 	messages := stateConversation()
 	compacted, err := Compact(messages, CompactionOptions{
 		PreserveLast: 2,
-		Summarize:    func([]kajicoderuntime.Message) (string, error) { return "SUMMARY", nil },
+		Summarize:    func([]kajicoderuntime.Message) (string, error) { return validSummary("SUMMARY"), nil },
 		taskState:    task.snapshotForCompaction(messages),
 	})
 	if err != nil {
@@ -99,7 +99,7 @@ func TestCompactPreservesObjectiveAfterPlanParityMismatch(t *testing.T) {
 	}
 	compacted, err := Compact(messages, CompactionOptions{
 		PreserveLast: 2,
-		Summarize:    func([]kajicoderuntime.Message) (string, error) { return "SUMMARY", nil },
+		Summarize:    func([]kajicoderuntime.Message) (string, error) { return validSummary("SUMMARY"), nil },
 		taskState: &taskStateSnapshot{
 			Objective:  "current objective",
 			PlanParity: taskPlanParityMismatch,
@@ -124,7 +124,7 @@ func TestTaskObjectiveSurvivesRepeatedCompactionWithoutPlanRefresh(t *testing.T)
 
 	first, err := Compact(messages, CompactionOptions{
 		PreserveLast: 2,
-		Summarize:    func([]kajicoderuntime.Message) (string, error) { return "FIRST", nil },
+		Summarize:    func([]kajicoderuntime.Message) (string, error) { return validSummary("FIRST"), nil },
 		taskState:    task.snapshotForCompaction(messages),
 	})
 	if err != nil {
@@ -142,7 +142,7 @@ func TestTaskObjectiveSurvivesRepeatedCompactionWithoutPlanRefresh(t *testing.T)
 	}
 	second, err := Compact(secondInput, CompactionOptions{
 		PreserveLast: 2,
-		Summarize:    func([]kajicoderuntime.Message) (string, error) { return "SECOND", nil },
+		Summarize:    func([]kajicoderuntime.Message) (string, error) { return validSummary("SECOND"), nil },
 		taskState:    snapshot,
 	})
 	if err != nil {
@@ -237,7 +237,7 @@ func TestCompactCarriesPreservedStateAcrossRepeatedCompaction(t *testing.T) {
 	// First compaction: real update_plan + skill load in the elided middle.
 	first, err := Compact(stateConversation(), CompactionOptions{
 		PreserveLast: 2,
-		Summarize:    func([]kajicoderuntime.Message) (string, error) { return "FIRST SUMMARY", nil },
+		Summarize:    func([]kajicoderuntime.Message) (string, error) { return validSummary("FIRST SUMMARY"), nil },
 	})
 	if err != nil {
 		t.Fatalf("first Compact: %v", err)
@@ -257,7 +257,7 @@ func TestCompactCarriesPreservedStateAcrossRepeatedCompaction(t *testing.T) {
 	out, err := Compact(second, CompactionOptions{
 		PreserveLast: 2,
 		Summarize: func([]kajicoderuntime.Message) (string, error) {
-			return "SECOND SUMMARY with no preserved sections", nil
+			return validSummary("SECOND SUMMARY with no preserved sections"), nil
 		},
 	})
 	if err != nil {
@@ -291,7 +291,7 @@ func TestCompactCarriesLoadedToolsAndProjectInstructionsAcrossRepeatedCompaction
 
 	first, err := Compact(messages, CompactionOptions{
 		PreserveLast: 2,
-		Summarize:    func([]kajicoderuntime.Message) (string, error) { return "FIRST SUMMARY", nil },
+		Summarize:    func([]kajicoderuntime.Message) (string, error) { return validSummary("FIRST SUMMARY"), nil },
 	})
 	if err != nil {
 		t.Fatalf("first Compact: %v", err)
@@ -305,7 +305,7 @@ func TestCompactCarriesLoadedToolsAndProjectInstructionsAcrossRepeatedCompaction
 
 	out, err := Compact(second, CompactionOptions{
 		PreserveLast: 2,
-		Summarize:    func([]kajicoderuntime.Message) (string, error) { return "SECOND SUMMARY", nil },
+		Summarize:    func([]kajicoderuntime.Message) (string, error) { return validSummary("SECOND SUMMARY"), nil },
 	})
 	if err != nil {
 		t.Fatalf("second Compact: %v", err)
@@ -342,7 +342,7 @@ func TestCompactPreservesSkillBodyWithMarkdownHeadings(t *testing.T) {
 	mustContainBody := func(label string, messages []kajicoderuntime.Message) []kajicoderuntime.Message {
 		out, err := Compact(messages, CompactionOptions{
 			PreserveLast: 2,
-			Summarize:    func([]kajicoderuntime.Message) (string, error) { return "SUMMARY", nil },
+			Summarize:    func([]kajicoderuntime.Message) (string, error) { return validSummary("SUMMARY"), nil },
 		})
 		if err != nil {
 			t.Fatalf("%s Compact: %v", label, err)

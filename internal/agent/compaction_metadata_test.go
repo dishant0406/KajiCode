@@ -24,7 +24,7 @@ func TestCompactMessagesReturnsMetadataForManualCompaction(t *testing.T) {
 		PreserveLast: 2,
 		Summarize: func(toSummarize []kajicoderuntime.Message) (string, error) {
 			captured = append([]kajicoderuntime.Message(nil), toSummarize...)
-			return "  manual summary  ", nil
+			return "  " + validSummary("manual summary") + "  ", nil
 		},
 	})
 	if err != nil {
@@ -40,8 +40,14 @@ func TestCompactMessagesReturnsMetadataForManualCompaction(t *testing.T) {
 	if result.PreservedCount != 3 {
 		t.Fatalf("PreservedCount = %d, want 3", result.PreservedCount)
 	}
-	if result.SummaryText != "manual summary" {
-		t.Fatalf("SummaryText = %q, want trimmed summary", result.SummaryText)
+	if !strings.HasPrefix(result.SummaryText, "## Objective") {
+		t.Fatalf("SummaryText = %q, want the trimmed templated summary", result.SummaryText)
+	}
+	if !strings.Contains(result.SummaryText, "manual summary") {
+		t.Fatalf("SummaryText = %q, want it to carry the summarizer text", result.SummaryText)
+	}
+	if strings.HasPrefix(result.SummaryText, " ") || strings.HasSuffix(result.SummaryText, " ") {
+		t.Fatalf("SummaryText = %q, want it trimmed", result.SummaryText)
 	}
 	if len(captured) != 3 || captured[0].Content != "first question" || captured[2].Content != "second question" {
 		t.Fatalf("summarized middle = %#v, want the three non-preserved non-system messages", captured)
@@ -74,7 +80,7 @@ func TestCompactMessagesNoopReturnsUncompactedMetadata(t *testing.T) {
 		PreserveLast: 8,
 		Summarize: func([]kajicoderuntime.Message) (string, error) {
 			called = true
-			return "summary", nil
+			return validSummary("summary"), nil
 		},
 	})
 	if err != nil {

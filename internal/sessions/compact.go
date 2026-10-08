@@ -14,9 +14,10 @@ import (
 // separate path (internal/agent).
 
 // SummarizePlan asks the provider to summarize the plan's summary prompt and
-// returns the trimmed result. It errors on an empty summary so a caller never
-// records a blank compaction. It is provider-shaped like the title call: one
-// system + one user turn, no tools.
+// returns the trimmed result. It rejects an empty or structurally unusable
+// summary (see ValidCompactionSummaryShape) so a caller never records a blank or
+// degenerate compaction. It is provider-shaped like the title call: one system +
+// one user turn, no tools.
 func SummarizePlan(ctx context.Context, provider kajicoderuntime.Provider, plan CompactionPlan) (string, error) {
 	if provider == nil {
 		return "", fmt.Errorf("no provider configured")
@@ -38,8 +39,12 @@ func SummarizePlan(ctx context.Context, provider kajicoderuntime.Provider, plan 
 		return "", fmt.Errorf("summarize compacted session: %s", collected.Error)
 	}
 	summary := strings.TrimSpace(collected.Text)
-	if summary == "" {
-		return "", fmt.Errorf("summarize compacted session: empty summary")
+	if !ValidCompactionSummaryShape(summary) {
+		// The model answered with something that is not a summary — a lazy
+		// one-liner or a re-emitted transcript. Recording it would inject garbage
+		// into the session's future context, so fail instead and let the user
+		// retry.
+		return "", fmt.Errorf("summarize compacted session: model returned an unusable summary")
 	}
 	return summary, nil
 }

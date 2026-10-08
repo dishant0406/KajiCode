@@ -10,6 +10,7 @@ import (
 
 	"github.com/dishant0406/KajiCode/internal/classifier"
 	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
+	"github.com/dishant0406/KajiCode/internal/sessions"
 	"github.com/dishant0406/KajiCode/internal/tools"
 	"github.com/dishant0406/KajiCode/internal/trace"
 )
@@ -126,6 +127,54 @@ const summaryInstructions = "You are compacting a coding-assistant conversation 
 	"in progress or unresolved. Omit pleasantries. Do not invent details. " +
 	"If a \"" + artifactsLabel + "\" block follows your summary, treat it as an authoritative list of files and " +
 	"commands still in play: name its paths in ## Relevant Files and do not contradict it."
+
+// Compaction summary validation. The structural checks that apply to ANY
+// summary (non-empty, bounded size, no repeated-line echo) live in
+// internal/sessions, so the manual "compact now" path enforces the same rules.
+// This path adds the strict-template checks, because only its prompt demands a
+// fixed Markdown outline.
+//
+// Thresholds are deliberately loose: the job is to reject output that is clearly
+// NOT a summary (a transcript echo, a lazy one-liner, or the model's
+// deliberation), never to police the wording of a real one. Measured against the
+// summaries persisted by this path in the local store: 156 legitimate summaries
+// pass with wide margin (longest 15.3 KB), and 85 degenerate ones fail —
+// including all four of the shortest, which are still genuine transcript echoes.
+//
+// compactionSummaryHeadingOffset is how far into the summary the first template
+// heading may sit. The prompt asks for the outline immediately, so prose BEFORE
+// "## Objective" is the model narrating instead of summarizing. The small
+// allowance absorbs a stray tag or blank line without admitting the
+// multi-thousand-character preambles seen in the failures.
+const compactionSummaryHeadingOffset = 200
+
+// errUnusableSummary marks a summarizer call that succeeded but returned text
+// that is not a usable summary (see validCompactionSummary). It is distinct from
+// a genuine provider failure so callers can tell "the model answered badly"
+// (recoverable by falling back to the free prune) from "the summarizer call
+// itself broke" (auth/network — nothing left to try).
+var errUnusableSummary = errors.New("summarizer returned an unusable summary")
+
+// validCompactionSummary reports whether the summarizer returned something
+// usable as a conversation summary. It checks only the properties that separate
+// a summary from the degenerate outputs actually observed, so a legitimately
+// unusual summary is never rejected:
+//
+//   - it passes the shared structural checks the manual compaction path also
+//     enforces (non-empty, bounded, no repeated-line echo);
+//   - the template's first heading opens it (a summary that leads with prose is
+//     the model deliberating);
+//   - the "## Next Move" heading is present (the outline was followed through).
+func validCompactionSummary(summary string) bool {
+	if !sessions.ValidCompactionSummaryShape(summary) {
+		return false
+	}
+	heading := strings.Index(strings.TrimSpace(summary), "## Objective")
+	if heading < 0 || heading > compactionSummaryHeadingOffset {
+		return false
+	}
+	return strings.Contains(summary, "## Next Move")
+}
 
 // previousSummaryOpenTag / CloseTag wrap a prior compaction's summary block that
 // is folded into the next summarizer call, so a later compaction updates the
@@ -443,6 +492,14 @@ func CompactMessages(messages []kajicoderuntime.Message, opts CompactionOptions)
 		return CompactionResult{}, err
 	}
 	summary = strings.TrimSpace(summary)
+	if !validCompactionSummary(summary) {
+		// The summarizer did not return a usable summary — it echoed the
+		// transcript, wrote a lazy one-liner, or deliberated instead of
+		// summarizing. Accepting it would inject garbage into the conversation and
+		// (on a later compaction) feed it back as the "previous summary". Fail so
+		// the caller takes its deterministic fallback instead.
+		return CompactionResult{}, errUnusableSummary
+	}
 
 	// Preserve structured state (active plan + loaded skills) from the elided
 	// middle verbatim, so it is not lost or paraphrased away by the prose summary.
@@ -781,6 +838,12 @@ func (state *compactionState) maybeCompact(
 		// judge-off path (a judged slice can be materially larger, because the
 		// judge keeps bodies the prune drops). The reactive path (or a later turn)
 		// can retry; we never drop messages here.
+		//
+		// Record the pruned size as the low-water mark so a summarizer that keeps
+		// returning unusable text does not make every subsequent turn pay for
+		// another summarizer call: the history is now this small, and only growth
+		// past it should trigger another attempt.
+		state.lowWaterMark = state.calibratedTokens(estimateTokens(pruned) + toolTokens)
 		return pruned, false
 	}
 	compacted := result.Messages
@@ -832,6 +895,23 @@ func (state *compactionState) recover(
 	// — identical recent context to the proactive path — and fall back to the
 	// aggressive legacy message-count tail only when it would not shrink.
 	result, compactErr := state.compactForRecovery(ctx, provider, messages, state.tailTurns)
+	// pruneOnly records that the summarizer answered badly and we are recovering
+	// with the free prune instead. That is not a compaction (no summary exists), so
+	// it must not be counted or emitted as one.
+	pruneOnly := false
+	if errors.Is(compactErr, errUnusableSummary) {
+		// The summarizer ANSWERED BADLY rather than failing. Fall back to the free
+		// prune floor — the same fallback the proactive path takes on summarizer
+		// failure — so the retried turn can still fit.
+		if pruned, reclaimed := pruneStaleToolOutput(messages, state.preserveLast); reclaimed > 0 {
+			result, compactErr, pruneOnly = CompactionResult{Messages: pruned}, nil, true
+		} else {
+			// Nothing to reclaim. Surface the ORIGINAL context-limit error rather
+			// than the summarizer's wording, and keep the one-shot budget so a
+			// later turn (once the history has grown) can try again.
+			return messages, false, nil
+		}
+	}
 	if compactErr != nil {
 		// A genuine compaction attempt was made (and failed): the budget is spent
 		// so the loop gives up rather than retrying a failing summarizer forever.
@@ -878,13 +958,20 @@ func (state *compactionState) recover(
 	// one-shot budget now so a provider that keeps returning context-limit errors
 	// after a successful compaction can't loop forever. Store the low-water mark in
 	// the SAME combined (messages + tool-defs) domain maybeCompact uses, so the
-	// proactive shrink-guard compares like with like. Count it now that the shrink
-	// is confirmed, so the counter mirrors maybeCompact's real-reduction policy.
+	// proactive shrink-guard compares like with like.
+	state.reactiveAttempted = true
+	state.lowWaterMark = state.calibratedTokens(estimateTokens(result.Messages) + estimateToolDefTokens(tools))
+	if pruneOnly {
+		// Recovered by the free prune: context shrank, but no summary was produced,
+		// so this is not a compaction — do not count it or claim one to the user.
+		return result.Messages, true, nil
+	}
+	// Only count a compaction when it actually shrank the history, so the
+	// compaction counter reflects real context reductions rather than paid
+	// no-ops that left the token budget untouched.
 	if r := trace.FromContext(ctx); r != nil {
 		r.Counter(trace.CounterCompactionCount, 1)
 	}
-	state.reactiveAttempted = true
-	state.lowWaterMark = state.calibratedTokens(estimateTokens(result.Messages) + estimateToolDefTokens(tools))
 	state.emitCompaction("reactive", result)
 	return result.Messages, true, nil
 }
@@ -1054,7 +1141,9 @@ func summarizeMessagesOnce(ctx context.Context, provider Provider, messages []ka
 	}
 	summary := strings.TrimSpace(collected.Text)
 	if summary == "" {
-		return "", errors.New("summarizer returned no text")
+		// An empty answer is an unusable one: report it with the same sentinel so
+		// callers treat it identically (fall back rather than abort).
+		return "", errUnusableSummary
 	}
 	return summary, nil
 }

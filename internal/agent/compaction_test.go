@@ -13,10 +13,14 @@ import (
 // --- Pure Compact() tests -------------------------------------------------
 
 func TestCompactKeepsSystemAndPreservedSuffix(t *testing.T) {
+	// The elided middle must be large enough that a real (templated) summary
+	// actually shrinks it: a real summarizer emits the template's fixed headings,
+	// so a handful of tiny messages would not be reduced.
+	filler := strings.Repeat("detail ", 400)
 	messages := []kajicoderuntime.Message{
 		{Role: kajicoderuntime.MessageRoleSystem, Content: "system prompt"},
-		{Role: kajicoderuntime.MessageRoleUser, Content: "first question"},
-		{Role: kajicoderuntime.MessageRoleAssistant, Content: "first answer"},
+		{Role: kajicoderuntime.MessageRoleUser, Content: "first question " + filler},
+		{Role: kajicoderuntime.MessageRoleAssistant, Content: "first answer " + filler},
 		{Role: kajicoderuntime.MessageRoleUser, Content: "second question"},
 		{Role: kajicoderuntime.MessageRoleAssistant, Content: "second answer"},
 		{Role: kajicoderuntime.MessageRoleUser, Content: "most recent question"},
@@ -29,7 +33,7 @@ func TestCompactKeepsSystemAndPreservedSuffix(t *testing.T) {
 		Summarize: func(toSummarize []kajicoderuntime.Message) (string, error) {
 			summarizeCalls++
 			captured = toSummarize
-			return "DENSE SUMMARY", nil
+			return validSummary("DENSE SUMMARY"), nil
 		},
 	})
 	if err != nil {
@@ -62,7 +66,7 @@ func TestCompactKeepsSystemAndPreservedSuffix(t *testing.T) {
 	if len(captured) != 3 {
 		t.Fatalf("expected 3 summarized messages, got %d: %#v", len(captured), captured)
 	}
-	if captured[0].Content != "first question" {
+	if !strings.HasPrefix(captured[0].Content, "first question") {
 		t.Fatalf("expected oldest non-system message first, got %#v", captured[0])
 	}
 	// Compaction must shrink the conversation.
@@ -88,7 +92,7 @@ func TestCompactSuffixNeverStartsWithToolResult(t *testing.T) {
 	result, err := Compact(messages, CompactionOptions{
 		PreserveLast: 1,
 		Summarize: func(toSummarize []kajicoderuntime.Message) (string, error) {
-			return "SUMMARY", nil
+			return validSummary("SUMMARY"), nil
 		},
 	})
 	if err != nil {
@@ -300,7 +304,7 @@ func (provider *summarizeRecordingProvider) StreamCompletion(ctx context.Context
 	if len(request.Tools) == 0 {
 		provider.summarizeCalls++
 		return streamEvents([]kajicoderuntime.StreamEvent{
-			{Type: kajicoderuntime.StreamEventText, Content: "COMPACTED SUMMARY"},
+			{Type: kajicoderuntime.StreamEventText, Content: validSummary("COMPACTED SUMMARY")},
 			{Type: kajicoderuntime.StreamEventDone},
 		}), nil
 	}
@@ -363,7 +367,7 @@ func TestRunProactiveCompactionTriggers(t *testing.T) {
 	if compactions[0].Trigger != "proactive" {
 		t.Fatalf("expected proactive trigger, got %q", compactions[0].Trigger)
 	}
-	if compactions[0].Summary != "COMPACTED SUMMARY" || len(compactions[0].Messages) == 0 {
+	if !strings.Contains(compactions[0].Summary, "COMPACTED SUMMARY") || len(compactions[0].Messages) == 0 {
 		t.Fatalf("expected compacted summary snapshot, got %#v", compactions[0])
 	}
 	for _, message := range compactions[0].Messages {
@@ -415,7 +419,7 @@ func (provider *reactiveProvider) StreamCompletion(ctx context.Context, request 
 	if len(request.Tools) == 0 {
 		provider.summarizeCalls++
 		return streamEvents([]kajicoderuntime.StreamEvent{
-			{Type: kajicoderuntime.StreamEventText, Content: "SUMMARY"},
+			{Type: kajicoderuntime.StreamEventText, Content: validSummary("SUMMARY")},
 			{Type: kajicoderuntime.StreamEventDone},
 		}), nil
 	}
@@ -492,7 +496,7 @@ func (provider *midStreamReactiveProvider) StreamCompletion(_ context.Context, r
 	if len(request.Tools) == 0 {
 		provider.summarizeCalls++
 		return streamEvents([]kajicoderuntime.StreamEvent{
-			{Type: kajicoderuntime.StreamEventText, Content: "SUMMARY"},
+			{Type: kajicoderuntime.StreamEventText, Content: validSummary("SUMMARY")},
 			{Type: kajicoderuntime.StreamEventDone},
 		}), nil
 	}
@@ -596,7 +600,7 @@ func TestCompactNeverProducesConsecutiveUserMessages(t *testing.T) {
 	}
 	out, err := Compact(msgs, CompactionOptions{
 		PreserveLast: 1, // suffix would naively start at u3-latest (user)
-		Summarize:    func([]kajicoderuntime.Message) (string, error) { return "summary", nil },
+		Summarize:    func([]kajicoderuntime.Message) (string, error) { return validSummary("summary"), nil },
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -611,7 +615,7 @@ func TestCompactNeverProducesConsecutiveUserMessages(t *testing.T) {
 func TestRecoverNoopDoesNotConsumeReactiveBudget(t *testing.T) {
 	st := newCompactionState(Options{ContextWindow: 1000, CompactionPreserveLast: 2}, nil)
 	provider := &mockProvider{turns: [][]kajicoderuntime.StreamEvent{{
-		{Type: kajicoderuntime.StreamEventText, Content: "SUMMARY"}, {Type: kajicoderuntime.StreamEventDone},
+		{Type: kajicoderuntime.StreamEventText, Content: validSummary("SUMMARY")}, {Type: kajicoderuntime.StreamEventDone},
 	}}}
 
 	// First recover: history is too small to compact, so it is a no-op (not
@@ -663,7 +667,7 @@ func TestRecoverNoopDoesNotConsumeReactiveBudget(t *testing.T) {
 func TestRecoverStripsImagesWhenTextCompactionCannotShrink(t *testing.T) {
 	st := newCompactionState(Options{ContextWindow: 1000, CompactionPreserveLast: 2}, nil)
 	provider := &mockProvider{turns: [][]kajicoderuntime.StreamEvent{{
-		{Type: kajicoderuntime.StreamEventText, Content: "SUMMARY"}, {Type: kajicoderuntime.StreamEventDone},
+		{Type: kajicoderuntime.StreamEventText, Content: validSummary("SUMMARY")}, {Type: kajicoderuntime.StreamEventDone},
 	}}}
 
 	// An image-only user turn with a prior text turn. The only reset candidate is
@@ -884,5 +888,152 @@ func TestRunProactiveCompactionAppendsResumeCue(t *testing.T) {
 	}
 	if !cueSeen {
 		t.Fatal("expected the resume cue in a post-compaction provider request")
+	}
+}
+
+// prunableHistory builds a history with enough stale tool output that the free
+// positional prune can actually reclaim context (pruneProtectRecentTokens keeps
+// a 40k-token trailing window of tool output, so a handful of small bodies is
+// never pruned). Used by the summarizer-failure fallback tests.
+func prunableHistory() []kajicoderuntime.Message {
+	msgs := []kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleSystem, Content: "sys"}}
+	for i := 0; i < 8; i++ {
+		id := "call-" + string(rune('a'+i))
+		msgs = append(msgs,
+			kajicoderuntime.Message{
+				Role:      kajicoderuntime.MessageRoleAssistant,
+				Content:   "reading file",
+				ToolCalls: []kajicoderuntime.ToolCall{{ID: id, Name: "read_file", Arguments: `{"path":"x"}`}},
+			},
+			kajicoderuntime.Message{Role: kajicoderuntime.MessageRoleTool, ToolCallID: id, Content: strings.Repeat("t", 20000)},
+		)
+	}
+	return append(msgs,
+		kajicoderuntime.Message{Role: kajicoderuntime.MessageRoleUser, Content: "u"},
+		kajicoderuntime.Message{Role: kajicoderuntime.MessageRoleAssistant, Content: "a"},
+	)
+}
+
+// An unusable summary from the summarizer must NOT abort a reactive recovery:
+// the model answered badly but the call worked, so recovery must fall back to
+// the free prune and retry rather than failing the user's run.
+func TestRecoverFallsBackToPruneOnUnusableSummary(t *testing.T) {
+	st := newCompactionState(Options{ContextWindow: 1000, CompactionPreserveLast: 2}, nil)
+	// The summarizer "succeeds" but returns a lazy one-liner, not a summary.
+	provider := &mockProvider{turns: [][]kajicoderuntime.StreamEvent{{
+		{Type: kajicoderuntime.StreamEventText, Content: "Now the registry:"},
+		{Type: kajicoderuntime.StreamEventDone},
+	}}}
+
+	big := prunableHistory()
+	compacted, retried, err := st.recover(context.Background(), provider, big, nil, "context length exceeded")
+	if err != nil {
+		t.Fatalf("an unusable summary must not abort recovery: %v", err)
+	}
+	if !retried {
+		t.Fatal("expected recovery to retry with the pruned history")
+	}
+	if estimateTokens(compacted) >= estimateTokens(big) {
+		t.Fatal("expected the fallback prune to shrink the history")
+	}
+}
+
+// A genuine provider failure must still surface: only an unusable *answer* is
+// recoverable by the prune fallback.
+func TestRecoverStillSurfacesGenuineSummarizerFailure(t *testing.T) {
+	st := newCompactionState(Options{ContextWindow: 1000, CompactionPreserveLast: 2}, nil)
+	provider := &errorSummarizer{message: "auth error: invalid key"}
+
+	big := []kajicoderuntime.Message{
+		{Role: kajicoderuntime.MessageRoleSystem, Content: "sys"},
+		{Role: kajicoderuntime.MessageRoleUser, Content: strings.Repeat("u", 4000)},
+		{Role: kajicoderuntime.MessageRoleAssistant, Content: strings.Repeat("a", 4000)},
+		{Role: kajicoderuntime.MessageRoleUser, Content: "u2"},
+		{Role: kajicoderuntime.MessageRoleAssistant, Content: "a2"},
+		{Role: kajicoderuntime.MessageRoleUser, Content: "u3"},
+	}
+	_, retried, err := st.recover(context.Background(), provider, big, nil, "context length exceeded")
+	if !retried || err == nil {
+		t.Fatalf("expected a genuine summarizer failure to surface, got retried=%v err=%v", retried, err)
+	}
+}
+
+// When the summarizer keeps returning unusable text, the proactive path must not
+// pay for another summarizer call on every subsequent turn: the prune floor
+// becomes the new low-water mark.
+func TestMaybeCompactRecordsLowWaterMarkOnUnusableSummary(t *testing.T) {
+	st := newCompactionState(Options{ContextWindow: 1000, CompactionPreserveLast: 2}, nil)
+	provider := &mockProvider{turns: [][]kajicoderuntime.StreamEvent{{
+		{Type: kajicoderuntime.StreamEventText, Content: "Let me write."},
+		{Type: kajicoderuntime.StreamEventDone},
+	}}}
+
+	messages := prunableHistory()
+	pruned, compacted := st.maybeCompact(context.Background(), provider, messages, nil)
+	if compacted {
+		t.Fatal("an unusable summary must not be reported as a compaction")
+	}
+	if st.lowWaterMark == 0 {
+		t.Fatal("expected the prune floor to be recorded as the low-water mark")
+	}
+	if estimateTokens(pruned) >= estimateTokens(messages) {
+		t.Fatal("expected the prune floor to shrink the history")
+	}
+	// The history now sits at the low-water mark, so the next call is a no-op and
+	// does NOT issue another summarizer request.
+	before := len(provider.requests)
+	if _, compacted := st.maybeCompact(context.Background(), provider, pruned, nil); compacted {
+		t.Fatal("expected no second compaction at the low-water mark")
+	}
+	if len(provider.requests) != before {
+		t.Fatalf("expected no further summarizer call, got %d new request(s)", len(provider.requests)-before)
+	}
+}
+
+// An EMPTY summarizer answer must take the same recoverable path as an unusable
+// one: it must not abort a reactive recovery.
+func TestRecoverFallsBackToPruneOnEmptySummary(t *testing.T) {
+	st := newCompactionState(Options{ContextWindow: 1000, CompactionPreserveLast: 2}, nil)
+	// The summarizer returns no text at all.
+	provider := &mockProvider{turns: [][]kajicoderuntime.StreamEvent{{
+		{Type: kajicoderuntime.StreamEventDone},
+	}}}
+
+	big := prunableHistory()
+	compacted, retried, err := st.recover(context.Background(), provider, big, nil, "context length exceeded")
+	if err != nil {
+		t.Fatalf("an empty summary must not abort recovery: %v", err)
+	}
+	if !retried {
+		t.Fatal("expected recovery to retry with the pruned history")
+	}
+	if estimateTokens(compacted) >= estimateTokens(big) {
+		t.Fatal("expected the fallback prune to shrink the history")
+	}
+}
+
+// Recovering via the free prune is NOT a compaction: no summary was produced, so
+// it must not be reported to the user or counted as one.
+func TestRecoverPruneFallbackDoesNotEmitOrCountCompaction(t *testing.T) {
+	st := newCompactionState(Options{ContextWindow: 1000, CompactionPreserveLast: 2}, nil)
+	var emitted []CompactionEvent
+	st.onCompaction = func(event CompactionEvent) { emitted = append(emitted, event) }
+	st.onPhase = func(PhaseEvent) {}
+
+	provider := &mockProvider{turns: [][]kajicoderuntime.StreamEvent{{
+		{Type: kajicoderuntime.StreamEventText, Content: "Let me write."},
+		{Type: kajicoderuntime.StreamEventDone},
+	}}}
+
+	big := prunableHistory()
+	_, retried, err := st.recover(context.Background(), provider, big, nil, "context length exceeded")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !retried {
+		t.Fatal("expected recovery to retry")
+	}
+	if len(emitted) != 0 {
+		t.Fatalf("a prune-only recovery must not report a compaction, got %#v", emitted)
 	}
 }

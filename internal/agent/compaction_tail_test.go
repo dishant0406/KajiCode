@@ -147,7 +147,7 @@ func TestCompactBudgetedTailKeepsRecentTurns(t *testing.T) {
 		ContextWindow:   200_000,
 		Summarize: func(toSummarize []kajicoderuntime.Message) (string, error) {
 			captured = toSummarize
-			return "SUMMARY", nil
+			return validSummary("SUMMARY"), nil
 		},
 	})
 	if err != nil {
@@ -221,7 +221,7 @@ func TestCompactBudgetedSplitsOverBudgetTurn(t *testing.T) {
 		ContextWindow:   200_000,
 		Summarize: func([]kajicoderuntime.Message) (string, error) {
 			captured++
-			return "SUMMARY", nil
+			return validSummary("SUMMARY"), nil
 		},
 	})
 	if err != nil {

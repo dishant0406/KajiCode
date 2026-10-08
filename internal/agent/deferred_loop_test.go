@@ -475,7 +475,7 @@ func TestRunReactiveRetryKeepsLoadedDeferredToolAndDiscovery(t *testing.T) {
 			{Type: kajicoderuntime.StreamEventError, Error: "prompt is too long: 250000 tokens > 200000 maximum"},
 		},
 		{ // summarize call inside Compact
-			{Type: kajicoderuntime.StreamEventText, Content: "SUMMARY"},
+			{Type: kajicoderuntime.StreamEventText, Content: validSummary("SUMMARY")},
 			{Type: kajicoderuntime.StreamEventDone},
 		},
 		{ // retry of turn 2 after compaction: final answer
@@ -609,7 +609,7 @@ func TestRunConnectTimeReactiveRetryKeepsLoadedDeferredToolAndDiscovery(t *testi
 			},
 			nil, // index 1: replaced by the connect-time error
 			{ // index 2: summarize call inside Compact
-				{Type: kajicoderuntime.StreamEventText, Content: "SUMMARY"},
+				{Type: kajicoderuntime.StreamEventText, Content: validSummary("SUMMARY")},
 				{Type: kajicoderuntime.StreamEventDone},
 			},
 			{ // index 3: retry of turn 2 after compaction: final answer

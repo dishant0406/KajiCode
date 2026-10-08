@@ -211,7 +211,7 @@ func TestCompactionPreservesInjectedGuideline(t *testing.T) {
 	result, err := CompactMessages(messages, CompactionOptions{
 		Summarize: func(middle []kajicoderuntime.Message) (string, error) {
 			summarized["middle"] = renderTranscript(middle)
-			return "the assistant did the work", nil
+			return validSummary("the assistant did the work"), nil
 		},
 	})
 	if err != nil {
