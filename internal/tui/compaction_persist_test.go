@@ -14,6 +14,11 @@ import (
 	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
+// compactionProviderSummary is the summary text the stub summarizer returns. It
+// is shaped like the real summarizer's output (the strict template), because a
+// compaction whose summary does not follow the template is rejected as unusable.
+const compactionProviderSummary = "## Objective\nSummarized earlier turns.\n\n## Important Details\n- none\n\n## Work State\n### Completed\n- none\n### Active\n- none\n### Blocked\n- none\n\n## Next Move\ncontinue\n\n## Relevant Files\n- none"
+
 // compactionProvider services the main turn and answers the out-of-band
 // compaction summarizer call with a short summary, exactly like the real
 // summarizeClosure path.
@@ -30,7 +35,7 @@ func (provider *compactionProvider) StreamCompletion(ctx context.Context, reques
 	}
 	ch := make(chan kajicoderuntime.StreamEvent, 4)
 	if isSummarizerRequest(request) {
-		ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventText, Content: "Summarized earlier turns."}
+		ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventText, Content: compactionProviderSummary}
 		ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventDone}
 		close(ch)
 		return ch, nil

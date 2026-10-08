@@ -633,7 +633,10 @@ func transcriptRowsFromSessionEvents(events []sessions.Event) []transcriptRow {
 				rows = append(rows, transcriptRow{kind: rowError, text: message})
 			}
 		case sessions.EventCompaction:
-			if summary := payloadString(payload, "summary"); summary != "" {
+			// Bound the summary: a persisted degenerate one (a re-emitted
+			// transcript, observed at 272 KB) must not flood the transcript when a
+			// session is resumed. The full summary stays in the session store.
+			if summary := compactionSummaryPreview(payloadString(payload, "summary")); summary != "" {
 				rows = append(rows, transcriptRow{kind: rowSystem, text: summary})
 			}
 		case sessions.EventSessionFork:

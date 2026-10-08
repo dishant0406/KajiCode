@@ -902,7 +902,7 @@ func compactResultLines(result CompactResult) []string {
 	if result.AfterTokens > 0 {
 		lines = append(lines, fmt.Sprintf("after: %d tokens", result.AfterTokens))
 	}
-	if summary := strings.TrimSpace(result.Summary); summary != "" {
+	if summary := compactionSummaryPreview(result.Summary); summary != "" {
 		lines = append(lines, "summary: "+summary)
 	}
 	return lines
@@ -944,6 +944,43 @@ func (m model) setAgentCompactionRow(text string) model {
 	return m
 }
 
+// compactionSummaryPreviewLines is how many lines of a compaction summary the
+// transcript shows. The summary is agent context, not user-facing output; a
+// degenerate one (a re-emitted transcript) can be hundreds of kilobytes, so the
+// transcript shows only a bounded glimpse of it. Every place a summary reaches
+// the transcript — the in-thread agent card, the manual compact command card,
+// and session replay — goes through compactionSummaryPreview for that reason.
+const compactionSummaryPreviewLines = 4
+
+// compactionSummaryPreview reduces a compaction summary to a short, bounded
+// preview for the in-thread card. It trims each shown line, clips it, and
+// collapses consecutive duplicates, so a degenerate summary (a re-emitted
+// transcript) cannot flood the card with thousands of identical lines.
+func compactionSummaryPreview(summary string) string {
+	summary = strings.TrimSpace(summary)
+	if summary == "" {
+		return ""
+	}
+	shown := make([]string, 0, compactionSummaryPreviewLines+1)
+	total := 0
+	previous := ""
+	for _, line := range strings.Split(summary, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || line == previous {
+			continue
+		}
+		previous = line
+		total++
+		if len(shown) < compactionSummaryPreviewLines {
+			shown = append(shown, truncateRunes(line, 160))
+		}
+	}
+	if total > len(shown) {
+		shown = append(shown, fmt.Sprintf("… (%d more lines)", total-len(shown)))
+	}
+	return strings.Join(shown, "\n")
+}
+
 // agentCompactCompleteText renders the in-thread completion row for an agent
 // auto-compaction, mirroring compactCompleteText for the manual path but driven
 // by the agent CompactionEvent.
@@ -956,8 +993,8 @@ func (m model) agentCompactCompleteText(event agent.CompactionEvent) string {
 	if event.RemovedCount > 0 {
 		lines = append(lines, fmt.Sprintf("Consolidated %d messages into a summary.", event.RemovedCount))
 	}
-	if event.Summary != "" {
-		lines = append(lines, "Summary: "+strings.TrimSpace(event.Summary))
+	if preview := compactionSummaryPreview(event.Summary); preview != "" {
+		lines = append(lines, "Summary: "+preview)
 	}
 	return strings.Join(lines, "\n")
 }
