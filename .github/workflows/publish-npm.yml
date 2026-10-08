@@ -290,16 +290,23 @@ jobs:
           else
             (cd dist/npm/wrapper && npm publish --access public --tag "$tag" --provenance)
           fi
-          for attempt in $(seq 1 24); do
+          # npm accepts the publish immediately but can take several minutes to
+          # serve the new version and dist-tag. Poll for the whole window rather
+          # than failing a release that actually shipped: the previous 24 x 10s
+          # budget was measured to be too short (v0.8.0 propagated in ~5 minutes
+          # and reported a false failure after the wrapper was already published).
+          for attempt in $(seq 1 60); do
             published="$(npm view @dishant0406/kajicode "dist-tags.${tag}" 2>/dev/null || true)"
             if [ "$published" = "$version" ]; then
               echo "dist-tag ${tag} is ${version}"
               exit 0
             fi
+            # Only nudge the tag once the version resolves; before that npm rejects
+            # the retag and the loop burns an attempt.
             if npm view "@dishant0406/kajicode@${version}" version >/dev/null 2>&1; then
               npm dist-tag add "@dishant0406/kajicode@${version}" "$tag"
             fi
-            sleep 10
+            sleep 15
           done
           echo "::error::dist-tag ${tag} did not update to ${version}"
           exit 1

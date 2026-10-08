@@ -117,7 +117,10 @@ one is user-visible immediately.
    tolerate a failed `npm view` (registry lag, or no `latest` tag yet on a
    bootstrap publish) — a missing value must not abort the job between the
    platform and wrapper publishes, which would strand a half-published
-   release.
+   release. The post-publish `latest` assertion polls for a full 15 minutes:
+   npm accepts the publish immediately but can take minutes to serve the new
+   dist-tag (observed: 66s for v0.7.5, ~5 minutes for v0.8.0), and a shorter
+   window reports a false failure for a release that actually shipped.
 2. **Platform versions publish before the wrapper.** The wrapper's
    `optionalDependencies` pin exact suffixed versions; publishing the wrapper
    first would create a window where installs resolve aliases that 404.
