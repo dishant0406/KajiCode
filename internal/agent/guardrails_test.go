@@ -110,12 +110,15 @@ func TestRunResetsEmptyTurnCounterOnVisibleOutput(t *testing.T) {
 	}
 }
 
+// A reasoning-only turn still counts as live: it resets the empty-turn counter
+// (so the empty-turn guard never fires on it) and the run continues to a real
+// final answer. The no-action runaway is bounded separately, by
+// maxNoActionTurns — see TestRunStopsAfterNoActionTurns.
 func TestRunResetsEmptyTurnCounterOnReasoning(t *testing.T) {
 	provider := &mockProvider{
 		turns: [][]kajicoderuntime.StreamEvent{
 			reasoningTurn("thinking 1"),
 			reasoningTurn("thinking 2"),
-			reasoningTurn("thinking 3"),
 			textTurn("done"),
 		},
 	}
@@ -130,8 +133,295 @@ func TestRunResetsEmptyTurnCounterOnReasoning(t *testing.T) {
 	if result.FinalAnswer != "done" {
 		t.Fatalf("expected reasoning-only turns to keep the run live until final answer, got %q", result.FinalAnswer)
 	}
-	if len(provider.requests) != 4 {
-		t.Fatalf("expected 4 turns, got %d", len(provider.requests))
+	if len(provider.requests) != 3 {
+		t.Fatalf("expected 3 turns, got %d", len(provider.requests))
+	}
+}
+
+// noActionProvider returns a reasoning-only turn for every request. It
+// models the reported loop: the model narrates its intentions ("Let me write.
+// Let me run. OK.") forever without ever calling a tool or emitting an answer.
+func noActionProvider() *mockProvider {
+	turns := make([][]kajicoderuntime.StreamEvent, 64)
+	for i := range turns {
+		turns[i] = reasoningTurn("Let me write. Let me run. OK.")
+	}
+	return &mockProvider{turns: turns}
+}
+
+// The reported bug: a model that only streams reasoning must be stopped by the
+// no-action guard, NOT burn the whole turn budget. Before the guard existed this
+// ran to MaxTurns.
+func TestRunStopsAfterNoActionTurns(t *testing.T) {
+	provider := noActionProvider()
+
+	result, err := Run(context.Background(), "go", provider, Options{
+		Registry: tools.NewRegistry(),
+		MaxTurns: 20,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(provider.requests) != maxNoActionTurns {
+		t.Fatalf("expected the no-action guard to stop the run at %d turns, got %d",
+			maxNoActionTurns, len(provider.requests))
+	}
+	if result.FinalAnswer == maxTurnsAnswer {
+		t.Fatal("no-action guard must stop before reaching maxTurns")
+	}
+	if !strings.Contains(result.FinalAnswer, noActionStopMarker) {
+		t.Fatalf("expected a no-action stop message, got %q", result.FinalAnswer)
+	}
+	if !IsNoProgressStop(result.FinalAnswer) {
+		t.Fatalf("no-action stop answer must be recognized by IsNoProgressStop, got %q", result.FinalAnswer)
+	}
+}
+
+// The guard must not fire on a run that is genuinely working: reasoning-only
+// turns followed by a real answer must complete normally.
+func TestNoActionGuardAllowsFinalAnswer(t *testing.T) {
+	provider := &mockProvider{
+		turns: [][]kajicoderuntime.StreamEvent{
+			reasoningTurn("thinking 1"),
+			reasoningTurn("thinking 2"),
+			reasoningTurn("thinking 3"),
+			reasoningTurn("thinking 4"),
+			reasoningTurn("thinking 5"),
+			textTurn("here is the answer"),
+		},
+	}
+
+	result, err := Run(context.Background(), "go", provider, Options{
+		Registry: tools.NewRegistry(),
+		MaxTurns: 20,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.FinalAnswer != "here is the answer" {
+		t.Fatalf("expected the run to reach its final answer, got %q", result.FinalAnswer)
+	}
+	if len(provider.requests) != 6 {
+		t.Fatalf("expected 6 turns, got %d", len(provider.requests))
+	}
+}
+
+// A tool call proves progress, so it must reset the no-action streak.
+func TestNoActionStreakResetsOnToolCall(t *testing.T) {
+	root := t.TempDir()
+	writeAgentTestFile(t, root+"/notes.txt", "alpha")
+	registry := tools.NewRegistry()
+	registry.Register(tools.NewReadFileTool(root))
+
+	provider := &mockProvider{
+		turns: [][]kajicoderuntime.StreamEvent{
+			reasoningTurn("thinking 1"),
+			reasoningTurn("thinking 2"),
+			reasoningTurn("thinking 3"),
+			reasoningTurn("thinking 4"),
+			reasoningTurn("thinking 5"),
+			toolTurn("call-1", "read_file", `{"path":"notes.txt"}`), // resets the streak
+			reasoningTurn("thinking 6"),
+			textTurn("done"),
+		},
+	}
+
+	result, err := Run(context.Background(), "go", provider, Options{
+		Registry: registry,
+		MaxTurns: 20,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.FinalAnswer != "done" {
+		t.Fatalf("expected a tool call to reset the no-action streak and the run to finish, got %q", result.FinalAnswer)
+	}
+	if len(provider.requests) != 8 {
+		t.Fatalf("expected 8 turns, got %d", len(provider.requests))
+	}
+}
+
+// The no-action reminder must be injected exactly once (at
+// noActionReminderAt), before the stop. The injected message stays in the
+// conversation for the remaining turns, so count only the turns where it FIRST
+// appears rather than every request that carries it.
+func TestNoActionReminderFiresOnceBeforeStop(t *testing.T) {
+	provider := noActionProvider()
+
+	if _, err := Run(context.Background(), "go", provider, Options{
+		Registry: tools.NewRegistry(),
+		MaxTurns: 20,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	injections := 0
+	seen := false
+	for _, request := range provider.requests {
+		present := false
+		for _, message := range request.Messages {
+			if message.Role == kajicoderuntime.MessageRoleUser &&
+				strings.Contains(message.Content, noActionProgressReminderMarker) {
+				present = true
+				break
+			}
+		}
+		if present && !seen {
+			injections++
+		}
+		seen = present
+	}
+	if injections != 1 {
+		t.Fatalf("expected the no-action reminder to be injected exactly once, got %d", injections)
+	}
+}
+
+// IsNoProgressStop must accept both guard stop answers and reject prose that
+// merely quotes a marker, so a real session is never hidden from /resume.
+func TestIsNoProgressStopRecognizesAllGuardAnswers(t *testing.T) {
+	if !IsNoProgressStop(noOutputStopAnswer(3)) {
+		t.Fatal("no-output stop answer must be recognized")
+	}
+	if !IsNoProgressStop(noActionStopAnswer(6, false)) {
+		t.Fatal("no-action stop answer must be recognized")
+	}
+	if !IsNoProgressStop(noActionStopAnswer(6, true)) {
+		t.Fatal("dropped-call stop answer must be recognized")
+	}
+	if !IsNoProgressStop(noOpToolCallStopAnswer(6)) {
+		t.Fatal("no-op tool-call stop answer must be recognized")
+	}
+	if IsNoProgressStop("Agent stopped after 3 turns without producing output or running a tool, then it kept going fine.") {
+		t.Fatal("prose quoting the stop shape must not be misclassified")
+	}
+	if IsNoProgressStop("Agent stopped after X turns " + noOutputStopMarker + " " + noOutputStopSuffix) {
+		t.Fatal("a non-numeric turn count must not be accepted")
+	}
+	if IsNoProgressStop("I will explain: " + noOutputStopAnswer(3)) {
+		t.Fatal("a quoted stop answer inside other prose must not be accepted")
+	}
+}
+
+// droppedCallProvider returns a malformed (nameless) tool call every turn: the
+// provider cannot dispatch it, so no tool ever executes. This is the second
+// member of the no-action runaway family.
+type droppedCallProvider struct{ calls int }
+
+func (provider *droppedCallProvider) StreamCompletion(_ context.Context, _ kajicoderuntime.CompletionRequest) (<-chan kajicoderuntime.StreamEvent, error) {
+	provider.calls++
+	ch := make(chan kajicoderuntime.StreamEvent, 3)
+	ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventToolCallStart, ToolCallID: "x"}
+	ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventToolCallEnd, ToolCallID: "x"}
+	ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventDone}
+	close(ch)
+	return ch, nil
+}
+
+// A model looping on malformed tool calls never executes anything, so before the
+// no-action guard it ran to MaxTurns. It must now be stopped by the same guard.
+func TestRunStopsAfterDroppedToolCallLoop(t *testing.T) {
+	provider := &droppedCallProvider{}
+
+	result, err := Run(context.Background(), "go", provider, Options{
+		Registry: tools.NewRegistry(),
+		MaxTurns: 20,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if provider.calls != maxNoActionTurns {
+		t.Fatalf("expected the no-action guard to stop the run at %d turns, got %d", maxNoActionTurns, provider.calls)
+	}
+	if result.FinalAnswer == maxTurnsAnswer {
+		t.Fatal("a dropped-call loop must stop before reaching maxTurns")
+	}
+	if !IsNoProgressStop(result.FinalAnswer) {
+		t.Fatalf("expected a guard stop answer, got %q", result.FinalAnswer)
+	}
+}
+
+// A dropped-call turn that also produced visible text is progress, so it must
+// reset the no-action streak rather than counting toward the stop.
+func TestDroppedCallWithVisibleTextResetsNoActionStreak(t *testing.T) {
+	var state guardState
+	for i := 0; i < maxNoActionTurns-1; i++ {
+		if state.observeNoActionTurn() {
+			t.Fatalf("guard fired at turn %d, before the streak reached its cap", i+1)
+		}
+	}
+	// A turn with visible text resets the streak, so the run is not stopped.
+	state.observeTurn(kajicoderuntime.CollectedStream{Text: "here is progress"})
+	if state.noActionTurns != 0 {
+		t.Fatalf("expected visible text to reset the no-action streak, got %d", state.noActionTurns)
+	}
+	if state.observeNoActionTurn() {
+		t.Fatal("expected the streak to restart from zero after visible text")
+	}
+}
+
+// A dropped-call loop must report what actually happened. The turn may have
+// streamed visible text, so the halt message must not claim no output was
+// produced — but the loop must still be bounded, because a tool call that cannot
+// run is not progress no matter how much prose accompanies it.
+type droppedCallWithTextProvider struct{ calls int }
+
+func (provider *droppedCallWithTextProvider) StreamCompletion(_ context.Context, _ kajicoderuntime.CompletionRequest) (<-chan kajicoderuntime.StreamEvent, error) {
+	provider.calls++
+	ch := make(chan kajicoderuntime.StreamEvent, 4)
+	ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventText, Content: "Let me write. "}
+	ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventToolCallStart, ToolCallID: "x"}
+	ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventToolCallEnd, ToolCallID: "x"}
+	ch <- kajicoderuntime.StreamEvent{Type: kajicoderuntime.StreamEventDone}
+	close(ch)
+	return ch, nil
+}
+
+func TestDroppedCallLoopWithVisibleTextStillStops(t *testing.T) {
+	provider := &droppedCallWithTextProvider{}
+
+	result, err := Run(context.Background(), "go", provider, Options{
+		Registry: tools.NewRegistry(),
+		MaxTurns: 20,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if provider.calls != maxNoActionTurns {
+		t.Fatalf("expected the guard to stop the run at %d turns, got %d", maxNoActionTurns, provider.calls)
+	}
+	if result.FinalAnswer == maxTurnsAnswer {
+		t.Fatal("a text-plus-dropped-call loop must stop before reaching maxTurns")
+	}
+	if !strings.Contains(result.FinalAnswer, droppedCallStopMarker) {
+		t.Fatalf("halt message must name the dropped calls, got %q", result.FinalAnswer)
+	}
+	if strings.Contains(result.FinalAnswer, noActionStopMarker) {
+		t.Fatalf("halt message must not claim no output was produced, got %q", result.FinalAnswer)
+	}
+}
+
+// A silent turn inside a dropped-call streak must reset the dropped-call reason,
+// so the halt message describes the turn that actually tripped the cap.
+func TestNoActionStopReasonTracksLastTurn(t *testing.T) {
+	var state guardState
+	for i := 0; i < maxNoActionTurns; i++ {
+		state.observeNoActionTurn()
+	}
+	if !strings.Contains(guardStopAnswer(&state, 6), droppedCallStopMarker) {
+		t.Fatal("expected the dropped-call reason when the cap was tripped by dropped calls")
+	}
+
+	// A silent turn resets the reason but still counts toward the streak, so the
+	// halt message stops claiming the calls were the problem.
+	state = guardState{}
+	for i := 0; i < maxNoActionTurns-1; i++ {
+		state.observeNoActionTurn()
+	}
+	state.observeTurn(kajicoderuntime.CollectedStream{})
+	if state.noActionTurns != maxNoActionTurns {
+		t.Fatalf("expected the silent turn to reach the cap, got %d", state.noActionTurns)
+	}
+	if !strings.Contains(guardStopAnswer(&state, 6), noActionStopMarker) {
+		t.Fatal("expected the no-output reason when the cap was tripped by a silent turn")
 	}
 }
 

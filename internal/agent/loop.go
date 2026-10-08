@@ -740,9 +740,16 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 		if len(collected.ToolCalls) == 0 {
 			// The model intended a tool call but it was malformed and dropped.
 			// Tell it to retry rather than silently treating text as the answer.
-			// This path is handled before the no-output guard so a dropped-call
-			// turn is never counted as a runaway empty turn.
+			// This path returns before the no-output guard so a dropped-call turn
+			// is never counted as an EMPTY turn — but it IS a turn that could not
+			// act, so it feeds the no-action guard that bounds a model looping on
+			// malformed calls.
 			if collected.DroppedToolCalls > 0 {
+				if guards.observeNoActionTurn() {
+					result.FinalAnswer = guardStopAnswer(guards, result.Turns)
+					result.Messages = copyMessages(messages)
+					return result, nil
+				}
 				messages = append(messages, kajicoderuntime.Message{
 					Role:    kajicoderuntime.MessageRoleUser,
 					Content: droppedToolCallNotice,
@@ -750,20 +757,28 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 				continue
 			}
 			// No-output guard: a turn with visible text is a real final answer.
-			// A truly-empty turn (no text, no tool calls, no dropped calls) is
-			// counted toward the runaway cap so we stop before burning maxTurns.
+			// A turn with no text and no tool calls is counted toward the runaway
+			// cap so we stop before burning maxTurns — either as a fully empty
+			// turn, or (when it streamed reasoning) as a reasoning-only turn.
 			if guards.observeTurn(collected) {
-				result.FinalAnswer = noOutputStopAnswer(result.Turns)
+				result.FinalAnswer = guardStopAnswer(guards, result.Turns)
 				result.Messages = copyMessages(messages)
 				return result, nil
 			}
 			if strings.TrimSpace(collected.Text) == "" {
 				// Empty-but-under-cap turn: nudge the model to make progress
-				// rather than treating the empty response as a final answer.
+				// rather than treating the empty response as a final answer. When
+				// the turn produced no action, the no-action nudge replaces the
+				// generic one so the model is told to stop deliberating instead of
+				// being told it produced "no output".
+				notice := "Your previous response had no visible output and no tool calls. " +
+					"Continue the task by using a tool or reply with your final answer."
+				if reminder := guards.noActionReminder(); reminder != "" {
+					notice = reminder
+				}
 				messages = append(messages, kajicoderuntime.Message{
-					Role: kajicoderuntime.MessageRoleUser,
-					Content: "Your previous response had no visible output and no tool calls. " +
-						"Continue the task by using a tool or reply with your final answer.",
+					Role:    kajicoderuntime.MessageRoleUser,
+					Content: notice,
 				})
 				continue
 			}

@@ -236,8 +236,13 @@ Key responsibilities of the loop:
    registered tool, redacts output, and appends a tool message. See
    [Tool Execution Lifecycle](#tool-execution-lifecycle).
 6. **Recover and guard** — handles malformed tool calls, repeated failures,
-   empty turns, context pressure, stream reconnect/retry, and max-turn fallback.
-   Context pressure is handled by [Context Budget and Compaction](#context-budget-and-compaction).
+   empty turns, no-action turns, context pressure, stream reconnect/retry, and
+   max-turn fallback. A turn that produces no visible text and no executed tool
+   call — whether it streamed only reasoning ("thinking out loud") or emitted a
+   tool call that could not run — is counted toward a runaway cap (nudge after 3,
+   stop after 6), because such a turn resets the empty-turn counter and would
+   otherwise run to `maxTurns`. Context pressure is handled by
+   [Context Budget and Compaction](#context-budget-and-compaction).
 7. **Finalize** — returns a final answer or a structured incomplete/stop reason.
 
 The model never directly mutates the workspace. It asks for tool calls; KajiCode

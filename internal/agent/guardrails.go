@@ -33,6 +33,21 @@ const (
 	// knows before spending more tool turns.
 	toolOnlyProgressReminderAt = 6
 
+	// noActionReminderAt injects a one-shot nudge after this many consecutive
+	// turns produced no visible text AND no executed tool call. Reasoning proves
+	// the model is running, not that it is making progress, so a model narrating
+	// its intentions ("Let me write. Let me run. OK.") or emitting only malformed
+	// tool calls is told to act.
+	noActionReminderAt = 3
+
+	// maxNoActionTurns stops the run after this many consecutive turns with no
+	// visible text and no executed tool call. This is the only bound on that
+	// loop: such a turn resets emptyTurns whenever it streamed reasoning (the turn
+	// was live), so maxEmptyTurns can never fire, and noOpTurns only counts tool
+	// calls. Without this bound the model stalls until MaxTurns. Set well above
+	// noActionReminderAt so the nudge gets several turns to break the loop.
+	maxNoActionTurns = 6
+
 	// planReminderTurn is the turn (1-based) by the end of which a multi-step
 	// task should have called todo_write; if it hasn't, a one-time reminder is
 	// injected. Set to 3 (not 2) so short, legitimate two-step tasks finish
@@ -405,14 +420,25 @@ func noOutputStopAnswer(turns int) string {
 	return noOutputStopPrefix + strconv.Itoa(turns) + " turns " + noOutputStopMarker + " " + noOutputStopSuffix
 }
 
-// IsNoProgressStop reports whether content IS the no-output guardrail stop answer
-// (a run that produced no visible text and no tool calls). It matches the EXACT
-// structure noOutputStopAnswer emits — prefix + "<int> turns " + marker + " " +
-// suffix, where only the integer turn count varies — rather than just looking for
-// the three parts in order. A loose check (prefix && contains-marker && suffix)
-// would misclassify a genuine assistant/tool message that merely quotes the
-// marker amid other prose, which would wrongly hide a real session from /resume
-// and skip its title generation.
+// guardStopTails are the exact tails (after "Agent stopped after <n> turns ") of
+// the runaway-guard halt answers, so IsNoProgressStop recognizes them all. The
+// repeated-failure guard uses a different prefix ("Agent stopped: …") and is not
+// covered here.
+var guardStopTails = []string{
+	noOutputStopMarker + " " + noOutputStopSuffix,
+	noActionStopTail,
+	droppedCallStopTail,
+	noOpToolCallStopTail,
+}
+
+// IsNoProgressStop reports whether content IS a guardrail stop answer — a run
+// halted by one of the runaway guards (no output, no action, or repeated no-op
+// tool calls). It matches the EXACT structure the stop answers emit — prefix +
+// "<int> turns " + one of the known tails — rather than just looking for the
+// parts in order. A loose check (prefix && contains-marker && suffix) would
+// misclassify a genuine assistant/tool message that merely quotes the marker amid
+// other prose, which would wrongly hide a real session from /resume and skip its
+// title generation.
 func IsNoProgressStop(content string) bool {
 	trimmed := strings.TrimSpace(content)
 	if !strings.HasPrefix(trimmed, noOutputStopPrefix) {
@@ -429,9 +455,15 @@ func IsNoProgressStop(content string) bool {
 	if _, err := strconv.Atoi(rest[:sep]); err != nil {
 		return false
 	}
-	// The marker must be immediately followed (one space) by the suffix and then
-	// end — no arbitrary text wedged in between.
-	return rest[sep+len(turnsSep):] == noOutputStopMarker+" "+noOutputStopSuffix
+	// The remainder must be exactly one of the guard's own tails — no arbitrary
+	// text wedged in.
+	tail := rest[sep+len(turnsSep):]
+	for _, known := range guardStopTails {
+		if tail == known {
+			return true
+		}
+	}
+	return false
 }
 
 // Reminder markers are stable substrings used both to build the reminder text
@@ -464,6 +496,52 @@ func toolOnlyProgressReminder(turns int) string {
 		" without visible progress. Before calling more tools, summarize what you already know, state the next concrete step, and finish if you have enough information."
 }
 
+// noActionProgressReminderMarker is a stable substring for tests.
+const noActionProgressReminderMarker = "consecutive turns with no visible output and no executed tool call"
+
+// noActionProgressReminder tells a model that has spent several turns without
+// acting to stop deliberating and take a concrete action.
+func noActionProgressReminder(turns int) string {
+	return "Reminder: your last " + strconv.Itoa(turns) + " " + noActionProgressReminderMarker +
+		". Stop deliberating: call a tool now to make progress, or give your final answer."
+}
+
+// noActionStopMarker and droppedCallStopMarker are stable substrings for tests.
+// The two exist so the halt message names what actually happened: a turn that
+// produced nothing, or a turn whose tool call could not run (which may still have
+// streamed visible text).
+const (
+	noActionStopMarker    = "without producing output or running a tool"
+	droppedCallStopMarker = "whose tool calls could not run"
+)
+
+// noActionStopTail / droppedCallStopTail are the fixed parts of noActionStopAnswer
+// after the turn count. Both share the noOutputStopPrefix shape ("Agent stopped
+// after <n> turns …") so IsNoProgressStop recognizes them structurally.
+const (
+	noActionStopTail    = noActionStopMarker + ", to avoid consuming tokens without making progress."
+	droppedCallStopTail = droppedCallStopMarker + ", to avoid consuming tokens without making progress."
+)
+
+// noActionStopAnswer is the final answer when the no-action guard halts the run.
+func noActionStopAnswer(turns int, droppedCall bool) string {
+	tail := noActionStopTail
+	if droppedCall {
+		tail = droppedCallStopTail
+	}
+	return noOutputStopPrefix + strconv.Itoa(turns) + " turns " + tail
+}
+
+// guardStopAnswer builds the final answer for whichever runaway guard just
+// tripped. When both the empty-turn and no-action counters reach their cap on the
+// same turn the no-action reason is reported, which is the more specific one.
+func guardStopAnswer(state *guardState, turns int) string {
+	if state.noActionTurns >= maxNoActionTurns {
+		return noActionStopAnswer(turns, state.noActionDroppedCall)
+	}
+	return noOutputStopAnswer(turns)
+}
+
 // guardState tracks the per-run signals the guardrails need. It is observable
 // purely from tool-call names and per-turn output, matching what the loop holds.
 type guardState struct {
@@ -483,6 +561,19 @@ type guardState struct {
 	staleReminderSent    bool
 	toolOnlyTurns        int
 	toolOnlyReminderSent bool
+	// noActionTurns counts consecutive turns that produced no visible text and no
+	// executed tool call — whether they streamed reasoning ("thinking out loud")
+	// or emitted only malformed tool calls that could not run. It is deliberately
+	// separate from emptyTurns: reasoning resets emptyTurns (the turn was live),
+	// and a dropped-call turn skips the empty-turn guard entirely, so this is the
+	// only counter that can bound a model that never actually acts.
+	noActionTurns        int
+	noActionReminderSent bool
+	// noActionDroppedCall records whether the current no-action streak was last
+	// extended by a turn whose tool call could not run. Such a turn may still have
+	// streamed visible text, so the halt message must not claim it produced no
+	// output. It is reset whenever the streak is extended by a silent turn.
+	noActionDroppedCall bool
 	// planItemsPending is the number of remaining (pending/in_progress) items in
 	// the most recent todo_write call, so the headless completion gate can tell
 	// whether work is unfinished when the model stops without a tool call.
@@ -592,7 +683,7 @@ func (state *guardState) observeToolResult(name string, failed bool, output stri
 }
 
 // observeTurn updates counters from a turn's collected stream. It returns
-// whether the no-output guard should stop the run.
+// whether a runaway guard should stop the run.
 //
 // Callers must NOT invoke this for turns handled by the dropped-tool-call retry
 // path; those are not "empty" in the runaway sense and are handled separately.
@@ -611,6 +702,17 @@ func (state *guardState) observeTurn(collected kajicoderuntime.CollectedStream) 
 	} else {
 		state.toolOnlyTurns = 0
 		state.toolOnlyReminderSent = false
+	}
+	// A turn with no visible text and no executed tool call is live but not
+	// productive — the model is deliberating or emitting calls that cannot run.
+	// Count the streak so it is bounded; visible text or an executed tool call
+	// proves progress and resets it.
+	if !hasToolCalls && !hasVisibleText {
+		state.noActionTurns++
+		state.noActionDroppedCall = false
+	} else {
+		state.noActionTurns = 0
+		state.noActionReminderSent = false
 	}
 
 	// One turn has passed; the plan-update below resets this to 0 when the model
@@ -633,7 +735,19 @@ func (state *guardState) observeTurn(collected kajicoderuntime.CollectedStream) 
 		}
 	}
 
-	return state.emptyTurns >= maxEmptyTurns
+	return state.emptyTurns >= maxEmptyTurns || state.noActionTurns >= maxNoActionTurns
+}
+
+// observeNoActionTurn counts a turn that could not act at all — currently only
+// the dropped-tool-call path, which returns before observeTurn. It shares the
+// noActionTurns streak with observeTurn so a model that only ever emits
+// malformed calls is bounded by the same guard, and returns whether to stop. The
+// turn is marked as a dropped call so the halt message says so: unlike a silent
+// turn, it may have streamed visible text that was not a usable final answer.
+func (state *guardState) observeNoActionTurn() bool {
+	state.noActionTurns++
+	state.noActionDroppedCall = true
+	return state.noActionTurns >= maxNoActionTurns
 }
 
 // pendingPlanItems reports whether the most recent todo_write call still has
@@ -667,6 +781,17 @@ func (state *guardState) progressReminder() string {
 	return toolOnlyProgressReminder(state.toolOnlyTurns)
 }
 
+// noActionReminder returns a one-shot nudge once the model has spent several
+// consecutive turns without producing output or running a tool, or "" when none
+// applies.
+func (state *guardState) noActionReminder() string {
+	if state.noActionReminderSent || state.noActionTurns < noActionReminderAt {
+		return ""
+	}
+	state.noActionReminderSent = true
+	return noActionProgressReminder(state.noActionTurns)
+}
+
 // noOpToolCallReminder tells the model that the calls it just made were verbatim
 // repeats, so it stops re-issuing them and either changes approach or answers.
 func noOpToolCallReminder(turns int) string {
@@ -675,13 +800,19 @@ func noOpToolCallReminder(turns int) string {
 		"use the results you already have, change the arguments, or state the answer with what you know."
 }
 
-// noOpToolCallStopAnswer is the final answer when the run halts on repeated
-// identical calls. noOpToolCallStopMarker is a stable substring for tests.
+// noOpToolCallStopMarker is a stable substring for tests.
 const noOpToolCallStopMarker = "repeated earlier tool calls verbatim"
 
+// noOpToolCallStopTail is the fixed part of noOpToolCallStopAnswer after the
+// "Agent stopped after <n> turns " prefix, so IsNoProgressStop recognizes it
+// structurally like the other guard halt answers.
+const noOpToolCallStopTail = "that " + noOpToolCallStopMarker +
+	", which returned nothing new, to avoid consuming tokens without making progress."
+
+// noOpToolCallStopAnswer is the final answer when the run halts on repeated
+// identical calls.
 func noOpToolCallStopAnswer(turns int) string {
-	return "Agent stopped after " + strconv.Itoa(turns) + " turns that " + noOpToolCallStopMarker +
-		", which returned nothing new, to avoid consuming tokens without making progress."
+	return noOutputStopPrefix + strconv.Itoa(turns) + " turns " + noOpToolCallStopTail
 }
 
 // planReminder returns a one-shot reminder message to inject before the next
