@@ -300,28 +300,56 @@ Reviews, applies, and recipes are owned by `internal/harness`:
   `MaxRefinements` events (only the most recent rollback is ever read), keeping
   `harness_state.json` bounded.
 
-Learned lessons are surfaced two ways. The bounded `<learned_memory>` prompt block
-(`learning.Context`) shows the freshest few, and the `learn` (CRUD/status) and
-`recall` (search) tools provide the deep-retrieval path. The prompt instructs the
-model to call `recall` before non-trivial work and when something fails
-unexpectedly, and `recall` searches both the project and global stores (project
-entries shadow global on the same `kind:id`), reporting each entry's scope. Both
-sources are treated as project/user conventions, not immutable facts, and a
-current explicit instruction always wins over one of them.
+Saved notes reach the model two ways (`internal/agent/learning_notes.go`):
 
-Recall mirrors the compaction engine's "keep the freshest within a budget"
-principle:
+- **Notes added to each request.** When a run starts, `BeginRun` calls `Notes`,
+  which searches the session, project, and global stores with the user's
+  request. Up to 3 matching notes, each cut to 300 characters, are added inside
+  `<notes_from_earlier_sessions>` to the copy of the request sent to the
+  provider. The model does not have to remember to call `recall`. A vague or
+  chatty request ("hello", "do the thing") matches nothing and is sent exactly
+  as typed. The loop's own history never holds the notes, so the learning
+  pass, compaction, `Result.Messages`, and saved sessions all see the request
+  as typed. The trade-off: the next run replays that request without notes, so
+  its provider cache can reuse history only up to that request.
+- **Standing notes in the system prompt.** The `<learned_memory>` block holds
+  only this project's and session's `prompt`-kind notes (project rules): the 6
+  most recently edited, each shortened. Global notes and facts never sit there
+  permanently; they appear only when they match a request. Keeping this block
+  stable is what keeps provider prompt caching effective.
 
-- Entries carry a `lastUsedAt` stamp and a `reinforcements` counter, updated by
-  `harness.TouchEntry` for every lesson a completed run actually surfaced, so the
-  injected block is recall-ordered (freshest/most-reinforced-first) rather than an
-  alphabetical slab.
-- The whole block obeys a token budget, capped per kind too, so a growing store
-  can never blow the context window.
-- The plan pass is anchored (`buildPlanPrompt`): the current curated state is
-  shown as a live anchor the plan must preserve, telling the optimizer to prefer
-  update-over-create instead of re-adding a near-duplicate. `apply.go` backstops
-  this by rejecting a create that duplicates an existing same-kind title.
+`recall` is the follow-up path in the middle of a task. It runs the same search
+over the project and global stores and returns up to 5 notes in full, labeled
+"this project" or "all projects" with the id `learn` needs to update one.
+
+Search (`harness.Search`) is BM25 keyword ranking:
+
+- Words are lowercased, and filler words and single letters are dropped. Short
+  terms such as `go` or `ci` are kept. A trailing "s" is removed, so "tests"
+  matches "test".
+- The title counts twice. A word that appears in most notes, such as the
+  project name, counts for little.
+- A note must match at least two of the query's words (one for a one-word
+  query) and cover at least half of the query's weight. Rare words weigh more,
+  and words no note contains are left out, so ordinary phrasing around a
+  specific bug does not hide the note about it. Results under half of the best
+  score are dropped. This keeps a request from dragging in a note that shares
+  a couple of incidental words with it.
+- Automatic notes also need a request with at least two keywords, so vague
+  requests get none; the agent can still call `recall` for anything else.
+- It matches words, not meanings: "replace" does not find "replacing".
+
+Reinforcement follows use. When a run ends, including a failed or cancelled
+run, `Reinforce` stamps `lastUsedAt` and `reinforcements` on the standing notes
+and the matched notes that run relied on. That keeps them from being pruned as stale (`PruneStale`) and breaks ties
+in search. Standing notes are chosen by last edit, so reinforcement never locks
+a set of notes in place. `BeginRun` re-arms `Finish` at the start of every run,
+because the TUI and ACP reuse one engine for many runs.
+
+Every entry takes the scope of the store that holds it, on load and on save.
+The plan pass is anchored (`buildPlanPrompt`): the current state is shown as a
+live anchor so the optimizer prefers update-over-create, and `apply.go` rejects
+a create that duplicates an existing same-kind title.
 
 ## Tool Execution Lifecycle
 

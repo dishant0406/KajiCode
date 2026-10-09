@@ -42,7 +42,7 @@ func TestRecallToolFindsByQuery(t *testing.T) {
 func TestRecallToolEmptyStore(t *testing.T) {
 	tool := NewRecallTool(filepath.Join(t.TempDir(), "learning"), "")
 	result := tool.Run(context.Background(), map[string]any{"query": "anything"})
-	if result.Status != StatusOK || !strings.Contains(result.Output, "No stored lessons") {
+	if result.Status != StatusOK || !strings.Contains(result.Output, "No notes saved") {
 		t.Fatalf("empty recall = %#v", result)
 	}
 }
@@ -56,6 +56,16 @@ func TestRecallToolKindFilter(t *testing.T) {
 	result := tool.Run(context.Background(), map[string]any{"kind": "prompt"})
 	if !strings.Contains(result.Output, "prompt") || strings.Contains(result.Output, "a memory") {
 		t.Fatalf("kind filter output = %q", result.Output)
+	}
+}
+
+func TestRecallToolKindFilterWithNoHits(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "learning")
+	seedProjectLesson(t, root, harness.NewEntry(harness.KindMemory, "Fact", "a memory", "fact", "general", harness.ScopeProject, "agent", testTime()))
+
+	result := NewRecallTool(root, "").Run(context.Background(), map[string]any{"kind": "recipe"})
+	if !strings.Contains(result.Output, `No saved notes of kind "recipe"`) {
+		t.Fatalf("kind filter with no hits should say so, got %q", result.Output)
 	}
 }
 
@@ -74,8 +84,43 @@ func TestRecallToolSearchesProjectAndGlobal(t *testing.T) {
 	if !strings.Contains(result.Output, "project-only-lesson") || !strings.Contains(result.Output, "global-only-lesson") {
 		t.Fatalf("recall should merge project+global, got %q", result.Output)
 	}
-	// The scope is labeled so the model knows where a lesson lives.
-	if !strings.Contains(result.Output, string(harness.ScopeGlobal)) || !strings.Contains(result.Output, string(harness.ScopeProject)) {
-		t.Fatalf("recall should report entry scope, got %q", result.Output)
+	// Where each note applies is labeled in plain words.
+	if !strings.Contains(result.Output, "(all projects, id: g)") || !strings.Contains(result.Output, "(this project, id: p)") {
+		t.Fatalf("recall should say where each note applies, got %q", result.Output)
+	}
+}
+
+// A keyword query from the agent rarely appears verbatim in a note; recall must
+// still find the note that contains those words.
+func TestRecallToolMatchesKeywordQuery(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "learning")
+	seedProjectLesson(t, root, harness.NewEntry(harness.KindMemory, "Vision-gate orphan token", "The TUI drops images for a non-vision model but leaves the [Image #1] token in the composer.", "vision", "general", harness.ScopeProject, "agent", testTime()))
+	seedProjectLesson(t, root, harness.NewEntry(harness.KindMemory, "Lint", "Run gofmt before commit", "lint", "general", harness.ScopeProject, "agent", testTime()))
+
+	result := NewRecallTool(root, "").Run(context.Background(), map[string]any{"query": "attachment token composer vision drop"})
+	if !strings.Contains(result.Output, "Vision-gate orphan token") || strings.Contains(result.Output, "gofmt") {
+		t.Fatalf("keyword query should find only the vision note, got %q", result.Output)
+	}
+}
+
+func TestRecallToolNoMatchSuggestsOtherKeywords(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "learning")
+	seedProjectLesson(t, root, harness.NewEntry(harness.KindMemory, "Lint", "Run gofmt before commit", "lint", "general", harness.ScopeProject, "agent", testTime()))
+
+	result := NewRecallTool(root, "").Run(context.Background(), map[string]any{"query": "kubernetes helm chart"})
+	if result.Status != StatusOK || !strings.Contains(result.Output, "Try fewer or different keywords") {
+		t.Fatalf("no-match output = %#v", result)
+	}
+}
+
+func TestRecallToolShowsHowToRunSavedSteps(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "learning")
+	entry := harness.NewEntry(harness.KindRecipe, "Release steps", "Build, smoke test, then tag the release.", "release_steps", "general", harness.ScopeProject, "agent", testTime())
+	entry.Recipe = &harness.Recipe{Name: "release-steps", Commands: []harness.RecipeCommand{{Tool: "bash", Args: map[string]any{"command": "make build"}}}}
+	seedProjectLesson(t, root, entry)
+
+	result := NewRecallTool(root, "").Run(context.Background(), map[string]any{"query": "release"})
+	if !strings.Contains(result.Output, `recipe_run name "release-steps"`) {
+		t.Fatalf("recipe note should say how to run it, got %q", result.Output)
 	}
 }

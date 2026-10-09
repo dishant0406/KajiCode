@@ -49,7 +49,7 @@ func ApplyLearning(store *Store, options ApplyOptions) LearningResult {
 	// be blindly overwritten (that would discard the other writer's lesson).
 	baselineVersions := map[string]int{}
 	for _, entry := range options.Plan.Baseline.Entries {
-		baselineVersions[entryKey(entry)] = entry.Version
+		baselineVersions[EntryKey(entry)] = entry.Version
 	}
 
 	err := store.WithLock(func(state State) (State, error) {
@@ -148,7 +148,7 @@ func applyOne(proposal EditProposal, entries []Entry, baselineVersions map[strin
 		if idx < 0 {
 			return EditOutcome{Proposal: proposal, Error: fmt.Sprintf("%s:%s does not exist", proposal.Kind, proposal.ID)}, entries, false
 		}
-		if got, saw := baselineVersions[entryKey(entries[idx])]; saw && got != entries[idx].Version {
+		if got, saw := baselineVersions[EntryKey(entries[idx])]; saw && got != entries[idx].Version {
 			return EditOutcome{Proposal: proposal, Error: fmt.Sprintf("conflict: %s:%s changed since plan (was v%d, now v%d)", proposal.Kind, proposal.ID, got, entries[idx].Version)}, entries, false
 		}
 		entry := entries[idx]
@@ -175,7 +175,7 @@ func applyOne(proposal EditProposal, entries []Entry, baselineVersions map[strin
 		if idx < 0 {
 			return EditOutcome{Proposal: proposal, Error: fmt.Sprintf("%s:%s does not exist", proposal.Kind, proposal.ID)}, entries, false
 		}
-		if got, saw := baselineVersions[entryKey(entries[idx])]; saw && got != entries[idx].Version {
+		if got, saw := baselineVersions[EntryKey(entries[idx])]; saw && got != entries[idx].Version {
 			return EditOutcome{Proposal: proposal, Error: fmt.Sprintf("conflict: %s:%s changed since plan (was v%d, now v%d)", proposal.Kind, proposal.ID, got, entries[idx].Version)}, entries, false
 		}
 		before := entries[idx]

@@ -425,3 +425,40 @@ func TestPruneStaleSweepsPreExistingOrphanRecipe(t *testing.T) {
 		t.Fatalf("in-use manifest must survive: %v", err)
 	}
 }
+
+// Older builds labeled some project-store entries "session". An entry belongs
+// to the store holding it, so it must load, and be saved, with that scope.
+func TestStoreStampsEntriesWithItsOwnScope(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "learning")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mislabeled := `{"scope":"project","entries":[{"id":"f","kind":"memory","title":"F","content":"c","scope":"session","createdAt":"2025-01-01T00:00:00Z","updatedAt":"2025-01-01T00:00:00Z","version":1}]}`
+	if err := os.WriteFile(filepath.Join(dir, StateFile), []byte(mislabeled), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store := NewStore(StoreOptions{Dir: dir, Scope: ScopeProject})
+	state, err := store.Load()
+	if err != nil || state.Entries[0].Scope != ScopeProject {
+		t.Fatalf("loaded scope = %q (err %v), want project", state.Entries[0].Scope, err)
+	}
+
+	state.Entries = append(state.Entries, NewEntry(KindMemory, "G", "g", "g", "general", ScopeSession, "agent", time.Now()))
+	if err := store.Save(state); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := os.ReadFile(filepath.Join(dir, StateFile))
+	if strings.Contains(string(raw), `"scope": "session"`) {
+		t.Fatalf("saved file still carries a session label:\n%s", raw)
+	}
+}
+
+func TestSnippetKeepsMultibyteCharactersWhole(t *testing.T) {
+	got := Snippet("日本語のメモ  です\nとても長い", 6)
+	if got != "日本語..." {
+		t.Fatalf("Snippet = %q", got)
+	}
+	if Snippet("short   note", 50) != "short note" {
+		t.Fatal("short text should only have whitespace collapsed")
+	}
+}

@@ -193,10 +193,13 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 
 	promptParts := buildSystemPromptParts(options)
 	messages := seedRunMessages(promptParts.prompt, prompt, options.Images, options.InitialMessages)
-	// Self-learning: the opening user turn is itself a candidate correction
-	// (a re-instruction after a bad prior run), so the engine sees it too.
-	if options.Learning != nil {
-		options.Learning.NoteUserTurn(prompt)
+	// Self-learning: BeginRun sees the opening request (it may be a correction)
+	// and returns saved notes that match it. The notes go only on the copies
+	// sent to the provider (requestMessages), never into messages, so the
+	// learning pass, compaction, and saved sessions see the request as typed.
+	requestNotes := options.Learning.BeginRun(prompt)
+	requestMessages := func() []kajicoderuntime.Message {
+		return withRequestNotes(copyMessages(messages), prompt, requestNotes)
 	}
 
 	guards := newGuardState()
@@ -435,7 +438,7 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 			}
 		}
 		request := kajicoderuntime.CompletionRequest{
-			Messages:        copyMessages(messages),
+			Messages:        requestMessages(),
 			Tools:           exposed,
 			ReasoningEffort: options.ReasoningEffort,
 			PromptCacheKey:  options.SessionID,
@@ -478,7 +481,7 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 				// compaction. Using the bare toolDefinitions here would route through an
 				// empty-loaded partition, re-hiding every already-loaded deferred tool.
 				request = kajicoderuntime.CompletionRequest{
-					Messages:        copyMessages(messages),
+					Messages:        requestMessages(),
 					Tools:           exposed,
 					ReasoningEffort: options.ReasoningEffort,
 					PromptCacheKey:  options.SessionID,
@@ -574,7 +577,7 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 				// than the bare toolDefinitions: exposed depends on registry+loaded (not
 				// the messages), so it stays valid after compaction.
 				retryRequest := kajicoderuntime.CompletionRequest{
-					Messages:        copyMessages(messages),
+					Messages:        requestMessages(),
 					Tools:           exposed,
 					ReasoningEffort: options.ReasoningEffort,
 					PromptCacheKey:  options.SessionID,
@@ -624,7 +627,7 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 				return result, err
 			}
 			retryRequest := kajicoderuntime.CompletionRequest{
-				Messages:        copyMessages(messages),
+				Messages:        requestMessages(),
 				Tools:           exposed,
 				ReasoningEffort: options.ReasoningEffort,
 				PromptCacheKey:  options.SessionID,
@@ -679,7 +682,7 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 				return result, err
 			}
 			retryRequest := kajicoderuntime.CompletionRequest{
-				Messages:        copyMessages(messages),
+				Messages:        requestMessages(),
 				Tools:           exposed,
 				ReasoningEffort: options.ReasoningEffort,
 				PromptCacheKey:  options.SessionID,

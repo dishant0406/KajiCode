@@ -165,26 +165,20 @@ func buildSystemPromptParts(options Options) systemPromptParts {
 	return builder.build()
 }
 
-// responseStyleContext renders the operator-selected reply style (TUI /style) as
-// a system-prompt directive so the choice actually shapes responses. "balanced"
-// (the default) and unknown/empty values add nothing, keeping the prompt
-// byte-identical to the pre-style behavior.
-// learningContext renders the merged learned memory block from the run's
-// LearningEngine. The block is wrapped in a <learned_memory> tag so the model
-// treats it as durable, evidence-backed knowledge from prior sessions rather
-// than workspace guidance. It returns "" (adding nothing to the prompt) when
-// the engine is unset or has nothing topical to surface.
+// learningContext renders the standing-notes block from the run's
+// LearningEngine, or "" (adding nothing to the prompt) when the engine is unset
+// or has no standing notes.
 func learningContext(options Options) string {
 	if options.Learning == nil {
 		return ""
 	}
-	memory := options.Learning.Context()
-	if memory == "" {
-		return ""
-	}
-	return learnedMemoryOpen + "\nDurable lessons learned across prior sessions. Treat these as project/user conventions, not as immutable facts; if a current instruction contradicts one, follow the current instruction.\n" + memory + "\n" + learnedMemoryClose
+	return learningMemoryBlock(options.Learning.Context())
 }
 
+// responseStyleContext renders the operator-selected reply style (TUI /style) as
+// a system-prompt directive so the choice actually shapes responses. "balanced"
+// (the default) and unknown/empty values add nothing, keeping the prompt
+// byte-identical to the pre-style behavior.
 func responseStyleContext(options Options) string {
 	// The persisted (global, /style-edited) speaking style wins over the
 	// session enum. An empty/missing file falls through to the enum below so the

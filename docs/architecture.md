@@ -246,9 +246,11 @@ The layers, each with its own tests:
   validation, and the config-file writer used by the CLI.
 - `internal/agent/learning.go` is the engine: it captures signals from tool
   results and user turns, gates on the debounce, schedules the pass in the
-  background, routes proposals by scope, and splices a refreshed
-  `<learned_memory>` block into the next request so a mid-session lesson takes
-  effect once its pass lands.
+  background, and routes proposals by scope. `BeginRun` and `Finish` bracket
+  every run, including each run of the one engine the TUI and ACP reuse.
+- `internal/agent/learning_notes.go` decides which notes reach the model:
+  standing notes for the system prompt (`Context`), notes that match the
+  request (`Notes`), and reinforcement of the notes a run relied on.
 - `internal/harness` owns the durable store and pipeline: the review gate, the
   plan pass (anchored so it prefers update-over-create), the guarded apply
   critical section with version-conflict detection, refinement history with a
@@ -256,14 +258,31 @@ The layers, each with its own tests:
   decay/cap (`PruneStale`, which also removes orphaned recipe manifests), and
   Go-native recipe manifests that `recipe_run` executes through the tool
   registry.
+- `internal/harness/search.go` ranks notes against a request with BM25 keyword
+  scoring (`Search`); both automatic notes and the `recall` tool use it.
 - `internal/tools` exposes the `learn` (status/run/CRUD) and `recall` (search
   project + global) tools plus `recipe_run`.
 
 Scopes are `session`, `project` (default; `<workspace>/.kajicode/learning`), and
-`global`; legacy per-session stores recorded as `local` are read back as
-`session`. Recall is recall-ordered by `lastUsedAt`/`reinforcements` and bounded
-per kind and by a whole-block token budget, so a growing store can never blow the
-context window.
+`global`. An entry always takes the scope of the store that holds it, on load
+and on save, so labels written by older builds cannot misroute it. A plan edit
+that still says `local` is stored in `project`.
+
+Notes reach the model two ways, both bounded so a growing store can never blow
+the context window:
+
+- **Standing notes.** The system prompt carries only this project's and
+  session's `prompt`-kind notes: the 6 most recently edited, each shortened.
+  It stays stable across requests, so provider prompt caching keeps working.
+- **Request notes.** At run start the engine searches every scope with the
+  user's request and adds up to 3 matching notes, shortened, to the copy of
+  that request sent to the provider. The loop's own history never holds them,
+  so the learning pass, compaction, and saved sessions see the request as
+  typed.
+
+When a run ends, it reinforces the standing notes and the matched notes it
+relied on. Standing notes are chosen by last edit, not last use, so reinforcement only
+keeps them from aging out and never locks a set in place.
 
 ## Tools, Sandbox, And Hooks
 

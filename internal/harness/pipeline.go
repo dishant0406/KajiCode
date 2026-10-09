@@ -144,7 +144,7 @@ Rules:
 - The base system prompt is immutable; never create/update/delete an entry with id "base_system_prompt".
 - Prefer small edits over large rewrites. Cite evidence from the conversation.
 - Entries are one of: prompt (supplemental notes), memory (durable facts), recipe (reusable procedure with a commands array), subagent (reusable delegation spec).
-- Scope: local by default. Use global only for durable cross-session lessons.
+- Scope: project by default (lessons about this repository). Use session only for lessons that matter to this session alone, and global only for lessons that hold in any repository on this machine.
 - A recipe entry's commands array is [{ "id": string, "tool": string (a registered KajiCode tool name), "args": object }].
 - Delete only entries that are stale or contradicted. Never delete an entry you did not first read.
 - Preserve still-true details in the current learning state. Do not create a near-duplicate of an entry the state already carries — prefer updating the existing entry.
@@ -161,7 +161,7 @@ Reply with ONLY a JSON object, no markdown fences:
       "title": string,
       "content": string,
       "path": string,
-      "scope": "local|global",
+      "scope": "session|project|global",
       "recipe": { "name": string, "description": string, "commands": [...] },
       "reason": string
     }
@@ -259,6 +259,10 @@ func ParseLearningPlan(raw string) (LearningPlan, error) {
 		if err := json.Unmarshal(rawEdit, &proposal); err != nil {
 			return LearningPlan{}, fmt.Errorf("malformed edit JSON: %w", err)
 		}
+		// Older plan prompts asked for "local"; it meant this project.
+		if proposal.Scope == ScopeLegacy {
+			proposal.Scope = ScopeProject
+		}
 		if err := ValidateProposal(proposal); err != nil {
 			return LearningPlan{}, fmt.Errorf("invalid edit: %w", err)
 		}
@@ -295,7 +299,7 @@ func ValidateProposal(proposal EditProposal) error {
 		return errors.New("delete cannot carry a recipe")
 	}
 	if proposal.Scope != "" && proposal.Scope != ScopeSession && proposal.Scope != ScopeProject && proposal.Scope != ScopeGlobal {
-		return fmt.Errorf("scope must be local or global, got %q", proposal.Scope)
+		return fmt.Errorf("scope must be session, project, or global, got %q", proposal.Scope)
 	}
 	return nil
 }

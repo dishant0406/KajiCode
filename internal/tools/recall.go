@@ -8,15 +8,15 @@ import (
 	"github.com/dishant0406/KajiCode/internal/harness"
 )
 
-// recallMaxResults caps how many matching entries a recall call returns, keeping
-// the output bounded regardless of how large the store has grown.
-const recallMaxResults = 12
+// recallMaxResults caps how many notes one recall call returns, keeping the
+// output bounded however large the stores grow.
+const recallMaxResults = 5
 
-// recallTool searches KajiCode's durable learning memory. Prompt injection
-// surfaces only the freshest few lessons; recall is the deep-retrieval path for
-// when the model needs a specific past lesson that did not fit the prompt block.
-// It reads both the project and global stores (project entries shadow global on
-// the same kind:id) and reports each entry's scope, never mutating anything.
+// recallTool searches the notes KajiCode saved from earlier sessions. The most
+// relevant notes are already attached to each request automatically; recall is
+// for follow-up questions in the middle of a task. It reads the project and
+// global stores (a project note shadows a global one with the same id) and
+// never changes anything.
 type recallTool struct {
 	baseTool
 	projectRoot string
@@ -31,13 +31,13 @@ func NewRecallTool(projectRoot, globalRoot string) Tool {
 		globalRoot:  globalRoot,
 		baseTool: baseTool{
 			name: "recall",
-			description: "Search KajiCode's stored lessons (memory, prompt notes, recipes, subagents) across the " +
-				"project and global memory for a topic. Use it when a lesson you remember exists but is not in the " +
-				"current context. Empty query lists the most recent lessons.",
+			description: "Search notes saved from earlier sessions: fixes, project rules, gotchas, and saved steps. " +
+				"Use a few keywords such as the error text, file, command, or feature name. " +
+				"An empty query lists the most recent notes.",
 			parameters: Schema{
 				Type: "object",
 				Properties: map[string]PropertySchema{
-					"query": {Type: "string", Description: "Keywords to match against entry titles, content, and paths. Empty lists recent entries."},
+					"query": {Type: "string", Description: "A few keywords to search for. Empty lists the most recent notes."},
 					"kind":  {Type: "string", Description: "Optional filter: prompt, memory, recipe, or subagent.", Enum: []string{"prompt", "memory", "recipe", "subagent"}},
 				},
 				Required:             []string{},
@@ -46,7 +46,7 @@ func NewRecallTool(projectRoot, globalRoot string) Tool {
 			safety: Safety{
 				SideEffect: SideEffectRead,
 				Permission: PermissionAllow,
-				Reason:     "Reads KajiCode's learning memory store only; never touches the workspace.",
+				Reason:     "Reads KajiCode's saved notes only; never touches the workspace.",
 			},
 			capabilities: ToolCapabilities{Effect: EffectReadOnly, ThreadSafe: false},
 		},
@@ -57,72 +57,65 @@ func (tool *recallTool) Run(_ context.Context, args map[string]any) Result {
 	project := loadEntries(tool.projectRoot, harness.ScopeProject)
 	global := loadEntries(tool.globalRoot, harness.ScopeGlobal)
 	entries := harness.MergeHarnessStates(harness.State{Entries: global}, harness.State{Entries: project})
+
 	if len(entries) == 0 {
-		return okResult("No stored lessons yet.")
+		return okResult("No notes saved from earlier sessions yet.")
 	}
-
-	query := strings.ToLower(strings.TrimSpace(stringArgSafe(args, "query")))
+	query := strings.TrimSpace(stringArgSafe(args, "query"))
 	kindFilter := strings.ToLower(strings.TrimSpace(stringArgSafe(args, "kind")))
-
-	matched := make([]harness.Entry, 0, len(entries))
-	for _, entry := range entries {
-		if kindFilter != "" && string(entry.Kind) != kindFilter {
-			continue
-		}
-		if query == "" || entryMatches(entry, query) {
-			matched = append(matched, entry)
+	if kindFilter != "" {
+		entries = filterKind(entries, harness.Kind(kindFilter))
+		if len(entries) == 0 {
+			return okResult(fmt.Sprintf("No saved notes of kind %q.", kindFilter))
 		}
 	}
+
+	matched := harness.Search(entries, query, recallMaxResults)
 	if len(matched) == 0 {
-		return okResult(fmt.Sprintf("No stored lessons matched %q.", query))
-	}
-	harness.OrderByRecency(matched)
-	if len(matched) > recallMaxResults {
-		matched = matched[:recallMaxResults]
+		return okResult(fmt.Sprintf("No earlier notes about %q. Try fewer or different keywords.", query))
 	}
 
-	header := "Stored lessons"
-	if query != "" {
-		header += fmt.Sprintf(" matching %q", query)
-	}
 	var b strings.Builder
-	b.WriteString(header + ":\n")
-	for _, entry := range matched {
-		scope := entry.Scope
-		if scope == "" {
-			scope = harness.ScopeProject
-		}
-		fmt.Fprintf(&b, "\n[%s:%s:%s] %s (v%d, used %d×)\n", scope, entry.Kind, entry.ID, entry.Title, entry.Version, entry.Reinforcements)
-		if entry.Path != "" && entry.Path != "general" {
-			fmt.Fprintf(&b, "  path: %s\n", entry.Path)
-		}
-		b.WriteString("  " + strings.TrimSpace(entry.Content) + "\n")
-		if entry.Recipe != nil {
-			fmt.Fprintf(&b, "  recipe %q commands: %d (run via recipe_run)\n", entry.Recipe.Name, len(entry.Recipe.Commands))
+	if query == "" {
+		b.WriteString("Most recent notes from earlier sessions:\n")
+	} else {
+		fmt.Fprintf(&b, "Notes from earlier sessions about %q:\n", query)
+	}
+	for i, entry := range matched {
+		fmt.Fprintf(&b, "\n%d. %s (%s, id: %s)\n", i+1, entry.Title, scopeLabel(entry.Scope), entry.ID)
+		b.WriteString(strings.TrimSpace(entry.Content) + "\n")
+		if hint := entry.RunHint(); hint != "" {
+			b.WriteString(hint + "\n")
 		}
 	}
 	return okResult(strings.TrimSpace(b.String()))
 }
 
-// loadEntries reads the entries of one store, tolerating a missing store. The
-// scope is applied to entries that lack one so recall can label them reliably.
+// scopeLabel names where a note applies in plain words. Recall reads only the
+// project and global stores.
+func scopeLabel(scope harness.Scope) string {
+	if scope == harness.ScopeGlobal {
+		return "all projects"
+	}
+	return "this project"
+}
+
+func filterKind(entries []harness.Entry, kind harness.Kind) []harness.Entry {
+	var out []harness.Entry
+	for _, entry := range entries {
+		if entry.Kind == kind {
+			out = append(out, entry)
+		}
+	}
+	return out
+}
+
+// loadEntries reads the entries of one store, tolerating a missing store.
+// Loading labels every entry with the store's scope.
 func loadEntries(root string, scope harness.Scope) []harness.Entry {
 	if strings.TrimSpace(root) == "" {
 		return nil
 	}
-	store := harness.NewStore(harness.StoreOptions{Dir: root, Scope: scope})
-	state, _ := store.Load()
-	for i := range state.Entries {
-		if state.Entries[i].Scope == "" {
-			state.Entries[i].Scope = scope
-		}
-	}
+	state, _ := harness.NewStore(harness.StoreOptions{Dir: root, Scope: scope}).Load()
 	return state.Entries
-}
-
-// entryMatches reports whether an entry contains the (already-lowercased) query
-// in its title, content, or path.
-func entryMatches(entry harness.Entry, query string) bool {
-	haystack := strings.ToLower(entry.Title + "\n" + entry.Content + "\n" + entry.Path)
-	return strings.Contains(haystack, query)
 }

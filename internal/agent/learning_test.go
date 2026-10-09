@@ -226,53 +226,40 @@ func TestLooksLikeCorrection(t *testing.T) {
 
 func TestLearningEngineContext(t *testing.T) {
 	gs, ps, ss := newEngineStores(t)
-	seed := harness.NewEntry(harness.KindMemory, "Use cmake", "Always build with cmake", "cmake", "general", harness.ScopeProject, "agent", testNow())
+	rule := harness.NewEntry(harness.KindPrompt, "Use cmake", "Always build with cmake", "cmake", "general", harness.ScopeProject, "agent", testNow())
+	fact := harness.NewEntry(harness.KindMemory, "Mongo keys", "mongo fact", "mongo", "general", harness.ScopeProject, "agent", testNow())
 	recipe := harness.NewEntry(harness.KindRecipe, "Build", "build recipe", "build", "general", harness.ScopeProject, "agent", testNow())
 	if err := ps.WithLock(func(state harness.State) (harness.State, error) {
-		state.Entries = append(state.Entries, seed, recipe)
+		state.Entries = append(state.Entries, rule, fact, recipe)
 		return state, nil
 	}); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
+	if err := gs.WithLock(func(state harness.State) (harness.State, error) {
+		state.Entries = append(state.Entries, harness.NewEntry(harness.KindPrompt, "Global tip", "global prompt note", "tip", "general", harness.ScopeGlobal, "agent", testNow()))
+		return state, nil
+	}); err != nil {
+		t.Fatalf("seed global: %v", err)
+	}
 	eng := NewLearningEngine(config.LearningConfig{}, nil, gs, ps, ss)
 	ctx := eng.Context()
 	if !strings.Contains(ctx, "cmake") {
-		t.Fatalf("context missing cmake entry: %q", ctx)
+		t.Fatalf("context missing the project rule: %q", ctx)
 	}
-	if strings.Contains(ctx, "build recipe") {
-		t.Fatalf("recipe entries should not appear in memory context: %q", ctx)
+	for _, unwanted := range []string{"mongo fact", "build recipe", "global prompt note"} {
+		if strings.Contains(ctx, unwanted) {
+			t.Fatalf("standing notes should hold only project prompt notes, found %q in %q", unwanted, ctx)
+		}
 	}
 	if (*LearningEngine)(nil).Context() != "" {
 		t.Fatal("nil engine context should be empty")
 	}
 }
 
-func TestLearningEngineReinforcesSurfacedLessons(t *testing.T) {
-	gs, ps, ss := newEngineStores(t)
-	seed := harness.NewEntry(harness.KindMemory, "Use cmake", "Always build with cmake", "cmake", "general", harness.ScopeProject, "agent", testNow())
-	if err := ps.WithLock(func(state harness.State) (harness.State, error) {
-		state.Entries = append(state.Entries, seed)
-		return state, nil
-	}); err != nil {
-		t.Fatalf("seed: %v", err)
-	}
-	eng := NewLearningEngine(config.LearningConfig{}, nil, gs, ps, ss)
-	eng.Context() // surfaces and records the lesson
-	eng.Reinforce()
-
-	state, _ := ps.Load()
-	if state.Entries[0].Reinforcements != 1 {
-		t.Fatalf("reinforcements = %d, want 1", state.Entries[0].Reinforcements)
-	}
-	if state.Entries[0].LastUsedAt == "" {
-		t.Fatal("LastUsedAt should be stamped by reinforcement")
-	}
-}
-
 func TestLearningPromptSection(t *testing.T) {
 	gs, ps, ss := newEngineStores(t)
 	if err := ps.WithLock(func(state harness.State) (harness.State, error) {
-		state.Entries = append(state.Entries, harness.NewEntry(harness.KindMemory, "Use cmake", "Always build with cmake", "cmake", "general", harness.ScopeProject, "agent", testNow()))
+		state.Entries = append(state.Entries, harness.NewEntry(harness.KindPrompt, "Use cmake", "Always build with cmake", "cmake", "general", harness.ScopeProject, "agent", testNow()))
 		return state, nil
 	}); err != nil {
 		t.Fatalf("seed: %v", err)
@@ -298,24 +285,24 @@ func TestLearningContextBoundsAndMergesScopes(t *testing.T) {
 			t.Fatalf("seed %s: %v", id, err)
 		}
 	}
-	for i := 0; i < learnedPromptMaxPerKind+3; i++ {
+	for i := 0; i < learnedPromptMaxEntries+3; i++ {
 		store := ps
 		if i%2 == 0 {
 			store = ss
 		}
-		seed(harness.KindMemory, "mem"+string('a'+rune(i)), strings.Repeat("x", 400), store)
+		seed(harness.KindPrompt, "mem"+string('a'+rune(i)), strings.Repeat("x", 400), store)
 	}
 	// A session memory entry must shadow the project one with the same id.
-	seed(harness.KindMemory, "dup", "session-wins", ss)
-	seed(harness.KindMemory, "dup", "project-value", ps)
+	seed(harness.KindPrompt, "dup", "session-wins", ss)
+	seed(harness.KindPrompt, "dup", "project-value", ps)
 
 	eng := NewLearningEngine(config.LearningConfig{}, nil, gs, ps, ss)
 	ctx := eng.Context()
 	if !strings.Contains(ctx, "session-wins") || strings.Contains(ctx, "project-value") {
 		t.Fatalf("session shadowing broken: %q", ctx)
 	}
-	if got := strings.Count(ctx, "- ["); got > learnedPromptMaxPerKind {
-		t.Fatalf("surfaced %d entries, want <= %d: %q", got, learnedPromptMaxPerKind, ctx)
+	if got := strings.Count(ctx, "- "); got > learnedPromptMaxEntries {
+		t.Fatalf("surfaced %d entries, want <= %d: %q", got, learnedPromptMaxEntries, ctx)
 	}
 	for _, line := range strings.Split(ctx, "\n") {
 		if len(line) > learnedPromptMaxContentLen+40 {
@@ -327,7 +314,7 @@ func TestLearningContextBoundsAndMergesScopes(t *testing.T) {
 func TestEnsurePromptHasMemorySplicesIdempotently(t *testing.T) {
 	gs, ps, ss := newEngineStores(t)
 	if err := ps.WithLock(func(state harness.State) (harness.State, error) {
-		state.Entries = append(state.Entries, harness.NewEntry(harness.KindMemory, "Use cmake", "Always build with cmake", "cmake", "general", harness.ScopeProject, "agent", testNow()))
+		state.Entries = append(state.Entries, harness.NewEntry(harness.KindPrompt, "Use cmake", "Always build with cmake", "cmake", "general", harness.ScopeProject, "agent", testNow()))
 		return state, nil
 	}); err != nil {
 		t.Fatalf("seed: %v", err)
@@ -389,7 +376,7 @@ func TestSpliceMemoryBlockEdgeCases(t *testing.T) {
 
 func TestRunTurnReportsApplied(t *testing.T) {
 	gs, ps, ss := newEngineStores(t)
-	provider := &fakeLearningProvider{learn: true, planResp: `{"summary":"capture cmake","rationale":"evidence","edits":[{"action":"create","kind":"memory","id":"cmake","title":"cmake","content":"use cmake","scope":"project"}]}`}
+	provider := &fakeLearningProvider{learn: true, planResp: `{"summary":"capture cmake","rationale":"evidence","edits":[{"action":"create","kind":"prompt","id":"cmake","title":"cmake","content":"use cmake","scope":"project"}]}`}
 	eng := NewLearningEngine(config.LearningConfig{Enabled: boolP(true), Compact: boolP(true)}, provider, gs, ps, ss)
 	msgs := []kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleUser, Content: "hi"}}
 	eng.NoteCompaction()
@@ -472,7 +459,7 @@ func (p *learnScriptedProvider) StreamCompletion(_ context.Context, request kaji
 	case strings.Contains(joined, "auto-learning review gate"):
 		resp = `{"shouldLearn": true, "rationale": "cmake is durable", "instructions": "capture cmake"}`
 	case strings.Contains(joined, "optimizer for KajiCode's self-learning memory"):
-		resp = `{"summary":"s","rationale":"r","edits":[{"action":"create","kind":"memory","id":"fact","title":"Fact","content":"always use cmake","scope":"project"}]}`
+		resp = `{"summary":"s","rationale":"r","edits":[{"action":"create","kind":"prompt","id":"fact","title":"Fact","content":"always use cmake","scope":"project"}]}`
 	default:
 		resp = "Done."
 	}
@@ -538,7 +525,7 @@ func TestLearningContextRecencyFirstWithinBudget(t *testing.T) {
 	seed := func(id, content, updated, lastUsed string) {
 		t.Helper()
 		if err := ps.WithLock(func(state harness.State) (harness.State, error) {
-			e := harness.NewEntry(harness.KindMemory, id, content, id, "general", harness.ScopeProject, "agent", testNow())
+			e := harness.NewEntry(harness.KindPrompt, id, content, id, "general", harness.ScopeProject, "agent", testNow())
 			e.UpdatedAt = updated
 			e.LastUsedAt = lastUsed
 			state.Entries = append(state.Entries, e)
@@ -562,22 +549,18 @@ func TestLearningContextRecencyFirstWithinBudget(t *testing.T) {
 	}
 }
 
-func TestLearningContextTokenBudgetCapsBlock(t *testing.T) {
+// A proposal with no scope lands in the project store and must be labeled
+// project there, not session (the label recall shows and reinforcement uses).
+func TestLearningEngineLabelsUnscopedProposalAsProject(t *testing.T) {
 	gs, ps, ss := newEngineStores(t)
-	if err := ps.WithLock(func(state harness.State) (harness.State, error) {
-		state.Entries = append(state.Entries, harness.NewEntry(harness.KindMemory, "big", strings.Repeat("very long content ", 4000), "big", "general", harness.ScopeProject, "agent", testNow()))
-		return state, nil
-	}); err != nil {
-		t.Fatalf("seed: %v", err)
-	}
-	eng := NewLearningEngine(config.LearningConfig{}, nil, gs, ps, ss)
-	ctx := eng.Context()
-	if ApproxTextTokens(ctx) > learnedMemoryTokenBudgetValue {
-		t.Fatalf("context exceeded token budget: %d > %d", ApproxTextTokens(ctx), learnedMemoryTokenBudgetValue)
-	}
-	for _, line := range strings.Split(ctx, "\n") {
-		if len(line) > learnedPromptMaxContentLen+40 {
-			t.Fatalf("line too long: %q", line)
-		}
+	plan := `{"summary":"s","edits":[{"action":"create","kind":"memory","id":"noscope","title":"N","content":"no scope given"}]}`
+	eng := NewLearningEngine(config.LearningConfig{}, &fakeLearningProvider{learn: true, planResp: plan}, gs, ps, ss)
+	eng.NoteToolResult(ToolResult{Meta: map[string]string{requestLearnMeta: "true"}})
+	eng.RunTurn(context.Background(), []kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleUser, Content: "x"}})
+	eng.waitForWork(learningFinishTimeout, nil)
+
+	project, _ := ps.Load()
+	if len(project.Entries) != 1 || project.Entries[0].Scope != harness.ScopeProject {
+		t.Fatalf("unscoped proposal stored as %#v", project.Entries)
 	}
 }

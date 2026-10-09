@@ -9,9 +9,10 @@
 //
 // The system is event-driven: the agent loop reports what actually happened
 // (failures, denials, user corrections) and the engine decides whether a pass is
-// warranted, rather than running a pass on a fixed turn schedule. Learned
-// lessons are surfaced through two paths — a bounded prompt block and recall/
-// reflect tools — so a large memory never monopolizes the context window.
+// warranted, rather than running a pass on a fixed turn schedule. Saved notes
+// reach the model when they match a request (Search) and through the recall
+// tool, plus a small block of standing project notes, so a large memory never
+// monopolizes the context window.
 package harness
 
 import (
@@ -298,27 +299,25 @@ func (store *Store) loadLocked() (State, error) {
 	return state, nil
 }
 
-// decodeState parses JSON into a State, normalizing scope and kinds, and
-// dropping malformed entries instead of failing the whole load when individual
-// records are bad.
-func decodeState(data []byte, fallbackScope Scope) (State, error) {
+// decodeState parses JSON into a State, dropping malformed entries instead of
+// failing the whole load. The state and every entry take the store's scope: an
+// entry belongs to the store that holds it, whatever label an older build wrote
+// in the file (legacy "local" stores are read as session stores by their owner).
+func decodeState(data []byte, scope Scope) (State, error) {
 	var raw struct {
-		Scope       string            `json:"scope"`
 		Entries     []json.RawMessage `json:"entries"`
 		Refinements []RefinementEvent `json:"refinements"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return State{}, err
 	}
-	state := State{Scope: normalizeScope(Scope(raw.Scope))}
-	if !state.Scope.valid() {
-		state.Scope = fallbackScope
-	}
+	state := State{Scope: normalizeScope(scope)}
 	for _, rawEntry := range raw.Entries {
-		entry, err := decodeEntry(rawEntry, state.Scope)
+		entry, err := decodeEntry(rawEntry)
 		if err != nil {
 			continue
 		}
+		entry.Scope = state.Scope
 		state.Entries = append(state.Entries, entry)
 	}
 	sortEntries(state.Entries)
@@ -326,7 +325,7 @@ func decodeState(data []byte, fallbackScope Scope) (State, error) {
 	return state, nil
 }
 
-func decodeEntry(raw json.RawMessage, fallbackScope Scope) (Entry, error) {
+func decodeEntry(raw json.RawMessage) (Entry, error) {
 	var entry Entry
 	if err := json.Unmarshal(raw, &entry); err != nil {
 		return Entry{}, err
@@ -336,10 +335,6 @@ func decodeEntry(raw json.RawMessage, fallbackScope Scope) (Entry, error) {
 	}
 	if strings.TrimSpace(entry.ID) == "" || strings.TrimSpace(entry.Title) == "" {
 		return Entry{}, errors.New("missing id or title")
-	}
-	entry.Scope = normalizeScope(entry.Scope)
-	if !entry.Scope.valid() {
-		entry.Scope = fallbackScope
 	}
 	return entry, nil
 }
@@ -420,6 +415,9 @@ func (store *Store) saveLocked(state State) error {
 		return fmt.Errorf("create learning dir: %w", err)
 	}
 	state.Scope = store.Scope
+	for i := range state.Entries {
+		state.Entries[i].Scope = store.Scope
+	}
 	sortEntries(state.Entries)
 	data, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {
@@ -538,7 +536,7 @@ func MergeHarnessStates(global, local State) []Entry {
 	byKey := map[string]Entry{}
 	var order []string
 	add := func(entry Entry) {
-		key := entryKey(entry)
+		key := EntryKey(entry)
 		if _, exists := byKey[key]; !exists {
 			order = append(order, key)
 		}
@@ -558,10 +556,10 @@ func MergeHarnessStates(global, local State) []Entry {
 func mergeListsForKind(global, local []Entry) []Entry {
 	byKey := map[string]Entry{}
 	for _, e := range global {
-		byKey[entryKey(e)] = e
+		byKey[EntryKey(e)] = e
 	}
 	for _, e := range local {
-		byKey[entryKey(e)] = e // local wins
+		byKey[EntryKey(e)] = e // local wins
 	}
 	out := make([]Entry, 0, len(byKey))
 	for _, e := range byKey {
@@ -571,7 +569,8 @@ func mergeListsForKind(global, local []Entry) []Entry {
 	return out
 }
 
-func entryKey(entry Entry) string {
+// EntryKey identifies an entry within a store: its kind and id.
+func EntryKey(entry Entry) string {
 	return string(entry.Kind) + ":" + entry.ID
 }
 
@@ -736,7 +735,7 @@ func FormatHarnessStateForPrompt(scope Scope, entries []Entry, maxEntriesPerKind
 			if shown >= maxEntriesPerKind {
 				break
 			}
-			summary := truncate(e.Content, 120)
+			summary := Snippet(e.Content, 120)
 			fmt.Fprintf(&b, "  - [%s:%s/%s] %s (%s, v%d): %s\n",
 				e.Scope, e.Kind, e.ID, heading(e.Title), e.Path, e.Version, summary)
 			if e.Recipe != nil {
@@ -759,13 +758,26 @@ func heading(s string) string {
 	return s
 }
 
-func truncate(s string, max int) string {
-	s = strings.TrimSpace(strings.ReplaceAll(s, "\n", " "))
-	if len(s) <= max {
+// RunHint tells the model how to run a recipe note's saved steps, or returns ""
+// for any other note.
+func (entry Entry) RunHint() string {
+	if entry.Recipe == nil {
+		return ""
+	}
+	return fmt.Sprintf("Saved steps: run them with recipe_run name %q.", entry.Recipe.Name)
+}
+
+// Snippet collapses whitespace in s and shortens it to at most max characters,
+// ending with "..." when it was cut. It counts runes, so it never splits a
+// multi-byte character.
+func Snippet(s string, max int) string {
+	s = strings.Join(strings.Fields(s), " ")
+	runes := []rune(s)
+	if len(runes) <= max {
 		return s
 	}
 	if max <= 3 {
-		return s[:max]
+		return string(runes[:max])
 	}
-	return s[:max-3] + "..."
+	return string(runes[:max-3]) + "..."
 }

@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -17,23 +16,9 @@ import (
 // learning pass at the next safe boundary.
 const requestLearnMeta = "request_learn"
 
-// Learned-memory prompt-bounds. Durable state is stored unbounded on disk (up to
-// the configured cap), but only a bounded, truncated slice is ever injected into
-// the prompt so a growing memory can never blow the model's context window.
-const (
-	// learnedPromptMaxPerKind caps how many entries of a given kind are surfaced
-	// in the <learned_memory> prompt block.
-	learnedPromptMaxPerKind = 6
-	// learnedPromptMaxContentLen truncates each entry's content shown in the
-	// <learned_memory> prompt block.
-	learnedPromptMaxContentLen = 160
-	// learnedMemoryTokenBudgetValue bounds the whole <learned_memory> block so a
-	// store with many lessons can never monopolize the context budget.
-	learnedMemoryTokenBudgetValue = 1200
-)
-
-// usedLesson records a lesson that was surfaced in the prompt, so a completed
-// run can reinforce exactly what it re-used.
+// usedLesson records a note this run relied on (a standing note in the system
+// prompt, or a note that matched the request), so the run's end can reinforce
+// exactly those.
 type usedLesson struct {
 	store *harness.Store
 	kind  harness.Kind
@@ -84,8 +69,8 @@ type LearningEngine struct {
 	compactionSignal bool
 	// manualReady is set by the learn tool's run action.
 	manualReady bool
-	// used records the lessons surfaced in the prompt this run, keyed so a run
-	// that surfaces the same lesson on several turns reinforces it once.
+	// used records the notes this run relied on, keyed so a note used on
+	// several turns is reinforced once.
 	used     map[string]usedLesson
 	lastPass time.Time
 	finished bool
@@ -224,6 +209,22 @@ func (e *LearningEngine) consumeApplied() bool {
 	applied := e.appliedSinceSplice
 	e.appliedSinceSplice = false
 	return applied
+}
+
+// BeginRun is the start-of-run hook. It re-arms Finish, because the TUI and
+// ACP reuse one engine for many runs, records this run's standing notes as
+// used, treats the opening request as a possible correction, and returns the
+// saved notes that match the request (see Notes).
+func (e *LearningEngine) BeginRun(request string) string {
+	if e == nil {
+		return ""
+	}
+	e.mu.Lock()
+	e.finished = false
+	e.mu.Unlock()
+	e.recordUsed(standingEntries(e.loadProjectState(), e.loadSessionState()))
+	e.NoteUserTurn(request)
+	return e.Notes(request)
 }
 
 // Finish is the end-of-run hook. It schedules a final pass over the completed
@@ -476,99 +477,6 @@ func (e *LearningEngine) loadRefinements() []harness.RefinementEvent {
 	return e.loadProjectState().Refinements
 }
 
-// Context renders the bounded, merged learned memory as a system prompt section.
-// It is called at run start by buildSystemPromptParts so the model sees durable
-// lessons on the first turn, and later by the loop's same-session refresh to pick
-// up newly applied lessons. The merged set is recall-ordered (freshest-first),
-// capped per kind, and obeys a whole-block token budget, so a growing store can
-// never blow the context window and is biased toward memory that has actually
-// been re-used. Each surfaced lesson is remembered for reinforcement.
-func (e *LearningEngine) Context() string {
-	if e == nil {
-		return ""
-	}
-	// Merge broadest-first: global, then project over it, then session over that.
-	project := harness.MergeHarnessStates(e.loadGlobalState(), e.loadProjectState())
-	session := e.loadSessionState()
-	merged := harness.MergeHarnessStates(harness.State{Entries: project}, session)
-	if len(merged) == 0 {
-		return ""
-	}
-	var b strings.Builder
-	shows := map[harness.Kind]int{}
-	budget := learnedMemoryTokenBudgetValue
-	surfaced := make([]usedLesson, 0, len(merged))
-	for _, entry := range merged {
-		switch entry.Kind {
-		case harness.KindMemory, harness.KindPrompt, harness.KindSubagent:
-			if shows[entry.Kind] >= learnedPromptMaxPerKind {
-				continue
-			}
-			title := strings.TrimSpace(entry.Title)
-			if title == "" {
-				title = entry.ID
-			}
-			scope := string(entry.Scope)
-			if scope == "" {
-				scope = string(harness.ScopeProject)
-			}
-			line := fmt.Sprintf("- [%s] %s: %s\n", scope, title, trimLearningContent(entry.Content))
-			weight := ApproxTextTokens(line)
-			if weight > budget {
-				break
-			}
-			b.WriteString(line)
-			budget -= weight
-			shows[entry.Kind]++
-			surfaced = append(surfaced, usedLesson{store: e.storeForEntryScope(entry.Scope), kind: entry.Kind, id: entry.ID})
-		}
-	}
-	e.mu.Lock()
-	for _, lesson := range surfaced {
-		e.used[string(lesson.kind)+"\x00"+lesson.id+"\x00"+lesson.storeDir()] = lesson
-	}
-	e.mu.Unlock()
-	return strings.TrimSpace(b.String())
-}
-
-// storeForEntryScope resolves which store an entry lives in, so reinforcement
-// stamps the store that actually holds it. It mirrors storeForScope exactly.
-func (e *LearningEngine) storeForEntryScope(scope harness.Scope) *harness.Store {
-	return e.storeForScope(scope)
-}
-
-// Reinforce stamps every lesson the run surfaced, so a lesson that keeps proving
-// useful accumulates reinforcements and resists pruning. It is called once when a
-// run completes.
-func (e *LearningEngine) Reinforce() {
-	if e == nil {
-		return
-	}
-	e.mu.Lock()
-	used := e.used
-	e.used = map[string]usedLesson{}
-	e.mu.Unlock()
-	now := time.Now()
-	for _, lesson := range used {
-		if lesson.store == nil || lesson.id == "" {
-			continue
-		}
-		lesson.store.TouchEntry(lesson.kind, lesson.id, now, false)
-	}
-}
-
-// trimLearningContent normalizes a learned entry's content for the one-line
-// prompt summary: newlines collapse to spaces and the value is truncated with a
-// marker so a verbose lesson cannot monopolize the context budget.
-func trimLearningContent(content string) string {
-	normalized := strings.Join(strings.Fields(content), " ")
-	if len(normalized) <= learnedPromptMaxContentLen {
-		return normalized
-	}
-	const marker = "..."
-	return normalized[:learnedPromptMaxContentLen-len(marker)] + marker
-}
-
 // learnedMemoryOpen and learnedMemoryClose delimit the same-session injectable
 // block. They match the static block built in system_prompt.go's
 // learningContext, so splicing an updated block replaces the prior one without
@@ -617,7 +525,7 @@ func learningMemoryBlock(memory string) string {
 	if memory == "" {
 		return ""
 	}
-	return learnedMemoryOpen + "\nDurable lessons learned across prior sessions. Treat these as project/user conventions, not as immutable facts; if a current instruction contradicts one, follow the current instruction.\n" + memory + "\n" + learnedMemoryClose
+	return learnedMemoryOpen + "\nStanding notes saved from earlier sessions in this project. Follow them unless the current request says otherwise.\n" + memory + "\n" + learnedMemoryClose
 }
 
 // spliceMemoryBlock replaces an existing <learned_memory>...</learned_memory>

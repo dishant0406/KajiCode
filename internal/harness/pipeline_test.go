@@ -275,3 +275,24 @@ func TestApplyPersistsRecipeManifest(t *testing.T) {
 		t.Fatalf("recipes = %#v problems = %#v", recipes, problems)
 	}
 }
+
+// The plan prompt once asked for "local", which the validator rejected, so the
+// whole plan was dropped. A legacy "local" must now land in the project scope.
+func TestParseLearningPlanMapsLegacyLocalScopeToProject(t *testing.T) {
+	plan, err := ParseLearningPlan(`{"summary":"s","edits":[{"action":"create","kind":"memory","id":"x","title":"t","content":"c","scope":"local"}]}`)
+	if err != nil {
+		t.Fatalf("legacy local scope rejected the plan: %v", err)
+	}
+	if plan.Proposals[0].Scope != ScopeProject {
+		t.Fatalf("scope = %q, want project", plan.Proposals[0].Scope)
+	}
+	if _, err := ParseLearningPlan(`{"summary":"s","edits":[{"action":"create","kind":"memory","id":"x","title":"t","content":"c","scope":"team"}]}`); err == nil {
+		t.Fatal("an unknown scope should still be rejected")
+	}
+}
+
+func TestPlanPromptAsksForSupportedScopes(t *testing.T) {
+	if strings.Contains(planSystemPrompt, "local|global") || !strings.Contains(planSystemPrompt, "session|project|global") {
+		t.Fatalf("plan prompt must ask for the scopes the validator accepts:\n%s", planSystemPrompt)
+	}
+}
