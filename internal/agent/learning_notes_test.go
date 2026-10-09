@@ -27,22 +27,22 @@ func TestNotesMatchRequestAcrossScopes(t *testing.T) {
 	seedNotes(t, gs, harness.NewEntry(harness.KindMemory, "Mongo dotted keys", "Keys with dots break $unset.", "mongo", "general", harness.ScopeGlobal, "agent", testNow()))
 	eng := NewLearningEngine(config.LearningConfig{}, nil, gs, ps, ss)
 
-	notes := eng.Notes("vision drop leaves the image token in the composer")
+	notes := eng.Notes(context.Background(), "vision drop leaves the image token in the composer")
 	if !strings.Contains(notes, "Vision-gate orphan token") || strings.Contains(notes, "Mongo") {
 		t.Fatalf("notes should hold only the matching project note: %q", notes)
 	}
 	if !strings.Contains(notes, "Call recall") {
 		t.Fatalf("notes should say how to read more: %q", notes)
 	}
-	if global := eng.Notes("mongo dotted keys break $unset"); !strings.Contains(global, "Mongo dotted keys") {
+	if global := eng.Notes(context.Background(), "mongo dotted keys break $unset"); !strings.Contains(global, "Mongo dotted keys") {
 		t.Fatalf("a matching global note should be attached: %q", global)
 	}
 	for _, request := range []string{"hello there", "do the thing", "composer"} {
-		if notes := eng.Notes(request); notes != "" {
+		if notes := eng.Notes(context.Background(), request); notes != "" {
 			t.Fatalf("%q is too vague for notes, got %q", request, notes)
 		}
 	}
-	if (*LearningEngine)(nil).Notes("anything") != "" {
+	if (*LearningEngine)(nil).Notes(context.Background(), "anything") != "" {
 		t.Fatal("nil engine should give no notes")
 	}
 }
@@ -55,7 +55,7 @@ func TestNotesSkipStandingNotesAndStayShort(t *testing.T) {
 	)
 	eng := NewLearningEngine(config.LearningConfig{}, nil, gs, ps, ss)
 
-	notes := eng.Notes("release smoke test details")
+	notes := eng.Notes(context.Background(), "release smoke test details")
 	if strings.Contains(notes, "Release rule") {
 		t.Fatalf("a standing note already in the system prompt was repeated: %q", notes)
 	}
@@ -115,7 +115,7 @@ func TestReinforceKeepsStandingAndMatchedNotesAlive(t *testing.T) {
 		t.Fatalf("rendering the prompt reinforced notes: %#v", state.Entries)
 	}
 
-	if eng.BeginRun("mongo dotted keys break $unset") == "" {
+	if eng.BeginRun(context.Background(), "mongo dotted keys break $unset") == "" {
 		t.Fatal("the mongo note should match")
 	}
 	eng.Reinforce()
@@ -215,5 +215,26 @@ func TestRequestNotesStayOutOfHistoryAndLearningPass(t *testing.T) {
 		if strings.Contains(message.Content, requestNotesOpen) {
 			t.Fatalf("run result carries the notes: %q", message.Content)
 		}
+	}
+}
+
+// With a classifier connected, notes are chosen by meaning, so a note that
+// shares no keywords with the request still reaches it.
+func TestNotesUseConnectedClassifier(t *testing.T) {
+	gs, ps, ss := newEngineStores(t)
+	seedNotes(t, ps, harness.NewEntry(harness.KindMemory, "Deploy checklist", "Bump the npm version, dispatch publish-npm.yml, then verify the registry.", "deploy", "general", harness.ScopeProject, "agent", testNow()))
+	eng := NewLearningEngine(config.LearningConfig{}, nil, gs, ps, ss)
+	request := "how do we ship a new build to users"
+	if eng.Notes(context.Background(), request) != "" {
+		t.Fatal("keyword search should not match this request")
+	}
+
+	eng.Classifier = &stubClassifier{probs: map[string]float64{"n0": 0.9}}
+	if notes := eng.Notes(context.Background(), request); !strings.Contains(notes, "Deploy checklist") {
+		t.Fatalf("classifier pick missing: %q", notes)
+	}
+	eng.Classifier = &stubClassifier{probs: map[string]float64{"n0": 0.2}}
+	if notes := eng.Notes(context.Background(), request); notes != "" {
+		t.Fatalf("classifier said not relevant, got %q", notes)
 	}
 }

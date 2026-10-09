@@ -110,6 +110,6 @@ func acpBuildLearning(deps appDeps) func(string, config.ResolvedConfig, kajicode
 		if store := deps.newSessionStore(); store != nil && strings.TrimSpace(sessionID) != "" {
 			sessionRoot = harness.SessionDir(filepath.Join(store.RootDir, sessionID))
 		}
-		return learningEngine(resolved.Learning, provider, harness.GlobalDir(nil), harness.ProjectDir(workspaceRoot), sessionRoot)
+		return learningEngine(resolved.Learning, connectedClassifier(resolved.Classifier, deps), provider, harness.GlobalDir(nil), harness.ProjectDir(workspaceRoot), sessionRoot)
 	}
 }

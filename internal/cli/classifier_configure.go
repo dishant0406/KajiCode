@@ -147,6 +147,7 @@ func reportClassifierConfigure(stdout io.Writer, configPath string, cfg classifi
 			"profile":    redactedClassifierProfile(profile),
 			"active":     cfg.file.Classifier.Active,
 			"features": map[string]any{
+				"memory":     map[string]bool{"enabled": cfg.classifierEnabled()},
 				"compaction": features.Compaction,
 				"toolResult": features.ToolResult,
 			},
@@ -170,6 +171,7 @@ func reportClassifierConfigure(stdout io.Writer, configPath string, cfg classifi
 	// persisted, not only what this command passed.
 	lines = append(lines,
 		"  classifier:  "+onOff(cfg.classifierEnabled()),
+		"  memory:      "+onOff(cfg.classifierEnabled())+" (follows the classifier)",
 		"  compaction:  "+featureSummary(features.Compaction.Enabled, fmt.Sprintf("keep >= %.2f", features.Compaction.EffectiveKeepResultThreshold())),
 		"  toolResult:  "+featureSummary(features.ToolResult.Enabled, fmt.Sprintf("drop < %.2f", features.ToolResult.EffectiveDropThreshold())),
 	)

@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"sort"
 	"strings"
 	"time"
@@ -69,10 +70,12 @@ func standingEntries(project, session harness.State) []harness.Entry {
 
 // Notes finds the saved notes that match the user's request and renders them
 // as a short block for that request, so the model sees relevant lessons without
-// having to call recall. Standing notes, which are already in the system
-// prompt, are skipped. Matched notes are recorded as used. It returns "" when
-// the request is too vague (fewer than two keywords) or nothing matches.
-func (e *LearningEngine) Notes(request string) string {
+// having to call recall. The classifier picks them when one is connected,
+// otherwise keyword search does (see harness.Find). Standing notes, which are
+// already in the system prompt, are skipped. Matched notes are recorded as
+// used. It returns "" when the request is too vague (fewer than two keywords)
+// or nothing matches.
+func (e *LearningEngine) Notes(ctx context.Context, request string) string {
 	if e == nil || len(harness.Keywords(request)) < 2 {
 		return ""
 	}
@@ -89,7 +92,7 @@ func (e *LearningEngine) Notes(request string) string {
 			candidates = append(candidates, entry)
 		}
 	}
-	matched := harness.Search(candidates, request, requestNotesMax)
+	matched := harness.Find(ctx, e.Classifier, candidates, request, requestNotesMax)
 	if len(matched) == 0 {
 		return ""
 	}

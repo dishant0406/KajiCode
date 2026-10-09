@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dishant0406/KajiCode/internal/classifier"
 	"github.com/dishant0406/KajiCode/internal/config"
 	"github.com/dishant0406/KajiCode/internal/harness"
 	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
@@ -49,6 +50,11 @@ func (u usedLesson) storeDir() string {
 // hook needs no provider plumbing. Proposals are routed by scope: session-scoped
 // lessons land in the session store, everything else in the project store.
 type LearningEngine struct {
+	// Classifier, when set, picks the saved notes attached to each request
+	// instead of keyword search (see Notes). The CLI sets it when a classifier
+	// is connected; nil means keyword search.
+	Classifier classifier.Classifier
+
 	cfg          config.LearningConfig
 	provider     kajicoderuntime.Provider
 	globalStore  *harness.Store
@@ -215,7 +221,7 @@ func (e *LearningEngine) consumeApplied() bool {
 // ACP reuse one engine for many runs, records this run's standing notes as
 // used, treats the opening request as a possible correction, and returns the
 // saved notes that match the request (see Notes).
-func (e *LearningEngine) BeginRun(request string) string {
+func (e *LearningEngine) BeginRun(ctx context.Context, request string) string {
 	if e == nil {
 		return ""
 	}
@@ -224,7 +230,7 @@ func (e *LearningEngine) BeginRun(request string) string {
 	e.mu.Unlock()
 	e.recordUsed(standingEntries(e.loadProjectState(), e.loadSessionState()))
 	e.NoteUserTurn(request)
-	return e.Notes(request)
+	return e.Notes(ctx, request)
 }
 
 // Finish is the end-of-run hook. It schedules a final pass over the completed

@@ -644,7 +644,9 @@ func runExec(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) in
 	if preparedSession.Store != nil && preparedSession.Session.SessionID != "" {
 		learningSessionRoot = harness.SessionDir(filepath.Join(preparedSession.Store.RootDir, preparedSession.Session.SessionID))
 	}
-	learning := learningEngine(resolved.Learning, provider, harness.GlobalDir(nil), harness.ProjectDir(workspaceRoot), learningSessionRoot)
+	memoryClassifier := connectedClassifier(resolved.Classifier, deps)
+	registerRecall(registry, workspaceRoot, memoryClassifier)
+	learning := learningEngine(resolved.Learning, memoryClassifier, provider, harness.GlobalDir(nil), harness.ProjectDir(workspaceRoot), learningSessionRoot)
 	if options.noLearning {
 		learning = nil // --no-learning: never run a learning pass this run.
 	}

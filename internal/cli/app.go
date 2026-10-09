@@ -723,6 +723,8 @@ func runInteractiveTUIWithSetup(stderr io.Writer, deps appDeps, permissionMode a
 	}
 
 	registry := newCoreRegistryScoped(workspaceRoot, scope)
+	memoryClassifier := connectedClassifier(resolved.Classifier, deps)
+	registerRecall(registry, workspaceRoot, memoryClassifier)
 	registerLocalControlTools(registry, workspaceRoot, resolved.LocalControl)
 	agentRuntime, err := registerAgents(registry, workspaceRoot, resolved.Agents.Depth)
 	if err != nil {
@@ -855,7 +857,7 @@ func runInteractiveTUIWithSetup(stderr io.Writer, deps appDeps, permissionMode a
 	// (<workspace>/.kajicode/learning), matching the learn/recipe tools at
 	// registration, because a per-session root is negotiated inside the TUI run;
 	// a nil engine leaves the agent loop byte-identical.
-	learning := learningEngine(resolved.Learning, provider, harness.GlobalDir(nil), harness.ProjectDir(workspaceRoot), "")
+	learning := learningEngine(resolved.Learning, memoryClassifier, provider, harness.GlobalDir(nil), harness.ProjectDir(workspaceRoot), "")
 	// Bind the resolved model to the models.dev snapshot, exactly as exec does, so
 	// TUI fact reads (vision gate, compaction window, /effort, cost, pickers) all
 	// resolve against one record. /model switches re-bind via tui.Options callbacks.
@@ -1058,7 +1060,7 @@ func newCoreRegistryScoped(workspaceRoot string, scope tools.PathScope) *tools.R
 	// through it) and the resolved global learning directory.
 	registry.Register(tools.NewLearnTool(harness.ProjectDir(workspaceRoot)))
 	registry.Register(tools.NewRecipeRunTool(registry, harness.ProjectDir(workspaceRoot)))
-	registry.Register(tools.NewRecallTool(harness.ProjectDir(workspaceRoot), harness.GlobalDir(nil)))
+	registry.Register(tools.NewRecallTool(harness.ProjectDir(workspaceRoot), harness.GlobalDir(nil), nil))
 	return registry
 }
 

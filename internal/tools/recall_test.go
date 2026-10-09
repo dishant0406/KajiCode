@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dishant0406/KajiCode/internal/classifier"
 	"github.com/dishant0406/KajiCode/internal/harness"
 )
 
@@ -29,7 +30,7 @@ func TestRecallToolFindsByQuery(t *testing.T) {
 	seedProjectLesson(t, root, harness.NewEntry(harness.KindMemory, "Use cmake", "Always build with cmake --build .", "cmake", "general", harness.ScopeProject, "agent", testTime()))
 	seedProjectLesson(t, root, harness.NewEntry(harness.KindMemory, "Lint", "Run gofmt before commit", "lint", "general", harness.ScopeProject, "agent", testTime()))
 
-	tool := NewRecallTool(root, "")
+	tool := NewRecallTool(root, "", nil)
 	result := tool.Run(context.Background(), map[string]any{"query": "cmake"})
 	if result.Status != StatusOK {
 		t.Fatalf("recall = %#v", result)
@@ -40,7 +41,7 @@ func TestRecallToolFindsByQuery(t *testing.T) {
 }
 
 func TestRecallToolEmptyStore(t *testing.T) {
-	tool := NewRecallTool(filepath.Join(t.TempDir(), "learning"), "")
+	tool := NewRecallTool(filepath.Join(t.TempDir(), "learning"), "", nil)
 	result := tool.Run(context.Background(), map[string]any{"query": "anything"})
 	if result.Status != StatusOK || !strings.Contains(result.Output, "No notes saved") {
 		t.Fatalf("empty recall = %#v", result)
@@ -52,7 +53,7 @@ func TestRecallToolKindFilter(t *testing.T) {
 	seedProjectLesson(t, root, harness.NewEntry(harness.KindMemory, "Fact", "a memory", "fact", "general", harness.ScopeProject, "agent", testTime()))
 	seedProjectLesson(t, root, harness.NewEntry(harness.KindPrompt, "Note", "a prompt note", "note", "general", harness.ScopeProject, "agent", testTime()))
 
-	tool := NewRecallTool(root, "")
+	tool := NewRecallTool(root, "", nil)
 	result := tool.Run(context.Background(), map[string]any{"kind": "prompt"})
 	if !strings.Contains(result.Output, "prompt") || strings.Contains(result.Output, "a memory") {
 		t.Fatalf("kind filter output = %q", result.Output)
@@ -63,7 +64,7 @@ func TestRecallToolKindFilterWithNoHits(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "learning")
 	seedProjectLesson(t, root, harness.NewEntry(harness.KindMemory, "Fact", "a memory", "fact", "general", harness.ScopeProject, "agent", testTime()))
 
-	result := NewRecallTool(root, "").Run(context.Background(), map[string]any{"kind": "recipe"})
+	result := NewRecallTool(root, "", nil).Run(context.Background(), map[string]any{"kind": "recipe"})
 	if !strings.Contains(result.Output, `No saved notes of kind "recipe"`) {
 		t.Fatalf("kind filter with no hits should say so, got %q", result.Output)
 	}
@@ -76,7 +77,7 @@ func TestRecallToolSearchesProjectAndGlobal(t *testing.T) {
 	seedProjectLesson(t, project, harness.NewEntry(harness.KindMemory, "Project fact", "project-only-lesson", "p", "general", harness.ScopeProject, "agent", testTime()))
 	seedProjectLesson(t, global, harness.NewEntry(harness.KindMemory, "Global fact", "global-only-lesson", "g", "general", harness.ScopeGlobal, "agent", testTime()))
 
-	tool := NewRecallTool(project, global)
+	tool := NewRecallTool(project, global, nil)
 	result := tool.Run(context.Background(), map[string]any{})
 	if result.Status != StatusOK {
 		t.Fatalf("recall = %#v", result)
@@ -97,7 +98,7 @@ func TestRecallToolMatchesKeywordQuery(t *testing.T) {
 	seedProjectLesson(t, root, harness.NewEntry(harness.KindMemory, "Vision-gate orphan token", "The TUI drops images for a non-vision model but leaves the [Image #1] token in the composer.", "vision", "general", harness.ScopeProject, "agent", testTime()))
 	seedProjectLesson(t, root, harness.NewEntry(harness.KindMemory, "Lint", "Run gofmt before commit", "lint", "general", harness.ScopeProject, "agent", testTime()))
 
-	result := NewRecallTool(root, "").Run(context.Background(), map[string]any{"query": "attachment token composer vision drop"})
+	result := NewRecallTool(root, "", nil).Run(context.Background(), map[string]any{"query": "attachment token composer vision drop"})
 	if !strings.Contains(result.Output, "Vision-gate orphan token") || strings.Contains(result.Output, "gofmt") {
 		t.Fatalf("keyword query should find only the vision note, got %q", result.Output)
 	}
@@ -107,7 +108,7 @@ func TestRecallToolNoMatchSuggestsOtherKeywords(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "learning")
 	seedProjectLesson(t, root, harness.NewEntry(harness.KindMemory, "Lint", "Run gofmt before commit", "lint", "general", harness.ScopeProject, "agent", testTime()))
 
-	result := NewRecallTool(root, "").Run(context.Background(), map[string]any{"query": "kubernetes helm chart"})
+	result := NewRecallTool(root, "", nil).Run(context.Background(), map[string]any{"query": "kubernetes helm chart"})
 	if result.Status != StatusOK || !strings.Contains(result.Output, "Try fewer or different keywords") {
 		t.Fatalf("no-match output = %#v", result)
 	}
@@ -119,8 +120,37 @@ func TestRecallToolShowsHowToRunSavedSteps(t *testing.T) {
 	entry.Recipe = &harness.Recipe{Name: "release-steps", Commands: []harness.RecipeCommand{{Tool: "bash", Args: map[string]any{"command": "make build"}}}}
 	seedProjectLesson(t, root, entry)
 
-	result := NewRecallTool(root, "").Run(context.Background(), map[string]any{"query": "release"})
+	result := NewRecallTool(root, "", nil).Run(context.Background(), map[string]any{"query": "release"})
 	if !strings.Contains(result.Output, `recipe_run name "release-steps"`) {
 		t.Fatalf("recipe note should say how to run it, got %q", result.Output)
+	}
+}
+
+// recallStubClassifier rates every note question with one fixed probability.
+type recallStubClassifier struct{ probability float64 }
+
+func (s recallStubClassifier) Name() string { return "stub" }
+
+func (s recallStubClassifier) Classify(_ context.Context, req classifier.Request) (classifier.Result, error) {
+	result := classifier.Result{}
+	for id := range req.Questions {
+		result[id] = classifier.Answer{Type: classifier.KindNoul, Probability: s.probability}
+	}
+	return result, nil
+}
+
+func TestRecallToolUsesConnectedClassifier(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "learning")
+	seedProjectLesson(t, root, harness.NewEntry(harness.KindMemory, "Deploy checklist", "Bump the npm version and dispatch publish-npm.yml.", "deploy", "general", harness.ScopeProject, "agent", testTime()))
+	query := map[string]any{"query": "ship a build to users"}
+
+	if out := NewRecallTool(root, "", nil).Run(context.Background(), query).Output; strings.Contains(out, "Deploy checklist") {
+		t.Fatalf("keyword search should not match: %q", out)
+	}
+	if out := NewRecallTool(root, "", recallStubClassifier{probability: 0.9}).Run(context.Background(), query).Output; !strings.Contains(out, "Deploy checklist") {
+		t.Fatalf("classifier pick missing: %q", out)
+	}
+	if out := NewRecallTool(root, "", recallStubClassifier{probability: 0.1}).Run(context.Background(), query).Output; !strings.Contains(out, "No earlier notes") {
+		t.Fatalf("classifier said not relevant, got %q", out)
 	}
 }

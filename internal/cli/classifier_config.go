@@ -14,8 +14,9 @@ import (
 
 // The `kajicode classifier` command manages the pluggable fast-classifier
 // capability: it registers Jev-shaped classifier profiles and proves one is
-// reachable. Registering a profile never turns a classifier-powered feature on;
-// that is a separate, explicit config step.
+// reachable. Once the classifier is enabled, memory search uses it right away;
+// the compaction judge and the tool-result gate each still need their own
+// explicit feature switch.
 
 func runClassifier(args []string, stdout io.Writer, stderr io.Writer, deps appDeps) int {
 	return runClassifierWithContext(context.Background(), args, stdout, stderr, deps)
@@ -148,7 +149,7 @@ func runClassifierAdd(args []string, stdout io.Writer, stderr io.Writer, deps ap
 	if updated {
 		action = "Updated"
 	}
-	if _, err := fmt.Fprintf(stdout, "%s classifier %s in %s\nEnable a feature in the classifier.features config block (see docs).\n", action, profile.Name, configPath); err != nil {
+	if _, err := fmt.Fprintf(stdout, "%s classifier %s in %s\nMemory search uses the classifier once it is enabled. Turn on compaction or toolResult in the classifier.features config block (see docs).\n", action, profile.Name, configPath); err != nil {
 		return exitCrash
 	}
 	return exitSuccess
@@ -284,6 +285,7 @@ func runClassifierCheck(ctx context.Context, args []string, stdout io.Writer, st
 			"reachable":   classifyErr == nil,
 			"probability": result.Probability("reachable", 0),
 			"features": map[string]any{
+				"memory":     cfg.Classifier.Enabled,
 				"compaction": cfg.Classifier.Features.Compaction.Enabled,
 				"toolResult": cfg.Classifier.Features.ToolResult.Enabled,
 			},
@@ -309,10 +311,11 @@ func runClassifierCheck(ctx context.Context, args []string, stdout io.Writer, st
 	if _, err := fmt.Fprintf(stdout, "Classifier %s is reachable (%s). Probe probability: %.3f\n", active.Name, active.URL(), result.Probability("reachable", 0)); err != nil {
 		return exitCrash
 	}
-	// Connecting a classifier enables nothing: each feature is a separate opt-in.
-	// Report their state so "reachable" is not mistaken for "in effect".
-	if _, err := fmt.Fprintf(stdout, "Features: compaction=%s toolResult=%s (set classifier.features.<name>.enabled in config to turn one on)\n",
-		onOff(cfg.Classifier.Features.Compaction.Enabled), onOff(cfg.Classifier.Features.ToolResult.Enabled)); err != nil {
+	// Memory search follows the classifier's enabled state; the other features
+	// are separate opt-ins. Report all three so "reachable" is not mistaken for
+	// "in effect".
+	if _, err := fmt.Fprintf(stdout, "Features: memory=%s compaction=%s toolResult=%s (memory follows classifier.enabled; set classifier.features.<name>.enabled to turn the others on)\n",
+		onOff(cfg.Classifier.Enabled), onOff(cfg.Classifier.Features.Compaction.Enabled), onOff(cfg.Classifier.Features.ToolResult.Enabled)); err != nil {
 		return exitCrash
 	}
 	return exitSuccess
@@ -421,7 +424,8 @@ func writeClassifierHelp(w io.Writer) int {
 
 The classifier is a pluggable fast-classifier capability. A profile points at any
 Jev-shaped endpoint ({state, questions} -> {answers}) and is stored in config.json.
-Registering a profile never enables a feature; enable one explicitly.
+Once the classifier is enabled, memory search uses it automatically. The
+compaction judge and tool-result gate each need their own switch.
 
 Flags for add:
       --kind <kind>           Wire adapter (default: jev)

@@ -3,6 +3,7 @@ package acp
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -1432,5 +1433,60 @@ func TestACPWorkspaceClosedOnDelete(t *testing.T) {
 	}
 	if closes != 1 {
 		t.Fatalf("workspace Close called %d times, want 1", closes)
+	}
+}
+
+// A classifier switched on mid-session must reach memory search: recall is
+// re-registered every turn from the current config, and the learning engine is
+// rebuilt when the classifier settings change (but reused while they do not).
+func TestACPMemorySearchFollowsClassifierChanges(t *testing.T) {
+	deps := testDeps(t)
+	enabled := false
+	gateThreshold := 0.0
+	baseResolve := deps.ResolveConfig
+	deps.ResolveConfig = func(root string, overrides config.Overrides) (config.ResolvedConfig, error) {
+		resolved, err := baseResolve(root, overrides)
+		resolved.Classifier.Enabled = enabled
+		resolved.Classifier.Features.ToolResult.DropThreshold = gateThreshold
+		return resolved, err
+	}
+	builds := 0
+	deps.BuildLearning = func(string, config.ResolvedConfig, kajicoderuntime.Provider, string) *agent.LearningEngine {
+		builds++
+		return &agent.LearningEngine{}
+	}
+	var recallEnabled []bool
+	deps.RegisterRecall = func(_ *tools.Registry, _ string, resolved config.ResolvedConfig) {
+		recallEnabled = append(recallEnabled, resolved.Classifier.Enabled)
+	}
+	deps.RunAgent = func(context.Context, string, kajicoderuntime.Provider, agent.Options) (agent.Result, error) {
+		return agent.Result{FinalAnswer: "ok"}, nil
+	}
+	h := newHarness(t, deps)
+	defer h.stop()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var res NewSessionResult
+	if err := h.client.Call(ctx, MethodSessionNew, NewSessionParams{Cwd: t.TempDir(), McpServers: []McpServer{}}, &res); err != nil {
+		t.Fatalf("session/new: %v", err)
+	}
+	prompt := func() {
+		t.Helper()
+		if err := h.client.Call(ctx, MethodSessionPrompt, PromptParams{SessionID: res.SessionID, Prompt: []ContentBlock{TextBlock("hi")}}, &PromptResult{}); err != nil {
+			t.Fatalf("session/prompt: %v", err)
+		}
+	}
+	prompt()
+	gateThreshold = 0.3 // a feature threshold edit must not discard the engine
+	prompt()
+	enabled = true
+	prompt()
+
+	if want := []bool{false, false, true}; fmt.Sprint(recallEnabled) != fmt.Sprint(want) {
+		t.Fatalf("recall registered with classifier states %v, want %v", recallEnabled, want)
+	}
+	if builds != 2 {
+		t.Fatalf("learning engine built %d times, want 2 (kept across a threshold edit, rebuilt when the classifier was switched on)", builds)
 	}
 }

@@ -123,6 +123,10 @@ type Deps struct {
 	// BuildToolResultGate builds the live tool-result relevance gate, matching
 	// exec/TUI. nil (or a nil return) leaves the tool path byte-identical.
 	BuildToolResultGate func(resolved config.ResolvedConfig) *agent.ToolResultGate
+	// RegisterRecall re-registers the recall tool each turn so it searches with
+	// the classifier exactly when one is connected, following mid-session
+	// changes. nil keeps the workspace's recall tool unchanged.
+	RegisterRecall func(registry *tools.Registry, workspaceRoot string, resolved config.ResolvedConfig)
 	// SuggestNes produces a next-edit suggestion for one buffered document.
 	// nil means nes/suggest returns an empty suggestion list.
 	SuggestNes func(ctx context.Context, input NesSuggestInput) (*NesEditSuggestion, error)
@@ -874,7 +878,7 @@ func classifierConfigureSchema() map[string]any {
 			"authScheme":     map[string]any{"type": "string", "title": "Auth scheme, e.g. Bearer (optional; raw sends the key bare)"},
 			"headers":        map[string]any{"type": "string", "title": "Extra headers, one KEY=VALUE per line (optional)"},
 			"timeoutMs":      map[string]any{"type": "string", "title": "Per-request timeout in ms (optional, default 8000)"},
-			"enable":         map[string]any{"type": "string", "title": "Enable the classifier capability (true/false)"},
+			"enable":         map[string]any{"type": "string", "title": "Enable the classifier (true/false); memory search uses it when on"},
 			"compaction":     map[string]any{"type": "string", "title": "Enable the compaction judge (true/false)"},
 			"compactionKeep": map[string]any{"type": "string", "title": "Compaction keep threshold 0-1 (optional)"},
 			"toolResult":     map[string]any{"type": "string", "title": "Enable the tool-result gate (true/false)"},
@@ -1015,6 +1019,9 @@ func (a *Agent) runTurn(ctx context.Context, sess *acpSession, userText string, 
 	// Cached per active provider so the engine's interval/signal state survives
 	// across turns; nil when learning is disabled in config.
 	learning := a.learningFor(sess, resolved, provider)
+	if a.deps.RegisterRecall != nil {
+		a.deps.RegisterRecall(registry, sess.cwd, resolved)
+	}
 
 	opts := agent.Options{
 		Cwd:             sess.cwd,
@@ -1972,11 +1979,11 @@ func (a *Agent) toolResultGateFor(sess *acpSession, resolved config.ResolvedConf
 	return gate
 }
 
-// classifierConfigKey fingerprints the resolved classifier config so a cached
-// client is rebuilt when (and only when) it changes. It includes the profiles,
-// because classifier.New derives the endpoint, model, auth, and key from the
-// active profile — editing one mid-session must rebuild the client.
-func classifierConfigKey(cfg classifier.Config) string {
+// classifierConnectionKey identifies which classifier is connected: the
+// enabled flag, the active profile, and every profile's connection settings.
+// Memory search depends only on this, so the learning engine is rebuilt only
+// when it changes, not when a compaction or tool-gate threshold is edited.
+func classifierConnectionKey(cfg classifier.Config) string {
 	var builder strings.Builder
 	builder.WriteString(cfg.Active)
 	builder.WriteString("\x00")
@@ -2016,6 +2023,16 @@ func classifierConfigKey(cfg classifier.Config) string {
 			builder.WriteString(profile.Headers[key])
 		}
 	}
+	return builder.String()
+}
+
+// classifierConfigKey fingerprints the resolved classifier config so a cached
+// client is rebuilt when (and only when) it changes. It includes the profiles,
+// because classifier.New derives the endpoint, model, auth, and key from the
+// active profile — editing one mid-session must rebuild the client.
+func classifierConfigKey(cfg classifier.Config) string {
+	var builder strings.Builder
+	builder.WriteString(classifierConnectionKey(cfg))
 	feature := cfg.Features.ToolResult
 	builder.WriteString("\x00")
 	builder.WriteString(strconv.FormatBool(cfg.Features.Compaction.Enabled))
@@ -2049,7 +2066,10 @@ func (a *Agent) learningFor(sess *acpSession, resolved config.ResolvedConfig, pr
 	if a.deps.BuildLearning == nil {
 		return nil
 	}
-	key := resolved.Provider.Name + "\x00" + resolved.Provider.Model
+	// The classifier connection is part of the key so memory search follows a
+	// classifier switched on or off mid-session; feature thresholds are not, so
+	// editing them does not discard the engine's queued learning signals.
+	key := resolved.Provider.Name + "\x00" + resolved.Provider.Model + "\x00" + classifierConnectionKey(resolved.Classifier)
 	sess.mu.Lock()
 	if sess.learning != nil && sess.learningKey == key {
 		engine := sess.learning

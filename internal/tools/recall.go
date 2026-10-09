@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/dishant0406/KajiCode/internal/classifier"
 	"github.com/dishant0406/KajiCode/internal/harness"
 )
 
@@ -16,19 +17,23 @@ const recallMaxResults = 5
 // relevant notes are already attached to each request automatically; recall is
 // for follow-up questions in the middle of a task. It reads the project and
 // global stores (a project note shadows a global one with the same id) and
-// never changes anything.
+// never changes anything. A connected classifier picks the notes; without one,
+// keyword search does (see harness.Find).
 type recallTool struct {
 	baseTool
 	projectRoot string
 	globalRoot  string
+	classifier  classifier.Classifier
 }
 
 // NewRecallTool builds the recall tool over the project and global learning
-// roots. An empty globalRoot disables the global source (used by tests).
-func NewRecallTool(projectRoot, globalRoot string) Tool {
+// roots. An empty globalRoot disables the global source (used by tests); a nil
+// classifier means keyword search.
+func NewRecallTool(projectRoot, globalRoot string, cl classifier.Classifier) Tool {
 	return &recallTool{
 		projectRoot: projectRoot,
 		globalRoot:  globalRoot,
+		classifier:  cl,
 		baseTool: baseTool{
 			name: "recall",
 			description: "Search notes saved from earlier sessions: fixes, project rules, gotchas, and saved steps. " +
@@ -53,7 +58,7 @@ func NewRecallTool(projectRoot, globalRoot string) Tool {
 	}
 }
 
-func (tool *recallTool) Run(_ context.Context, args map[string]any) Result {
+func (tool *recallTool) Run(ctx context.Context, args map[string]any) Result {
 	project := loadEntries(tool.projectRoot, harness.ScopeProject)
 	global := loadEntries(tool.globalRoot, harness.ScopeGlobal)
 	entries := harness.MergeHarnessStates(harness.State{Entries: global}, harness.State{Entries: project})
@@ -70,7 +75,7 @@ func (tool *recallTool) Run(_ context.Context, args map[string]any) Result {
 		}
 	}
 
-	matched := harness.Search(entries, query, recallMaxResults)
+	matched := harness.Find(ctx, tool.classifier, entries, query, recallMaxResults)
 	if len(matched) == 0 {
 		return okResult(fmt.Sprintf("No earlier notes about %q. Try fewer or different keywords.", query))
 	}

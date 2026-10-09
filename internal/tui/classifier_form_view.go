@@ -54,7 +54,7 @@ func (form *classifierFormState) renderStep(width int) []string {
 	case classifierFormStepKey:
 		return form.fieldLine(width, "API Key", strings.Repeat("*", len(form.apiKey)), form.keyPlaceholder())
 	case classifierFormStepCapability:
-		return form.boolLine(width, "Enable Classifier", form.capability, "the capability must be on for either feature to run")
+		return form.boolLine(width, "Enable Classifier", form.capability, "memory search uses it as soon as it is on; the features below also need it")
 	case classifierFormStepCompaction:
 		return form.boolLine(width, "Compaction Judge", form.compaction, "keep/drop stale tool bodies before summarizing")
 	case classifierFormStepCompactionKeep:
@@ -121,7 +121,7 @@ func (form *classifierFormState) renderConfirmStep(width int) []string {
 		"Header:      " + displayValue(strings.TrimSpace(form.header), "(none)"),
 		"Timeout:     " + displayValue(strings.TrimSpace(form.timeout), "(default)"),
 		"API key:     " + keyState,
-		"Classifier:  " + onOffLabel(form.capability),
+		"Classifier:  " + onOffLabel(form.capability) + " (memory search follows this)",
 		"Compaction:  " + onOffLabel(form.compaction) + " (keep " + displayValue(strings.TrimSpace(form.compactionKeep), "default") + ")",
 		"Tool gate:   " + onOffLabel(form.toolResult) + " (drop " + displayValue(strings.TrimSpace(form.toolDrop), "default") +
 			", keep " + displayValue(strings.TrimSpace(form.toolKeep), "default") + ", shadow " + onOffLabel(form.toolShadow) + ")",

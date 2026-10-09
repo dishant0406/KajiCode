@@ -76,8 +76,9 @@ func (p Profile) timeoutMS() int {
 type APIKeyResolver func(name string) (string, bool)
 
 // Config is the classifier capability's persisted configuration: a named-profile
-// list plus the per-feature switches. Adding a profile never turns a feature on;
-// enabling is a separate explicit step.
+// list plus the per-feature switches. Adding a profile turns nothing on; once
+// Enabled is set, memory search uses the classifier, and each feature in
+// Features still needs its own switch.
 type Config struct {
 	Enabled  bool      `json:"enabled,omitempty"`
 	Active   string    `json:"active,omitempty"`
@@ -85,8 +86,9 @@ type Config struct {
 	Features Features  `json:"features,omitempty"`
 }
 
-// Features gates the consumers. Each is independently off, so connecting a
-// classifier changes no agent behavior until a feature is explicitly enabled.
+// Features gates the compaction judge and the tool-result gate. Each is
+// independently off until explicitly enabled. Memory search has no switch: it
+// uses the classifier whenever the classifier is enabled.
 type Features struct {
 	Compaction CompactionFeature `json:"compaction,omitempty"`
 	ToolResult ToolResultFeature `json:"toolResult,omitempty"`

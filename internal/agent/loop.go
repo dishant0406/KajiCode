@@ -197,7 +197,7 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 	// and returns saved notes that match it. The notes go only on the copies
 	// sent to the provider (requestMessages), never into messages, so the
 	// learning pass, compaction, and saved sessions see the request as typed.
-	requestNotes := options.Learning.BeginRun(prompt)
+	requestNotes := options.Learning.BeginRun(ctx, prompt)
 	requestMessages := func() []kajicoderuntime.Message {
 		return withRequestNotes(copyMessages(messages), prompt, requestNotes)
 	}

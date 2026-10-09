@@ -47,7 +47,7 @@ the next model turn.
 | Sandbox/permissions | `internal/sandbox` | Path scope, network policy, command risk, grants, permission decisions, and platform isolation backends. |
 | Sessions | `internal/sessions` | Local metadata, append-only event logs, replay, checkpoint, rewind, fork, and lineage. |
 | Extensions | `internal/mcp`, `internal/plugins`, `internal/skills`, `internal/agents`, `internal/hooks` | External tools, plugin activation, skill discovery, sub-agents, and lifecycle hooks. |
-| Fast classifier | `internal/classifier` | The pluggable fast-classifier capability: a provider-agnostic `Classifier` seam, a Jev-shaped HTTP backend ({state,questions}→{answers}), and the profile/config types. Consumed by `internal/agent` (the optional compaction judge, whose drops are made recoverable through the tool-output spill, and the optional tool-result relevance gate at the tool boundary, plus its bounded read-only re-query loop) and managed by the `kajicode classifier` CLI and the `/classifier` TUI and ACP configuration forms. It is not a model provider and never generates text. |
+| Fast classifier | `internal/classifier` | The pluggable fast-classifier capability: a provider-agnostic `Classifier` seam, a Jev-shaped HTTP backend ({state,questions}→{answers}), and the profile/config types. Consumed by `internal/agent` (the optional compaction judge, whose drops are made recoverable through the tool-output spill, and the optional tool-result relevance gate at the tool boundary, plus its bounded read-only re-query loop) and by memory search (`internal/harness/classify.go`), which uses it whenever a classifier is connected, with no feature switch; it is managed by the `kajicode classifier` CLI and the `/classifier` TUI and ACP configuration forms. It is not a model provider and never generates text. |
 | Local control | `internal/localcontrol`, `internal/browser`, `internal/background`, `internal/daemon` | Optional browser, terminal, desktop, and daemon-backed helpers. |
 | Release | `cmd/kajicode-release`, `internal/release`, `scripts/install.*`, `scripts/npm/*`, `.github/workflows/publish-npm.yml` | Binary archives, checksums, installers, npm wrapper/platform packages, tags, and GitHub releases. |
 
@@ -258,8 +258,11 @@ The layers, each with its own tests:
   decay/cap (`PruneStale`, which also removes orphaned recipe manifests), and
   Go-native recipe manifests that `recipe_run` executes through the tool
   registry.
-- `internal/harness/search.go` ranks notes against a request with BM25 keyword
-  scoring (`Search`); both automatic notes and the `recall` tool use it.
+- `internal/harness/classify.go` (`Find`) picks the notes that help with a
+  request: it asks the connected classifier, and uses BM25 keyword search
+  (`internal/harness/search.go`, `Search`) when no classifier is connected or
+  the classifier fails or misses its 2-second deadline. Both automatic notes
+  and the `recall` tool go through `Find`.
 - `internal/tools` exposes the `learn` (status/run/CRUD) and `recall` (search
   project + global) tools plus `recipe_run`.
 

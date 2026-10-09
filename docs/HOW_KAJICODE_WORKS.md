@@ -322,7 +322,24 @@ Saved notes reach the model two ways (`internal/agent/learning_notes.go`):
 over the project and global stores and returns up to 5 notes in full, labeled
 "this project" or "all projects" with the id `learn` needs to update one.
 
-Search (`harness.Search`) is BM25 keyword ranking:
+Which notes match is decided by `harness.Find`:
+
+- **With a classifier connected** (`classifier.enabled` and a usable profile;
+  no separate feature switch), it asks the classifier one yes/no question per
+  note: "would this saved note help the agent answer or carry out the
+  request?". The state is the request plus each note's title and first 300
+  characters, with secrets redacted before anything is shortened. The request
+  is capped at 2,000 characters, and notes and their questions are packed into
+  batches of at most 45 KB (about 60 notes), sent in parallel. A batch that does
+  not answer every note it was asked about counts as a failure. Notes scoring
+  0.5 or higher are kept, best first. Keyword search is not used when the
+  classifier answers, even if it finds nothing relevant.
+- **Fallback.** If any batch fails, or the whole lookup passes 2 seconds, that
+  one lookup uses keyword search instead. On real lookups (200 notes,
+  jev-1.13) most finished in 0.8–1.4 s and the slowest took 1.74 s.
+- **Without a classifier,** keyword search is used.
+
+Keyword search (`harness.Search`) is BM25 ranking:
 
 - Words are lowercased, and filler words and single letters are dropped. Short
   terms such as `go` or `ci` are kept. A trailing "s" is removed, so "tests"
@@ -337,7 +354,8 @@ Search (`harness.Search`) is BM25 keyword ranking:
   a couple of incidental words with it.
 - Automatic notes also need a request with at least two keywords, so vague
   requests get none; the agent can still call `recall` for anything else.
-- It matches words, not meanings: "replace" does not find "replacing".
+- It matches words, not meanings: "replace" does not find "replacing". That
+  is the gap the classifier path closes.
 
 Reinforcement follows use. When a run ends, including a failed or cancelled
 run, `Reinforce` stamps `lastUsedAt` and `reinforcements` on the standing notes
