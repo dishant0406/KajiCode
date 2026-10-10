@@ -89,6 +89,30 @@ func (c *updateCollector) waitForVariant(t *testing.T, variant string) {
 	t.Fatalf("timed out waiting for %s, got %v", variant, c.seen())
 }
 
+// waitForText blocks until an update carrying text containing want arrives, for
+// the same reason as waitForVariant: updates are delivered on their own
+// goroutines, so they can land after the prompt call returns.
+func (c *updateCollector) waitForText(t *testing.T, want string) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		for _, raw := range c.rawMessages() {
+			var probe struct {
+				Update struct {
+					Content struct {
+						Text string `json:"text"`
+					} `json:"content"`
+				} `json:"update"`
+			}
+			if json.Unmarshal(raw, &probe) == nil && strings.Contains(probe.Update.Content.Text, want) {
+				return
+			}
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for an update containing %q, got %v", want, c.seen())
+}
+
 // newCollectorHarness wires a client to an agent and captures every update.
 func newCollectorHarness(t *testing.T, deps Deps) (*clientHarness, *updateCollector) {
 	t.Helper()
@@ -1047,23 +1071,7 @@ func TestACPRefreshModelsSlashCommand(t *testing.T) {
 		t.Fatal("/refresh-models did not re-run discovery for every provider")
 	}
 	updates.waitForVariant(t, UpdateConfigOption)
-	var summarySeen bool
-	for _, raw := range updates.rawMessages() {
-		var probe struct {
-			Update struct {
-				SessionUpdate string `json:"sessionUpdate"`
-				Content       struct {
-					Text string `json:"text"`
-				} `json:"content"`
-			} `json:"update"`
-		}
-		if json.Unmarshal(raw, &probe) == nil && strings.Contains(probe.Update.Content.Text, "Refreshed models") {
-			summarySeen = true
-		}
-	}
-	if !summarySeen {
-		t.Fatal("/refresh-models did not stream a refresh summary")
-	}
+	updates.waitForText(t, "Refreshed models")
 }
 
 // TestACPSkillsListsWorkspaceSkills proves /skills lists the session's merged
