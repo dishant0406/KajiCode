@@ -248,7 +248,9 @@ Key responsibilities of the loop:
    output is kept out of the history, and the turn counts toward the same cap. ACP
    sessions save the prose streamed in an interrupted or failed run, record the
    model on each prompt, and store a sample of any cut-off repetition as an `error`
-   event. Context pressure is handled by
+   event. A stream that sends no output at all within the first-token window (30s
+   plus about 1ms per prompt token, capped at 5 minutes; `KAJICODE_FIRST_TOKEN_TIMEOUT`
+   sets the 30s floor) is cancelled and retried once. Context pressure is handled by
    [Context Budget and Compaction](#context-budget-and-compaction).
 7. **Finalize** — returns a final answer or a structured incomplete/stop reason.
 

@@ -50,7 +50,7 @@ var ErrStreamNoFirstToken = errors.New("no first token (the model accepted the r
 // firstTokenTimeout simply never matches the first-token cause.
 func StreamTimeoutMessageWithFirstToken(err error, idleTimeout, firstTokenTimeout time.Duration) string {
 	if errors.Is(err, ErrStreamNoFirstToken) {
-		return fmt.Sprintf("no first token within %s (the request was accepted but the model produced no output; cancelling and retrying)", firstTokenTimeout)
+		return fmt.Sprintf("no first token within %s (the request was accepted but the model produced no output)", firstTokenTimeout)
 	}
 	if errors.Is(err, ErrStreamStalled) {
 		return fmt.Sprintf("no output for %s (the model kept the connection alive but produced nothing — it may be stuck; try a faster model or lower reasoning effort)", ContentStallTimeout(idleTimeout))
@@ -106,8 +106,24 @@ const streamIdleTimeoutEnv = "KAJICODE_STREAM_IDLE_TIMEOUT"
 // nothing was streamed yet) safely re-issued. Without it a request that is
 // accepted and then sits silent waits out the full idle watchdog (minutes). 30s
 // is generous next to the 1-5s a healthy first token takes, while still
-// catching a hung gateway quickly. Override with KAJICODE_FIRST_TOKEN_TIMEOUT.
+// catching a hung gateway quickly. It is the floor: ScaleFirstTokenTimeout adds
+// time for large prompts. Override with KAJICODE_FIRST_TOKEN_TIMEOUT.
 const DefaultFirstTokenTimeout = 30 * time.Second
+
+// MaxFirstTokenTimeout caps the first-token window however large the prompt is.
+const MaxFirstTokenTimeout = 5 * time.Minute
+
+// ScaleFirstTokenTimeout returns the first-token window for one request. The
+// configured (or default) timeout is the floor; a larger prompt gets more time,
+// 1ms per estimated token (4 bytes each), because the model must read the whole
+// prompt before it emits anything. Without this a long conversation outgrows a
+// fixed window and every retry fails the same way. A timeout <= 0 stays disabled.
+func ScaleFirstTokenTimeout(base time.Duration, requestBytes int) time.Duration {
+	if base <= 0 || base >= MaxFirstTokenTimeout {
+		return base
+	}
+	return min(base+time.Duration(requestBytes/4)*time.Millisecond, MaxFirstTokenTimeout)
+}
 
 // firstTokenTimeoutEnv is the global override for the first-token timeout. Same
 // grammar as streamIdleTimeoutEnv: a Go duration, a bare seconds count, or a

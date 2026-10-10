@@ -234,7 +234,8 @@ func (provider *Provider) stream(ctx context.Context, body []byte, events chan<-
 	// Use the shared SSE reader (also used by the Anthropic/Gemini providers) so
 	// multi-line "data:" continuation fields are joined into one payload, and the
 	// idle watchdog / context cancellation are handled uniformly.
-	err = providerio.ScanSSEDataWithContext(streamCtx, cancelStream, response.Body, provider.streamIdleTimeout, provider.firstTokenTimeout, func(data string) bool {
+	firstTokenTimeout := providerio.ScaleFirstTokenTimeout(provider.firstTokenTimeout, len(body))
+	err = providerio.ScanSSEDataWithContext(streamCtx, cancelStream, response.Body, provider.streamIdleTimeout, firstTokenTimeout, func(data string) bool {
 		return provider.emitPayload(ctx, data, state, events)
 	})
 	if errors.Is(err, providerio.ErrStreamIdle) || errors.Is(err, providerio.ErrStreamStalled) || errors.Is(err, providerio.ErrStreamNoFirstToken) {
@@ -242,7 +243,7 @@ func (provider *Provider) stream(ctx context.Context, body []byte, events chan<-
 		state.closeBufferedOpen(events)
 		sendEvent(ctx, events, kajicoderuntime.StreamEvent{
 			Type:  kajicoderuntime.StreamEventError,
-			Error: provider.redact("provider stream error: " + providerio.StreamTimeoutMessageWithFirstToken(err, provider.streamIdleTimeout, provider.firstTokenTimeout)),
+			Error: provider.redact("provider stream error: " + providerio.StreamTimeoutMessageWithFirstToken(err, provider.streamIdleTimeout, firstTokenTimeout)),
 		})
 		return
 	}

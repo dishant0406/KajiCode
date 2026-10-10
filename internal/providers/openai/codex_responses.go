@@ -444,13 +444,14 @@ func (p *responsesTransport) streamResponses(
 	}
 
 	state := newResponsesState()
-	err = providerio.ScanSSEDataWithContext(streamCtx, cancelStream, response.Body, inner.streamIdleTimeout, inner.firstTokenTimeout, func(data string) bool {
+	firstTokenTimeout := providerio.ScaleFirstTokenTimeout(inner.firstTokenTimeout, len(body))
+	err = providerio.ScanSSEDataWithContext(streamCtx, cancelStream, response.Body, inner.streamIdleTimeout, firstTokenTimeout, func(data string) bool {
 		return p.emitResponsesEvent(ctx, data, state, events)
 	})
 	if errors.Is(err, providerio.ErrStreamIdle) || errors.Is(err, providerio.ErrStreamStalled) || errors.Is(err, providerio.ErrStreamNoFirstToken) {
 		providerio.SendEvent(ctx, events, kajicoderuntime.StreamEvent{
 			Type:  kajicoderuntime.StreamEventError,
-			Error: p.redact("provider stream error: " + providerio.StreamTimeoutMessageWithFirstToken(err, inner.streamIdleTimeout, inner.firstTokenTimeout)),
+			Error: p.redact("provider stream error: " + providerio.StreamTimeoutMessageWithFirstToken(err, inner.streamIdleTimeout, firstTokenTimeout)),
 		})
 		return
 	}

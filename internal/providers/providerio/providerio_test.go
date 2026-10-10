@@ -527,11 +527,31 @@ func TestResolveFirstTokenTimeout(t *testing.T) {
 
 func TestStreamTimeoutMessageWithFirstToken(t *testing.T) {
 	msg := StreamTimeoutMessageWithFirstToken(ErrStreamNoFirstToken, time.Minute, 30*time.Second)
-	if !strings.Contains(msg, "no first token within 30s") {
+	if !strings.Contains(msg, "no first token within 30s") || strings.Contains(msg, "retrying") {
 		t.Fatalf("first-token message = %q", msg)
 	}
 	// The other two causes must still classify correctly.
 	if got := StreamTimeoutMessageWithFirstToken(ErrStreamIdle, time.Minute, 0); !strings.Contains(got, "idle timeout after") {
 		t.Fatalf("idle message = %q", got)
+	}
+}
+
+func TestScaleFirstTokenTimeout(t *testing.T) {
+	base := 30 * time.Second
+	if got := ScaleFirstTokenTimeout(base, 400); got < base || got > base+time.Second {
+		t.Fatalf("small prompt must keep about the floor, got %v", got)
+	}
+	// ~100k tokens (400KB) gets 100s more.
+	if got := ScaleFirstTokenTimeout(base, 400_000); got != 130*time.Second {
+		t.Fatalf("large prompt: got %v, want 130s", got)
+	}
+	if got := ScaleFirstTokenTimeout(base, 100_000_000); got != MaxFirstTokenTimeout {
+		t.Fatalf("huge prompt must hit the cap, got %v", got)
+	}
+	if got := ScaleFirstTokenTimeout(10*time.Minute, 400_000); got != 10*time.Minute {
+		t.Fatalf("an explicit value above the cap must be kept, got %v", got)
+	}
+	if got := ScaleFirstTokenTimeout(0, 400_000); got != 0 {
+		t.Fatalf("a disabled timeout must stay disabled, got %v", got)
 	}
 }

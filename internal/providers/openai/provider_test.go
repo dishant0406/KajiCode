@@ -1477,7 +1477,7 @@ func TestStreamCompletionAbortsOnNoFirstToken(t *testing.T) {
 				msg = e.Error
 			}
 		}
-		if !strings.Contains(msg, "no first token within 60ms") {
+		if !strings.Contains(msg, "no first token within") {
 			t.Fatalf("error = %q, want a first-token timeout", msg)
 		}
 	case <-time.After(3 * time.Second):
@@ -1493,4 +1493,42 @@ func collectProviderEventsNoFatal(provider *Provider) []kajicoderuntime.StreamEv
 		return nil
 	}
 	return readAll(stream)
+}
+
+// A long prompt takes longer to read before the first token, so the first-token
+// window grows with the request: the same slow server that fails a short prompt
+// must succeed for a long one.
+func TestFirstTokenWindowGrowsWithPromptSize(t *testing.T) {
+	provider := newTestProviderWithOptions(t, Options{
+		APIKey:            "sk-test",
+		FirstTokenTimeout: 60 * time.Millisecond,
+	}, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		w.(http.Flusher).Flush()
+		time.Sleep(400 * time.Millisecond) // slow to read the prompt
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\ndata: [DONE]\n\n"))
+	})
+	run := func(prompt string) (text, errMsg string) {
+		stream, err := provider.StreamCompletion(context.Background(), kajicoderuntime.CompletionRequest{
+			Messages: []kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleUser, Content: prompt}},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, e := range readAll(stream) {
+			text += e.Content
+			if e.Type == kajicoderuntime.StreamEventError {
+				errMsg = e.Error
+			}
+		}
+		return text, errMsg
+	}
+
+	if _, errMsg := run("short"); !strings.Contains(errMsg, "no first token within") {
+		t.Fatalf("a short prompt should hit the first-token timeout, got %q", errMsg)
+	}
+	if text, errMsg := run(strings.Repeat("x", 40_000)); errMsg != "" || text != "hi" {
+		t.Fatalf("a long prompt should get a longer window, got text=%q err=%q", text, errMsg)
+	}
 }

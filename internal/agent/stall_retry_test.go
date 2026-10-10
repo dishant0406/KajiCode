@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -161,7 +162,7 @@ func TestIsStreamTimeoutError(t *testing.T) {
 		"provider stream error: no output for 10m (the model produced nothing)",
 		"provider stream error: idle timeout after 5m0s (upstream stopped sending data)",
 		"stream stalled (upstream kept the connection alive but produced no output)",
-		"provider stream error: no first token within 30s (the request was accepted but the model produced no output; cancelling and retrying)",
+		"provider stream error: no first token within 30s (the request was accepted but the model produced no output)",
 	}
 	for _, m := range timeouts {
 		if !isStreamTimeoutError(m) {
@@ -182,7 +183,7 @@ func TestIsStreamTimeoutError(t *testing.T) {
 func TestRunRetriesNoFirstTokenThenSucceeds(t *testing.T) {
 	p := &stallProvider{
 		stallBefore: 1,
-		stallError:  "provider stream error: no first token within 30s (the request was accepted but the model produced no output; cancelling and retrying)",
+		stallError:  "provider stream error: no first token within 30s (the request was accepted but the model produced no output)",
 	}
 	result, err := Run(context.Background(), "go", p, Options{Registry: tools.NewRegistry()})
 	if err != nil {
@@ -193,5 +194,21 @@ func TestRunRetriesNoFirstTokenThenSucceeds(t *testing.T) {
 	}
 	if got := atomic.LoadInt32(&p.calls); got != 2 {
 		t.Fatalf("want 2 calls (1 no-first-token + 1 retry), got %d", got)
+	}
+}
+
+// When the retry also gets no first token the run stops, and the error says how
+// to wait longer.
+func TestRunNoFirstTokenAfterRetryExplainsTheTimeout(t *testing.T) {
+	p := &stallProvider{
+		stallBefore: 2,
+		stallError:  "provider stream error: no first token within 30s (the request was accepted but the model produced no output)",
+	}
+	_, err := Run(context.Background(), "go", p, Options{Registry: tools.NewRegistry()})
+	if err == nil || !strings.Contains(err.Error(), "no first token within 30s") || !strings.Contains(err.Error(), "KAJICODE_FIRST_TOKEN_TIMEOUT") {
+		t.Fatalf("expected the timeout error with a hint, got %v", err)
+	}
+	if got := atomic.LoadInt32(&p.calls); got != 2 {
+		t.Fatalf("want 2 calls (1 timeout + 1 retry), got %d", got)
 	}
 }

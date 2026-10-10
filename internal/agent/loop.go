@@ -112,6 +112,15 @@ const abortedToolResultNotice = "aborted: run halted by the repeated-failure gua
 const droppedToolCallNotice = "Your previous tool call was malformed (it was missing a tool name) and was not executed. " +
 	"Re-issue the tool call with a valid tool name and JSON arguments, or reply with your final answer."
 
+// firstTokenHint explains how to wait longer when a model gave up after the
+// retry without producing a first token. It returns "" for any other error.
+func firstTokenHint(message string) string {
+	if !strings.Contains(strings.ToLower(message), "no first token within") {
+		return ""
+	}
+	return " — if this model is slow to start on long conversations, raise KAJICODE_FIRST_TOKEN_TIMEOUT (for example 300) or use a faster model"
+}
+
 // degenerateTurnNotice tells the model its last response was cut off because it
 // kept repeating the same few phrases, and was discarded.
 const degenerateTurnNotice = "Your previous response was cut off because it kept repeating the same few phrases, and it was discarded. " +
@@ -721,7 +730,7 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 			}
 			if collected.Error != "" {
 				result.Messages = copyMessages(messages)
-				return result, errors.New(collected.Error)
+				return result, errors.New(collected.Error + firstTokenHint(collected.Error))
 			}
 		}
 
