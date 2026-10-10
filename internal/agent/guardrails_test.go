@@ -287,6 +287,9 @@ func TestIsNoProgressStopRecognizesAllGuardAnswers(t *testing.T) {
 	if !IsNoProgressStop(noActionStopAnswer(6, true)) {
 		t.Fatal("dropped-call stop answer must be recognized")
 	}
+	if !IsNoProgressStop(degenerateStopAnswer(6)) {
+		t.Fatal("repeating-output stop answer must be recognized")
+	}
 	if !IsNoProgressStop(noOpToolCallStopAnswer(6)) {
 		t.Fatal("no-op tool-call stop answer must be recognized")
 	}

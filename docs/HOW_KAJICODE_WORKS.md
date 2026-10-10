@@ -241,7 +241,14 @@ Key responsibilities of the loop:
    call — whether it streamed only reasoning ("thinking out loud") or emitted a
    tool call that could not run — is counted toward a runaway cap (nudge after 3,
    stop after 6), because such a turn resets the empty-turn counter and would
-   otherwise run to `maxTurns`. Context pressure is handled by
+   otherwise run to `maxTurns`. The turn counters only see finished turns, so
+   the stream collector also watches each turn's text and reasoning while it
+   streams: when the model is stuck repeating the same few phrases ("Go.
+   Writing. OK."), the turn is cut off, the provider request is cancelled, the
+   output is kept out of the history, and the turn counts toward the same cap. ACP
+   sessions save the prose streamed in an interrupted or failed run, record the
+   model on each prompt, and store a sample of any cut-off repetition as an `error`
+   event. Context pressure is handled by
    [Context Budget and Compaction](#context-budget-and-compaction).
 7. **Finalize** — returns a final answer or a structured incomplete/stop reason.
 

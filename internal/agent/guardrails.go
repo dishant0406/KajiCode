@@ -428,6 +428,7 @@ var guardStopTails = []string{
 	noOutputStopMarker + " " + noOutputStopSuffix,
 	noActionStopTail,
 	droppedCallStopTail,
+	degenerateStopTail,
 	noOpToolCallStopTail,
 }
 
@@ -513,6 +514,7 @@ func noActionProgressReminder(turns int) string {
 const (
 	noActionStopMarker    = "without producing output or running a tool"
 	droppedCallStopMarker = "whose tool calls could not run"
+	degenerateStopMarker  = "whose output was stuck repeating itself"
 )
 
 // noActionStopTail / droppedCallStopTail are the fixed parts of noActionStopAnswer
@@ -521,6 +523,7 @@ const (
 const (
 	noActionStopTail    = noActionStopMarker + ", to avoid consuming tokens without making progress."
 	droppedCallStopTail = droppedCallStopMarker + ", to avoid consuming tokens without making progress."
+	degenerateStopTail  = degenerateStopMarker + ", to avoid consuming tokens without making progress."
 )
 
 // noActionStopAnswer is the final answer when the no-action guard halts the run.
@@ -532,11 +535,20 @@ func noActionStopAnswer(turns int, droppedCall bool) string {
 	return noOutputStopPrefix + strconv.Itoa(turns) + " turns " + tail
 }
 
+// degenerateStopAnswer is the final answer when turns keep being cut off for
+// repeating themselves.
+func degenerateStopAnswer(turns int) string {
+	return noOutputStopPrefix + strconv.Itoa(turns) + " turns " + degenerateStopTail
+}
+
 // guardStopAnswer builds the final answer for whichever runaway guard just
 // tripped. When both the empty-turn and no-action counters reach their cap on the
 // same turn the no-action reason is reported, which is the more specific one.
 func guardStopAnswer(state *guardState, turns int) string {
 	if state.noActionTurns >= maxNoActionTurns {
+		if state.noActionDegenerate {
+			return degenerateStopAnswer(turns)
+		}
 		return noActionStopAnswer(turns, state.noActionDroppedCall)
 	}
 	return noOutputStopAnswer(turns)
@@ -574,6 +586,9 @@ type guardState struct {
 	// streamed visible text, so the halt message must not claim it produced no
 	// output. It is reset whenever the streak is extended by a silent turn.
 	noActionDroppedCall bool
+	// noActionDegenerate records that the streak was last extended by a turn cut
+	// off for repeating itself, so the halt message says so.
+	noActionDegenerate bool
 	// planItemsPending is the number of remaining (pending/in_progress) items in
 	// the most recent todo_write call, so the headless completion gate can tell
 	// whether work is unfinished when the model stops without a tool call.
@@ -710,6 +725,7 @@ func (state *guardState) observeTurn(collected kajicoderuntime.CollectedStream) 
 	if !hasToolCalls && !hasVisibleText {
 		state.noActionTurns++
 		state.noActionDroppedCall = false
+		state.noActionDegenerate = false
 	} else {
 		state.noActionTurns = 0
 		state.noActionReminderSent = false
@@ -747,6 +763,16 @@ func (state *guardState) observeTurn(collected kajicoderuntime.CollectedStream) 
 func (state *guardState) observeNoActionTurn() bool {
 	state.noActionTurns++
 	state.noActionDroppedCall = true
+	state.noActionDegenerate = false
+	return state.noActionTurns >= maxNoActionTurns
+}
+
+// observeDegenerateTurn counts a turn that was cut off for repeating itself. It
+// shares the noActionTurns streak, so such a model is stopped by the same cap.
+func (state *guardState) observeDegenerateTurn() bool {
+	state.noActionTurns++
+	state.noActionDroppedCall = false
+	state.noActionDegenerate = true
 	return state.noActionTurns >= maxNoActionTurns
 }
 

@@ -410,7 +410,10 @@ type Options struct {
 	DisabledTools []string
 	OnText        func(string)
 	OnReasoning   func(string)
-	OnToolCall    func(ToolCall)
+	// OnDegenerateTurn receives a sample of the repeating text when a turn is cut
+	// off because the model got stuck repeating itself.
+	OnDegenerateTurn func(sample string)
+	OnToolCall       func(ToolCall)
 	// OnToolCallStart / OnToolCallDelta stream a tool call's arguments LIVE as the
 	// model generates them — OnToolCallStart on open (id, tool name), then
 	// OnToolCallDelta for each argument fragment. A surface can render the

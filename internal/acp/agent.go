@@ -1023,6 +1023,9 @@ func (a *Agent) runTurn(ctx context.Context, sess *acpSession, userText string, 
 		a.deps.RegisterRecall(registry, sess.cwd, resolved)
 	}
 
+	// streamed collects the prose shown to the client so an interrupted or failed
+	// run still leaves what the agent said in the session history.
+	var streamed strings.Builder
 	opts := agent.Options{
 		Cwd:             sess.cwd,
 		SessionID:       sess.id,
@@ -1060,8 +1063,12 @@ func (a *Agent) runTurn(ctx context.Context, sess *acpSession, userText string, 
 		Images:          images,
 		ImageLimits:     imageinput.LimitsFrom(resolved.Images.MaxWidth, resolved.Images.MaxHeight, resolved.Images.MaxBytes, resolved.Images.AutoResize),
 		Skills:          workspace.Skills,
-		OnText:          note.text,
-		OnReasoning:     note.thought,
+		OnText: func(delta string) {
+			streamed.WriteString(delta)
+			note.text(delta)
+		},
+		OnReasoning:      note.thought,
+		OnDegenerateTurn: func(sample string) { a.recordDegenerateTurn(sess, sample) },
 		// Report real token counts with the resolved context window as size, so the
 		// client's context gauge has a denominator (matches the TUI's used/window).
 		OnUsage: func(u agent.Usage) { note.usage(u.TotalTokens(), contextWindow) },
@@ -1093,16 +1100,20 @@ func (a *Agent) runTurn(ctx context.Context, sess *acpSession, userText string, 
 	result, runErr := a.deps.RunAgent(ctx, agentPrompt, provider, opts)
 
 	reason, stopErr := stopReasonFor(result, runErr)
-	if stopErr != nil {
-		return "", RPCError(codeInternalError, stopErr.Error())
+	assistantText := result.FinalAnswer
+	if assistantText == "" {
+		assistantText = strings.TrimSpace(streamed.String())
 	}
-	if err := a.persistTurn(sess, userText, result.FinalAnswer); err != nil {
+	if err := a.persistTurn(sess, userText, assistantText, resolved.Provider.Name, resolved.Provider.Model); err != nil {
 		a.warnPersistence(
 			note,
 			"save session history",
 			"Could not save session history. This turn is available in memory, but future resume may miss it until storage recovers.",
 			err,
 		)
+	}
+	if stopErr != nil {
+		return "", RPCError(codeInternalError, stopErr.Error())
 	}
 	// The user approved the plan: leave plan mode, re-advertise the dropdown as
 	// Agent, and run the execution turn immediately — the same handoff the TUI
@@ -1642,7 +1653,7 @@ func (a *Agent) replayHistory(note *notifier, history []turnRecord) {
 
 // ---- persistence + continuity ----
 
-func (a *Agent) persistTurn(sess *acpSession, user, assistant string) error {
+func (a *Agent) persistTurn(sess *acpSession, user, assistant, provider, model string) error {
 	defer sess.appendHistory(turnRecord{user: user, assistant: assistant})
 	if a.deps.Store == nil {
 		return nil
@@ -1650,7 +1661,7 @@ func (a *Agent) persistTurn(sess *acpSession, user, assistant string) error {
 	events := []sessions.AppendEventInput{
 		{
 			Type:    sessions.EventMessage,
-			Payload: map[string]any{"role": "user", "content": user},
+			Payload: map[string]any{"role": "user", "content": user, "provider": provider, "model": model},
 		},
 	}
 	if assistant != "" {
@@ -1661,6 +1672,27 @@ func (a *Agent) persistTurn(sess *acpSession, user, assistant string) error {
 	}
 	_, err := a.deps.Store.AppendEvents(sess.id, events)
 	return err
+}
+
+// maxDegenerateSampleBytes bounds the repeated text stored for diagnosis.
+const maxDegenerateSampleBytes = 1024
+
+// recordDegenerateTurn stores a sample of the text a model was cut off repeating,
+// so the cause can be studied later. Streamed reasoning is otherwise never saved.
+func (a *Agent) recordDegenerateTurn(sess *acpSession, sample string) {
+	if a.deps.Store == nil {
+		return
+	}
+	if len(sample) > maxDegenerateSampleBytes {
+		sample = sample[:maxDegenerateSampleBytes]
+	}
+	_, err := a.deps.Store.AppendEvents(sess.id, []sessions.AppendEventInput{{
+		Type:    sessions.EventError,
+		Payload: map[string]any{"message": "model output was cut off for repeating itself: " + sample},
+	}})
+	if err != nil {
+		log.Printf("kajicode acp: failed to record repeating output for session %s: %v", sess.id, err)
+	}
 }
 
 func (a *Agent) loadHistory(sessionID string) ([]turnRecord, error) {

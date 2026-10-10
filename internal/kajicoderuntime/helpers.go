@@ -24,6 +24,12 @@ type CollectedStream struct {
 	// HasReasoning records whether the provider streamed reasoning deltas. The
 	// deltas remain non-answer content, but they still prove the turn was live.
 	HasReasoning bool
+	// Degenerate is set when the stream was cut off because the model was stuck
+	// repeating the same few phrases. Text then holds only what streamed before
+	// the cut and must not be treated as an answer. DegenerateSample holds the
+	// repeating segments for diagnostics.
+	Degenerate       bool
+	DegenerateSample string
 }
 
 // Truncated reports whether the response ended for a non-normal reason (the
@@ -44,6 +50,10 @@ type CollectOptions struct {
 	// instead of waiting for the whole call to accumulate. nil is a no-op.
 	OnToolCallStart func(id, name string)
 	OnToolCallDelta func(id, fragment string)
+	// Cancel stops the provider request behind the stream. It is called when the
+	// stream is cut off as degenerate; without it the rest of the stream is
+	// drained in the background.
+	Cancel func()
 }
 
 // SeedMessages creates the initial system and user turns for a request. It is a
@@ -94,6 +104,7 @@ func CollectStreamWithOptions(ctx context.Context, events <-chan StreamEvent, op
 	collected := CollectedStream{}
 	collector := newToolCallCollector()
 	usageSeen := false
+	var textRepeats, reasoningRepeats repetitionDetector
 	finish := func() CollectedStream {
 		collector.flush(&collected)
 		if usageSeen && options.OnUsage != nil {
@@ -102,6 +113,19 @@ func CollectStreamWithOptions(ctx context.Context, events <-chan StreamEvent, op
 		return collected
 	}
 
+	cutOff := func(detector *repetitionDetector) CollectedStream {
+		collected.Degenerate = true
+		collected.DegenerateSample = detector.excerpt()
+		if options.Cancel != nil {
+			options.Cancel()
+		} else {
+			go func() {
+				for range events {
+				}
+			}()
+		}
+		return finish()
+	}
 	for {
 		select {
 		case <-ctx.Done():
@@ -134,12 +158,18 @@ func CollectStreamWithOptions(ctx context.Context, events <-chan StreamEvent, op
 				if options.OnText != nil {
 					options.OnText(event.Content)
 				}
+				if textRepeats.feed(event.Content) {
+					return cutOff(&textRepeats)
+				}
 			case StreamEventReasoning:
 				if strings.TrimSpace(event.Content) != "" {
 					collected.HasReasoning = true
 				}
 				if options.OnReasoning != nil {
 					options.OnReasoning(event.Content)
+				}
+				if reasoningRepeats.feed(event.Content) {
+					return cutOff(&reasoningRepeats)
 				}
 			case StreamEventToolCallStart:
 				collector.start(event.ToolCallID, event.ToolName, event.ToolCallSignature)

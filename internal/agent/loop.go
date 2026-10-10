@@ -112,6 +112,11 @@ const abortedToolResultNotice = "aborted: run halted by the repeated-failure gua
 const droppedToolCallNotice = "Your previous tool call was malformed (it was missing a tool name) and was not executed. " +
 	"Re-issue the tool call with a valid tool name and JSON arguments, or reply with your final answer."
 
+// degenerateTurnNotice tells the model its last response was cut off because it
+// kept repeating the same few phrases, and was discarded.
+const degenerateTurnNotice = "Your previous response was cut off because it kept repeating the same few phrases, and it was discarded. " +
+	"Do not narrate what you are about to do: call a tool now, or reply with your final answer."
+
 // escalationFailedNoticePrefix introduces the brief, user-role note recorded
 // when a requested mid-run model switch could not be performed (the
 // ModelSwitcher returned an error). The run continues on the current model;
@@ -460,7 +465,11 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 		// the timeout error instead of hanging the session.
 		hb := startWaitingHeartbeat(ctx, options, PhaseProviderRequest, "waiting for model")
 		turnSilentStart := time.Now()
-		stream, err := streamWithReconnect(ctx, provider, request, reconnectNoticeFor(options))
+		// streamCtx lets the collector cancel the provider request when the model
+		// is cut off for repeating itself.
+		streamCtx, cancelStream := context.WithCancel(ctx)
+		defer cancelStream()
+		stream, err := streamWithReconnect(streamCtx, provider, request, reconnectNoticeFor(options))
 		if err != nil {
 			hb.Stop()
 			if isImageRejectionError(err) {
@@ -491,7 +500,7 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 				// whole run and re-burn every token (AUDIT-L1).
 				emitPhase(options, PhaseProviderRequest, "waiting for model after compaction")
 				hb.bump(PhaseProviderRequest, "waiting for model after compaction")
-				stream, err = streamWithReconnect(ctx, provider, request, reconnectNoticeFor(options))
+				stream, err = streamWithReconnect(streamCtx, provider, request, reconnectNoticeFor(options))
 			}
 			if err != nil {
 				result.Messages = copyMessages(messages)
@@ -510,7 +519,7 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 		// before the append), so the retry re-sends clean context with no
 		// conversation-state duplication.
 		forwardedVisibleText := false
-		forwardingOpts := kajicoderuntime.CollectOptions{OnUsage: options.OnUsage}
+		forwardingOpts := kajicoderuntime.CollectOptions{OnUsage: options.OnUsage, Cancel: cancelStream}
 		// Install text/reasoning forwarding handlers whenever EITHER a user
 		// callback OR a trace recorder is set. A headless traced run (e.g. `kajicode
 		// exec --trace`) sets Trace but no OnText/OnReasoning; without these
@@ -582,7 +591,7 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 					ReasoningEffort: options.ReasoningEffort,
 					PromptCacheKey:  options.SessionID,
 				}
-				retryStream, retryStreamErr := streamWithReconnect(ctx, provider, retryRequest, reconnectNoticeFor(options))
+				retryStream, retryStreamErr := streamWithReconnect(streamCtx, provider, retryRequest, reconnectNoticeFor(options))
 				if retryStreamErr != nil {
 					return collected, retryStreamErr
 				}
@@ -590,6 +599,7 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 				emitPhase(options, PhaseStreaming, "streaming model response")
 				collected = kajicoderuntime.CollectStreamWithOptions(ctx, retryStream, kajicoderuntime.CollectOptions{
 					OnUsage: options.OnUsage,
+					Cancel:  cancelStream,
 				})
 				genSpan.End()
 			}
@@ -632,7 +642,7 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 				ReasoningEffort: options.ReasoningEffort,
 				PromptCacheKey:  options.SessionID,
 			}
-			retryStream, retryErr := streamWithReconnect(ctx, provider, retryRequest, reconnectNoticeFor(options))
+			retryStream, retryErr := streamWithReconnect(streamCtx, provider, retryRequest, reconnectNoticeFor(options))
 			if retryErr != nil {
 				result.Messages = copyMessages(messages)
 				return result, retryErr
@@ -687,7 +697,7 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 				ReasoningEffort: options.ReasoningEffort,
 				PromptCacheKey:  options.SessionID,
 			}
-			retryStream, retryErr := streamWithReconnect(ctx, provider, retryRequest, reconnectNoticeFor(options))
+			retryStream, retryErr := streamWithReconnect(streamCtx, provider, retryRequest, reconnectNoticeFor(options))
 			if retryErr != nil {
 				result.Messages = copyMessages(messages)
 				return result, retryErr
@@ -729,6 +739,25 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 		// output token cap (or by a content filter) is reported as truncated. A
 		// tool-call turn normalizes to "" and clears any prior reason.
 		result.FinishReason = collected.FinishReason
+
+		// The model was cut off repeating itself. Keep the garbled output out of the
+		// history, count the turn toward the no-action stop, and tell the model to
+		// act instead.
+		if collected.Degenerate {
+			if options.OnDegenerateTurn != nil {
+				options.OnDegenerateTurn(collected.DegenerateSample)
+			}
+			if guards.observeDegenerateTurn() {
+				result.FinalAnswer = guardStopAnswer(guards, result.Turns)
+				result.Messages = copyMessages(messages)
+				return result, nil
+			}
+			messages = append(messages, kajicoderuntime.Message{
+				Role:    kajicoderuntime.MessageRoleUser,
+				Content: degenerateTurnNotice,
+			})
+			continue
+		}
 
 		collected.ToolCalls = canonicalizeToolCalls(registry, collected.ToolCalls)
 		messages = append(messages, kajicoderuntime.Message{
