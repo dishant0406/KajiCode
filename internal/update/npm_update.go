@@ -30,6 +30,27 @@ func applyNpmUpdate(ctx context.Context, executablePath string) error {
 	return nil
 }
 
+// verifyNpmUpdate runs the binary npm just installed and checks that it reports
+// wantVersion. `npm install` exits 0 when it installs the previous version
+// again, which happens while the registry is not yet serving a new release.
+func verifyNpmUpdate(ctx context.Context, executablePath string, wantVersion string) error {
+	output, err := exec.CommandContext(ctx, executablePath, "--version").CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("npm finished, but %s could not be run to check its version: %w", executablePath, err)
+	}
+	// The version is the last word of the output ("kajicode 0.8.6").
+	fields := strings.Fields(string(output))
+	got := ""
+	if len(fields) > 0 {
+		got = strings.TrimPrefix(fields[len(fields)-1], "v")
+	}
+	want := strings.TrimPrefix(wantVersion, "v")
+	if got != want {
+		return fmt.Errorf("npm installed %s, not %s: the npm registry may not be serving %s yet, so run `kajicode upgrade` again in a few minutes", got, want, want)
+	}
+	return nil
+}
+
 func npmExecutable(prefix string, hasPrefix bool) (string, error) {
 	if hasPrefix {
 		for _, candidate := range npmExecutableCandidates(prefix) {

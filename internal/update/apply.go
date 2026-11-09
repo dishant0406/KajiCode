@@ -70,6 +70,9 @@ func Apply(ctx context.Context, options Options) (ApplyResult, error) {
 		if err := applyNpmUpdate(ctx, executablePath); err != nil {
 			return ApplyResult{}, err
 		}
+		if err := verifyNpmUpdate(ctx, executablePath, checkResult.LatestVersion); err != nil {
+			return ApplyResult{}, err
+		}
 		return ApplyResult{
 			Result:        checkResult,
 			Applied:       true,

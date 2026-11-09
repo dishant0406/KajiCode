@@ -109,3 +109,23 @@ went from 500 to 5000 (`internal/config/resolver.go`).
 **Why.** Long build-and-verify tasks hit 80 and 100 turns in the middle of the
 work. When a run does hit the limit, the user now sees a line that says so and
 how to raise it.
+
+## 7. `kajicode upgrade` checks what npm really installed
+
+**The problem.** Right after the 0.8.6 release, `kajicode upgrade` printed
+"updated via npm to 0.8.6", but `kajicode -v` still said 0.8.5. npm was not
+serving the new packages yet, so `npm install -g ...@latest` installed 0.8.5
+again and exited 0. The upgrade command printed the version it had looked up,
+not the version that got installed.
+
+**What we chose.** After `npm install`, the upgrade runs the installed binary
+with `--version` and compares the answer with the version it expected
+(`verifyNpmUpdate` in `internal/update/npm_update.go`). If they differ, the
+upgrade fails with a message that names both versions and says to try again in
+a few minutes.
+
+**Why run the binary** instead of reading `package.json`. The binary is the
+thing the user runs. The check also catches the case where npm installed the new
+wrapper package but not the platform binary.
+
+**Trade-off.** One extra process start per upgrade. It takes a few milliseconds.

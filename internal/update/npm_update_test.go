@@ -66,6 +66,33 @@ func TestApplyNpmUpdateUsesOwningPrefix(t *testing.T) {
 	}
 }
 
+// npm exits 0 when it installs the old version again, so the upgrade must check
+// what the installed binary reports before it claims success.
+func TestVerifyNpmUpdateChecksInstalledVersion(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("test uses a POSIX shell binary stub")
+	}
+	binary := filepath.Join(t.TempDir(), "kajicode")
+	script := "#!/bin/sh\necho 'BANNER ART'\necho\necho 'kajicode 0.8.5'\n"
+	if err := os.WriteFile(binary, []byte(script), 0o755); err != nil {
+		t.Fatalf("WriteFile binary stub: %v", err)
+	}
+
+	if err := verifyNpmUpdate(context.Background(), binary, "0.8.5"); err != nil {
+		t.Fatalf("matching version returned error: %v", err)
+	}
+	if err := verifyNpmUpdate(context.Background(), binary, "v0.8.5"); err != nil {
+		t.Fatalf("matching version with a v prefix returned error: %v", err)
+	}
+	err := verifyNpmUpdate(context.Background(), binary, "0.8.6")
+	if err == nil || !strings.Contains(err.Error(), "npm installed 0.8.5, not 0.8.6") {
+		t.Fatalf("stale install error = %v, want it to name both versions", err)
+	}
+	if err := verifyNpmUpdate(context.Background(), binary+"-missing", "0.8.6"); err == nil {
+		t.Fatal("a missing binary must be an error, not a success")
+	}
+}
+
 func shellQuote(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
 }

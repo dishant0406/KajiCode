@@ -105,3 +105,31 @@ default limit is 300. It comes from `maxTurns` in the config file or
 - An empty reply (no text, no tool) has its own retry path and its own cap.
 - The repeated-failure and repeated-identical-call guards still stop a run that
   loops on tool calls.
+
+## `kajicode upgrade` for an npm install
+
+1. `update.Apply` (`internal/update/apply.go`) asks the release source for the
+   newest version (`Check`). If nothing is newer, it prints "already up to date"
+   and stops.
+2. `DetectInstallMethod` sees that the running binary lives under
+   `node_modules`, so this is an npm install.
+3. `applyNpmUpdate` (`internal/update/npm_update.go`) runs
+   `npm install -g --prefix <prefix> @dishant0406/kajicode@latest`, with the npm
+   that belongs to the same Node version as the install.
+4. `verifyNpmUpdate` runs the installed binary with `--version` and reads the
+   last word of the output.
+5. If that word is the expected version, the user sees
+   "[kajicode] updated via npm to X (old -> X)".
+
+Edge cases:
+
+- **npm installed the old version again.** This happens for a few minutes after
+  a release, while npm is not serving the new packages yet. The user sees
+  "npm installed 0.8.5, not 0.8.6: the npm registry may not be serving 0.8.6
+  yet, so run `kajicode upgrade` again in a few minutes". Recovery: wait and run
+  it again.
+- **The binary is gone or cannot run after the install.** The user sees
+  "npm finished, but <path> could not be run to check its version". Recovery:
+  `npm install -g @dishant0406/kajicode@latest`.
+- **npm itself fails.** The user sees npm's own output and
+  "npm install -g ...@latest: <error>".
