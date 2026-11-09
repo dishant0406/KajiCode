@@ -1043,6 +1043,8 @@ func (a *Agent) runTurn(ctx context.Context, sess *acpSession, userText string, 
 		Autonomy:        "low",
 		MaxTurns:        maxTurns,
 		PlanMode:        sess.planModeEnabled(),
+		// The run ends when the model calls finish, not on a text-only reply.
+		RequireFinish: true,
 		// Optional relevance judge for compaction, matching exec/TUI. nil (no
 		// builder or feature off) leaves compaction byte-identical to the free
 		// prune + summarizer path.
@@ -1098,6 +1100,9 @@ func (a *Agent) runTurn(ctx context.Context, sess *acpSession, userText string, 
 	// can never satisfy this guard again.
 	wasPlanMode := sess.planModeEnabled()
 	result, runErr := a.deps.RunAgent(ctx, agentPrompt, provider, opts)
+	if result.StopNotice != "" {
+		note.text("\n\n" + result.StopNotice)
+	}
 
 	reason, stopErr := stopReasonFor(result, runErr)
 	assistantText := result.FinalAnswer

@@ -5744,6 +5744,9 @@ func (m model) runAgentWithOptions(runID int, runCtx context.Context, prompt str
 		if notice := result.TruncationNotice(); notice != "" {
 			rows = append(rows, transcriptRow{kind: rowSystem, text: notice})
 		}
+		if result.StopNotice != "" {
+			rows = append(rows, transcriptRow{kind: rowSystem, text: result.StopNotice})
+		}
 		// Persist the run's trailing prose and its final answer exactly once.
 		// flushProse captures the final turn's streamed text; FinalAnswer is stored
 		// only when it is not already the tail of what was flushed — an exact match

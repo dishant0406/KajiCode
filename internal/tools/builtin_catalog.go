@@ -53,6 +53,9 @@ func BuiltinCatalog(workspaceRoot string) []Tool {
 	// exit_plan_mode is the control tool that ends a plan-mode run; it is
 	// advertised only while plan mode is active (see agent.partitionToolsCached).
 	all = append(all, NewExitPlanModeTool())
+	// finish is the control tool that ends a run; it is advertised only in runs
+	// that require it (see agent.partitionToolsCached).
+	all = append(all, NewFinishTool())
 	// Multi-edit: atomic batch editing of one file.
 	all = append(all, NewMultiEditTool(workspaceRoot))
 	return all

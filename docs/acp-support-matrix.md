@@ -549,6 +549,8 @@ skips (dropped project hooks/plugins/MCP for an untrusted workspace) are
 surfaced on stderr exactly like exec. Intentional exceptions: the headless
 completion gate (`RequireCompletionSignal`) stays off — an editor has an
 operator present — and tracing (`Trace`) has no ACP consumer, so it is off.
+ACP runs set `RequireFinish` like the TUI: a run ends when the model calls
+`finish`, and a `Result.StopNotice` is sent to the client as a text chunk.
 
 ### 12.7 Status summary (after the model/knob work)
 

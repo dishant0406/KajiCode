@@ -312,6 +312,11 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 	// opt into the one permitted task-grounded semantic check.
 	completionPolicy := newCompletionPolicy(options.SelfCorrect != nil)
 
+	// Finish-tool completion (interactive surfaces): the run ends when the model
+	// calls finish, not when it replies without a tool call. See finish.go.
+	requireFinish := finishUsable(registry, options)
+	finish := &finishState{}
+
 	// toolDefCache memoizes each tool's rendered JSON-schema definition across
 	// turns (a tool's advertised schema is stable for the run), so partitionTools
 	// doesn't re-run the recursive schema→map conversion for every tool every turn.
@@ -823,6 +828,27 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 				})
 				continue
 			}
+			// Finish rule (interactive): once the run has used tools, or while todo
+			// items are open, a text-only reply does not end it. Remind the model
+			// to act, ask the user, or call finish. A plain question (no tools used,
+			// no open todo items) still ends here with its text answer.
+			if requireFinish {
+				openTodos := openTodoCount(registry)
+				if guards.totalToolCalls > 0 || openTodos > 0 {
+					if finish.noToolReplies >= maxNoToolReminders {
+						result.FinalAnswer = collected.Text
+						result.StopNotice = noToolStopNotice()
+						result.Messages = copyMessages(messages)
+						return result, nil
+					}
+					finish.noToolReplies++
+					messages = append(messages, kajicoderuntime.Message{
+						Role:    kajicoderuntime.MessageRoleUser,
+						Content: noToolReminder(openTodos),
+					})
+					continue
+				}
+			}
 			// Completion gate (headless): a turn with text but no tool call is the
 			// model's final answer ONLY when the work is actually done. Default off
 			// (RequireCompletionSignal), so interactive runs stay byte-identical.
@@ -886,6 +912,7 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 		// executing so the empty-turn counter resets and plan-tracking signals
 		// stay current.
 		guards.observeTurn(collected)
+		finish.noToolReplies = 0
 		for _, call := range collected.ToolCalls {
 			if call.Name == planToolName {
 				task.observe(taskStateEvent{kind: taskStateEventPlan, arguments: call.Arguments})
@@ -943,7 +970,19 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 			options.Trace.StampFirstUsefulAction()
 			var toolResult ToolResult
 			var abortErr error
-			if index >= precomputedStart && index < precomputedEnd {
+			// finishSummary is non-empty only when this call is an accepted finish.
+			finishSummary := ""
+			if requireFinish && call.Name == tools.FinishToolName {
+				toolResult, finishSummary = finish.evaluate(call, len(collected.ToolCalls), openTodoCount(registry))
+				// A final answer means there is no later turn, so wait for the
+				// checks on this run's edits; a new error refuses the finish so the
+				// model sees it and can fix it.
+				if finishSummary != "" {
+					if nudge := postEditDiagnostics.drainFinal(ctx); nudge != "" {
+						toolResult, finishSummary = finishRefused(call, "your edits introduced new problems.\n"+nudge), ""
+					}
+				}
+			} else if index >= precomputedStart && index < precomputedEnd {
 				toolResult, abortErr = precomputed[index-precomputedStart].result, precomputed[index-precomputedStart].abortErr
 			} else {
 				toolSpan := options.Trace.Span(trace.SpanToolExecution)
@@ -1007,6 +1046,19 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 				messages = appendAbortedToolResults(messages, collected.ToolCalls[index+1:])
 				result.FinalAnswer = collected.Text
 				result.PlanApproved = true
+				result.Messages = copyMessages(messages)
+				return result, nil
+			}
+			// An accepted finish ends the run with its summary as the answer. It
+			// is always the only call in the reply, so nothing is left to close out.
+			if finishSummary != "" {
+				// Surfaces show and store the answer from the text stream, so the
+				// summary is streamed like any other final answer.
+				if options.OnText != nil {
+					options.OnText(finishSummary)
+				}
+				task.observe(taskStateEvent{kind: taskStateEventCompletion, completion: completionEvaluation{Decision: CompletionComplete}})
+				result.FinalAnswer = finishSummary
 				result.Messages = copyMessages(messages)
 				return result, nil
 			}
@@ -1241,6 +1293,7 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 			Content: coach,
 		})
 	}
+	result.StopNotice = maxTurnsStopNotice(maxTurns)
 	finalExposed, _ := partitionToolsCached(registry, options, loaded, toolDefCache)
 	if answer, finalMessages, finishReason := finalAnswerAfterMaxTurns(ctx, provider, messages, finalExposed, options); strings.TrimSpace(answer) != "" {
 		result.FinalAnswer = answer

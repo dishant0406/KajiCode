@@ -524,6 +524,14 @@ type Options struct {
 	// add no model call. Default false leaves the loop byte-identical, so the
 	// interactive TUI is unaffected.
 	RequireCompletionSignal bool
+	// RequireFinish makes the finish tool the way a run ends, for INTERACTIVE
+	// surfaces (TUI, ACP). A text-only reply after the run has used tools, or
+	// while todo items are open, no longer ends the run: the loop reminds the
+	// model to act, call ask_user, or call finish, at most maxNoToolReminders
+	// times in a row. A reply in a run that used no tools and has no open todo
+	// items still ends it, so a plain question costs one model call. Ignored in
+	// plan mode. Default false leaves the loop byte-identical (see finish.go).
+	RequireFinish bool
 
 	runPermissions *permissionRunState
 	// guidelineTrack carries the mid-run AGENTS.md/KAJICODE.md discovery tracker
@@ -557,6 +565,10 @@ type Result struct {
 	// the plan (exit_plan_mode returned "approved"). The surface clears plan mode
 	// and starts executing the plan on the next run. False for every other run.
 	PlanApproved bool
+	// StopNotice is a short user-facing line that says why the harness, not the
+	// model, ended the run (the tool-turn limit, or repeated replies with no tool
+	// call). Empty for a normal completion. Surfaces show it under the answer.
+	StopNotice string
 }
 
 // Truncated reports whether the final response ended abnormally (cut off at the

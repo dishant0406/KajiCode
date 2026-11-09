@@ -412,6 +412,9 @@ func CoreToolsScoped(workspaceRoot string, scope PathScope) []Tool {
 	// mode is active (see agent.partitionToolsCached), so a normal run's tool list
 	// is unchanged.
 	tools = append(tools, NewExitPlanModeTool())
+	// finish follows the same rule: registered for every run, advertised only
+	// in runs that require it.
+	tools = append(tools, NewFinishTool())
 	tools = append(tools, NewMultiEditTool(workspaceRoot))
 	return tools
 }

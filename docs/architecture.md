@@ -176,6 +176,32 @@ inline. Because the run is rebuilt every turn, toggling plan
 mode (`/plan`, `Ctrl+G`; the `plan` config option over ACP) takes effect on the
 next run.
 
+### Finish Tool
+
+Interactive runs (TUI and ACP set `Options.RequireFinish`) end when the model
+calls the `finish` tool, not when it replies without a tool call. The rule lives
+in `internal/agent/finish.go`:
+
+- `finish` is registered like any other tool but advertised only when
+  `finishRequired` is true (`partitionToolsCached`), so headless `exec` and
+  sub-agent runs keep the text-reply ending and their tool list is unchanged.
+- A text-only reply after the run has used tools, or while todo items are open,
+  gets `noToolReminder` as a user message and the loop continues. At most
+  `maxNoToolReminders` (3) in a row; any tool call resets the count. After that
+  the run stops with `Result.StopNotice`.
+- A text-only reply in a run that used no tools and has no open todo items still
+  ends the run, so a plain question costs one model call.
+- A `finish` call is decided by `finishState.evaluate` before any tool executes.
+  It is refused when the summary is empty, when it shares a reply with another
+  tool call, once when todo items are open, and when the final diagnostics drain
+  reports a new error. An accepted call streams its summary through `OnText` and
+  becomes `Result.FinalAnswer`.
+- Plan mode ignores the rule. `Result.StopNotice` is also set when a run hits
+  the tool-turn limit.
+
+`docs/design.md` records why this design was chosen; `docs/flow.md` walks the
+flow and its edge cases.
+
 ### Wire Protocol Routing
 
 A provider can serve its models on several wire protocols from one base URL

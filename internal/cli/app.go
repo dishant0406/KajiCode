@@ -957,6 +957,8 @@ func runInteractiveTUIWithSetup(stderr io.Writer, deps appDeps, permissionMode a
 			// Background sub-agent completion push: the interactive run learns a
 			// finished task's result on its next turn instead of polling TaskOutput.
 			TaskCompletions: agentRuntime.completions(),
+			// The run ends when the model calls finish, not on a text-only reply.
+			RequireFinish: true,
 		},
 		// LoadSkills backs /skills and direct /<skill-name> invocation in the TUI.
 		// It resolves against the same merged set (default dir + plugin skill

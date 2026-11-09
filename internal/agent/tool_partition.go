@@ -34,6 +34,10 @@ func partitionToolsCached(registry *tools.Registry, options Options, loaded map[
 		if tool.Name() == tools.ExitPlanModeToolName && !options.PlanMode {
 			continue
 		}
+		// finish is advertised only in runs that end through it.
+		if tool.Name() == tools.FinishToolName && !finishRequired(options) {
+			continue
+		}
 		visible = append(visible, tool)
 		if tools.IsDeferralEligible(tool) {
 			eligible++

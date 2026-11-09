@@ -158,6 +158,9 @@ func buildSystemPromptParts(options Options) systemPromptParts {
 	if planMode := planModeContext(options); planMode != "" {
 		builder.add(promptSectionPlanMode, planMode)
 	}
+	if finish := finishContext(options); finish != "" {
+		builder.add(promptSectionFinish, finish)
+	}
 	policy := strings.TrimSpace(confirmationPolicy)
 	if policy != "" {
 		builder.add(promptSectionConfirmation, policy)

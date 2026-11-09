@@ -346,6 +346,9 @@ func TestACPRunTurnWiresSandboxAndScopedRegistry(t *testing.T) {
 	if captured.Registry != reg {
 		t.Fatal("scoped registry was not wired into agent.Options")
 	}
+	if !captured.RequireFinish {
+		t.Fatal("ACP runs must end through the finish tool (RequireFinish)")
+	}
 	if len(captured.Skills) != 1 || captured.Skills[0].Name != "demo" {
 		t.Fatalf("skill catalog was not wired into agent.Options: %#v", captured.Skills)
 	}
