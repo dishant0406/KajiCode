@@ -39,9 +39,12 @@ branch of the loop in `loop.go`.
   They see the model keep working. The loop does not look at what the reply
   says, and it does not look at how many tools this run has used: every
   "continue" starts a new run with zero tools, so that number proves nothing.
-- **A plain question.** The model can answer in the `finish` summary and the run
-  ends in one model call. If it answers in text first, it gets one reminder and
-  then calls `finish` with a one-line summary.
+- **A plain question.** The prompt tells the model to put its answer in the
+  `finish` summary, so the run ends in one model call. If it answers in text
+  first, it gets one reminder and then calls `finish`.
+- **An ACP client that cannot show questions** (`OnAskUser` is nil). `ask_user`
+  would only answer "assume something", so the reminder and the prompt tell the
+  model to put a real question in the `finish` summary instead.
 - **Open todo items** are read by `openTodoCount` (`internal/agent/finish.go`)
   from the newest `todo_write` call in the conversation history. After a restart
   or resume the history is replayed, so the items are still seen. If the history

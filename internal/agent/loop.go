@@ -843,7 +843,7 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 				finish.noToolReplies++
 				messages = append(messages, kajicoderuntime.Message{
 					Role:    kajicoderuntime.MessageRoleUser,
-					Content: noToolReminder(openTodoCount(messages, registry)),
+					Content: noToolReminder(openTodoCount(messages, registry), options.OnAskUser != nil),
 				})
 				continue
 			}

@@ -177,7 +177,16 @@ restart.
 
 - A plain question costs one extra model call at worst. It can answer inside
   `finish` and stay at one call; the prompt says so. If the model answers in
-  text first, the user may see the answer and then a one-line summary.
+  text first, the user may see the answer twice (the text, then the summary).
+  We did not tell the model to shrink the summary to one line when it already
+  answered in text: ACP saves `Result.FinalAnswer` as the assistant turn in its
+  history, so a one-line summary would replace the real answer there.
+- In an ACP client that cannot show questions, `ask_user` only answers "assume
+  something". There the reminder and the prompt send a real question out in the
+  `finish` summary, so the user can answer it.
+- The loop does not check whether the model can call tools. A model without tool
+  support would be reminded 3 times and then stopped with the notice. Such a
+  model could not do coding work anyway.
 - After a compaction, the history may no longer hold the `todo_write` call. Then
   the check falls back to the in-memory list, which a restart empties. The
   reminder still fires, because it no longer depends on the todo count. Only the

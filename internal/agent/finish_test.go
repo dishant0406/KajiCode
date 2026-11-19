@@ -307,3 +307,43 @@ func TestMaxTurnsSetsStopNotice(t *testing.T) {
 		t.Fatalf("StopNotice = %q, want the tool-turn limit notice", result.StopNotice)
 	}
 }
+
+// Without an ask_user front-end (an ACP client that cannot show questions),
+// ask_user only answers "assume something", so the wording must send a real
+// question out through the finish summary instead.
+func TestFinishWordingFollowsAskUserAvailability(t *testing.T) {
+	ask := func(context.Context, AskUserRequest) (AskUserResponse, error) { return AskUserResponse{}, nil }
+	const viaSummary = "put your question in the summary"
+	const viaAskUser = "call ask_user"
+
+	if r := noToolReminder(0, true); !strings.Contains(r, viaAskUser) || strings.Contains(r, viaSummary) {
+		t.Fatalf("reminder with ask_user available:\n%s", r)
+	}
+	if r := noToolReminder(0, false); !strings.Contains(r, viaSummary) || strings.Contains(r, viaAskUser) {
+		t.Fatalf("reminder without ask_user:\n%s", r)
+	}
+	withAsk := finishContext(Options{RequireFinish: true, OnAskUser: ask})
+	if !strings.Contains(withAsk, viaAskUser) || strings.Contains(withAsk, viaSummary) {
+		t.Fatalf("prompt with ask_user available:\n%s", withAsk)
+	}
+	withoutAsk := finishContext(Options{RequireFinish: true})
+	if !strings.Contains(withoutAsk, viaSummary) || strings.Contains(withoutAsk, viaAskUser) {
+		t.Fatalf("prompt without ask_user:\n%s", withoutAsk)
+	}
+	if finishContext(Options{}) != "" || finishContext(Options{RequireFinish: true, PlanMode: true}) != "" {
+		t.Fatal("the finish prompt must be empty when the run does not require finish")
+	}
+}
+
+// ACP saves Result.FinalAnswer as the assistant turn in its history, so the
+// prompt must not tell the model to shrink the summary when it already answered
+// in text. The answer belongs in the summary, once.
+func TestFinishPromptKeepsTheAnswerInTheSummary(t *testing.T) {
+	prompt := finishContext(Options{RequireFinish: true})
+	if !strings.Contains(prompt, "Put your final answer to the user in the finish `summary`") {
+		t.Fatalf("prompt does not put the answer in the summary:\n%s", prompt)
+	}
+	if strings.Contains(prompt, "one short line") {
+		t.Fatalf("prompt tells the model to shrink the summary:\n%s", prompt)
+	}
+}

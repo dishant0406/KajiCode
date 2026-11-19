@@ -59,9 +59,18 @@ func finishContext(options Options) string {
 		"- Never say you will do something and then stop. Do it with a tool call in the same reply.\n" +
 		"- When the whole task is complete and checked, call " + tools.FinishToolName +
 		" alone. This is the only way to end a task, even for a simple question.\n" +
-		"- Put your final answer to the user in the finish `summary`. If you already wrote the full answer in text " +
-		"earlier in this task, keep the summary to one short line.\n" +
-		"- If you need the user's input to continue, call ask_user. Do not ask in plain text and stop."
+		"- Put your final answer to the user in the finish `summary`. Do not write it as plain text before calling finish.\n" +
+		"- " + needUserInputLine(options.OnAskUser != nil) + " Do not ask in plain text and stop."
+}
+
+// needUserInputLine says how the model reaches the user. Without an ask_user
+// front-end (an ACP client that cannot show questions) ask_user only answers
+// "assume something", so a real question has to go out in the finish summary.
+func needUserInputLine(canAsk bool) string {
+	if canAsk {
+		return "If you need the user's input to continue, call ask_user."
+	}
+	return "If you need the user's input to continue, call " + tools.FinishToolName + " and put your question in the summary."
 }
 
 // openTodoCount returns how many todo items are still pending or in progress.
@@ -97,10 +106,10 @@ func openTodoCount(messages []kajicoderuntime.Message, registry *tools.Registry)
 }
 
 // noToolReminder is the automatic message sent after a text-only reply.
-func noToolReminder(openTodos int) string {
+func noToolReminder(openTodos int, canAsk bool) string {
 	reminder := "You replied without calling a tool, so " + noToolReminderMarker + ". Do one of these now:\n" +
 		"- If work remains, do the next step with a tool call.\n" +
-		"- If you need the user's input, call ask_user.\n" +
+		"- " + needUserInputLine(canAsk) + "\n" +
 		"- If the whole task is complete, call " + tools.FinishToolName + " with a summary.\n"
 	if openTodos > 0 {
 		reminder += "The todo list still has " + strconv.Itoa(openTodos) + " open item(s).\n"
