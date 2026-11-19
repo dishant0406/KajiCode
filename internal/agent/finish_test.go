@@ -36,17 +36,23 @@ func runWithFinish(t *testing.T, turns ...[]kajicoderuntime.StreamEvent) (Result
 	return result, provider
 }
 
-// The real endings from the session that motivated the rule: each came after
-// tool calls, with todo items open, and each ended the run. None may end it now.
-func TestFinishRuleRemindsOnRealPrematureEndings(t *testing.T) {
-	endings := []string{
-		"Doing that now.",
-		"Now the Blender props — 7 new builders, rendered one at a time. Let me look at an existing builder to match the quality bar.",
-		"Next step: compose the mp4 from the current minimal stations so the file on disk matches the code.",
-		"Stopping here to report honestly rather than keep iterating silently.",
-		"Reply **yes** and I go on to the look, storyboard, voice, props and render. Or tell me what to change.",
-	}
-	for _, ending := range endings {
+// The real endings from the sessions that motivated the rule. Each one ended a
+// run. None may end it now.
+var prematureEndings = []string{
+	"Doing that now.",
+	"Now the Blender props — 7 new builders, rendered one at a time. Let me look at an existing builder to match the quality bar.",
+	"Next step: compose the mp4 from the current minimal stations so the file on disk matches the code.",
+	"Stopping here to report honestly rather than keep iterating silently.",
+	"Reply **yes** and I go on to the look, storyboard, voice, props and render. Or tell me what to change.",
+	"I’ll compare the actual query and source-count paths, then trace your Anime Kitsu addon’s exact endpoint.",
+	"I found two actual gaps beyond the unpublished config. I’m fixing both with strict episode checks, then I’ll run the picker-facing tests.",
+	"I’ll get this to a compiled, tested implementation—not stop at adapter names. First I’m locating the exact current errors.",
+}
+
+// A text-only reply in the middle of a run (tools used, todo items open) gets a
+// reminder, and the run goes on to finish.
+func TestFinishRuleRemindsOnPrematureEndingsMidRun(t *testing.T) {
+	for _, ending := range prematureEndings {
 		result, provider := runWithFinish(t,
 			planTurn("completed", "pending"),
 			textTurn(ending),
@@ -65,12 +71,91 @@ func TestFinishRuleRemindsOnRealPrematureEndings(t *testing.T) {
 	}
 }
 
-// A plain question uses no tools and has no todo list: its text answer ends
-// the run in one model call.
-func TestFinishRuleLetsPlainAnswerEndTheRun(t *testing.T) {
-	result, provider := runWithFinish(t, textTurn("The function parses the config file."))
+// The case that stopped session kaji_20261119041549_1e956dfa three times: a new
+// run (every "continue" is one) whose FIRST reply is text-only. No tool has run
+// yet in this run, so nothing about the run itself says the task is unfinished.
+func TestFinishRuleRemindsOnTheFirstReplyOfARun(t *testing.T) {
+	for _, ending := range prematureEndings {
+		result, provider := runWithFinish(t,
+			textTurn(ending),
+			finishTurn("done"),
+		)
+		if len(provider.requests) != 2 {
+			t.Fatalf("ending %q: run stopped after %d requests, want 2", ending, len(provider.requests))
+		}
+		if !someRequestContains(provider.requests, noToolReminderMarker) {
+			t.Fatalf("ending %q: no reminder was injected", ending)
+		}
+		if result.FinalAnswer != "done" || result.StopNotice != "" {
+			t.Fatalf("ending %q: final=%q notice=%q", ending, result.FinalAnswer, result.StopNotice)
+		}
+	}
+}
+
+// openTodosHistory is the conversation of an earlier run: a todo_write call with
+// 3 of 5 items open. It stands for a session resumed after a restart, when the
+// todo_write tool's in-memory list is empty.
+func openTodosHistory() []kajicoderuntime.Message {
+	args := `{"todos":[` +
+		`{"content":"a","status":"completed"},{"content":"b","status":"completed"},` +
+		`{"content":"c","status":"in_progress"},{"content":"d","status":"pending"},{"content":"e","status":"pending"}]}`
+	return []kajicoderuntime.Message{
+		{Role: kajicoderuntime.MessageRoleUser, Content: "port torrentio"},
+		{Role: kajicoderuntime.MessageRoleAssistant, ToolCalls: []kajicoderuntime.ToolCall{{ID: "old", Name: "todo_write", Arguments: args}}},
+		{Role: kajicoderuntime.MessageRoleTool, ToolCallID: "old", Content: "ok"},
+	}
+}
+
+// After a restart the in-memory todo list is empty, but the history still holds
+// the last todo_write call. The open items must be seen from there.
+func TestFinishRuleSeesTodosFromEarlierHistory(t *testing.T) {
+	provider := &mockProvider{turns: [][]kajicoderuntime.StreamEvent{
+		textTurn("I’m fixing both, then I’ll run the tests."),
+		finishTurn("too early"),
+		finishTurn("really done"),
+	}}
+	result, err := Run(context.Background(), "continue", provider, Options{
+		Registry:        finishRegistry(),
+		MaxTurns:        10,
+		RequireFinish:   true,
+		InitialMessages: openTodosHistory(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(provider.requests) != 3 || result.FinalAnswer != "really done" {
+		t.Fatalf("requests=%d final=%q", len(provider.requests), result.FinalAnswer)
+	}
+	if !someRequestContains(provider.requests, "still has 3 open item(s)") {
+		t.Fatal("the reminder did not report the 3 open items from the history")
+	}
+	if !someRequestContains(provider.requests, "3 todo item(s) are still open") {
+		t.Fatal("finish was not refused once for the 3 open items from the history")
+	}
+}
+
+func TestOpenTodoCountPrefersHistoryAndFallsBackToTheTool(t *testing.T) {
+	registry := finishRegistry()
+	if got := openTodoCount(nil, registry); got != 0 {
+		t.Fatalf("no history and an empty tool list = %d, want 0", got)
+	}
+	if got := openTodoCount(openTodosHistory(), registry); got != 3 {
+		t.Fatalf("history with 3 open items = %d, want 3", got)
+	}
+	// History with a malformed todo_write call falls back to the tool's list.
+	bad := []kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleAssistant,
+		ToolCalls: []kajicoderuntime.ToolCall{{ID: "x", Name: "todo_write", Arguments: "{not json"}}}}
+	if got := openTodoCount(bad, registry); got != 0 {
+		t.Fatalf("malformed history with an empty tool list = %d, want 0", got)
+	}
+}
+
+// A plain question also goes through finish now. It can answer in the summary,
+// so it still costs one model call.
+func TestFinishRuleLetsAPlainQuestionAnswerThroughFinish(t *testing.T) {
+	result, provider := runWithFinish(t, finishTurn("The function parses the config file."))
 	if len(provider.requests) != 1 {
-		t.Fatalf("plain answer took %d requests, want 1", len(provider.requests))
+		t.Fatalf("answer through finish took %d requests, want 1", len(provider.requests))
 	}
 	if result.FinalAnswer != "The function parses the config file." || result.StopNotice != "" {
 		t.Fatalf("final=%q notice=%q", result.FinalAnswer, result.StopNotice)

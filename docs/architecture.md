@@ -185,12 +185,14 @@ in `internal/agent/finish.go`:
 - `finish` is registered like any other tool but advertised only when
   `finishRequired` is true (`partitionToolsCached`), so headless `exec` and
   sub-agent runs keep the text-reply ending and their tool list is unchanged.
-- A text-only reply after the run has used tools, or while todo items are open,
-  gets `noToolReminder` as a user message and the loop continues. At most
-  `maxNoToolReminders` (3) in a row; any tool call resets the count. After that
-  the run stops with `Result.StopNotice`.
-- A text-only reply in a run that used no tools and has no open todo items still
-  ends the run, so a plain question costs one model call.
+- A text-only reply never ends the run, including the first reply of a run (every
+  "continue" starts a fresh run). It gets `noToolReminder` as a user message and
+  the loop continues. At most `maxNoToolReminders` (3) in a row; any tool call
+  resets the count. After that the run stops with `Result.StopNotice`. A plain
+  question goes through `finish` too and can answer in the summary.
+- Open todo items are read by `openTodoCount` from the newest `todo_write` call in
+  the conversation history, which survives a restart or resume. It falls back to
+  the tool's in-memory list when the history has none.
 - A `finish` call is decided by `finishState.evaluate` before any tool executes.
   It is refused when the summary is empty, when it shares a reply with another
   tool call, once when todo items are open, and when the final diagnostics drain

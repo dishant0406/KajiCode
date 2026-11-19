@@ -62,6 +62,8 @@ model answers "ok, continuing" without a tool call, the run ends. The check
 reads only two facts (tool calls in this run, open todo items), so it cannot see
 that case.
 
+**Update:** this exception was removed. See entry 8.
+
 ## 3. Reminder cap: 3 in a row, reset by any tool call
 
 **What we chose.** `maxNoToolReminders = 3`. Any tool call resets the count.
@@ -129,3 +131,54 @@ thing the user runs. The check also catches the case where npm installed the new
 wrapper package but not the platform binary.
 
 **Trade-off.** One extra process start per upgrade. It takes a few milliseconds.
+
+## 8. The plain-chat exception is removed; todo items come from the history
+
+**The problem.** Entry 2 let a text-only reply end the run when the run had used
+no tools and no todo items were open. The point was to keep "what does this
+function do?" at one model call. But it broke the real case. Every "continue"
+starts a new run, and a new run has used zero tools. So when the model started a
+run with "I'll fix both, then run the tests." and nothing else, the loop saw
+"no tools used" and ended the run. That is exactly the stop we were trying to
+remove.
+
+We saw it in session `kaji_20261119041549_1e956dfa`. Three runs stopped this way.
+Each made one model request and ended. The finish rule was live: an earlier run
+in the same session ended correctly through `finish`.
+
+The second check had a hole too. Open todo items were read from the todo_write
+tool's in-memory copy. A restarted kajicode has an empty copy, and nothing
+restores it on resume. The session had 3 of 5 items open and the rule could not
+see them. (We also found that the TUI does not wire a durable todo store, so
+"read the saved list" would not have worked there. The conversation history does
+carry the list.)
+
+**What we chose.**
+
+- A text-only reply never ends an interactive run. The first reply of a run gets
+  the reminder like any other.
+- Open todo items are read from the newest `todo_write` call in the conversation
+  history (`openTodoCount`). The in-memory list is only a fallback.
+
+**Why.** Basically, "how many tools did this run use" and "does the reply sound
+unfinished" are both guesses. The model's own `finish` call is the one real
+signal. The history is the one source that is the same before and after a
+restart.
+
+**What we rejected.**
+
+- *Keep the exception but count tools across the whole session.* It still guesses.
+  A session whose last task is done would be treated as unfinished, or the other
+  way round, depending on what the count says.
+- *Wire a durable todo store into the TUI.* It is a bigger change in two
+  packages, and the history already has the list.
+
+**Trade-offs.**
+
+- A plain question costs one extra model call at worst. It can answer inside
+  `finish` and stay at one call; the prompt says so. If the model answers in
+  text first, the user may see the answer and then a one-line summary.
+- After a compaction, the history may no longer hold the `todo_write` call. Then
+  the check falls back to the in-memory list, which a restart empties. The
+  reminder still fires, because it no longer depends on the todo count. Only the
+  "refuse `finish` once while items are open" push is lost.

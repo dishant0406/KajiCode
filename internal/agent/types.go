@@ -525,12 +525,12 @@ type Options struct {
 	// interactive TUI is unaffected.
 	RequireCompletionSignal bool
 	// RequireFinish makes the finish tool the way a run ends, for INTERACTIVE
-	// surfaces (TUI, ACP). A text-only reply after the run has used tools, or
-	// while todo items are open, no longer ends the run: the loop reminds the
-	// model to act, call ask_user, or call finish, at most maxNoToolReminders
-	// times in a row. A reply in a run that used no tools and has no open todo
-	// items still ends it, so a plain question costs one model call. Ignored in
-	// plan mode. Default false leaves the loop byte-identical (see finish.go).
+	// surfaces (TUI, ACP). A text-only reply never ends the run: the loop
+	// reminds the model to act, call ask_user, or call finish, at most
+	// maxNoToolReminders times in a row. This holds for a plain question too,
+	// which then costs one extra model call. Ignored in plan mode and when the
+	// finish tool is unavailable. Default false leaves the loop byte-identical
+	// (see finish.go).
 	RequireFinish bool
 
 	runPermissions *permissionRunState

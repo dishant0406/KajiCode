@@ -32,13 +32,21 @@ This is for runs in the app (TUI) and over ACP (the editor connection). Both set
 This is the case the whole feature exists for. The check is in the no-tool
 branch of the loop in `loop.go`.
 
-- **The run used no tools and no todo items are open.** This is a plain answer
-  to a plain question. The run ends with that text. One model call.
-- **The run already used a tool, or todo items are open.** The loop adds
+- **Any text-only reply, including the first reply of a run.** The loop adds
   `noToolReminder` as a user message and asks the model again. The reminder
   says: do the next step with a tool, or call `ask_user`, or call `finish`. If
   todo items are open, it says how many. The user does not see the reminder.
-  They see the model keep working.
+  They see the model keep working. The loop does not look at what the reply
+  says, and it does not look at how many tools this run has used: every
+  "continue" starts a new run with zero tools, so that number proves nothing.
+- **A plain question.** The model can answer in the `finish` summary and the run
+  ends in one model call. If it answers in text first, it gets one reminder and
+  then calls `finish` with a one-line summary.
+- **Open todo items** are read by `openTodoCount` (`internal/agent/finish.go`)
+  from the newest `todo_write` call in the conversation history. After a restart
+  or resume the history is replayed, so the items are still seen. If the history
+  has none (compacted, or the run never planned), it uses the `todo_write`
+  tool's in-memory list.
 - **The model ignores the reminder.** It gets up to 3 reminders in a row
   (`maxNoToolReminders`). Any tool call sets the count back to 0.
 - **The model ignores 3 reminders.** The run stops on the 4th text-only reply.

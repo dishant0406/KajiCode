@@ -4,13 +4,16 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/dishant0406/KajiCode/internal/kajicoderuntime"
 	"github.com/dishant0406/KajiCode/internal/tools"
 )
 
 // Finish-tool completion (Options.RequireFinish). The model, not the harness,
-// says when a task is done: it calls the finish tool. A text-only reply in the
-// middle of a task gets a reminder instead of ending the run, so a model that
-// writes "next I will do X" and then stops is pushed to do X.
+// says when a task is done: it calls the finish tool. A text-only reply never
+// ends the run; it gets a reminder instead, so a model that writes "next I will
+// do X" and then stops is pushed to do X. No signal is read from the wording of
+// the reply or from how many tools this run has used: every "continue" starts a
+// fresh run, so those say nothing about whether the task is done.
 
 // maxNoToolReminders bounds how many text-only replies IN A ROW get a reminder.
 // Any tool call resets the count. Once spent, the run stops with a StopNotice
@@ -55,14 +58,27 @@ func finishContext(options Options) string {
 		"- A reply without a tool call does NOT end a task. While work remains, every reply must include a tool call.\n" +
 		"- Never say you will do something and then stop. Do it with a tool call in the same reply.\n" +
 		"- When the whole task is complete and checked, call " + tools.FinishToolName +
-		" alone, with a summary for the user. This is the only way to end a task.\n" +
-		"- If you need the user's input to continue, call ask_user. Do not ask in plain text and stop.\n" +
-		"- A simple question that needs no tools can be answered directly in plain text."
+		" alone. This is the only way to end a task, even for a simple question.\n" +
+		"- Put your final answer to the user in the finish `summary`. If you already wrote the full answer in text " +
+		"earlier in this task, keep the summary to one short line.\n" +
+		"- If you need the user's input to continue, call ask_user. Do not ask in plain text and stop."
 }
 
-// openTodoCount returns how many todo items are still pending or in progress,
-// read from the todo_write tool's in-memory list. 0 when there is no list.
-func openTodoCount(registry *tools.Registry) int {
+// openTodoCount returns how many todo items are still pending or in progress.
+// It reads the newest todo_write call in the conversation, which survives a
+// restart or resume because the history is replayed into every run. Only when
+// the history holds no usable todo_write call (a compacted history, or a run
+// that never planned) does it fall back to the todo_write tool's in-memory list.
+func openTodoCount(messages []kajicoderuntime.Message, registry *tools.Registry) int {
+	if plan, found, valid := latestTaskPlan(messages); found && valid {
+		open := 0
+		for _, item := range plan {
+			if planStatusRemaining(item.Status) {
+				open++
+			}
+		}
+		return open
+	}
 	tool, ok := registry.Get(planToolName)
 	if !ok {
 		return 0

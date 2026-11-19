@@ -828,26 +828,24 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 				})
 				continue
 			}
-			// Finish rule (interactive): once the run has used tools, or while todo
-			// items are open, a text-only reply does not end it. Remind the model
-			// to act, ask the user, or call finish. A plain question (no tools used,
-			// no open todo items) still ends here with its text answer.
+			// Finish rule (interactive): a text-only reply never ends the run. Remind
+			// the model to act, ask the user, or call finish, up to
+			// maxNoToolReminders in a row. This includes the FIRST reply of a run:
+			// every "continue" starts a fresh run, so "no tools used yet" says
+			// nothing about whether the task is done.
 			if requireFinish {
-				openTodos := openTodoCount(registry)
-				if guards.totalToolCalls > 0 || openTodos > 0 {
-					if finish.noToolReplies >= maxNoToolReminders {
-						result.FinalAnswer = collected.Text
-						result.StopNotice = noToolStopNotice()
-						result.Messages = copyMessages(messages)
-						return result, nil
-					}
-					finish.noToolReplies++
-					messages = append(messages, kajicoderuntime.Message{
-						Role:    kajicoderuntime.MessageRoleUser,
-						Content: noToolReminder(openTodos),
-					})
-					continue
+				if finish.noToolReplies >= maxNoToolReminders {
+					result.FinalAnswer = collected.Text
+					result.StopNotice = noToolStopNotice()
+					result.Messages = copyMessages(messages)
+					return result, nil
 				}
+				finish.noToolReplies++
+				messages = append(messages, kajicoderuntime.Message{
+					Role:    kajicoderuntime.MessageRoleUser,
+					Content: noToolReminder(openTodoCount(messages, registry)),
+				})
+				continue
 			}
 			// Completion gate (headless): a turn with text but no tool call is the
 			// model's final answer ONLY when the work is actually done. Default off
@@ -973,7 +971,7 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 			// finishSummary is non-empty only when this call is an accepted finish.
 			finishSummary := ""
 			if requireFinish && call.Name == tools.FinishToolName {
-				toolResult, finishSummary = finish.evaluate(call, len(collected.ToolCalls), openTodoCount(registry))
+				toolResult, finishSummary = finish.evaluate(call, len(collected.ToolCalls), openTodoCount(messages, registry))
 				// A final answer means there is no later turn, so wait for the
 				// checks on this run's edits; a new error refuses the finish so the
 				// model sees it and can fix it.
