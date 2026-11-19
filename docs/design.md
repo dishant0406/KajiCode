@@ -191,3 +191,42 @@ restart.
   the check falls back to the in-memory list, which a restart empties. The
   reminder still fires, because it no longer depends on the todo count. Only the
   "refuse `finish` once while items are open" push is lost.
+
+## 9. An npm install asks npm, not GitHub, which version is newest
+
+**The problem.** `kajicode upgrade` failed with "github release check failed (403
+Forbidden): GitHub API rate limit (limit 60) reached; retry in about 13m47s".
+The command asked the GitHub releases API for the newest version before it ran
+`npm install -g`. That API allows 60 requests an hour per network address when
+you are not logged in, and something else on the machine had used them up. An npm
+install does not need GitHub at all.
+
+**What we chose.** For a plain npm install, `applyNpm` runs
+`npm view @dishant0406/kajicode version --prefer-online` and compares the answer
+with the running version. It installs only when npm's version is newer, then
+runs the check from entry 7. Standalone installs still use the GitHub API,
+because they download the release archive from GitHub anyway.
+
+**Why npm's answer.** The install is done by npm, so npm is the one source that
+agrees with what the install will get. If GitHub says 0.8.7 exists but the npm
+registry has not caught up, the user now sees "already up to date" for what npm
+can install, not an install of the old version with a "newer exists" message.
+`--prefer-online` skips npm's cached package info, which can be minutes old right
+after a release.
+
+**What we rejected.**
+
+- *Send a GitHub token with the request.* It would raise the limit to 5,000 an
+  hour, but it needs a token on every machine, and the GitHub answer still does
+  not match what npm will install.
+- *Run `npm install -g @latest` first and compare after.* It touches the install
+  on every run, even when it is already current.
+
+**Trade-offs.**
+
+- A caller that sets its own release source (`--endpoint`, `--repository`, or
+  `KAJICODE_UPDATE_RELEASE_URL`) keeps the GitHub path, so those options still
+  mean what they said.
+- `kajicode update --check` still uses the GitHub API, so it can still hit the
+  rate limit. We did not change it.
+- The lookup starts one extra npm process, which takes about a second.

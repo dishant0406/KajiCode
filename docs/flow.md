@@ -119,21 +119,37 @@ default limit is 300. It comes from `maxTurns` in the config file or
 
 ## `kajicode upgrade` for an npm install
 
-1. `update.Apply` (`internal/update/apply.go`) asks the release source for the
-   newest version (`Check`). If nothing is newer, it prints "already up to date"
-   and stops.
-2. `DetectInstallMethod` sees that the running binary lives under
-   `node_modules`, so this is an npm install.
-3. `applyNpmUpdate` (`internal/update/npm_update.go`) runs
-   `npm install -g --prefix <prefix> @dishant0406/kajicode@latest`, with the npm
-   that belongs to the same Node version as the install.
-4. `verifyNpmUpdate` runs the installed binary with `--version` and reads the
+1. `update.Apply` (`internal/update/apply.go`) finds the running binary and runs
+   `DetectInstallMethod`. A binary under `node_modules` is an npm install.
+2. For a plain npm install, `usesNpmRegistry` is true and `applyNpm`
+   (`internal/update/npm_update.go`) takes over. It does not call the GitHub API.
+   It runs `npm view @dishant0406/kajicode version --prefer-online` with the npm
+   that belongs to the same Node version as the install, and reads the newest
+   version from the answer.
+3. If that version is not newer than the running one, the user sees
+   "already up to date". Nothing is installed.
+4. Otherwise `applyNpmUpdate` runs
+   `npm install -g --prefix <prefix> @dishant0406/kajicode@latest`.
+5. `verifyNpmUpdate` runs the installed binary with `--version` and reads the
    last word of the output.
-5. If that word is the expected version, the user sees
+6. If that word is the expected version, the user sees
    "[kajicode] updated via npm to X (old -> X)".
+
+Other installs, and npm installs where the caller sets its own release source
+(`--endpoint`, `--repository`, or `KAJICODE_UPDATE_RELEASE_URL`), use `Check`
+against the GitHub releases API, then download, verify and replace the binary
+(standalone) or run the same npm install (npm).
 
 Edge cases:
 
+- **GitHub is rate limited or down.** An npm install does not notice, because it
+  never calls GitHub. A standalone install still fails with
+  "github release check failed (403 Forbidden): GitHub API rate limit (limit 60)
+  reached; retry in about 13m47s". Recovery: wait, or set
+  `KAJICODE_UPDATE_RELEASE_URL`.
+- **npm cannot answer the lookup.** The user sees
+  "npm view @dishant0406/kajicode version: <error>". Nothing is installed.
+  Recovery: `npm install -g @dishant0406/kajicode@latest`.
 - **npm installed the old version again.** This happens for a few minutes after
   a release, while npm is not serving the new packages yet. The user sees
   "npm installed 0.8.5, not 0.8.6: the npm registry may not be serving 0.8.6

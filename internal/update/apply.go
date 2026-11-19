@@ -38,14 +38,10 @@ var (
 )
 
 // Apply checks for an update and, if one is available, installs it: via
-// `npm install -g` for npm-managed installs, or by downloading, verifying,
-// and atomically replacing the binary for standalone installs.
+// `npm install -g` for npm-managed installs (npm also says which version is
+// newest, so the GitHub API is not used), or by downloading, verifying, and
+// atomically replacing the binary for standalone installs.
 func Apply(ctx context.Context, options Options) (ApplyResult, error) {
-	checkResult, err := Check(ctx, options)
-	if err != nil {
-		return ApplyResult{}, err
-	}
-
 	executablePath, err := os.Executable()
 	if err != nil {
 		return ApplyResult{}, fmt.Errorf("resolve current executable: %w", err)
@@ -60,11 +56,19 @@ func Apply(ctx context.Context, options Options) (ApplyResult, error) {
 	// on a future upgrade that may never come.
 	CleanupStaleBinary(executablePath)
 
+	method := DetectInstallMethod(executablePath)
+	if usesNpmRegistry(method, options) {
+		return applyNpm(ctx, options, executablePath)
+	}
+
+	checkResult, err := Check(ctx, options)
+	if err != nil {
+		return ApplyResult{}, err
+	}
 	if !checkResult.UpdateAvailable {
 		return ApplyResult{Result: checkResult, Message: "already up to date"}, nil
 	}
 
-	method := DetectInstallMethod(executablePath)
 	switch method {
 	case InstallMethodNpm:
 		if err := applyNpmUpdate(ctx, executablePath); err != nil {
