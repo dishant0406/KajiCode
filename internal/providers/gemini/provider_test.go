@@ -682,3 +682,21 @@ func TestGeminiRequestOmitsAdditionalPropertiesInToolSchema(t *testing.T) {
 		t.Fatalf("tool property must survive sanitization: %#v", props)
 	}
 }
+
+func TestGeminiRequestRequiresAToolCallOnlyWhenAsked(t *testing.T) {
+	provider, err := New(Options{Model: "gemini-test", APIKey: "k"})
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+	messages := []kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleUser, Content: "hi"}}
+	tools := []kajicoderuntime.ToolDefinition{{Name: "finish", Description: "end", Parameters: map[string]any{"type": "object"}}}
+
+	plain, _ := provider.geminiRequest(kajicoderuntime.CompletionRequest{Messages: messages, Tools: tools})
+	if plain.ToolConfig != nil {
+		t.Fatalf("toolConfig = %v, want it omitted by default", plain.ToolConfig)
+	}
+	forced, _ := provider.geminiRequest(kajicoderuntime.CompletionRequest{Messages: messages, Tools: tools, RequireToolCall: true})
+	if forced.ToolConfig == nil || forced.ToolConfig.FunctionCallingConfig.Mode != "ANY" {
+		t.Fatalf("toolConfig = %v, want mode ANY", forced.ToolConfig)
+	}
+}

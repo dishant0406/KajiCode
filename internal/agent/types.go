@@ -409,6 +409,10 @@ type Options struct {
 	EnabledTools  []string
 	DisabledTools []string
 	OnText        func(string)
+	// OnHarnessNote receives each automatic message the loop adds to the
+	// conversation on its own (the finish reminder), so a surface can record
+	// what the model was sent. nil no-ops.
+	OnHarnessNote func(string)
 	OnReasoning   func(string)
 	// OnDegenerateTurn receives a sample of the repeating text when a turn is cut
 	// off because the model got stuck repeating itself.

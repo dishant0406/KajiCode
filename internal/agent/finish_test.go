@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -345,5 +346,105 @@ func TestFinishPromptKeepsTheAnswerInTheSummary(t *testing.T) {
 	}
 	if strings.Contains(prompt, "one short line") {
 		t.Fatalf("prompt tells the model to shrink the summary:\n%s", prompt)
+	}
+}
+
+func forcedFlags(provider *mockProvider) []bool {
+	flags := []bool{}
+	for _, request := range provider.requests {
+		flags = append(flags, request.RequireToolCall)
+	}
+	return flags
+}
+
+// A model that ignores two reminders in a row gets a request that requires a
+// tool call, so the third text-only reply cannot happen with a provider that
+// honors it. Here the model then finishes.
+func TestFinishRuleRequiresAToolCallAfterIgnoredReminders(t *testing.T) {
+	result, provider := runWithFinish(t,
+		textTurn("Next I will do X."), textTurn("Next I will do X."), textTurn("Next I will do X."),
+		finishTurn("done"),
+	)
+	if result.FinalAnswer != "done" {
+		t.Fatalf("final = %q", result.FinalAnswer)
+	}
+	got := forcedFlags(provider)
+	want := []bool{false, false, true, true}
+	if len(got) != len(want) {
+		t.Fatalf("flags = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("flags = %v, want %v", got, want)
+		}
+	}
+}
+
+// A tool call clears the count, so the next request is no longer forced.
+func TestFinishRuleStopsForcingAfterAToolCall(t *testing.T) {
+	_, provider := runWithFinish(t,
+		textTurn("one"), textTurn("two"),
+		planTurn("completed", "completed"),
+		finishTurn("done"),
+	)
+	got := forcedFlags(provider)
+	want := []bool{false, false, true, false}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("flags = %v, want %v", got, want)
+		}
+	}
+}
+
+// rejectForced fails any request that requires a tool call, like a gateway that
+// does not support tool_choice "required".
+type rejectForced struct{ mockProvider }
+
+func (provider *rejectForced) StreamCompletion(ctx context.Context, request kajicoderuntime.CompletionRequest) (<-chan kajicoderuntime.StreamEvent, error) {
+	if request.RequireToolCall {
+		provider.requests = append(provider.requests, request)
+		return nil, errors.New("400 tool_choice required is not supported")
+	}
+	return provider.mockProvider.StreamCompletion(ctx, request)
+}
+
+// When the endpoint rejects the required tool call, the run asks again without
+// it and does not force again.
+func TestFinishRuleFallsBackWhenTheEndpointRejectsAForcedToolCall(t *testing.T) {
+	provider := &rejectForced{mockProvider{turns: [][]kajicoderuntime.StreamEvent{
+		textTurn("one"), textTurn("two"), textTurn("three"), finishTurn("done"),
+	}}}
+	result, err := Run(context.Background(), "build the reel", provider, Options{
+		Registry: finishRegistry(), MaxTurns: 20, RequireFinish: true,
+	})
+	if err != nil || result.FinalAnswer != "done" {
+		t.Fatalf("final = %q, err = %v", result.FinalAnswer, err)
+	}
+	forced := 0
+	for _, request := range provider.requests {
+		if request.RequireToolCall {
+			forced++
+		}
+	}
+	if forced != 1 {
+		t.Fatalf("forced requests = %d, want exactly 1 (then no more)", forced)
+	}
+}
+
+// Every reminder is reported so the session log can record what the model was sent.
+func TestFinishRuleReportsEachReminder(t *testing.T) {
+	notes := []string{}
+	provider := &mockProvider{turns: [][]kajicoderuntime.StreamEvent{
+		textTurn("one"), textTurn("two"), finishTurn("done"),
+	}}
+	_, err := Run(context.Background(), "build the reel", provider, Options{
+		Registry: finishRegistry(), MaxTurns: 20, RequireFinish: true,
+		OnHarnessNote: func(note string) { notes = append(notes, note) },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(notes) != 2 || !strings.Contains(notes[0], noToolReminderMarker) {
+		t.Fatalf("notes = %q", notes)
 	}
 }

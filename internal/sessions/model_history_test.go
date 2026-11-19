@@ -142,3 +142,17 @@ func TestCompactedModelMessagesHandlesEmptyTail(t *testing.T) {
 		t.Fatalf("expected summary-only snapshot, got %#v", snapshot)
 	}
 }
+
+// A harness note is a log entry. It must not come back as a user message when
+// the session is replayed into a later run.
+func TestModelMessagesFromEventsIgnoresHarnessNotes(t *testing.T) {
+	events := []Event{
+		modelHistoryEvent(1, EventMessage, map[string]any{"role": "user", "content": "continue"}),
+		modelHistoryEvent(2, EventMessage, map[string]any{"role": "assistant", "content": "Next I will do X."}),
+		modelHistoryEvent(3, EventHarnessNote, map[string]any{"content": "You replied without calling a tool"}),
+	}
+	messages := ModelMessagesFromEvents(events)
+	if len(messages) != 2 {
+		t.Fatalf("got %d messages, want 2 (the note is not history): %#v", len(messages), messages)
+	}
+}

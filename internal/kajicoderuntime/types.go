@@ -210,6 +210,11 @@ type CompletionRequest struct {
 	// re-billing the full prefix each turn. Providers without an equivalent
 	// ignore it.
 	PromptCacheKey string
+	// RequireToolCall asks the provider to make the model answer with a tool call
+	// instead of plain text (OpenAI tool_choice "required", Anthropic "any", Gemini
+	// mode ANY). It is a best effort: a provider that cannot express it ignores
+	// it, and the agent loop retries without it when the endpoint rejects it.
+	RequireToolCall bool
 }
 
 // Provider streams normalized completion events for one request.

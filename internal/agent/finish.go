@@ -20,6 +20,11 @@ import (
 // instead of reminding forever.
 const maxNoToolReminders = 3
 
+// forceToolCallAfter is how many text-only replies in a row the model may send
+// before the next request asks the provider to require a tool call. Reminders
+// alone did not move some models, so this is the structural push.
+const forceToolCallAfter = 2
+
 // noToolReminderMarker is a stable substring for tests.
 const noToolReminderMarker = "the run is still going"
 
@@ -27,6 +32,13 @@ const noToolReminderMarker = "the run is still going"
 type finishState struct {
 	noToolReplies int  // text-only replies in a row
 	todoRefused   bool // finish was already refused once for open todo items
+	forceRejected bool // the endpoint rejected a required tool call; stop asking
+}
+
+// wantsForcedToolCall reports whether the next request should require a tool
+// call: the model ignored enough reminders and the endpoint has not refused it.
+func (state *finishState) wantsForcedToolCall() bool {
+	return state.noToolReplies >= forceToolCallAfter && !state.forceRejected
 }
 
 // finishRequired reports whether this run ends through the finish tool. Plan

@@ -495,6 +495,9 @@ func (provider *Provider) openAIRequest(request kajicoderuntime.CompletionReques
 				},
 			})
 		}
+		if request.RequireToolCall {
+			mapped.ToolChoice = "required"
+		}
 	}
 	return mapped
 }

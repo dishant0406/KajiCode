@@ -52,6 +52,18 @@ branch of the loop in `loop.go`.
   tool's in-memory list.
 - **The model ignores the reminder.** It gets up to 3 reminders in a row
   (`maxNoToolReminders`). Any tool call sets the count back to 0.
+- **The model ignores 2 reminders.** The next request asks the provider to
+  require a tool call (`CompletionRequest.RequireToolCall`, set in `loop.go` when
+  `finishState.wantsForcedToolCall` is true). OpenAI-style APIs get
+  `tool_choice: "required"`, Anthropic gets `{"type":"any"}` (skipped while
+  extended thinking is on), Gemini gets mode `ANY`. `finish` is a tool, so the
+  model can still end the task. If the endpoint rejects it with an error, the
+  loop asks again without it and does not force again in that run
+  (`forceRejected`). Azure and the Codex Responses transport ignore the flag.
+- **Every reminder is logged.** The loop calls `Options.OnHarnessNote`; the TUI
+  writes a `harness_note` event to `events.jsonl` (`sessions.EventHarnessNote`).
+  It is a log only. The history replay skips it, so a later run never sees it as
+  a user message. ACP does not record notes.
 - **The model ignores 3 reminders.** The run stops on the 4th text-only reply.
   The user sees that last reply, and under it: "Stopped: the model replied 4
   times in a row without calling a tool or finish. Send a message to continue."

@@ -230,3 +230,35 @@ after a release.
 - `kajicode update --check` still uses the GitHub API, so it can still hit the
   rate limit. We did not change it.
 - The lookup starts one extra npm process, which takes about a second.
+
+## 10. After two ignored reminders, require a tool call
+
+**What we chose.** The third request after two text-only replies carries
+`RequireToolCall`. Each provider maps it to its own "must call a tool" setting.
+If the endpoint rejects it, the loop retries once without it and stops forcing
+for that run. Every reminder is also written to the session log as a
+`harness_note` event.
+
+**Why.** Session `kaji_20261119041549_1e956dfa` ended with the model
+(`fireworks/kimi_k3.1_pro` through a gateway) answering all three reminders with
+another "Next I will..." sentence. Reminders ask. A required tool call does not
+leave the model a choice. The model can still call `finish`, so the rule that the
+model, not the harness, decides when the task is done still holds. We read no
+wording to decide any of this.
+
+**What we rejected.**
+
+- *Force a tool call from the first text-only reply.* Most models obey the first
+  reminder. Forcing early would cost compatibility for no gain.
+- *Check the reply for "next step" wording to decide when to force.* The user
+  ruled out wording checks.
+
+**Trade-offs.**
+
+- Some gateways and thinking models reject the setting. That costs one failed
+  request, then the run goes on unforced. A model that cannot call tools at all
+  still ends with the "Stopped" notice after 3 reminders.
+- Anthropic with extended thinking, Azure, and the Codex Responses transport do
+  not get the setting.
+- `harness_note` events add a few lines to `events.jsonl`. They are never sent
+  back to the model.

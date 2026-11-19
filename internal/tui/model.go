@@ -5564,6 +5564,13 @@ func (m model) runAgentWithOptions(runID int, runCtx context.Context, prompt str
 			}
 		}
 
+		options.OnHarnessNote = func(note string) {
+			flushProse()
+			sessionEvents = append(sessionEvents, pendingSessionEvent{
+				Type:    sessions.EventHarnessNote,
+				Payload: map[string]any{"content": note},
+			})
+		}
 		onToolResult := options.OnToolResult
 		options.OnToolResult = func(result agent.ToolResult) {
 			row := transcriptRow{

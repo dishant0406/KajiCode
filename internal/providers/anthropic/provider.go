@@ -412,6 +412,9 @@ func (provider *Provider) anthropicRequest(request kajicoderuntime.CompletionReq
 			})
 		}
 		mapped.Tools[len(mapped.Tools)-1].CacheControl = &cacheControl{Type: cacheEphemeral}
+		if request.RequireToolCall && mapped.Thinking == nil {
+			mapped.ToolChoice = map[string]string{"type": "any"}
+		}
 	}
 	applyMessageCacheBreakpoints(mapped.Messages)
 	return mapped, nil

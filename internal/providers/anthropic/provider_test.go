@@ -583,3 +583,26 @@ func eventsOfType(events []kajicoderuntime.StreamEvent, eventType kajicoderuntim
 	}
 	return matching
 }
+
+func TestAnthropicRequestRequiresAToolCallOnlyWhenAsked(t *testing.T) {
+	provider, err := New(Options{Model: "claude-test", APIKey: "k"})
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+	messages := []kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleUser, Content: "hi"}}
+	tools := []kajicoderuntime.ToolDefinition{{Name: "finish", Description: "end", Parameters: map[string]any{"type": "object"}}}
+
+	plain, _ := provider.anthropicRequest(kajicoderuntime.CompletionRequest{Messages: messages, Tools: tools})
+	if plain.ToolChoice != nil {
+		t.Fatalf("tool_choice = %v, want it omitted by default", plain.ToolChoice)
+	}
+	forced, _ := provider.anthropicRequest(kajicoderuntime.CompletionRequest{Messages: messages, Tools: tools, RequireToolCall: true})
+	if forced.ToolChoice["type"] != "any" {
+		t.Fatalf("tool_choice = %v, want type any", forced.ToolChoice)
+	}
+	// Anthropic rejects tool_choice any while extended thinking is on.
+	thinking, _ := provider.anthropicRequest(kajicoderuntime.CompletionRequest{Messages: messages, Tools: tools, RequireToolCall: true, ReasoningEffort: "high"})
+	if thinking.Thinking == nil || thinking.ToolChoice != nil {
+		t.Fatalf("thinking = %v, tool_choice = %v, want thinking on and no tool_choice", thinking.Thinking, thinking.ToolChoice)
+	}
+}

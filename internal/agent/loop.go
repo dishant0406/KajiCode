@@ -461,6 +461,7 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 			Tools:           exposed,
 			ReasoningEffort: options.ReasoningEffort,
 			PromptCacheKey:  options.SessionID,
+			RequireToolCall: requireFinish && finish.wantsForcedToolCall(),
 		}
 		// Report the per-category context budget for this turn so a surface can
 		// show utilization. Opt-in: a no-op when OnContext is unset.
@@ -484,6 +485,14 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 		streamCtx, cancelStream := context.WithCancel(ctx)
 		defer cancelStream()
 		stream, err := streamWithReconnect(streamCtx, provider, request, reconnectNoticeFor(options))
+		if err != nil && request.RequireToolCall && ctx.Err() == nil {
+			// The endpoint may not support a required tool call (some gateways and
+			// thinking models reject it). Ask again without it, and do not force
+			// again in this run.
+			finish.forceRejected = true
+			request.RequireToolCall = false
+			stream, err = streamWithReconnect(streamCtx, provider, request, reconnectNoticeFor(options))
+		}
 		if err != nil {
 			hb.Stop()
 			if isImageRejectionError(err) {
@@ -841,10 +850,14 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 					return result, nil
 				}
 				finish.noToolReplies++
+				reminder := noToolReminder(openTodoCount(messages, registry), options.OnAskUser != nil)
 				messages = append(messages, kajicoderuntime.Message{
 					Role:    kajicoderuntime.MessageRoleUser,
-					Content: noToolReminder(openTodoCount(messages, registry), options.OnAskUser != nil),
+					Content: reminder,
 				})
+				if options.OnHarnessNote != nil {
+					options.OnHarnessNote(reminder)
+				}
 				continue
 			}
 			// Completion gate (headless): a turn with text but no tool call is the

@@ -1532,3 +1532,23 @@ func TestFirstTokenWindowGrowsWithPromptSize(t *testing.T) {
 		t.Fatalf("a long prompt should get a longer window, got text=%q err=%q", text, errMsg)
 	}
 }
+
+func TestOpenAIRequestRequiresAToolCallOnlyWhenAsked(t *testing.T) {
+	provider, err := New(Options{Model: "gpt-test"})
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+	messages := []kajicoderuntime.Message{{Role: kajicoderuntime.MessageRoleUser, Content: "hi"}}
+	tools := []kajicoderuntime.ToolDefinition{{Name: "finish", Description: "end", Parameters: map[string]any{"type": "object"}}}
+
+	if got := provider.openAIRequest(kajicoderuntime.CompletionRequest{Messages: messages, Tools: tools}).ToolChoice; got != "" {
+		t.Fatalf("tool_choice = %q, want it omitted by default", got)
+	}
+	if got := provider.openAIRequest(kajicoderuntime.CompletionRequest{Messages: messages, Tools: tools, RequireToolCall: true}).ToolChoice; got != "required" {
+		t.Fatalf("tool_choice = %q, want required", got)
+	}
+	// With no tools there is nothing to require; the API rejects tool_choice then.
+	if got := provider.openAIRequest(kajicoderuntime.CompletionRequest{Messages: messages, RequireToolCall: true}).ToolChoice; got != "" {
+		t.Fatalf("tool_choice = %q, want it omitted without tools", got)
+	}
+}

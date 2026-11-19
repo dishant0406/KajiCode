@@ -362,6 +362,10 @@ func (provider *Provider) geminiRequest(request kajicoderuntime.CompletionReques
 			})
 		}
 		mapped.Tools = []geminiToolGroup{{FunctionDeclarations: declarations}}
+		if request.RequireToolCall {
+			mapped.ToolConfig = &toolConfig{}
+			mapped.ToolConfig.FunctionCallingConfig.Mode = "ANY"
+		}
 	}
 	return mapped, nil
 }

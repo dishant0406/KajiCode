@@ -47,6 +47,9 @@ const (
 	EventSessionChild       EventType = "session_child"
 	EventSpecialistStart    EventType = "specialist_start"
 	EventSpecialistStop     EventType = "specialist_stop"
+	// EventHarnessNote records an automatic message the agent loop sent the model
+	// (the finish reminder). It is a log only: it is not replayed as history.
+	EventHarnessNote EventType = "harness_note"
 )
 
 type SessionKind string

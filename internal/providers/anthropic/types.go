@@ -12,7 +12,10 @@ type messagesRequest struct {
 	// Omitted (nil) for normal requests so behavior is unchanged.
 	Thinking *thinkingConfig `json:"thinking,omitempty"`
 	Tools    []anthropicTool `json:"tools,omitempty"`
-	Stream   bool            `json:"stream"`
+	// ToolChoice forces a tool call ({"type":"any"}). Anthropic rejects it while
+	// extended thinking is on, so it is only set when Thinking is nil.
+	ToolChoice map[string]string `json:"tool_choice,omitempty"`
+	Stream     bool              `json:"stream"`
 }
 
 // thinkingConfig requests extended thinking with a token budget. Type is always

@@ -5,6 +5,14 @@ type generateContentRequest struct {
 	Contents          []geminiContent   `json:"contents"`
 	GenerationConfig  generationConfig  `json:"generationConfig"`
 	Tools             []geminiToolGroup `json:"tools,omitempty"`
+	ToolConfig        *toolConfig       `json:"toolConfig,omitempty"`
+}
+
+// toolConfig forces a function call (mode ANY) when set.
+type toolConfig struct {
+	FunctionCallingConfig struct {
+		Mode string `json:"mode"`
+	} `json:"functionCallingConfig"`
 }
 
 type generationConfig struct {
