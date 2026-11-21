@@ -262,3 +262,122 @@ wording to decide any of this.
   not get the setting.
 - `harness_note` events add a few lines to `events.jsonl`. They are never sent
   back to the model.
+
+## 11. Only new work clears the reminder count
+
+**What we chose.** The "text-only replies in a row" count (`finishState.noToolReplies`)
+used to reset on any tool call. Now it resets only on a tool turn that did new
+work: a call the run has not made before, or a call that changed a file. That is
+the existing no-op guard's answer (`observeNoOpToolCalls`, `Count == 0`). A call
+now also counts as a repeat when only its argument order differs (`toolCallKey`).
+
+**Why.** Session `kaji_20261119041549_1e956dfa` had runs with 54 and 18
+reminders and no `finish`. The model said "I'll do X", called `todo_read` again,
+said it again, and so on. The cheap call reset the count every time, so the
+3-in-a-row cap never fired. Now a repeated `todo_read` or a re-read of the same
+file range does not reset it, and the run stops with the usual notice. The same
+fix keeps the forced tool call (decision 10) alive, because the count no longer
+falls back to 0 after one cheap call.
+
+**What we rejected.**
+
+- *A cap on the total reminders per run.* We built it first. It would also stop a
+  run that makes real edits while narrating a lot, which is the run we want.
+- *Treat a read with a different line range as a repeat.* Paging through a long
+  file would trip the guard.
+- *Judge whether a call "made progress".* That is a guess about meaning.
+
+**Trade-offs.**
+
+- A model that varies its arguments a little (a new range every time) still
+  counts as doing new work. Only the guard thresholds and `maxTurns` bound that.
+- The count still resets when the user sends a message. A new message is a new
+  decision by the user.
+
+## 12. The reply that earned a reminder is not replayed
+
+**What we chose.** In the TUI, the text-only reply that triggers a reminder is
+saved inside the `harness_note` event (`reply`), not as an assistant message.
+`ModelMessagesFromEvents` skips notes, so the next run does not see it.
+
+**Why.** On the next "continue" the history had many "I'll do X" assistant
+messages and none of the corrections, so the model saw itself narrating and never
+being corrected. Keeping the reply in the note still lets us read what the model
+said when we debug.
+
+**Trade-offs.** A resumed session shows fewer chatty lines. If a model puts a real
+answer in text and then calls `finish`, the answer lives in the finish summary,
+which is saved as usual. ACP does not record notes, so it is unchanged.
+
+## 13. `/goal`: the harness restarts a stopped run
+
+**What we chose.** `/goal <objective>` starts a run. When a run ends and the model
+did not call `finish` (`Result.Finished` is false), `advanceGoal`
+(`internal/tui/goal.go`) queues the next run through `queuedMessage`. The goal
+ends on `finish` (after the reviewer agrees, see 14), an error, a cancelled run,
+`/goal stop`, 3 restarts in a row where the run did no new work
+(`Result.MadeProgress`, the same signal that clears the reminder count), or 50
+restarts.
+
+**Why.** A user should not have to type "continue" again and again. The DeepSeek
+Harness (goal driver on idle) and opencode (`/goal` plugin) both do this and
+neither ends a run on a guess about the reply. The model ends the goal itself
+with `finish`.
+
+**What we rejected.**
+
+- *The existing self-paced `/loop`.* It ends on a text line (`LOOP: DONE`), which
+  is a wording check, and it is built for polling.
+- *A `blocked` tool.* `ask_user` and `finish` already cover it.
+
+**Trade-offs.** `/new`, `/resume` and plan mode end the goal in the window where it
+runs (the saved state, see 14, is what `/resume` brings back).
+
+## 14. A reviewer checks `finish` during a goal, and the goal is saved
+
+**What we chose.** Two things.
+
+- *Reviewer.* When the model calls `finish` during a goal, `judgeGoalCmd`
+  (`internal/tui/goal_judge.go`) makes one separate model call, with the same
+  provider. It gets the objective, the closing summary, and the last 30 tool
+  results across all the goal's runs (the first 60 and the last 100 characters of
+  each, because a test prints its verdict last). It answers one line of JSON,
+  `{"verdict":"done"|"continue","reason":...}`. "done" completes the goal.
+  "continue" counts as a restart and sends the model back with the reason. The
+  reviewer's prompt says the model's claim is not evidence and to answer
+  "continue" when in doubt.
+- *Saving.* Every change of the goal is written to the session as a `goal` event
+  (`recordGoal`). `/resume` reads the last one (`goalFromEvents`), shows "Goal
+  restored", and waits. `/goal resume` starts the next run.
+
+**Why.** A weak model can call `finish` too early, and one early `finish` ended
+the goal for good. A reviewer that sees the real tool calls is the "judge on
+idle" that opencode's `/goal` plugin uses, and the user asked for the model, not a
+wording check, to judge. A goal that lives only in memory is lost when the app
+closes, and the long runs a goal exists for are the ones that get interrupted.
+
+**What we rejected.**
+
+- *Refuse the first `finish` and accept the second.* A weak model just calls it
+  twice. It checks nothing.
+- *Restart the run on resume.* A model run costs money, so the user chooses when.
+- *Keep the reviewer on for plain runs.* Only goals ask for "don't stop until
+  done". A plain run ends on the user's next message anyway.
+
+**Trade-offs.**
+
+- Each `finish` in a goal costs one more request. The reviewer is also a model and
+  can be wrong. It can reject good work, so rejections count toward the stall and
+  round limits.
+- If the reviewer fails (a rate limit, a timeout) or does not answer in JSON, the
+  goal is not completed. It stays, the user sees why, and `/goal resume` tries
+  again or `/goal stop` accepts the work. We first accepted the `finish` on a
+  failure, but then one 429 would end an unattended goal, which is the early stop
+  the reviewer exists to prevent. A reviewer that never answers in JSON can trap a
+  goal until the user steps in.
+- The reviewer sees only a short slice of tool output, not the files. The slice is
+  kept in memory, so after a `/resume` the first check sees only the new runs.
+- A verdict belongs to one goal (`goalJudgedMsg.goal`). If the goal was stopped or
+  replaced while the reviewer worked, the verdict is dropped.
+- A goal that hits a limit is stopped, not paused: it is cleared and saved as
+  cleared. The notice says to start it again with `/goal <objective>`.

@@ -69,6 +69,7 @@ func finishContext(options Options) string {
 	return "## Ending A Task\n\n" +
 		"- A reply without a tool call does NOT end a task. While work remains, every reply must include a tool call.\n" +
 		"- Never say you will do something and then stop. Do it with a tool call in the same reply.\n" +
+		"- Make changes and run checks with tools. Do not describe a change in text instead of making it.\n" +
 		"- When the whole task is complete and checked, call " + tools.FinishToolName +
 		" alone. This is the only way to end a task, even for a simple question.\n" +
 		"- Put your final answer to the user in the finish `summary`. Do not write it as plain text before calling finish.\n" +
@@ -83,6 +84,16 @@ func needUserInputLine(canAsk bool) string {
 		return "If you need the user's input to continue, call ask_user."
 	}
 	return "If you need the user's input to continue, call " + tools.FinishToolName + " and put your question in the summary."
+}
+
+// withFinishNote adds the finish rule to a nudge that otherwise says "reply with
+// your final answer". In a finish run a plain reply does not end the task, so
+// that wording would contradict the rule.
+func withFinishNote(nudge string, requireFinish bool) string {
+	if !requireFinish {
+		return nudge
+	}
+	return nudge + " Plain text does not end the task: end it by calling " + tools.FinishToolName + "."
 }
 
 // openTodoCount returns how many todo items are still pending or in progress.

@@ -54,6 +54,7 @@ func (m model) ensureActiveSession(prompt string) (model, error) {
 func (m model) startNewSession() model {
 	previousID := m.activeSession.SessionID
 	m = m.cancelResumeLoading()
+	m.goal = nil // a goal belongs to the conversation it was set in
 
 	m.activeSession = sessions.Metadata{}
 	m.sessionEvents = nil

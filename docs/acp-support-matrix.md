@@ -409,6 +409,7 @@ Source: `internal/tui/commands.go:81-370`. "Mechanism" = simplest correct exposu
 | `/thread` | modal | browse/revert | picker modal; `sessions rewind` is the headless core | `[n/a]` |
 | `/btw` | text | side conversation | TUI surface-state swap | `[n/a]` |
 | `/loop` | text | interval loop | driven by the TUI idle ticker | `[n/a]` |
+| `/goal` | text | keep working until finish | driven by the TUI run-completion handler | `[n/a]` |
 | `/image` | text | attach image | native prompt `image` ContentBlock | `[x]` |
 | `/search`, `/find` | text | search events | command `/search` (hint: query) | `[x]` |
 | `/mcp`, `/mcp-status` | modal | MCP config | command `/mcp` (status); manager is a modal | `[=]` |

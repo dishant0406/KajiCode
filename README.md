@@ -223,6 +223,7 @@ Common slash commands:
 | `/resume`, `/thread` | continue, or browse/copy/edit/revert messages in local sessions |
 | `/btw [question]` | ask in an isolated fork without adding the side conversation to the main session |
 | `/loop` | repeat a prompt or custom `/command` on an interval (`/loop 5m /babysit-prs`) or self-paced |
+| `/goal` | keep working on an objective across runs until the model calls `finish` and a reviewer agrees; saved in the session (`/goal <objective>`, `/goal resume`, `/goal stop`) |
 | `/compact`, `/context` | manage context usage |
 | `/permissions`, `/tools` | inspect available tools and policy |
 | `/add-dir` | allow an extra write directory for this session |

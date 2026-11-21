@@ -269,6 +269,7 @@ type model struct {
 	// hide the cursor for those users.
 	terminalFocused bool
 	queuedMessage   string
+	goal            *goalState // active /goal, nil when none
 	// loops holds the session's active /loop definitions (see loop.go). activeLoopID
 	// tags the in-flight run when it is a loop iteration (empty = a user turn), so the
 	// completion seam knows whether to advance a loop. loopSeq invalidates a stale
@@ -623,6 +624,10 @@ type agentResponseMsg struct {
 	// (the exit_plan_mode tool returned "approved"). The handler clears plan mode
 	// and queues the execution prompt.
 	planApproved bool
+	// finished reports that the model ended the run by calling finish.
+	finished bool
+	// madeProgress reports that the run did new work (see agent.Result.MadeProgress).
+	madeProgress bool
 }
 
 type agentRowMsg struct {
@@ -2340,6 +2345,9 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 			})
 			m.queuedMessage = agent.PlanExecutionPrompt
 		}
+		var goalNotice string
+		var goalCmd tea.Cmd
+		m, goalNotice, goalCmd = m.advanceGoal(msg) // must read pendingAskUser/pendingPermission before they are reset below
 		// A fully successful turn means the task is done. Weaker models often
 		// forget the final todo_write, leaving the panel stuck mid-progress;
 		// reconcile it to complete here. Read pendingAskUser/pendingPermission
@@ -2400,6 +2408,9 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 				turnElapsed: msg.turnElapsed,
 			})
 		}
+		if goalNotice != "" {
+			m = m.appendGoalSystem(goalNotice)
+		}
 		if m.runCompletionWarning != nil {
 			if notice := strings.TrimSpace(m.runCompletionWarning()); notice != "" {
 				m.transcript = appendTranscriptRow(m.transcript, transcriptRow{kind: rowSystem, text: notice})
@@ -2428,13 +2439,7 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m, titleCmd = m.maybeAutoTitleActiveSession()
 			// Post-turn recap (gated on the recaps preference): one short sentence
 			// summarizing the turn's final answer, shown as a "※ recap:" footnote.
-			var finalAnswer string
-			for _, row := range msg.rows {
-				if row.kind == rowAssistant && row.final {
-					finalAnswer = row.text
-				}
-			}
-			m, recapCmd = m.maybeRecapTurn(msg.runID, finalAnswer)
+			m, recapCmd = m.maybeRecapTurn(msg.runID, finalAnswerText(msg.rows))
 		}
 		// End-of-turn git sweep: catch file mutations the tool stream couldn't
 		// report (bash scaffolding, subagent edits) so the FILES sidebar is
@@ -2447,19 +2452,19 @@ func (m model) updateModel(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var loopTickCmd tea.Cmd
 		if loopID := m.activeLoopID; loopID != "" {
 			m.activeLoopID = ""
-			loopFinalAnswer := ""
-			for _, row := range msg.rows {
-				if row.kind == rowAssistant && row.final {
-					loopFinalAnswer = row.text
-				}
-			}
-			m = m.advanceLoop(loopID, loopFinalAnswer, msg.err)
+			m = m.advanceLoop(loopID, finalAnswerText(msg.rows), msg.err)
 			// advanceLoop -> removeLoop may have stopped the ticker; restart it if
 			// other loops remain.
 			m, loopTickCmd = m.ensureLoopTick()
 		}
 		next, queuedCmd := m.launchQueuedMessageIfReady()
-		return next, tea.Batch(titleCmd, recapCmd, sweepCmd, queuedCmd, loopTickCmd)
+		return next, tea.Batch(titleCmd, recapCmd, sweepCmd, queuedCmd, loopTickCmd, goalCmd)
+	case goalJudgedMsg:
+		m, notice := m.applyGoalVerdict(msg)
+		if notice != "" {
+			m = m.appendGoalSystem(notice)
+		}
+		return m.launchQueuedMessageIfReady()
 	case sessionTitleGeneratedMsg:
 		return m.handleSessionTitleGenerated(msg)
 	case recapGeneratedMsg:
@@ -4559,6 +4564,8 @@ func (m model) dispatchCommand(command parsedCommand) (tea.Model, tea.Cmd) {
 		return m.handleBTWCommand(command.text)
 	case commandLoop:
 		return m.handleLoopCommand(command.text)
+	case commandGoal:
+		return m.handleGoalCommand(command.text)
 	case commandExit:
 		// Closing the session stops its foreground loops mid-task; warn once so a
 		// token-spending loop isn't ended by reflex.
@@ -5120,6 +5127,11 @@ func (m *model) cancelRun() {
 	if m.runCancel != nil {
 		m.runCancel()
 	}
+	// Cancelling a run is the user saying stop, so a goal must not restart it.
+	if m.goal != nil && m.pending && m.activeLoopID == "" {
+		m.goal = nil
+		*m = m.recordGoal().appendGoalSystem("Goal stopped.")
+	}
 	m.clearStreamingToolCall() // a cancelled file-write must not linger into the next run
 	// A cancelled loop iteration bypasses the agentResponseMsg completion seam (its
 	// late message is drained through flushRunIDs, not advanceLoop), so clear the
@@ -5564,11 +5576,15 @@ func (m model) runAgentWithOptions(runID int, runCtx context.Context, prompt str
 			}
 		}
 
+		// The text-only reply that earned a reminder is kept in the log, inside the
+		// note, but not as an assistant message: replaying it would show the next run
+		// a model that narrates and is never corrected.
 		options.OnHarnessNote = func(note string) {
-			flushProse()
+			reply := proseBuf.String()
+			proseBuf.Reset()
 			sessionEvents = append(sessionEvents, pendingSessionEvent{
 				Type:    sessions.EventHarnessNote,
-				Payload: map[string]any{"content": note},
+				Payload: map[string]any{"content": note, "reply": reply},
 			})
 		}
 		onToolResult := options.OnToolResult
@@ -5770,7 +5786,7 @@ func (m model) runAgentWithOptions(runID int, runCtx context.Context, prompt str
 				},
 			})
 		}
-		return agentResponseMsg{runID: runID, rows: rows, usageEvents: usageEvents, usageModelID: usageModelID, sessionEvents: sessionEvents, turnTools: toolCalls, turnElapsed: elapsed, ttft: ttft, planApproved: result.PlanApproved}
+		return agentResponseMsg{runID: runID, rows: rows, usageEvents: usageEvents, usageModelID: usageModelID, sessionEvents: sessionEvents, turnTools: toolCalls, turnElapsed: elapsed, ttft: ttft, planApproved: result.PlanApproved, finished: result.Finished, madeProgress: result.MadeProgress}
 	}
 }
 

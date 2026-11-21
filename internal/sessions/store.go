@@ -50,6 +50,9 @@ const (
 	// EventHarnessNote records an automatic message the agent loop sent the model
 	// (the finish reminder). It is a log only: it is not replayed as history.
 	EventHarnessNote EventType = "harness_note"
+	// EventGoal records the state of the TUI's /goal ("objective" is "" when the
+	// goal ended), so /resume can bring it back. It is not replayed as history.
+	EventGoal EventType = "goal"
 )
 
 type SessionKind string

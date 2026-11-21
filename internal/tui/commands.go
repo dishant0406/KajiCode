@@ -50,6 +50,7 @@ const (
 	commandPromptEditor
 	commandPromptInspect
 	commandLoop
+	commandGoal
 	commandWebSearch
 	commandPlan
 	commandUnknown
@@ -338,6 +339,13 @@ var commandDefinitions = []commandDefinition{
 		group:       commandGroupSession,
 		description: "Repeat a prompt or command on an interval (e.g. /loop 5m /babysit-prs), or self-paced when no interval is given.",
 		kind:        commandLoop,
+	},
+	{
+		name:        "/goal",
+		usage:       "/goal <objective> | /goal | /goal stop",
+		group:       commandGroupSession,
+		description: "Keep working on an objective across runs until the model calls finish.",
+		kind:        commandGoal,
 	},
 	{
 		name:        "/help",

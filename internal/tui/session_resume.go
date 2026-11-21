@@ -114,6 +114,10 @@ func (m model) applyResumePrepared(msg resumePreparedMsg) (model, tea.Cmd) {
 	}
 	prefix := initialTranscript()
 	prefix = appendRow(prefix, rowSystem, m.formatResumeSummary(*msg.session, len(msg.events)))
+	m.goal = goalFromEvents(msg.events)
+	if m.goal != nil {
+		prefix = appendRow(prefix, rowSystem, "Goal restored: "+m.goal.objective+"\nType /goal resume to continue it, or /goal stop to end it.")
+	}
 	if loopsCleared > 0 {
 		prefix = appendRow(prefix, rowSystem, fmt.Sprintf("Stopped %d loop(s) tied to the previous session.", loopsCleared))
 	}

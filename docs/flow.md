@@ -64,6 +64,10 @@ branch of the loop in `loop.go`.
   writes a `harness_note` event to `events.jsonl` (`sessions.EventHarnessNote`).
   It is a log only. The history replay skips it, so a later run never sees it as
   a user message. ACP does not record notes.
+- **The model alternates text with a repeated tool call.** The in-a-row count
+  resets only on a tool turn that did new work (`noOp.Count == 0` in `loop.go`),
+  so a repeated `todo_read` does not reset it. Text, repeat, text, repeat, text,
+  repeat, text ends with the usual notice.
 - **The model ignores 3 reminders.** The run stops on the 4th text-only reply.
   The user sees that last reply, and under it: "Stopped: the model replied 4
   times in a row without calling a tool or finish. Send a message to continue."
@@ -172,3 +176,46 @@ Edge cases:
   `npm install -g @dishant0406/kajicode@latest`.
 - **npm itself fails.** The user sees npm's own output and
   "npm install -g ...@latest: <error>".
+
+### `/goal`: keep going across runs
+
+Files: `internal/tui/goal.go`, `internal/tui/goal_judge.go`, the run-completion
+handler in `internal/tui/model.go`, `cancelRun`, and `session_resume.go`.
+
+1. The user types `/goal <objective>`. `handleGoalCommand` stores the goal and
+   starts a run with the objective and the rule "call finish when done".
+   `/goal` shows the status. `/goal stop` clears it. While a run is active it
+   says to wait. In plan mode it refuses, because plan mode has no `finish` tool
+   and the goal could never end.
+2. Every change of the goal is saved as a `goal` event in the session
+   (`recordGoal`). The first one is written after the run starts, because that is
+   when the session is created.
+3. When any run ends, the handler calls `advanceGoal` with the result. The line it
+   returns is shown after the run's own rows, so the answer comes first.
+4. The run ended with an error: the goal is cleared and the user sees how to
+   start it again. If plan mode was turned on meanwhile, the goal is stopped for
+   the same reason as step 1.
+5. The run was not the goal's (a `/loop` iteration), the plan was approved, or the
+   run only waits for the user (ask_user, a permission prompt): nothing changes.
+6. The model called `finish` (`Result.Finished`): the reviewer checks it
+   (`judgeGoalCmd`, one extra model call, 60 s limit). The user sees the answer,
+   then the result arrives as a `goalJudgedMsg`:
+   - "done": "Goal complete."
+   - "continue": the user sees "Reviewer: the goal is not met yet: <reason>". It
+     counts as a restart (step 7) and the next run carries the reason.
+   - the reviewer fails or does not answer in JSON: the goal stays. The user sees
+     why and can send `/goal resume` to try again or `/goal stop` to accept the
+     work.
+   - the user stopped or replaced the goal meanwhile: the result is ignored (it
+     carries the goal it was for).
+7. Otherwise the harness ended the run. The restart count goes up. A run that did
+   no new work (`Result.MadeProgress` is false) counts as a stall. At 3 stalls in a
+   row, or 50 restarts, the goal is stopped (cleared) and the user sees why. Else
+   the next run is queued with "Continue working toward the goal".
+8. A message the user already queued goes first. The goal restarts after it.
+9. Esc while a run is active (`cancelRun`) clears the goal, unless the run is a
+   `/loop` iteration. Ctrl+C while idle does not. `/new` clears it in the window.
+   A failed `/resume` leaves it alone.
+10. `/resume` reads the last `goal` event of the session (`goalFromEvents`) and
+    shows "Goal restored: ...". It does not start a run. `/goal resume` starts the
+    next one, and the restart count continues from where it was.

@@ -196,7 +196,7 @@ func (m model) leaveBTW() (model, tea.Cmd) {
 func btwCommandUnavailable(command parsedCommand) bool {
 	arg := strings.ToLower(strings.TrimSpace(command.text))
 	switch command.kind {
-	case commandNew, commandResume, commandRetitle, commandLoop,
+	case commandNew, commandResume, commandRetitle, commandLoop, commandGoal,
 		commandCompact, commandMCP, commandThread:
 		return true
 	case commandModel:

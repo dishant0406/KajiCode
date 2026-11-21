@@ -569,6 +569,14 @@ type Result struct {
 	// the plan (exit_plan_mode returned "approved"). The surface clears plan mode
 	// and starts executing the plan on the next run. False for every other run.
 	PlanApproved bool
+	// MadeProgress reports that at least one tool turn in the run did new work: a
+	// call the run had not made before, or a call that changed a file. A run that
+	// only talked, or only repeated earlier calls, leaves it false.
+	MadeProgress bool
+	// Finished reports that the run ended because the model called finish and the
+	// harness accepted it. False when the harness ended the run (a stop notice,
+	// the turn limit, a guard) or the run failed.
+	Finished bool
 	// StopNotice is a short user-facing line that says why the harness, not the
 	// model, ended the run (the tool-turn limit, or repeated replies with no tool
 	// call). Empty for a normal completion. Surfaces show it under the answer.

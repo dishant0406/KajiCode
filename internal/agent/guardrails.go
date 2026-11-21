@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"encoding/json"
 	"strconv"
 	"strings"
 
@@ -618,10 +619,15 @@ func newGuardState() *guardState {
 }
 
 // toolCallKey identifies a tool call by what makes it the same call: its name and
-// its exact arguments. A repeat of this key cannot return anything the model has
-// not already seen.
+// its arguments, with the key order ignored. A repeat of this key cannot return
+// anything the model has not already seen.
 func toolCallKey(call kajicoderuntime.ToolCall) string {
-	return call.Name + "\x00" + call.Arguments
+	var args map[string]any
+	if json.Unmarshal([]byte(call.Arguments), &args) != nil {
+		return call.Name + "\x00" + call.Arguments
+	}
+	canonical, _ := json.Marshal(args) // map keys are sorted, so the order never matters
+	return call.Name + "\x00" + string(canonical)
 }
 
 // observeNoOpToolCalls tracks turns whose tool calls are all verbatim repeats of

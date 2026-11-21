@@ -606,3 +606,53 @@ func TestSuccessfulMultiTurnRunPersistsEachProseSegmentOnce(t *testing.T) {
 		t.Fatalf("rehydrated model history lost the intermediate prose: %#v", messages)
 	}
 }
+
+// A text-only reply that gets a finish reminder is logged inside the note and is
+// not replayed to the next run as an assistant message.
+func TestReminderEarnedReplyIsLoggedButNotReplayed(t *testing.T) {
+	store := testSessionStore(t)
+	registry := tools.NewRegistry()
+	registry.Register(tools.NewFinishTool())
+	provider := &scriptedProvider{scripts: [][]kajicoderuntime.StreamEvent{
+		{{Type: kajicoderuntime.StreamEventText, Content: "Next I will do X."}, {Type: kajicoderuntime.StreamEventDone}},
+		{
+			{Type: kajicoderuntime.StreamEventToolCallStart, ToolCallID: "f", ToolName: tools.FinishToolName},
+			{Type: kajicoderuntime.StreamEventToolCallDelta, ToolCallID: "f", ArgumentsFragment: `{"summary":"all done"}`},
+			{Type: kajicoderuntime.StreamEventToolCallEnd, ToolCallID: "f"},
+			{Type: kajicoderuntime.StreamEventDone},
+		},
+	}}
+	m := newModel(context.Background(), Options{
+		Cwd:          "repo",
+		ProviderName: "openai",
+		ModelName:    "gpt-4.1",
+		Provider:     provider,
+		Registry:     registry,
+		SessionStore: store,
+		AgentOptions: agent.Options{Registry: registry, RequireFinish: true},
+	})
+	m.input.SetValue("do the thing")
+
+	updated, cmd := m.Update(testKey(tea.KeyEnter))
+	next := updated.(model)
+	updated, _ = next.Update(execCmd(cmd))
+	_ = updated.(model)
+
+	events := readOnlySessionEvents(t, store)
+	var note sessions.Event
+	for _, event := range events {
+		if event.Type == sessions.EventHarnessNote {
+			note = event
+		}
+	}
+	if note.Type == "" {
+		t.Fatalf("no harness_note in %v", eventTypes(events))
+	}
+	assertPayloadField(t, note, "reply", "Next I will do X.")
+	if messages := sessions.ModelMessagesFromEvents(events); messagesContainAssistant(messages, "Next I will do X.") {
+		t.Fatalf("the reminded reply was replayed as history: %#v", messages)
+	}
+	if messages := sessions.ModelMessagesFromEvents(events); !messagesContainAssistant(messages, "all done") {
+		t.Fatalf("the finish summary is missing from history: %#v", messages)
+	}
+}

@@ -777,7 +777,7 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 			}
 			messages = append(messages, kajicoderuntime.Message{
 				Role:    kajicoderuntime.MessageRoleUser,
-				Content: degenerateTurnNotice,
+				Content: withFinishNote(degenerateTurnNotice, requireFinish),
 			})
 			continue
 		}
@@ -807,7 +807,7 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 				}
 				messages = append(messages, kajicoderuntime.Message{
 					Role:    kajicoderuntime.MessageRoleUser,
-					Content: droppedToolCallNotice,
+					Content: withFinishNote(droppedToolCallNotice, requireFinish),
 				})
 				continue
 			}
@@ -833,7 +833,7 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 				}
 				messages = append(messages, kajicoderuntime.Message{
 					Role:    kajicoderuntime.MessageRoleUser,
-					Content: notice,
+					Content: withFinishNote(notice, requireFinish),
 				})
 				continue
 			}
@@ -923,7 +923,6 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 		// executing so the empty-turn counter resets and plan-tracking signals
 		// stay current.
 		guards.observeTurn(collected)
-		finish.noToolReplies = 0
 		for _, call := range collected.ToolCalls {
 			if call.Name == planToolName {
 				task.observe(taskStateEvent{kind: taskStateEventPlan, arguments: call.Arguments})
@@ -1070,6 +1069,7 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 				}
 				task.observe(taskStateEvent{kind: taskStateEventCompletion, completion: completionEvaluation{Decision: CompletionComplete}})
 				result.FinalAnswer = finishSummary
+				result.Finished = true
 				result.Messages = copyMessages(messages)
 				return result, nil
 			}
@@ -1120,6 +1120,13 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 		// so a model can loop on the same calls forever. Every call in this turn
 		// already has its tool_result, so the halt needs no aborted placeholders.
 		noOp := guards.observeNoOpToolCalls(collected.ToolCalls, changedFilesThisBatch)
+		// Only a turn that did new work clears the text-only reminder count. A
+		// repeated call (todo_read again, the same file read again) is not work, so
+		// it does not clear it.
+		if noOp.Count == 0 {
+			finish.noToolReplies = 0
+			result.MadeProgress = true
+		}
 		if noOp.Stop {
 			result.FinalAnswer = noOpToolCallStopAnswer(noOp.Count)
 			result.Messages = copyMessages(messages)
@@ -1221,7 +1228,7 @@ func Run(ctx context.Context, prompt string, provider Provider, options Options)
 		if collected.DroppedToolCalls > 0 {
 			messages = append(messages, kajicoderuntime.Message{
 				Role:    kajicoderuntime.MessageRoleUser,
-				Content: droppedToolCallNotice,
+				Content: withFinishNote(droppedToolCallNotice, requireFinish),
 			})
 		}
 

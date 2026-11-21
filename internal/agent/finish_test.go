@@ -179,12 +179,12 @@ func TestFinishRuleStopsAfterIgnoredReminders(t *testing.T) {
 	}
 }
 
-// A tool call between text-only replies resets the reminder count.
+// New work between text-only replies resets the reminder count.
 func TestFinishRuleToolCallResetsReminderCount(t *testing.T) {
 	result, provider := runWithFinish(t,
-		planTurn("completed", "completed"),
+		stepPlan("a"),
 		textTurn("one"), textTurn("two"), textTurn("three"),
-		planTurn("completed", "completed"),
+		stepPlan("b"),
 		textTurn("four"), textTurn("five"), textTurn("six"),
 		finishTurn("done"),
 	)
@@ -446,5 +446,91 @@ func TestFinishRuleReportsEachReminder(t *testing.T) {
 	}
 	if len(notes) != 2 || !strings.Contains(notes[0], noToolReminderMarker) {
 		t.Fatalf("notes = %q", notes)
+	}
+}
+
+func stepPlan(step string) []kajicoderuntime.StreamEvent {
+	return toolTurn("plan", "todo_write", `{"todos":[{"content":"`+step+`","status":"completed"}]}`)
+}
+
+// A model that follows every text-only reply with the SAME cheap tool call is
+// not working. The repeat must not clear the reminder count, so the run stops.
+func TestFinishRuleStopsWhenRepeatedCallsSeparateTheTextReplies(t *testing.T) {
+	result, provider := runWithFinish(t,
+		stepPlan("a"),
+		textTurn("Next I will do X."), stepPlan("a"),
+		textTurn("Next I will do X."), stepPlan("a"),
+		textTurn("Next I will do X."), stepPlan("a"),
+		textTurn("Next I will do X."),
+		textTurn("never requested"),
+	)
+	if result.StopNotice != noToolStopNotice() {
+		t.Fatalf("notice = %q, requests = %d", result.StopNotice, len(provider.requests))
+	}
+	if len(provider.requests) != 8 {
+		t.Fatalf("got %d requests, want 8", len(provider.requests))
+	}
+}
+
+// New work between the text-only replies is progress and does clear the count.
+func TestFinishRuleKeepsGoingWhileNewWorkSeparatesTheTextReplies(t *testing.T) {
+	turns := [][]kajicoderuntime.StreamEvent{}
+	for _, step := range []string{"a", "b", "c", "d", "e", "f"} {
+		turns = append(turns, textTurn("Next I will do X."), stepPlan(step))
+	}
+	turns = append(turns, finishTurn("done"))
+	result, _ := runWithFinish(t, turns...)
+	if result.FinalAnswer != "done" || result.StopNotice != "" {
+		t.Fatalf("final = %q, notice = %q", result.FinalAnswer, result.StopNotice)
+	}
+}
+
+// The order of the arguments must not make a repeat look like new work.
+func TestToolCallKeyIgnoresArgumentOrder(t *testing.T) {
+	first := toolCallKey(ToolCall{Name: "read_file", Arguments: `{"path":"a.go","start_line":1}`})
+	second := toolCallKey(ToolCall{Name: "read_file", Arguments: `{"start_line":1,"path":"a.go"}`})
+	other := toolCallKey(ToolCall{Name: "read_file", Arguments: `{"path":"a.go","start_line":2}`})
+	if first != second || first == other {
+		t.Fatalf("keys: %q %q %q", first, second, other)
+	}
+}
+
+// In a finish run, the nudge for an empty reply must not say a plain reply ends the task.
+func TestEmptyReplyNudgeMentionsFinishInAFinishRun(t *testing.T) {
+	_, provider := runWithFinish(t,
+		[]kajicoderuntime.StreamEvent{{Type: kajicoderuntime.StreamEventDone}},
+		finishTurn("done"),
+	)
+	last := provider.requests[1].Messages
+	nudge := last[len(last)-1].Content
+	if !strings.Contains(nudge, "calling "+tools.FinishToolName) {
+		t.Fatalf("nudge = %q, want it to point at finish", nudge)
+	}
+}
+
+// MadeProgress is true only when a tool turn did new work.
+func TestResultMadeProgressOnlyForNewWork(t *testing.T) {
+	worked, _ := runWithFinish(t, stepPlan("a"), finishTurn("done"))
+	if !worked.MadeProgress {
+		t.Fatal("a new tool call is new work")
+	}
+	repeated, _ := runWithFinish(t, textTurn("hmm"), finishTurn("done"))
+	if repeated.MadeProgress {
+		t.Fatal("a run that only talked did no new work")
+	}
+	again, _ := runWithFinish(t, textTurn("a"), textTurn("b"), textTurn("c"), textTurn("d"))
+	if again.MadeProgress || again.Finished {
+		t.Fatalf("progress = %v, finished = %v", again.MadeProgress, again.Finished)
+	}
+}
+
+func TestResultFinishedOnlyWhenFinishIsAccepted(t *testing.T) {
+	done, _ := runWithFinish(t, finishTurn("done"))
+	if !done.Finished {
+		t.Fatal("an accepted finish sets Finished")
+	}
+	stopped, _ := runWithFinish(t, textTurn("a"), textTurn("b"), textTurn("c"), textTurn("d"))
+	if stopped.Finished {
+		t.Fatal("a harness stop is not a finish")
 	}
 }
