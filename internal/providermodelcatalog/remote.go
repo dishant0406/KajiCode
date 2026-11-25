@@ -16,8 +16,11 @@ import (
 
 const (
 	DefaultModelsDevURL = "https://models.dev/api.json"
-	modelsDevSource     = "models.dev"
-	openGatewaySource   = "opengateway"
+	// maxCatalogBytes caps a catalog download. models.dev api.json is about
+	// 7 MB today, so the old 4 MB cap cut it off and the parse failed.
+	maxCatalogBytes   = 64 << 20
+	modelsDevSource   = "models.dev"
+	openGatewaySource = "opengateway"
 )
 
 type FetchOptions struct {
@@ -77,7 +80,7 @@ func ParseModelsDevProvider(body []byte, providerID string) ([]Model, error) {
 	models := make([]Model, 0, len(provider.Models))
 	for key, item := range provider.Models {
 		model := item.toModel(key, modelsDevSource)
-		if model.ID == "" || !IsCodingModel(model) {
+		if model.ID == "" || !IsCodingModel(model) || servedOnUnsupportedAPI(providerID, item) {
 			continue
 		}
 		models = append(models, model)
@@ -153,6 +156,16 @@ type remoteModel struct {
 	Limit              remoteLimit      `json:"limit"`
 	Cost               remoteCost       `json:"cost"`
 	Modalities         remoteModalities `json:"modalities"`
+	Provider           struct {
+		NPM string `json:"npm"`
+	} `json:"provider"`
+}
+
+// servedOnUnsupportedAPI reports whether the model is served only on an API we
+// have no client for. OpenCode serves Gemini on its "interactions" API
+// (npm @ai-sdk/google); a request to it would fail, so we do not list it.
+func servedOnUnsupportedAPI(providerID string, model remoteModel) bool {
+	return strings.HasPrefix(providerID, "opencode") && model.Provider.NPM == "@ai-sdk/google"
 }
 
 type remoteLimit struct {
@@ -211,7 +224,7 @@ func fetchJSON(ctx context.Context, endpoint string, client *http.Client) ([]byt
 		return nil, err
 	}
 	defer response.Body.Close()
-	body, err := io.ReadAll(io.LimitReader(response.Body, 4<<20))
+	body, err := io.ReadAll(io.LimitReader(response.Body, maxCatalogBytes))
 	if err != nil {
 		return nil, err
 	}

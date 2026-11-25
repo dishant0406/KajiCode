@@ -219,3 +219,27 @@ handler in `internal/tui/model.go`, `cancelRun`, and `session_resume.go`.
 10. `/resume` reads the last `goal` event of the session (`goalFromEvents`) and
     shows "Goal restored: ...". It does not start a run. `/goal resume` starts the
     next one, and the restart count continues from where it was.
+
+## Listing OpenCode models (Zen, Go)
+
+1. The picker or `kajicode providers models` calls `DiscoverCatalog`
+   (`internal/providermodeldiscovery/discovery.go`).
+2. It downloads the models.dev catalog (`FetchModelsDev` in
+   `internal/providermodelcatalog/remote.go`). The file is about 7 MB. The cap is
+   64 MB.
+3. It also asks the provider for its live list (`/models`, needs the API key).
+4. `mergeLiveModels` keeps live models that are also in the catalog and are
+   coding models. With `ShowAllModels` on, `unionLiveModels` keeps all of them.
+5. At run time, `modelProtocol` in `internal/providers/factory.go` reads the
+   models.dev `npm` value. Anthropic gives `/messages`, OpenAI gives
+   `/responses`, and the rest use chat completions. Every OpenCode request also
+   carries the `x-opencode-session` header.
+
+Edge cases:
+
+- The catalog download fails or is cut off: the picker uses a name guess on the
+  live list. Some models are hidden. Turn on `ShowAllModels` to see all of them.
+- No API key: the live list is skipped and the catalog list is shown.
+- Gemini models on OpenCode (`interactions` API): hidden from the catalog,
+  because KajiCode has no client for that API. `ShowAllModels` can still list
+  them, and a request to them fails.

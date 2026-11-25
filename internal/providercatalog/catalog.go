@@ -158,7 +158,7 @@ var descriptors = []Descriptor{
 	openAICompat("zai", "Z.ai", "https://api.z.ai/api/paas/v4", "glm-4.5", []string{"ZAI_API_KEY"}, "z.ai"),
 	openAICompat("zai-cn", "Z.ai CN", "https://open.bigmodel.cn/api/paas/v4", "glm-4.5", []string{"ZHIPU_API_KEY"}, "z.ai cn"),
 	openAICompat("kilocode", "KiloCode", "https://api.kilo.ai/api/gateway", "anthropic/claude-sonnet-4.6", []string{"KILO_API_KEY"}, "kilo", "kilo gateway"),
-	openAICompat("opencode", "OpenCode Zen", "https://opencode.ai/zen/v1", "deepseek-v4-flash", []string{"OPENCODE_API_KEY"}, "opencode zen"),
+	openAICompat("opencode", "OpenCode Zen", "https://opencode.ai/zen/v1", "deepseek-v4.1-flash", []string{"OPENCODE_API_KEY"}, "opencode zen"),
 	openAICompat("opencode-go", "OpenCode Go", "https://opencode.ai/zen/go/v1", "deepseek-v4-pro", []string{"OPENCODE_API_KEY"}, "opencode go"),
 	anthropicCompat("opencode-go-anthropic-compatible", "OpenCode Go Anthropic-compatible", "https://opencode.ai/zen/go", "minimax-m3", []string{"OPENCODE_API_KEY"}),
 	openAICompat("atomic-chat", "Atomic Chat", "https://api.atomic.chat/v1", "gpt-4.1", []string{"ATOMIC_CHAT_API_KEY"}),

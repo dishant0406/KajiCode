@@ -381,3 +381,38 @@ closes, and the long runs a goal exists for are the ones that get interrupted.
   replaced while the reviewer worked, the verdict is dropped.
 - A goal that hits a limit is stopped, not paused: it is cleared and saved as
   cleared. The notice says to start it again with `/goal <objective>`.
+
+## Model catalog download limit (OpenCode models went missing)
+
+**What we chose.** `fetchJSON` in `internal/providermodelcatalog/remote.go` now
+reads up to 64 MB (`maxCatalogBytes`). It used to stop at 4 MB.
+
+**Why.** The models.dev `api.json` file grew to about 7 MB. The old cap cut it in
+the middle, so the JSON did not parse. The error was "unexpected end of JSON
+input". The curated catalog came back empty for every provider. Then the picker
+fell back to a name guess (`LooksLikeCodingModelID`) on the live list. Many
+OpenCode ids (`big-pickle`, `kimi-k3`, `beam-free`) fail that guess, so models
+vanished. `modelsource` (the other models.dev reader) already had a 64 MB cap, so
+the two readers now agree.
+
+**What we checked first.** We compared the live OpenCode `/models` lists with
+models.dev. Zen has 83 chat models live, Go has 31. Every one is in models.dev,
+and the protocol in models.dev (`npm`) matches the live `recommended_api` for
+all of them. So the wire routing in `internal/providers` was already right. We
+did not touch it.
+
+**Also changed.** The Zen default model is now `deepseek-v4.1-flash`. The old
+default, `deepseek-v4-flash`, is no longer in the live Zen list.
+
+**Rejected.** Reading `type`, `recommended_api` and `api.*.base_url` from the
+live OpenCode list. It is more exact, but the data we need is already in
+models.dev, and it would add a network call to provider setup.
+
+**Trade-offs.** A bigger cap means a bad server could make us read 64 MB. That is
+the same guard `modelsource` already uses.
+
+**Gemini models.** OpenCode serves Gemini on its `interactions` API. KajiCode has
+no client for it, so a request would fail. `servedOnUnsupportedAPI` in
+`remote.go` drops these models (models.dev `npm` is `@ai-sdk/google`) from the
+OpenCode catalog. The trade-off: with `ShowAllModels` on, the live list can still
+show them.

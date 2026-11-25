@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/dishant0406/KajiCode/internal/modelregistry"
@@ -99,6 +100,19 @@ func TestFetchJSON(t *testing.T) {
 	}
 }
 
+func TestFetchJSONReadsCatalogLargerThanFourMegabytes(t *testing.T) {
+	padding := strings.Repeat("x", 5<<20)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"openai":{"models":{"gpt-4o":{"id":"gpt-4o"}}},"pad":{"models":{"x":{"id":"` + padding + `"}}}}`))
+	}))
+	defer srv.Close()
+
+	models, err := FetchModelsDev(context.Background(), "openai", FetchOptions{HTTPClient: srv.Client(), ModelsDevURL: srv.URL})
+	if err != nil || !containsModelID(models, "gpt-4o") {
+		t.Fatalf("large catalog models = %#v, %v", models, err)
+	}
+}
+
 func TestFetchModelsDevAndOpenGatewayOverHTTP(t *testing.T) {
 	modelsDev := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"openai":{"models":{"gpt-4o":{"id":"gpt-4o"}}}}`))
@@ -141,4 +155,17 @@ func containsModelID(models []Model, id string) bool {
 		}
 	}
 	return false
+}
+
+func TestOpenCodeCatalogSkipsGeminiModels(t *testing.T) {
+	body := []byte(`{"opencode":{"models":{
+		"gemini-3.5-flash":{"id":"gemini-3.5-flash","tool_call":true,"provider":{"npm":"@ai-sdk/google"}},
+		"kimi-k3":{"id":"kimi-k3","tool_call":true}}}}`)
+	models, err := ParseModelsDevProvider(body, "opencode")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if containsModelID(models, "gemini-3.5-flash") || !containsModelID(models, "kimi-k3") {
+		t.Fatalf("models = %#v, want kimi-k3 only", models)
+	}
 }
