@@ -1,6 +1,7 @@
 package modelregistry
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/dishant0406/KajiCode/internal/modelsource"
@@ -64,6 +65,9 @@ func TestReasoningEffortsNoNameInference(t *testing.T) {
 // usingSeed enables the embedded models.dev seed for a test and restores state.
 func usingSeed(t *testing.T) {
 	t.Helper()
+	// Point the cache at a missing file so a live models.dev cache on the machine
+	// (or one written by another test package) cannot replace the embedded seed.
+	t.Setenv("KAJICODE_MODELS_CACHE_PATH", filepath.Join(t.TempDir(), "missing.json"))
 	modelsource.Enable()
 	ResetSynthesizedCacheForTest()
 	t.Cleanup(func() {
